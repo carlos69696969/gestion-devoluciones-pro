@@ -141,13 +141,27 @@ export const loader = async ({ request }) => {
         ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
         : `Estas dentro del periodo de devolucion (${settings.returnWindowDays} dias). Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`,
     };
-  } catch {
+  } catch (err) {
+    const rawMessage = String(err?.message || err || "");
+    const isOrdersScopeError =
+      rawMessage.toLowerCase().includes("orders") &&
+      rawMessage.toLowerCase().includes("access denied");
+
+    const diagnostic = [
+      `Tienda recibida: ${shop || "-"}`,
+      `Pedido recibido: ${orderNumber || "-"}`,
+      `Email recibido: ${email || "-"}`,
+    ].join(" | ");
+
     return {
       reasons: REASONS,
       settings,
       autoOrder: null,
       shop,
-      error: "No se pudo cargar el pedido automaticamente.",
+      error: isOrdersScopeError
+        ? "La app no tiene permisos de pedidos (read_orders) para esta tienda."
+        : "No se pudo cargar el pedido automaticamente.",
+      diagnostic,
     };
   }
 };
@@ -275,7 +289,18 @@ export const action = async ({ request }) => {
 };
 
 export default function PublicReturnsPortal() {
-  const { reasons, settings, autoOrder, shop, error, info, isExpired, limitDate, message } = useLoaderData();
+  const {
+    reasons,
+    settings,
+    autoOrder,
+    shop,
+    error,
+    info,
+    isExpired,
+    limitDate,
+    message,
+    diagnostic,
+  } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -285,6 +310,9 @@ export default function PublicReturnsPortal() {
       <h1>Portal de devoluciones</h1>
       {info ? <p>{info}</p> : null}
       {error ? <p style={{ color: "#b42318" }}>{error}</p> : null}
+      {typeof diagnostic === "string" ? (
+        <p style={{ color: "#475467", fontSize: 14 }}>{diagnostic}</p>
+      ) : null}
       {message ? <p style={{ color: isExpired ? "#b42318" : "#027a48" }}>{message}</p> : null}
 
       {autoOrder && !isExpired ? (
