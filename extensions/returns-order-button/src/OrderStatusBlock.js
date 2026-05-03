@@ -1,27 +1,30 @@
-import {
-  extension,
-  BlockStack,
-  Button,
-  Text,
-} from "@shopify/ui-extensions/customer-account";
+/* global globalThis */
+import "@shopify/ui-extensions/customer-account";
 
 const RETURN_PORTAL_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones";
 const DEFAULT_SHOP_DOMAIN = "cariana-3.myshopify.com";
 
-export default extension("customer-account.order-status.block.render", (root, api) => {
+export default function extension() {
+  const shopifyObj = globalThis?.shopify || {};
+  const targetValue =
+    shopifyObj?.target?.value ||
+    shopifyObj?.extension?.target?.value ||
+    shopifyObj?.target?.current ||
+    {};
+
   const orderName =
-    api?.order?.current?.name ||
-    api?.target?.current?.order?.name ||
+    targetValue?.order?.name ||
+    shopifyObj?.order?.current?.name ||
     "";
 
   const customerEmail =
-    api?.buyerIdentity?.current?.email ||
-    api?.target?.current?.customer?.emailAddress?.emailAddress ||
+    targetValue?.customer?.emailAddress?.emailAddress ||
+    shopifyObj?.buyerIdentity?.current?.email ||
     "";
 
   const shopDomain =
-    api?.shop?.myshopifyDomain ||
-    api?.target?.current?.shop?.myshopifyDomain ||
+    targetValue?.shop?.myshopifyDomain ||
+    shopifyObj?.shop?.myshopifyDomain ||
     DEFAULT_SHOP_DOMAIN;
 
   const url = new URL(RETURN_PORTAL_URL);
@@ -35,25 +38,24 @@ export default extension("customer-account.order-status.block.render", (root, ap
     url.searchParams.set("shop", String(shopDomain));
   }
 
-  const stack = root.createComponent(BlockStack, {
-    spacing: "tight",
-    padding: "base",
-  });
+  const wrapper = document.createElement("s-stack");
+  wrapper.setAttribute("padding", "base");
+  wrapper.setAttribute("gap", "tight");
 
-  const title = root.createComponent(Text, { emphasis: "bold" }, "Devoluciones");
-  const description = root.createComponent(
-    Text,
-    {},
-    "Inicia aqui la devolucion de este pedido.",
-  );
-  const button = root.createComponent(
-    Button,
-    { to: url.toString(), external: true },
-    "Solicitar devolucion",
-  );
+  const title = document.createElement("s-text");
+  title.setAttribute("appearance", "strong");
+  title.textContent = "Devoluciones";
 
-  stack.appendChild(title);
-  stack.appendChild(description);
-  stack.appendChild(button);
-  root.appendChild(stack);
-});
+  const description = document.createElement("s-text");
+  description.textContent = "Inicia aqui la devolucion de este pedido.";
+
+  const button = document.createElement("s-button");
+  button.textContent = "Solicitar devolucion";
+  button.setAttribute("href", url.toString());
+  button.setAttribute("target", "_blank");
+
+  wrapper.appendChild(title);
+  wrapper.appendChild(description);
+  wrapper.appendChild(button);
+  document.body.appendChild(wrapper);
+}

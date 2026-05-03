@@ -66,7 +66,7 @@ export const loader = async ({ request }) => {
 
   const settings = await getOrCreateSettings(shop);
 
-  if (!orderNumber || !email) {
+  if (!orderNumber) {
     return {
       reasons: REASONS,
       settings,
@@ -110,9 +110,10 @@ export const loader = async ({ request }) => {
     );
     const data = await response.json();
 
-    const match = data?.data?.orders?.edges
-      ?.map((e) => e.node)
-      ?.find((o) => (o.email || "").toLowerCase() === email);
+    const candidates = data?.data?.orders?.edges?.map((e) => e.node) || [];
+    const match = email
+      ? candidates.find((o) => (o.email || "").toLowerCase() === email)
+      : candidates[0];
 
     if (!match) {
       return {
