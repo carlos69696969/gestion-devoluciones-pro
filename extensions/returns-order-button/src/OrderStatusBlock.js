@@ -1,11 +1,17 @@
+/* global globalThis */
 import "@shopify/ui-extensions/customer-account";
 
-const RETURN_PORTAL_URL = "https://gestion-devoluciones-pro.onrender.com/app";
+const RETURN_PORTAL_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones";
+const DEFAULT_SHOP_DOMAIN = "cariana-3.myshopify.com";
 
 export default function extension() {
   const target = globalThis?.shopify?.target?.value;
   const orderName = target?.order?.name || "";
   const customerEmail = target?.customer?.emailAddress?.emailAddress || "";
+  const shopDomain =
+    target?.shop?.myshopifyDomain ||
+    globalThis?.shopify?.shop?.myshopifyDomain ||
+    DEFAULT_SHOP_DOMAIN;
 
   const url = new URL(RETURN_PORTAL_URL);
   if (orderName) {
@@ -13,6 +19,9 @@ export default function extension() {
   }
   if (customerEmail) {
     url.searchParams.set("email", String(customerEmail));
+  }
+  if (shopDomain) {
+    url.searchParams.set("shop", String(shopDomain));
   }
 
   const wrapper = document.createElement("s-stack");
