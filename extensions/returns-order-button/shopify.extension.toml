@@ -1,0 +1,11 @@
+api_version = "2026-04"
+uid = "d38d4c1d-8b2d-8a10-19fe-c139bf17d63ef43d4c31"
+
+[[extensions]]
+name = "Boton devolucion pedido"
+handle = "returns-order-button"
+type = "ui_extension"
+
+[[extensions.targeting]]
+target = "customer-account.order-status.block.render"
+module = "./src/OrderStatusBlock.js"

@@ -1,0 +1,9 @@
+{
+  "name": "returns-order-button",
+  "private": true,
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@shopify/ui-extensions": "2026.4.x"
+  }
+}

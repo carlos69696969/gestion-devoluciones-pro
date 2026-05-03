@@ -43,111 +43,140 @@ export const action = async ({ request }) => {
   const intent = String(formData.get("intent") || "");
 
   if (intent === "lookup") {
-    const orderNumber = String(formData.get("orderNumber") || "").trim();
-    const email = String(formData.get("email") || "").trim().toLowerCase();
+    try {
+      const orderNumber = String(formData.get("orderNumber") || "").trim();
+      const email = String(formData.get("email") || "").trim().toLowerCase();
 
-    if (!orderNumber || !email) {
-      return { ok: false, error: "Captura numero de pedido y correo." };
-    }
+      if (!orderNumber || !email) {
+        return { ok: false, error: "Captura numero de pedido y correo." };
+      }
 
-    const response = await admin.graphql(
-      `#graphql
-      query FindOrders($query: String!) {
-        orders(first: 5, query: $query) {
-          edges {
-            node {
-              id
-              name
-              email
-              customer { displayName }
-              lineItems(first: 50) {
-                edges {
-                  node {
-                    id
-                    title
-                    quantity
-                    product { id }
-                    variant { id }
+      const response = await admin.graphql(
+        `#graphql
+        query FindOrders($query: String!) {
+          orders(first: 5, query: $query) {
+            edges {
+              node {
+                id
+                name
+                email
+                customer { displayName }
+                lineItems(first: 50) {
+                  edges {
+                    node {
+                      id
+                      title
+                      quantity
+                      product { id }
+                      variant { id }
+                    }
                   }
                 }
               }
             }
           }
+        }`,
+        {
+          variables: { query: `name:#${orderNumber}` },
+        },
+      );
+      const data = await response.json();
+
+      if (data?.errors?.length) {
+        const hasAccessDenied = data.errors.some((error) =>
+          String(error?.message || "").toLowerCase().includes("access denied"),
+        );
+        if (hasAccessDenied) {
+          return {
+            ok: false,
+            error: "La app no tiene permisos de pedidos. Reinstala la app y acepta permisos.",
+          };
         }
-      }`,
-      {
-        variables: { query: `name:#${orderNumber}` },
-      },
-    );
-    const data = await response.json();
-    const match = data?.data?.orders?.edges
-      ?.map((e) => e.node)
-      ?.find((o) => (o.email || "").toLowerCase() === email);
+        return { ok: false, error: "Shopify devolvio un error al consultar el pedido." };
+      }
 
-    if (!match) {
-      return { ok: false, error: "No encontramos un pedido con esos datos." };
+      const match = data?.data?.orders?.edges
+        ?.map((e) => e.node)
+        ?.find((o) => (o.email || "").toLowerCase() === email);
+
+      if (!match) {
+        return { ok: false, error: "No encontramos un pedido con esos datos." };
+      }
+
+      return { ok: true, order: normalizeOrder(match) };
+    } catch (error) {
+      const message = String(error?.message || "").toLowerCase();
+      if (message.includes("access denied")) {
+        return {
+          ok: false,
+          error: "La app no tiene permisos de pedidos. Reinstala la app y acepta permisos.",
+        };
+      }
+      return { ok: false, error: "No se pudo buscar el pedido en este momento." };
     }
-
-    return { ok: true, order: normalizeOrder(match) };
   }
 
   if (intent === "submit_return") {
-    const payloadRaw = String(formData.get("payload") || "");
-    if (!payloadRaw) {
-      return { ok: false, error: "No hay informacion para guardar." };
-    }
-
-    const payload = JSON.parse(payloadRaw);
-    if (!payload.items?.length) {
-      return { ok: false, error: "Selecciona al menos un producto." };
-    }
-
-    if (payload.returnMethod === "pickup") {
-      const required = [
-        "pickupFullName",
-        "pickupPhone",
-        "pickupAddress",
-        "pickupNeighborhood",
-        "pickupCity",
-        "pickupState",
-        "pickupPostalCode",
-      ];
-      const missing = required.find((field) => !payload[field]);
-      if (missing) {
-        return { ok: false, error: "Completa todos los datos de recoleccion." };
+    try {
+      const payloadRaw = String(formData.get("payload") || "");
+      if (!payloadRaw) {
+        return { ok: false, error: "No hay informacion para guardar." };
       }
-    }
 
-    await prisma.returnRequest.create({
-      data: {
-        shop: session.shop,
-        shopifyOrderId: payload.order.id,
-        orderNumber: payload.order.orderNumber,
-        customerName: payload.order.customerName,
-        customerEmail: payload.order.customerEmail,
-        returnMethod: payload.returnMethod,
-        returnCost: payload.returnMethod === "pickup" ? PICKUP_COST : 0,
-        pickupFullName: payload.pickupFullName || null,
-        pickupPhone: payload.pickupPhone || null,
-        pickupAddress: payload.pickupAddress || null,
-        pickupNeighborhood: payload.pickupNeighborhood || null,
-        pickupCity: payload.pickupCity || null,
-        pickupState: payload.pickupState || null,
-        pickupPostalCode: payload.pickupPostalCode || null,
-        pickupReferences: payload.pickupReferences || null,
-        items: {
-          create: payload.items.map((item) => ({
-            productId: item.productId || "",
-            variantId: item.variantId || null,
-            title: item.title,
-            quantity: Number(item.quantity || 1),
-            reason: item.reason,
-          })),
+      const payload = JSON.parse(payloadRaw);
+      if (!payload.items?.length) {
+        return { ok: false, error: "Selecciona al menos un producto." };
+      }
+
+      if (payload.returnMethod === "pickup") {
+        const required = [
+          "pickupFullName",
+          "pickupPhone",
+          "pickupAddress",
+          "pickupNeighborhood",
+          "pickupCity",
+          "pickupState",
+          "pickupPostalCode",
+        ];
+        const missing = required.find((field) => !payload[field]);
+        if (missing) {
+          return { ok: false, error: "Completa todos los datos de recoleccion." };
+        }
+      }
+
+      await prisma.returnRequest.create({
+        data: {
+          shop: session.shop,
+          shopifyOrderId: payload.order.id,
+          orderNumber: payload.order.orderNumber,
+          customerName: payload.order.customerName,
+          customerEmail: payload.order.customerEmail,
+          returnMethod: payload.returnMethod,
+          returnCost: payload.returnMethod === "pickup" ? PICKUP_COST : 0,
+          pickupFullName: payload.pickupFullName || null,
+          pickupPhone: payload.pickupPhone || null,
+          pickupAddress: payload.pickupAddress || null,
+          pickupNeighborhood: payload.pickupNeighborhood || null,
+          pickupCity: payload.pickupCity || null,
+          pickupState: payload.pickupState || null,
+          pickupPostalCode: payload.pickupPostalCode || null,
+          pickupReferences: payload.pickupReferences || null,
+          items: {
+            create: payload.items.map((item) => ({
+              productId: item.productId || "",
+              variantId: item.variantId || null,
+              title: item.title,
+              quantity: Number(item.quantity || 1),
+              reason: item.reason,
+            })),
+          },
         },
-      },
-    });
+      });
 
-    return { ok: true, saved: true };
+      return { ok: true, saved: true };
+    } catch {
+      return { ok: false, error: "No se pudo guardar la solicitud de devolucion." };
+    }
   }
 
   return { ok: false, error: "Accion no valida." };

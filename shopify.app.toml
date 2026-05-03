@@ -2,7 +2,7 @@
 
 client_id = "6819cfa57bbf4225b0207806265cdc8a"
 name = "Portal Devoluciones Cariana"
-application_url = "https://example.com"
+application_url = "https://gestion-devoluciones-pro.onrender.com"
 embedded = true
 
 [webhooks]
@@ -15,4 +15,6 @@ optional_scopes = [ ]
 use_legacy_install_flow = false
 
 [auth]
-redirect_urls = [ ]
+redirect_urls = [
+  "https://gestion-devoluciones-pro.onrender.com/auth/callback"
+]
