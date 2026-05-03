@@ -14,6 +14,7 @@ const REASONS = [
 ];
 
 const MANUAL_REVIEW_REASONS = new Set(["No era lo que pedi", "Llego danado"]);
+const ADMIN_API_VERSION = "2025-10";
 
 function normalizeOrder(orderNode) {
   return {
@@ -54,42 +55,15 @@ async function getOrCreateSettings(shop) {
   });
 }
 
-export const loader = async ({ request }) => {
-  const url = new URL(request.url);
-  const incomingShop = (url.searchParams.get("shop") || "").trim().toLowerCase();
-  const configuredShop = (process.env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
-  const defaultShop = configuredShop || "cariana-3.myshopify.com";
-  const shop = incomingShop || defaultShop;
-  const orderNumber = (url.searchParams.get("order") || "").trim();
-  const email = (url.searchParams.get("email") || "").trim().toLowerCase();
-
-  if (!shop) {
-    return { error: "Falta el dominio de la tienda.", autoOrder: null, settings: null, reasons: REASONS };
-  }
-
-  const settings = await getOrCreateSettings(shop);
-
-  if (!orderNumber) {
-    return {
-      reasons: REASONS,
-      settings,
-      autoOrder: null,
-      shop,
-      info:
-        "Abre esta pagina desde el boton 'Solicitar devolucion' de tu pedido para reconocer tu orden automaticamente.",
-    };
-  }
-
-  const candidateShops = Array.from(
-    new Set([incomingShop, configuredShop, defaultShop].filter(Boolean)),
-  );
-  let lastError = null;
-
-  for (const shopCandidate of candidateShops) {
-    try {
-      const { admin } = await unauthenticated.admin(shopCandidate);
-      const response = await admin.graphql(
-        `#graphql
+async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
+  const response = await fetch(`https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": accessToken,
+    },
+    body: JSON.stringify({
+      query: `#graphql
         query FindOrder($query: String!) {
           orders(first: 5, query: $query) {
             edges {
@@ -115,17 +89,130 @@ export const loader = async ({ request }) => {
             }
           }
         }`,
-        { variables: { query: `name:#${orderNumber}` } },
-      );
-      const data = await response.json();
+      variables: { query: `name:#${orderNumber}` },
+    }),
+  });
 
-      const candidates = data?.data?.orders?.edges?.map((e) => e.node) || [];
+  const data = await response.json();
+  if (!response.ok || data?.errors?.length) {
+    throw new Error(
+      data?.errors?.[0]?.message ||
+        `Error consultando Shopify Admin API (${response.status}).`,
+    );
+  }
+
+  return data?.data?.orders?.edges?.map((edge) => edge.node) || [];
+}
+
+export const loader = async ({ request }) => {
+  const url = new URL(request.url);
+  const incomingShop = (url.searchParams.get("shop") || "").trim().toLowerCase();
+  const configuredShop = (process.env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
+  const shop = incomingShop || configuredShop;
+  const orderNumber = (url.searchParams.get("order") || "").trim();
+  const email = (url.searchParams.get("email") || "").trim().toLowerCase();
+
+  if (!shop) {
+    return { error: "Falta el dominio de la tienda.", autoOrder: null, settings: null, reasons: REASONS };
+  }
+
+  const settings = await getOrCreateSettings(shop);
+
+  if (!orderNumber) {
+    return {
+      reasons: REASONS,
+      settings,
+      autoOrder: null,
+      shop,
+      info:
+        "Abre esta pagina desde el boton 'Solicitar devolucion' de tu pedido para reconocer tu orden automaticamente.",
+    };
+  }
+
+  const rawCandidates = Array.from(new Set([incomingShop, configuredShop].filter(Boolean)));
+  const allSessions = await prisma.session.findMany({
+    select: { shop: true, isOnline: true, accessToken: true },
+  });
+  const offlineSessions = allSessions.filter((session) => session.isOnline === false);
+  const offlineShops = offlineSessions
+    .map((session) => String(session.shop || "").trim().toLowerCase())
+    .filter(Boolean);
+  const sessionShops = offlineSessions
+    .map((session) => String(session.shop || "").trim().toLowerCase())
+    .filter(Boolean);
+  const candidateShops = Array.from(new Set([...rawCandidates, ...offlineShops, ...sessionShops]));
+
+  if (!candidateShops.length) {
+    return {
+      reasons: REASONS,
+      settings,
+      autoOrder: null,
+      shop,
+      error: "No se encontro sesion valida para la tienda.",
+      diagnostic: `Tiendas recibidas: ${rawCandidates.join(", ") || "-"} | Agrega la tienda correcta en el parametro shop del boton y reinstala la app para regenerar sesion offline.`,
+    };
+  }
+  let lastError = null;
+  let triedWithSession = [];
+
+  for (const shopCandidate of candidateShops) {
+    const existingSession = offlineSessions.find(
+      (session) => String(session.shop || "").trim().toLowerCase() === shopCandidate,
+    );
+    if (!existingSession) {
+      continue;
+    }
+    triedWithSession.push(shopCandidate);
+    try {
+      let candidates = [];
+      try {
+        const { admin } = await unauthenticated.admin(shopCandidate);
+        const response = await admin.graphql(
+          `#graphql
+          query FindOrder($query: String!) {
+            orders(first: 5, query: $query) {
+              edges {
+                node {
+                  id
+                  name
+                  email
+                  createdAt
+                  customer { displayName phone }
+                  lineItems(first: 50) {
+                    edges {
+                      node {
+                        id
+                        title
+                        quantity
+                        product { id }
+                        variant { id }
+                        originalUnitPriceSet { shopMoney { amount } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }`,
+          { variables: { query: `name:#${orderNumber}` } },
+        );
+        const data = await response.json();
+        candidates = data?.data?.orders?.edges?.map((e) => e.node) || [];
+      } catch (sessionError) {
+        candidates = await fetchOrderCandidatesByToken({
+          shop: shopCandidate,
+          accessToken: existingSession.accessToken,
+          orderNumber,
+        });
+        lastError = sessionError;
+      }
+
       const match = email
         ? candidates.find((o) => (o.email || "").toLowerCase() === email)
         : candidates[0];
 
       if (!match) {
-        continue;
+      continue;
       }
 
       const order = normalizeOrder(match);
@@ -162,6 +249,8 @@ export const loader = async ({ request }) => {
 
     const diagnostic = [
       `Tiendas probadas: ${candidateShops.join(", ") || "-"}`,
+      `Tiendas probadas con sesion: ${triedWithSession.join(", ") || "-"}`,
+      `Tiendas con sesion offline: ${offlineShops.join(", ") || "-"}`,
       `Pedido recibido: ${orderNumber || "-"}`,
       `Email recibido: ${email || "-"}`,
     ].join(" | ");
