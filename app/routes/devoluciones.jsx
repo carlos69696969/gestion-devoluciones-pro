@@ -131,7 +131,7 @@ export const loader = async ({ request }) => {
 
   const rawCandidates = Array.from(new Set([incomingShop, configuredShop].filter(Boolean)));
   const allSessions = await prisma.session.findMany({
-    select: { shop: true, isOnline: true, accessToken: true },
+    select: { id: true, shop: true, isOnline: true, accessToken: true },
   });
   const offlineSessions = allSessions.filter((session) => session.isOnline === false);
   const offlineShops = offlineSessions
@@ -156,10 +156,10 @@ export const loader = async ({ request }) => {
   let triedWithSession = [];
 
   for (const shopCandidate of candidateShops) {
-    const existingSession = offlineSessions.find(
+    const sessionCandidates = offlineSessions.filter(
       (session) => String(session.shop || "").trim().toLowerCase() === shopCandidate,
     );
-    if (!existingSession) {
+    if (!sessionCandidates.length) {
       continue;
     }
     triedWithSession.push(shopCandidate);
@@ -199,12 +199,28 @@ export const loader = async ({ request }) => {
         const data = await response.json();
         candidates = data?.data?.orders?.edges?.map((e) => e.node) || [];
       } catch (sessionError) {
-        candidates = await fetchOrderCandidatesByToken({
-          shop: shopCandidate,
-          accessToken: existingSession.accessToken,
-          orderNumber,
-        });
-        lastError = sessionError;
+        const canonicalOfflineId = `offline_${shopCandidate}`;
+        const orderedCandidates = [
+          ...sessionCandidates.filter((s) => s.id === canonicalOfflineId),
+          ...sessionCandidates.filter((s) => s.id !== canonicalOfflineId),
+        ];
+        let fallbackError = sessionError;
+        for (const sessionCandidate of orderedCandidates) {
+          try {
+            candidates = await fetchOrderCandidatesByToken({
+              shop: shopCandidate,
+              accessToken: sessionCandidate.accessToken,
+              orderNumber,
+            });
+            fallbackError = null;
+            break;
+          } catch (tokenError) {
+            fallbackError = tokenError;
+          }
+        }
+        if (fallbackError) {
+          throw fallbackError;
+        }
       }
 
       const match = email
@@ -251,6 +267,7 @@ export const loader = async ({ request }) => {
       `Tiendas probadas: ${candidateShops.join(", ") || "-"}`,
       `Tiendas probadas con sesion: ${triedWithSession.join(", ") || "-"}`,
       `Tiendas con sesion offline: ${offlineShops.join(", ") || "-"}`,
+      `Ids de sesion offline: ${offlineSessions.map((s) => s.id).join(", ") || "-"}`,
       `Pedido recibido: ${orderNumber || "-"}`,
       `Email recibido: ${email || "-"}`,
     ].join(" | ");
