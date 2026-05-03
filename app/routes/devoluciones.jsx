@@ -167,7 +167,7 @@ export const loader = async ({ request }) => {
       error: isOrdersScopeError
         ? "La app no tiene permisos de pedidos (read_orders) para esta tienda."
         : "No se pudo cargar el pedido automaticamente.",
-      diagnostic: `${diagnostic} | Shop original: ${incomingShop || "-"}`,
+      diagnostic: `${diagnostic} | Shop original: ${incomingShop || "-"} | Error tecnico: ${rawMessage || "-"}`,
     };
   }
 };
