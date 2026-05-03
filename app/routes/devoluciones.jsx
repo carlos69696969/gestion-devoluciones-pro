@@ -14,6 +14,7 @@ const REASONS = [
 ];
 
 const MANUAL_REVIEW_REASONS = new Set(["No era lo que pedi", "Llego danado"]);
+const ADMIN_API_VERSION = "2025-10";
 
 function normalizeOrder(orderNode) {
   return {
@@ -52,6 +53,52 @@ async function getOrCreateSettings(shop) {
   return prisma.returnSettings.create({
     data: { shop },
   });
+}
+
+async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
+  const response = await fetch(`https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": accessToken,
+    },
+    body: JSON.stringify({
+      query: `#graphql
+        query FindOrder($query: String!) {
+          orders(first: 5, query: $query) {
+            edges {
+              node {
+                id
+                name
+                email
+                createdAt
+                customer { displayName phone }
+                lineItems(first: 50) {
+                  edges {
+                    node {
+                      id
+                      title
+                      quantity
+                      product { id }
+                      variant { id }
+                      originalUnitPriceSet { shopMoney { amount } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }`,
+      variables: { query: `name:#${orderNumber}` },
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok || data?.errors?.length) {
+    throw new Error(
+      data?.errors?.[0]?.message || `Error consultando Shopify Admin API (${response.status}).`,
+    );
+  }
+  return data?.data?.orders?.edges?.map((edge) => edge.node) || [];
 }
 
 export const loader = async ({ request }) => {
@@ -159,40 +206,47 @@ export const loader = async ({ request }) => {
           try {
             const loadedSession = await sessionStorage.loadSession(sessionCandidate.id);
             if (!loadedSession) continue;
-
-            const admin = new shopify.api.clients.Graphql({ session: loadedSession });
-            const gqlResponse = await admin.request(
-              `#graphql
-              query FindOrder($query: String!) {
-                orders(first: 5, query: $query) {
-                  edges {
-                    node {
-                      id
-                      name
-                      email
-                      createdAt
-                      customer { displayName phone }
-                      lineItems(first: 50) {
-                        edges {
-                          node {
-                            id
-                            title
-                            quantity
-                            product { id }
-                            variant { id }
-                            originalUnitPriceSet { shopMoney { amount } }
+            if (shopify?.api?.clients?.Graphql) {
+              const admin = new shopify.api.clients.Graphql({ session: loadedSession });
+              const gqlResponse = await admin.request(
+                `#graphql
+                query FindOrder($query: String!) {
+                  orders(first: 5, query: $query) {
+                    edges {
+                      node {
+                        id
+                        name
+                        email
+                        createdAt
+                        customer { displayName phone }
+                        lineItems(first: 50) {
+                          edges {
+                            node {
+                              id
+                              title
+                              quantity
+                              product { id }
+                              variant { id }
+                              originalUnitPriceSet { shopMoney { amount } }
+                            }
                           }
                         }
                       }
                     }
                   }
-                }
-              }`,
-              {
-                variables: { query: `name:#${orderNumber}` },
-              },
-            );
-            candidates = gqlResponse?.data?.orders?.edges?.map((e) => e.node) || [];
+                }`,
+                {
+                  variables: { query: `name:#${orderNumber}` },
+                },
+              );
+              candidates = gqlResponse?.data?.orders?.edges?.map((e) => e.node) || [];
+            } else {
+              candidates = await fetchOrderCandidatesByToken({
+                shop: shopCandidate,
+                accessToken: loadedSession.accessToken,
+                orderNumber,
+              });
+            }
             fallbackError = null;
             break;
           } catch (tokenError) {
