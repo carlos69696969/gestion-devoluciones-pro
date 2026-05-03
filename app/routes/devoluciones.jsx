@@ -57,7 +57,8 @@ async function getOrCreateSettings(shop) {
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const incomingShop = (url.searchParams.get("shop") || "").trim().toLowerCase();
-  const defaultShop = (process.env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
+  const configuredShop = (process.env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
+  const defaultShop = configuredShop || "cariana-3.myshopify.com";
   const shop =
     incomingShop.endsWith("-ft.myshopify.com") && defaultShop
       ? defaultShop
