@@ -59,10 +59,7 @@ export const loader = async ({ request }) => {
   const incomingShop = (url.searchParams.get("shop") || "").trim().toLowerCase();
   const configuredShop = (process.env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
   const defaultShop = configuredShop || "cariana-3.myshopify.com";
-  const shop =
-    incomingShop.endsWith("-ft.myshopify.com") && defaultShop
-      ? defaultShop
-      : incomingShop;
+  const shop = incomingShop || defaultShop;
   const orderNumber = (url.searchParams.get("order") || "").trim();
   const email = (url.searchParams.get("email") || "").trim().toLowerCase();
 
@@ -83,70 +80,80 @@ export const loader = async ({ request }) => {
     };
   }
 
-  try {
-    const { admin } = await unauthenticated.admin(shop);
-    const response = await admin.graphql(
-      `#graphql
-      query FindOrder($query: String!) {
-        orders(first: 5, query: $query) {
-          edges {
-            node {
-              id
-              name
-              email
-              createdAt
-              customer { displayName phone }
-              lineItems(first: 50) {
-                edges {
-                  node {
-                    id
-                    title
-                    quantity
-                    product { id }
-                    variant { id }
-                    originalUnitPriceSet { shopMoney { amount } }
+  const candidateShops = Array.from(
+    new Set([incomingShop, configuredShop, defaultShop].filter(Boolean)),
+  );
+  let lastError = null;
+
+  for (const shopCandidate of candidateShops) {
+    try {
+      const { admin } = await unauthenticated.admin(shopCandidate);
+      const response = await admin.graphql(
+        `#graphql
+        query FindOrder($query: String!) {
+          orders(first: 5, query: $query) {
+            edges {
+              node {
+                id
+                name
+                email
+                createdAt
+                customer { displayName phone }
+                lineItems(first: 50) {
+                  edges {
+                    node {
+                      id
+                      title
+                      quantity
+                      product { id }
+                      variant { id }
+                      originalUnitPriceSet { shopMoney { amount } }
+                    }
                   }
                 }
               }
             }
           }
-        }
-      }`,
-      { variables: { query: `name:#${orderNumber}` } },
-    );
-    const data = await response.json();
+        }`,
+        { variables: { query: `name:#${orderNumber}` } },
+      );
+      const data = await response.json();
 
-    const candidates = data?.data?.orders?.edges?.map((e) => e.node) || [];
-    const match = email
-      ? candidates.find((o) => (o.email || "").toLowerCase() === email)
-      : candidates[0];
+      const candidates = data?.data?.orders?.edges?.map((e) => e.node) || [];
+      const match = email
+        ? candidates.find((o) => (o.email || "").toLowerCase() === email)
+        : candidates[0];
 
-    if (!match) {
+      if (!match) {
+        continue;
+      }
+
+      const order = normalizeOrder(match);
+      const limitDate = addDays(order.createdAt, settings.returnWindowDays);
+      const now = new Date();
+      const isExpired = now > limitDate;
+
       return {
         reasons: REASONS,
         settings,
-        autoOrder: null,
-        shop,
-        error: "No encontramos un pedido con esos datos.",
+        autoOrder: order,
+        shop: shopCandidate,
+        isExpired,
+        limitDate: limitDate.toISOString(),
+        message: isExpired
+          ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
+          : `Estas dentro del periodo de devolucion (${settings.returnWindowDays} dias). Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`,
       };
+    } catch (err) {
+      lastError = err;
     }
+  }
 
-    const order = normalizeOrder(match);
-    const limitDate = addDays(order.createdAt, settings.returnWindowDays);
-    const now = new Date();
-    const isExpired = now > limitDate;
-
-    return {
-      reasons: REASONS,
-      settings,
-      autoOrder: order,
-      shop,
-      isExpired,
-      limitDate: limitDate.toISOString(),
-      message: isExpired
-        ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
-        : `Estas dentro del periodo de devolucion (${settings.returnWindowDays} dias). Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`,
-    };
+  try {
+    if (!lastError) {
+      throw new Error("No se encontro un pedido valido en las tiendas configuradas.");
+    }
+    throw lastError;
   } catch (err) {
     const rawMessage = String(err?.message || err || "");
     const isOrdersScopeError =
@@ -154,7 +161,7 @@ export const loader = async ({ request }) => {
       rawMessage.toLowerCase().includes("access denied");
 
     const diagnostic = [
-      `Tienda recibida: ${shop || "-"}`,
+      `Tiendas probadas: ${candidateShops.join(", ") || "-"}`,
       `Pedido recibido: ${orderNumber || "-"}`,
       `Email recibido: ${email || "-"}`,
     ].join(" | ");
