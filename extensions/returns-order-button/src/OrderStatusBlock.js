@@ -1,16 +1,27 @@
-/* global globalThis */
-import "@shopify/ui-extensions/customer-account";
+import {
+  extension,
+  BlockStack,
+  Button,
+  Text,
+} from "@shopify/ui-extensions/customer-account";
 
 const RETURN_PORTAL_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones";
 const DEFAULT_SHOP_DOMAIN = "cariana-3.myshopify.com";
 
-export default function extension() {
-  const target = globalThis?.shopify?.target?.value;
-  const orderName = target?.order?.name || "";
-  const customerEmail = target?.customer?.emailAddress?.emailAddress || "";
+export default extension("customer-account.order-status.block.render", (root, api) => {
+  const orderName =
+    api?.order?.current?.name ||
+    api?.target?.current?.order?.name ||
+    "";
+
+  const customerEmail =
+    api?.buyerIdentity?.current?.email ||
+    api?.target?.current?.customer?.emailAddress?.emailAddress ||
+    "";
+
   const shopDomain =
-    target?.shop?.myshopifyDomain ||
-    globalThis?.shopify?.shop?.myshopifyDomain ||
+    api?.shop?.myshopifyDomain ||
+    api?.target?.current?.shop?.myshopifyDomain ||
     DEFAULT_SHOP_DOMAIN;
 
   const url = new URL(RETURN_PORTAL_URL);
@@ -24,24 +35,25 @@ export default function extension() {
     url.searchParams.set("shop", String(shopDomain));
   }
 
-  const wrapper = document.createElement("s-stack");
-  wrapper.setAttribute("padding", "base");
-  wrapper.setAttribute("gap", "tight");
+  const stack = root.createComponent(BlockStack, {
+    spacing: "tight",
+    padding: "base",
+  });
 
-  const title = document.createElement("s-text");
-  title.setAttribute("appearance", "strong");
-  title.textContent = "Devoluciones";
+  const title = root.createComponent(Text, { emphasis: "bold" }, "Devoluciones");
+  const description = root.createComponent(
+    Text,
+    {},
+    "Inicia aqui la devolucion de este pedido.",
+  );
+  const button = root.createComponent(
+    Button,
+    { to: url.toString(), external: true },
+    "Solicitar devolucion",
+  );
 
-  const description = document.createElement("s-text");
-  description.textContent = "Inicia aqui la devolucion de este pedido.";
-
-  const button = document.createElement("s-button");
-  button.textContent = "Solicitar devolucion";
-  button.setAttribute("href", url.toString());
-  button.setAttribute("target", "_blank");
-
-  wrapper.appendChild(title);
-  wrapper.appendChild(description);
-  wrapper.appendChild(button);
-  document.body.appendChild(wrapper);
-}
+  stack.appendChild(title);
+  stack.appendChild(description);
+  stack.appendChild(button);
+  root.appendChild(stack);
+});
