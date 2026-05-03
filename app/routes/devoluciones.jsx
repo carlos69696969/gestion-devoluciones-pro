@@ -56,7 +56,12 @@ async function getOrCreateSettings(shop) {
 
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
-  const shop = (url.searchParams.get("shop") || "").trim().toLowerCase();
+  const incomingShop = (url.searchParams.get("shop") || "").trim().toLowerCase();
+  const defaultShop = (process.env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
+  const shop =
+    incomingShop.endsWith("-ft.myshopify.com") && defaultShop
+      ? defaultShop
+      : incomingShop;
   const orderNumber = (url.searchParams.get("order") || "").trim();
   const email = (url.searchParams.get("email") || "").trim().toLowerCase();
 
@@ -161,7 +166,7 @@ export const loader = async ({ request }) => {
       error: isOrdersScopeError
         ? "La app no tiene permisos de pedidos (read_orders) para esta tienda."
         : "No se pudo cargar el pedido automaticamente.",
-      diagnostic,
+      diagnostic: `${diagnostic} | Shop original: ${incomingShop || "-"}`,
     };
   }
 };
