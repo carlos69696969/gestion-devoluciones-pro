@@ -474,6 +474,8 @@ export default function PublicReturnsPortal() {
 }
 
 function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, actionData }) {
+  const [step, setStep] = useState(1);
+  const [clientError, setClientError] = useState("");
   const [selected, setSelected] = useState({});
   const [reasonsByItem, setReasonsByItem] = useState(
     Object.fromEntries(order.items.map((item) => [item.id, reasons[0]])),
@@ -532,6 +534,63 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
     [order, customerName, customerPhone, selectedItems, returnMethod, estimatedRefund, pickup],
   );
 
+  const goToStep = (nextStep) => {
+    setClientError("");
+    setStep(nextStep);
+  };
+
+  const validateStep = (currentStep) => {
+    if (currentStep === 1) {
+      if (!selectedItems.length) return "Selecciona al menos un producto.";
+      const needsEvidence = selectedItems.some((item) => MANUAL_REVIEW_REASONS.has(item.reason));
+      if (needsEvidence) {
+        const missingDetails = selectedItems.some(
+          (item) => MANUAL_REVIEW_REASONS.has(item.reason) && !String(item.details || "").trim(),
+        );
+        if (missingDetails) return "Completa la descripcion del problema en los productos marcados.";
+        const missingPhoto = selectedItems.some(
+          (item) => MANUAL_REVIEW_REASONS.has(item.reason) && !String(item.photoDataUrl || "").trim(),
+        );
+        if (missingPhoto) return "Sube una foto del problema en los productos marcados.";
+      }
+    }
+
+    if (currentStep === 2) {
+      if (returnMethod !== "branch" && returnMethod !== "pickup") {
+        return "Selecciona un metodo de devolucion.";
+      }
+    }
+
+    if (currentStep === 3) {
+      if (!String(customerName || "").trim()) return "Captura tu nombre.";
+      if (!String(customerPhone || "").trim()) return "Captura tu telefono.";
+      if (returnMethod === "pickup") {
+        const required = [
+          ["pickupAddress", "Direccion completa"],
+          ["pickupNeighborhood", "Colonia"],
+          ["pickupCity", "Ciudad"],
+          ["pickupState", "Estado"],
+          ["pickupPostalCode", "Codigo postal"],
+          ["pickupDate", "Dia de recoleccion"],
+          ["pickupTimeSlot", "Horario de recoleccion"],
+        ];
+        const missing = required.find(([key]) => !String(pickup[key] || "").trim());
+        if (missing) return `Completa: ${missing[1]}.`;
+      }
+    }
+
+    return "";
+  };
+
+  const nextFrom = (currentStep) => {
+    const msg = validateStep(currentStep);
+    if (msg) {
+      setClientError(msg);
+      return;
+    }
+    goToStep(currentStep + 1);
+  };
+
   return (
     <section style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
       <h2 style={{ marginTop: 0 }}>Solicitud para pedido {order.name}</h2>
@@ -540,208 +599,264 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
         <input type="hidden" name="shop" value={shop} />
         <input type="hidden" name="payload" value={JSON.stringify(payload)} />
         <div style={{ display: "grid", gap: 16 }}>
-          <div>
-            <h3>1) Productos a devolver</h3>
-            {order.items.map((item) => {
-              const reason = reasonsByItem[item.id] || reasons[0];
-              const needsEvidence = MANUAL_REVIEW_REASONS.has(reason);
-              return (
-                <div key={item.id} style={{ border: "1px solid #ddd", padding: 10, borderRadius: 6, marginBottom: 10 }}>
-                  <label style={{ display: "block" }}>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selected[item.id])}
-                      onChange={(event) =>
-                        setSelected((prev) => ({ ...prev, [item.id]: event.target.checked }))
-                      }
-                    />{" "}
-                    {item.title} (x{item.quantity}) - ${toMXN(item.unitPrice)} c/u
-                  </label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <strong>Paso {step} de 4</strong>
+            <span style={{ color: "#667085" }}>
+              {step === 1
+                ? "Productos"
+                : step === 2
+                  ? "Metodo"
+                  : step === 3
+                    ? "Contacto"
+                    : "Resumen"}
+            </span>
+          </div>
 
-                  {selected[item.id] ? (
-                    <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                      <label>
-                        Motivo
-                        <select
-                          value={reason}
-                          onChange={(event) =>
-                            setReasonsByItem((prev) => ({ ...prev, [item.id]: event.target.value }))
-                          }
-                        >
-                          {reasons.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+          {clientError ? <p style={{ color: "#b42318" }}>{clientError}</p> : null}
 
-                      {needsEvidence ? (
-                        <>
-                          <label>
-                            Descripcion del problema (obligatoria)
-                            <textarea
-                              value={detailsByItem[item.id] || ""}
-                              onChange={(event) =>
-                                setDetailsByItem((prev) => ({ ...prev, [item.id]: event.target.value }))
-                              }
-                            />
-                          </label>
-                          <label>
-                            Foto del problema (obligatoria)
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(event) => {
-                                const file = event.target.files?.[0];
-                                if (!file) return;
-                                const reader = new FileReader();
-                                reader.onload = () => {
-                                  setPhotoByItem((prev) => ({
-                                    ...prev,
-                                    [item.id]: String(reader.result || ""),
-                                  }));
-                                };
-                                reader.readAsDataURL(file);
-                              }}
-                            />
-                          </label>
-                        </>
-                      ) : null}
-                    </div>
-                  ) : null}
+          {step === 1 ? (
+            <div>
+              <h3>1) Productos a devolver</h3>
+              {order.items.map((item) => {
+                const reason = reasonsByItem[item.id] || reasons[0];
+                const needsEvidence = MANUAL_REVIEW_REASONS.has(reason);
+                return (
+                  <div key={item.id} style={{ border: "1px solid #ddd", padding: 10, borderRadius: 6, marginBottom: 10 }}>
+                    <label style={{ display: "block" }}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selected[item.id])}
+                        onChange={(event) =>
+                          setSelected((prev) => ({ ...prev, [item.id]: event.target.checked }))
+                        }
+                      />{" "}
+                      {item.title} (x{item.quantity}) - ${toMXN(item.unitPrice)} c/u
+                    </label>
+
+                    {selected[item.id] ? (
+                      <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                        <label>
+                          Motivo
+                          <select
+                            value={reason}
+                            onChange={(event) =>
+                              setReasonsByItem((prev) => ({ ...prev, [item.id]: event.target.value }))
+                            }
+                          >
+                            {reasons.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        {needsEvidence ? (
+                          <>
+                            <label>
+                              Descripcion del problema (obligatoria)
+                              <textarea
+                                value={detailsByItem[item.id] || ""}
+                                onChange={(event) =>
+                                  setDetailsByItem((prev) => ({ ...prev, [item.id]: event.target.value }))
+                                }
+                              />
+                            </label>
+                            <label>
+                              Foto del problema (obligatoria)
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  if (!file) return;
+                                  const reader = new FileReader();
+                                  reader.onload = () => {
+                                    setPhotoByItem((prev) => ({
+                                      ...prev,
+                                      [item.id]: String(reader.result || ""),
+                                    }));
+                                  };
+                                  reader.readAsDataURL(file);
+                                }}
+                              />
+                            </label>
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button type="button" disabled={isSubmitting} onClick={() => nextFrom(1)}>
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {step === 2 ? (
+            <div>
+              <h3>2) Metodo de devolucion</h3>
+              <label>
+                <input
+                  type="radio"
+                  name="returnMethodChoice"
+                  value="branch"
+                  checked={returnMethod === "branch"}
+                  onChange={() => setReturnMethod("branch")}
+                />{" "}
+                Entrega en sucursal (sin costo)
+              </label>
+              <br />
+              <label>
+                <input
+                  type="radio"
+                  name="returnMethodChoice"
+                  value="pickup"
+                  checked={returnMethod === "pickup"}
+                  onChange={() => setReturnMethod("pickup")}
+                />{" "}
+                Recoleccion a domicilio ({requiresReview ? "Gratis" : `$${toMXN(settings.pickupCost)} MXN`})
+              </label>
+
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+                <button type="button" disabled={isSubmitting} onClick={() => goToStep(1)}>
+                  Atras
+                </button>
+                <button type="button" disabled={isSubmitting} onClick={() => nextFrom(2)}>
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {step === 3 ? (
+            <div>
+              <h3>3) Datos de contacto</h3>
+              <div style={{ display: "grid", gap: 8 }}>
+                <input
+                  placeholder="Nombre del cliente"
+                  value={customerName}
+                  onChange={(event) => setCustomerName(event.target.value)}
+                />
+                <input
+                  placeholder="Telefono"
+                  value={customerPhone}
+                  onChange={(event) => setCustomerPhone(event.target.value)}
+                />
+              </div>
+
+              {returnMethod === "branch" ? (
+                <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, marginTop: 12 }}>
+                  <h3>Entrega en sucursal</h3>
+                  <p><strong>Direccion:</strong> {settings.branchAddress}</p>
+                  <p><strong>Instrucciones:</strong> {settings.branchInstructions}</p>
+                  <p><strong>Horarios:</strong> {settings.branchHours}</p>
                 </div>
-              );
-            })}
-          </div>
+              ) : (
+                <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, display: "grid", gap: 8, marginTop: 12 }}>
+                  <h3>Recoleccion a domicilio</h3>
+                  <p><strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
+                  <p><strong>Horarios disponibles:</strong> {settings.pickupHours}</p>
+                  <input
+                    placeholder="Direccion completa"
+                    value={pickup.pickupAddress}
+                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupAddress: event.target.value }))}
+                  />
+                  <input
+                    placeholder="Colonia"
+                    value={pickup.pickupNeighborhood}
+                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupNeighborhood: event.target.value }))}
+                  />
+                  <input
+                    placeholder="Ciudad"
+                    value={pickup.pickupCity}
+                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupCity: event.target.value }))}
+                  />
+                  <input
+                    placeholder="Estado"
+                    value={pickup.pickupState}
+                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupState: event.target.value }))}
+                  />
+                  <input
+                    placeholder="Codigo postal"
+                    value={pickup.pickupPostalCode}
+                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupPostalCode: event.target.value }))}
+                  />
+                  <input
+                    placeholder="Referencias"
+                    value={pickup.pickupReferences}
+                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupReferences: event.target.value }))}
+                  />
+                  <input
+                    type="date"
+                    value={pickup.pickupDate}
+                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupDate: event.target.value }))}
+                  />
+                  <input
+                    placeholder="Horario de recoleccion"
+                    value={pickup.pickupTimeSlot}
+                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupTimeSlot: event.target.value }))}
+                  />
+                </div>
+              )}
 
-          <div>
-            <h3>2) Metodo de devolucion</h3>
-            <label>
-              <input
-                type="radio"
-                name="returnMethodChoice"
-                value="branch"
-                checked={returnMethod === "branch"}
-                onChange={() => setReturnMethod("branch")}
-              />{" "}
-              Entrega en sucursal (sin costo)
-            </label>
-            <br />
-            <label>
-              <input
-                type="radio"
-                name="returnMethodChoice"
-                value="pickup"
-                checked={returnMethod === "pickup"}
-                onChange={() => setReturnMethod("pickup")}
-              />{" "}
-              Recoleccion a domicilio ({requiresReview ? "Gratis" : `$${toMXN(settings.pickupCost)} MXN`})
-            </label>
-          </div>
-
-          <div>
-            <h3>3) Datos de contacto</h3>
-            <input
-              placeholder="Nombre del cliente"
-              value={customerName}
-              onChange={(event) => setCustomerName(event.target.value)}
-            />
-            <br />
-            <input
-              placeholder="Telefono"
-              value={customerPhone}
-              onChange={(event) => setCustomerPhone(event.target.value)}
-            />
-          </div>
-
-          {returnMethod === "branch" ? (
-            <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
-              <h3>Entrega en sucursal</h3>
-              <p><strong>Direccion:</strong> {settings.branchAddress}</p>
-              <p><strong>Instrucciones:</strong> {settings.branchInstructions}</p>
-              <p><strong>Horarios:</strong> {settings.branchHours}</p>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+                <button type="button" disabled={isSubmitting} onClick={() => goToStep(2)}>
+                  Atras
+                </button>
+                <button type="button" disabled={isSubmitting} onClick={() => nextFrom(3)}>
+                  Confirmar
+                </button>
+              </div>
             </div>
-          ) : (
-            <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, display: "grid", gap: 8 }}>
-              <h3>Recoleccion a domicilio</h3>
-              <p><strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
-              <p><strong>Horarios disponibles:</strong> {settings.pickupHours}</p>
-              <input
-                placeholder="Direccion completa"
-                value={pickup.pickupAddress}
-                onChange={(event) => setPickup((prev) => ({ ...prev, pickupAddress: event.target.value }))}
-              />
-              <input
-                placeholder="Colonia"
-                value={pickup.pickupNeighborhood}
-                onChange={(event) => setPickup((prev) => ({ ...prev, pickupNeighborhood: event.target.value }))}
-              />
-              <input
-                placeholder="Ciudad"
-                value={pickup.pickupCity}
-                onChange={(event) => setPickup((prev) => ({ ...prev, pickupCity: event.target.value }))}
-              />
-              <input
-                placeholder="Estado"
-                value={pickup.pickupState}
-                onChange={(event) => setPickup((prev) => ({ ...prev, pickupState: event.target.value }))}
-              />
-              <input
-                placeholder="Codigo postal"
-                value={pickup.pickupPostalCode}
-                onChange={(event) => setPickup((prev) => ({ ...prev, pickupPostalCode: event.target.value }))}
-              />
-              <input
-                placeholder="Referencias"
-                value={pickup.pickupReferences}
-                onChange={(event) => setPickup((prev) => ({ ...prev, pickupReferences: event.target.value }))}
-              />
-              <input
-                type="date"
-                value={pickup.pickupDate}
-                onChange={(event) => setPickup((prev) => ({ ...prev, pickupDate: event.target.value }))}
-              />
-              <input
-                placeholder="Horario de recoleccion"
-                value={pickup.pickupTimeSlot}
-                onChange={(event) => setPickup((prev) => ({ ...prev, pickupTimeSlot: event.target.value }))}
-              />
+          ) : null}
+
+          {step === 4 ? (
+            <div>
+              <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
+                <h3>4) Confirmacion y resumen</h3>
+                <p><strong>Nombre:</strong> {customerName || "-"}</p>
+                <p><strong>Telefono:</strong> {customerPhone || "-"}</p>
+                <p><strong>Productos:</strong> {selectedItems.map((x) => `${x.title} (${x.reason})`).join(", ") || "-"}</p>
+                <p><strong>Monto estimado a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
+                {returnMethod === "branch" ? (
+                  <>
+                    <p><strong>Direccion sucursal:</strong> {settings.branchAddress}</p>
+                    <p><strong>Instrucciones:</strong> {settings.branchInstructions}</p>
+                    <p><strong>Horarios:</strong> {settings.branchHours}</p>
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      <strong>Direccion recoleccion:</strong>{" "}
+                      {[pickup.pickupAddress, pickup.pickupNeighborhood, pickup.pickupCity, pickup.pickupState, pickup.pickupPostalCode]
+                        .filter(Boolean)
+                        .join(", ") || "-"}
+                    </p>
+                    <p><strong>Dia:</strong> {pickup.pickupDate || "-"}</p>
+                    <p><strong>Horario:</strong> {pickup.pickupTimeSlot || "-"}</p>
+                    <p><strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
+                    <p><strong>Costo recoleccion:</strong> ${toMXN(returnCost)} MXN</p>
+                    <p><strong>Total final a reembolsar:</strong> ${toMXN(finalRefund)} MXN</p>
+                  </>
+                )}
+              </div>
+
+              {actionData?.error ? <p style={{ color: "#b42318" }}>{actionData.error}</p> : null}
+              {actionData?.saved ? <p style={{ color: "#027a48" }}>{actionData.message}</p> : null}
+
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+                <button type="button" disabled={isSubmitting} onClick={() => goToStep(3)}>
+                  Atras
+                </button>
+                <button disabled={isSubmitting} type="submit">Confirmar devolucion</button>
+              </div>
             </div>
-          )}
-
-          <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
-            <h3>4) Confirmacion y resumen</h3>
-            <p><strong>Nombre:</strong> {customerName || "-"}</p>
-            <p><strong>Telefono:</strong> {customerPhone || "-"}</p>
-            <p><strong>Productos:</strong> {selectedItems.map((x) => `${x.title} (${x.reason})`).join(", ") || "-"}</p>
-            <p><strong>Monto estimado a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
-            {returnMethod === "branch" ? (
-              <>
-                <p><strong>Direccion sucursal:</strong> {settings.branchAddress}</p>
-                <p><strong>Instrucciones:</strong> {settings.branchInstructions}</p>
-                <p><strong>Horarios:</strong> {settings.branchHours}</p>
-              </>
-            ) : (
-              <>
-                <p>
-                  <strong>Direccion recoleccion:</strong>{" "}
-                  {[pickup.pickupAddress, pickup.pickupNeighborhood, pickup.pickupCity, pickup.pickupState, pickup.pickupPostalCode]
-                    .filter(Boolean)
-                    .join(", ") || "-"}
-                </p>
-                <p><strong>Dia:</strong> {pickup.pickupDate || "-"}</p>
-                <p><strong>Horario:</strong> {pickup.pickupTimeSlot || "-"}</p>
-                <p><strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
-                <p><strong>Costo recoleccion:</strong> ${toMXN(returnCost)} MXN</p>
-                <p><strong>Total final a reembolsar:</strong> ${toMXN(finalRefund)} MXN</p>
-              </>
-            )}
-          </div>
-
-          {actionData?.error ? <p style={{ color: "#b42318" }}>{actionData.error}</p> : null}
-          {actionData?.saved ? <p style={{ color: "#027a48" }}>{actionData.message}</p> : null}
-          <button disabled={isSubmitting} type="submit">Confirmar devolucion</button>
+          ) : null}
         </div>
       </Form>
     </section>
