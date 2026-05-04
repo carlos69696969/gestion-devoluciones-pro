@@ -334,7 +334,12 @@ export const action = async ({ request }) => {
           error: "Para 'Llego danado' o 'No era lo que pedi' debes escribir descripcion.",
         };
       }
-      if (!String(item.photoDataUrl || "").trim()) {
+      const photos = Array.isArray(item.photoDataUrls)
+        ? item.photoDataUrls.filter(Boolean)
+        : String(item.photoDataUrl || "").trim()
+          ? [String(item.photoDataUrl)]
+          : [];
+      if (!photos.length) {
         return {
           ok: false,
           error: "Para 'Llego danado' o 'No era lo que pedi' debes subir una foto.",
@@ -412,7 +417,10 @@ export const action = async ({ request }) => {
           quantity: Number(item.quantity || 1),
           reason: item.reason,
           details: item.details || null,
-          photoDataUrl: item.photoDataUrl || null,
+          // Store up to 2 photos as JSON in the existing column (keeps schema unchanged)
+          photoDataUrl: Array.isArray(item.photoDataUrls)
+            ? JSON.stringify(item.photoDataUrls.slice(0, 2))
+            : item.photoDataUrl || null,
         })),
       },
     },
@@ -525,7 +533,9 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
           ...item,
           reason: reasonsByItem[item.id] || "",
           details: detailsByItem[item.id] || "",
-          photoDataUrl: photoByItem[item.id] || "",
+          photoDataUrls: Array.isArray(photoByItem[item.id]) ? photoByItem[item.id] : [],
+          // Back-compat: keep the first photo as a single field too
+          photoDataUrl: Array.isArray(photoByItem[item.id]) ? (photoByItem[item.id][0] || "") : "",
         })),
     [order.items, reasons, reasonsByItem, selected, detailsByItem, photoByItem],
   );
@@ -569,9 +579,11 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
           (item) => MANUAL_REVIEW_REASONS.has(item.reason) && !String(item.details || "").trim(),
         );
         if (missingDetails) return "Completa la descripcion del problema en los productos marcados.";
-        const missingPhoto = selectedItems.some(
-          (item) => MANUAL_REVIEW_REASONS.has(item.reason) && !String(item.photoDataUrl || "").trim(),
-        );
+        const missingPhoto = selectedItems.some((item) => {
+          if (!MANUAL_REVIEW_REASONS.has(item.reason)) return false;
+          const photos = Array.isArray(item.photoDataUrls) ? item.photoDataUrls : [];
+          return photos.length < 1;
+        });
         if (missingPhoto) return "Sube una foto del problema en los productos marcados.";
       }
     }
@@ -691,42 +703,78 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                           </select>
                         </label>
 
-                        {needsEvidence ? (
-                          <>
-                            <label>
-                              Descripcion del problema (obligatoria)
-                              <textarea
-                                value={detailsByItem[item.id] || ""}
-                                onChange={(event) =>
-                                  setDetailsByItem((prev) => ({ ...prev, [item.id]: event.target.value }))
-                                }
-                                className={styles.textarea}
-                              />
-                            </label>
-                            <label>
+                      {needsEvidence ? (
+                        <>
+                          <label>
+                            Descripcion del problema (obligatoria)
+                            <textarea
+                              value={detailsByItem[item.id] || ""}
+                              onChange={(event) =>
+                                setDetailsByItem((prev) => ({ ...prev, [item.id]: event.target.value }))
+                              }
+                              className={styles.textarea}
+                            />
+                          </label>
+                          <div>
+                            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>
                               Foto del problema (obligatoria)
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(event) => {
-                                  const file = event.target.files?.[0];
-                                  if (!file) return;
-                                  const reader = new FileReader();
-                                  reader.onload = () => {
-                                    setPhotoByItem((prev) => ({
-                                      ...prev,
-                                      [item.id]: String(reader.result || ""),
-                                    }));
-                                  };
-                                  reader.readAsDataURL(file);
-                                }}
-                              />
-                            </label>
-                          </>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
+                            </div>
+                            {(() => {
+                              const photos = Array.isArray(photoByItem[item.id]) ? photoByItem[item.id] : [];
+                              const slots = Math.min(photos.length + 1, 2);
+
+                              const setPhotoAt = (index, dataUrl) => {
+                                setPhotoByItem((prev) => {
+                                  const current = Array.isArray(prev[item.id]) ? prev[item.id] : [];
+                                  const next = current.slice(0, 2);
+                                  next[index] = dataUrl;
+                                  return { ...prev, [item.id]: next.filter(Boolean).slice(0, 2) };
+                                });
+                              };
+
+                              const readFile = (file, index) => {
+                                const reader = new FileReader();
+                                reader.onload = () => setPhotoAt(index, String(reader.result || ""));
+                                reader.readAsDataURL(file);
+                              };
+
+                              return (
+                                <div className={styles.photoGrid}>
+                                  {Array.from({ length: slots }).map((_, slotIndex) => {
+                                    const preview = photos[slotIndex] || "";
+                                    const inputId = `photo_${item.id}_${slotIndex}`;
+                                    return (
+                                      <label key={inputId} className={styles.photoSlot} htmlFor={inputId}>
+                                        <input
+                                          id={inputId}
+                                          className={styles.hiddenFile}
+                                          type="file"
+                                          accept="image/*"
+                                          onChange={(event) => {
+                                            const file = event.target.files?.[0];
+                                            if (!file) return;
+                                            readFile(file, slotIndex);
+                                            // allow selecting the same file again later
+                                            event.target.value = "";
+                                          }}
+                                        />
+                                        {preview ? (
+                                          <img className={styles.photoPreview} alt="Foto del problema" src={preview} />
+                                        ) : (
+                                          <span className={styles.photoSlotText}>Seleccionar foto</span>
+                                        )}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
                 );
               })}
 

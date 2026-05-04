@@ -233,6 +233,45 @@
   background: #fff;
 }
 
+.photoGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.photoSlot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 140px;
+  border: 1px dashed #c9ccd0;
+  border-radius: 14px;
+  background: #fafbfb;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.photoSlot:hover {
+  border-color: rgba(0, 91, 211, 0.55);
+  box-shadow: 0 0 0 3px rgba(0, 91, 211, 0.10);
+}
+
+.photoSlotText {
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.photoPreview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hiddenFile {
+  display: none;
+}
+
 .summary {
   border: 1px solid var(--border);
   border-radius: var(--radius);
