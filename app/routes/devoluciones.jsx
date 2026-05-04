@@ -147,13 +147,22 @@ export const loader = async ({ request }) => {
   const sessionShops = offlineSessions
     .map((session) => String(session.shop || "").trim().toLowerCase())
     .filter(Boolean);
-  // Avoid crossing stores: prefer the explicit shop from URL, then configured shop.
-  // Only fall back to offline sessions if neither is present.
-  const candidateShops = incomingShop
+  // Prefer the explicit shop from URL, then configured shop. If we don't have any sessions
+  // for that shop (common when the store has multiple myshopify.com domains), fall back to
+  // whatever sessions we do have so we can still fetch orders.
+  const preferredShops = incomingShop
     ? [incomingShop]
     : configuredShop
       ? [configuredShop]
-      : Array.from(new Set([...offlineShops, ...sessionShops]));
+      : [];
+  const preferredHasSession = preferredShops.some((s) =>
+    allSessions.some((sess) => String(sess.shop || "").trim().toLowerCase() === s),
+  );
+  const candidateShops = preferredShops.length
+    ? (preferredHasSession
+        ? preferredShops
+        : Array.from(new Set([...preferredShops, ...offlineShops, ...sessionShops])))
+    : Array.from(new Set([...offlineShops, ...sessionShops]));
 
   if (!candidateShops.length) {
     return {
