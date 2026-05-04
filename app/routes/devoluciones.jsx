@@ -1,8 +1,6 @@
 /* eslint-disable react/prop-types */
 import { useMemo, useState } from "react";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
-import prisma from "../db.server";
-import { sessionStorage } from "../shopify.server";
 
 const REASONS = [
   "Me quedo grande",
@@ -55,6 +53,7 @@ function toMXN(value) {
 }
 
 async function getOrCreateSettings(shop) {
+  const { default: prisma } = await import("../db.server");
   const existing = await prisma.returnSettings.findUnique({ where: { shop } });
   if (existing) return existing;
 
@@ -111,6 +110,8 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
 }
 
 export const loader = async ({ request }) => {
+  const { default: prisma } = await import("../db.server");
+  const { sessionStorage } = await import("../shopify.server");
   const url = new URL(request.url);
   const incomingShop = (url.searchParams.get("shop") || "").trim().toLowerCase();
   const configuredShop = (process.env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
@@ -293,6 +294,7 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
+  const { default: prisma } = await import("../db.server");
   const formData = await request.formData();
   const shop = String(formData.get("shop") || "").trim().toLowerCase();
   const payloadRaw = String(formData.get("payload") || "");
