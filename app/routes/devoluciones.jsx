@@ -864,7 +864,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                   <h3 className={styles.sectionTitle}>Entrega en sucursal</h3>
                   <p><strong>Direccion:</strong> {settings.branchAddress}</p>
                   <p><strong>Instrucciones:</strong> {settings.branchInstructions}</p>
-                  <p><strong>Horarios:</strong> {settings.branchHours}</p>
+                  <p><strong>Horarios de entrega:</strong> {settings.branchHours}</p>
                 </div>
               ) : (
                 <div className={styles.summary} style={{ marginTop: 12 }}>
@@ -929,7 +929,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                   Atras
                 </button>
                 <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitting} onClick={() => nextFrom(3)}>
-                  Confirmar
+                  Siguiente
                 </button>
               </div>
             </div>
@@ -948,7 +948,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                   <>
                     <p><strong>Direccion sucursal:</strong> {settings.branchAddress}</p>
                     <p><strong>Instrucciones:</strong> {settings.branchInstructions}</p>
-                    <p><strong>Horarios:</strong> {settings.branchHours}</p>
+                    <p><strong>Horarios de entrega:</strong> {settings.branchHours}</p>
                   </>
                 ) : (
                   <>
