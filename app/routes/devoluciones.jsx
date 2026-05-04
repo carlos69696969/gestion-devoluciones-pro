@@ -35,6 +35,8 @@ function normalizeOrder(orderNode) {
       id: node.id,
       productId: node.product?.id || "",
       variantId: node.variant?.id || "",
+      imageUrl: node.variant?.image?.url || node.product?.featuredImage?.url || "",
+      imageAlt: node.variant?.image?.altText || node.product?.featuredImage?.altText || "",
       title: node.title,
       quantity: node.quantity,
       unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
@@ -87,8 +89,8 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                       id
                       title
                       quantity
-                      product { id }
-                      variant { id }
+                      product { id featuredImage { url altText } }
+                      variant { id image { url altText } }
                       originalUnitPriceSet { shopMoney { amount } }
                     }
                   }
@@ -478,7 +480,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
   const [clientError, setClientError] = useState("");
   const [selected, setSelected] = useState({});
   const [reasonsByItem, setReasonsByItem] = useState(
-    Object.fromEntries(order.items.map((item) => [item.id, reasons[0]])),
+    Object.fromEntries(order.items.map((item) => [item.id, ""])),
   );
   const [detailsByItem, setDetailsByItem] = useState({});
   const [photoByItem, setPhotoByItem] = useState({});
@@ -504,7 +506,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
         .filter((item) => selected[item.id])
         .map((item) => ({
           ...item,
-          reason: reasonsByItem[item.id] || reasons[0],
+          reason: reasonsByItem[item.id] || "",
           details: detailsByItem[item.id] || "",
           photoDataUrl: photoByItem[item.id] || "",
         })),
@@ -542,6 +544,8 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
   const validateStep = (currentStep) => {
     if (currentStep === 1) {
       if (!selectedItems.length) return "Selecciona al menos un producto.";
+      const missingReason = selectedItems.some((item) => !String(item.reason || "").trim());
+      if (missingReason) return "Selecciona un motivo para cada producto seleccionado.";
       const needsEvidence = selectedItems.some((item) => MANUAL_REVIEW_REASONS.has(item.reason));
       if (needsEvidence) {
         const missingDetails = selectedItems.some(
@@ -618,19 +622,33 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
             <div>
               <h3>1) Productos a devolver</h3>
               {order.items.map((item) => {
-                const reason = reasonsByItem[item.id] || reasons[0];
+                const reason = reasonsByItem[item.id] || "";
                 const needsEvidence = MANUAL_REVIEW_REASONS.has(reason);
                 return (
                   <div key={item.id} style={{ border: "1px solid #ddd", padding: 10, borderRadius: 6, marginBottom: 10 }}>
-                    <label style={{ display: "block" }}>
+                    <label style={{ display: "grid", gridTemplateColumns: "auto 64px 1fr", gap: 10, alignItems: "center" }}>
                       <input
                         type="checkbox"
                         checked={Boolean(selected[item.id])}
                         onChange={(event) =>
                           setSelected((prev) => ({ ...prev, [item.id]: event.target.checked }))
                         }
-                      />{" "}
-                      {item.title} (x{item.quantity}) - ${toMXN(item.unitPrice)} c/u
+                      />
+                      {item.imageUrl ? (
+                        <img
+                          alt={item.imageAlt || item.title}
+                          src={item.imageUrl}
+                          style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1px solid #eee" }}
+                        />
+                      ) : (
+                        <div style={{ width: 64, height: 64, borderRadius: 8, border: "1px solid #eee", background: "#f2f4f7" }} />
+                      )}
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{item.title}</div>
+                        <div style={{ color: "#667085", fontSize: 13 }}>
+                          x{item.quantity} - ${toMXN(item.unitPrice)} c/u
+                        </div>
+                      </div>
                     </label>
 
                     {selected[item.id] ? (
@@ -643,6 +661,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                               setReasonsByItem((prev) => ({ ...prev, [item.id]: event.target.value }))
                             }
                           >
+                            <option value="">Selecciona un motivo</option>
                             {reasons.map((option) => (
                               <option key={option} value={option}>
                                 {option}
