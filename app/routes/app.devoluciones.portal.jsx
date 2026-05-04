@@ -105,14 +105,15 @@ export const action = async ({ request }) => {
 
       return { ok: true, order: normalizeOrder(match) };
     } catch (error) {
-      const message = String(error?.message || "").toLowerCase();
-      if (message.includes("access denied")) {
+      const raw = String(error?.message || error || "");
+      const message = raw.toLowerCase();
+      if (message.includes("access denied") || message.includes("unauthorized") || message.includes("forbidden")) {
         return {
           ok: false,
           error: "La app no tiene permisos de pedidos. Reinstala la app y acepta permisos.",
         };
       }
-      return { ok: false, error: "No se pudo buscar el pedido en este momento." };
+      return { ok: false, error: "No se pudo buscar el pedido en este momento.", diagnostic: raw };
     }
   }
 

@@ -11,11 +11,14 @@ const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
   apiVersion: ApiVersion.October25,
-  scopes: process.env.SCOPES?.split(","),
+  scopes: process.env.SCOPES?.split(",").map((s) => s.trim()).filter(Boolean),
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
+  // Ensures we persist both online and offline sessions. The public returns portal
+  // depends on an offline token being present for the shop.
+  useOnlineTokens: true,
   future: {
     expiringOfflineAccessTokens: true,
   },
