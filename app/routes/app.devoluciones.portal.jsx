@@ -21,11 +21,15 @@ export const loader = async ({ request }) => {
 };
 
 function normalizeOrder(orderNode) {
+  const fallbackName =
+    orderNode.shippingAddress?.name ||
+    orderNode.billingAddress?.name ||
+    "Cliente";
   return {
     id: orderNode.id,
     orderNumber: orderNode.name?.replace("#", "") || "",
     name: orderNode.name || "",
-    customerName: orderNode.customer?.displayName || "Cliente",
+    customerName: fallbackName,
     customerEmail: orderNode.email || "",
     items: orderNode.lineItems.edges.map(({ node }) => ({
       id: node.id,
@@ -60,7 +64,8 @@ export const action = async ({ request }) => {
                 id
                 name
                 email
-                customer { displayName }
+                shippingAddress { name }
+                billingAddress { name }
                 lineItems(first: 50) {
                   edges {
                     node {

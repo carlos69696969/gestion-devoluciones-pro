@@ -17,13 +17,21 @@ const MANUAL_REVIEW_REASONS = new Set(["No era lo que pedi", "Llego danado"]);
 const ADMIN_API_VERSION = "2025-10";
 
 function normalizeOrder(orderNode) {
+  const fallbackName =
+    orderNode.shippingAddress?.name ||
+    orderNode.billingAddress?.name ||
+    "Cliente";
+  const fallbackPhone =
+    orderNode.shippingAddress?.phone ||
+    orderNode.billingAddress?.phone ||
+    "";
   return {
     id: orderNode.id,
     orderNumber: orderNode.name?.replace("#", "") || "",
     name: orderNode.name || "",
-    customerName: orderNode.customer?.displayName || "Cliente",
+    customerName: fallbackName,
     customerEmail: orderNode.email || "",
-    customerPhone: orderNode.customer?.phone || "",
+    customerPhone: fallbackPhone,
     createdAt: orderNode.createdAt,
     items: orderNode.lineItems.edges.map(({ node }) => ({
       id: node.id,
@@ -72,7 +80,8 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                 name
                 email
                 createdAt
-                customer { displayName phone }
+                shippingAddress { name phone }
+                billingAddress { name phone }
                 lineItems(first: 50) {
                   edges {
                     node {
