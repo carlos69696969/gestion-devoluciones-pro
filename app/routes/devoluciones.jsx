@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import prisma from "../db.server";
-import shopify, { sessionStorage, unauthenticated } from "../shopify.server";
+import { sessionStorage } from "../shopify.server";
 
 const REASONS = [
   "Me quedo grande",
@@ -137,7 +137,13 @@ export const loader = async ({ request }) => {
   const sessionShops = offlineSessions
     .map((session) => String(session.shop || "").trim().toLowerCase())
     .filter(Boolean);
-  const candidateShops = Array.from(new Set([...rawCandidates, ...offlineShops, ...sessionShops]));
+  // Avoid crossing stores: prefer the explicit shop from URL, then configured shop.
+  // Only fall back to offline sessions if neither is present.
+  const candidateShops = incomingShop
+    ? [incomingShop]
+    : configuredShop
+      ? [configuredShop]
+      : Array.from(new Set([...offlineShops, ...sessionShops]));
 
   if (!candidateShops.length) {
     return {
@@ -161,100 +167,29 @@ export const loader = async ({ request }) => {
     }
     triedWithSession.push(shopCandidate);
     try {
+      const canonicalOfflineId = `offline_${shopCandidate}`;
+      const orderedCandidates = [
+        ...sessionCandidates.filter((s) => s.id === canonicalOfflineId),
+        ...sessionCandidates.filter((s) => s.id !== canonicalOfflineId),
+      ];
       let candidates = [];
-      try {
-        const { admin } = await unauthenticated.admin(shopCandidate);
-        const response = await admin.graphql(
-          `#graphql
-          query FindOrder($query: String!) {
-            orders(first: 5, query: $query) {
-              edges {
-                node {
-                  id
-                  name
-                  email
-                  createdAt
-                  customer { displayName phone }
-                  lineItems(first: 50) {
-                    edges {
-                      node {
-                        id
-                        title
-                        quantity
-                        product { id }
-                        variant { id }
-                        originalUnitPriceSet { shopMoney { amount } }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }`,
-          { variables: { query: `name:#${orderNumber}` } },
-        );
-        const data = await response.json();
-        candidates = data?.data?.orders?.edges?.map((e) => e.node) || [];
-      } catch (sessionError) {
-        const canonicalOfflineId = `offline_${shopCandidate}`;
-        const orderedCandidates = [
-          ...sessionCandidates.filter((s) => s.id === canonicalOfflineId),
-          ...sessionCandidates.filter((s) => s.id !== canonicalOfflineId),
-        ];
-        let fallbackError = sessionError;
-        for (const sessionCandidate of orderedCandidates) {
-          try {
-            const loadedSession = await sessionStorage.loadSession(sessionCandidate.id);
-            if (!loadedSession) continue;
-            if (shopify?.api?.clients?.Graphql) {
-              const admin = new shopify.api.clients.Graphql({ session: loadedSession });
-              const gqlResponse = await admin.request(
-                `#graphql
-                query FindOrder($query: String!) {
-                  orders(first: 5, query: $query) {
-                    edges {
-                      node {
-                        id
-                        name
-                        email
-                        createdAt
-                        customer { displayName phone }
-                        lineItems(first: 50) {
-                          edges {
-                            node {
-                              id
-                              title
-                              quantity
-                              product { id }
-                              variant { id }
-                              originalUnitPriceSet { shopMoney { amount } }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }`,
-                {
-                  variables: { query: `name:#${orderNumber}` },
-                },
-              );
-              candidates = gqlResponse?.data?.orders?.edges?.map((e) => e.node) || [];
-            } else {
-              candidates = await fetchOrderCandidatesByToken({
-                shop: shopCandidate,
-                accessToken: loadedSession.accessToken,
-                orderNumber,
-              });
-            }
-            fallbackError = null;
-            break;
-          } catch (tokenError) {
-            fallbackError = tokenError;
-          }
+      let fallbackError = null;
+      for (const sessionCandidate of orderedCandidates) {
+        try {
+          const loadedSession = await sessionStorage.loadSession(sessionCandidate.id);
+          if (!loadedSession?.accessToken) continue;
+          candidates = await fetchOrderCandidatesByToken({
+            shop: shopCandidate,
+            accessToken: loadedSession.accessToken,
+            orderNumber,
+          });
+          fallbackError = null;
+          break;
+        } catch (tokenError) {
+          fallbackError = tokenError;
         }
-        if (fallbackError) throw fallbackError;
       }
+      if (fallbackError) throw fallbackError;
 
       const match = email
         ? candidates.find((o) => (o.email || "").toLowerCase() === email)
