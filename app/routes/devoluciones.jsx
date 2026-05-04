@@ -168,7 +168,7 @@ export const loader = async ({ request }) => {
   let triedWithSession = [];
 
   for (const shopCandidate of candidateShops) {
-    const sessionCandidates = offlineSessions.filter(
+    const sessionCandidates = allSessions.filter(
       (session) => String(session.shop || "").trim().toLowerCase() === shopCandidate,
     );
     if (!sessionCandidates.length) {
@@ -179,17 +179,24 @@ export const loader = async ({ request }) => {
       const canonicalOfflineId = `offline_${shopCandidate}`;
       const orderedCandidates = [
         ...sessionCandidates.filter((s) => s.id === canonicalOfflineId),
-        ...sessionCandidates.filter((s) => s.id !== canonicalOfflineId),
+        ...sessionCandidates
+          .filter((s) => s.id !== canonicalOfflineId)
+          // Prefer any offline sessions next, then online sessions as fallback.
+          .sort((a, b) => {
+            const aOffline = a.isOnline === false ? 0 : 1;
+            const bOffline = b.isOnline === false ? 0 : 1;
+            return aOffline - bOffline;
+          }),
       ];
       let candidates = [];
       let fallbackError = null;
       for (const sessionCandidate of orderedCandidates) {
         try {
-          const loadedSession = await sessionStorage.loadSession(sessionCandidate.id);
-          if (!loadedSession?.accessToken) continue;
+          const accessToken = sessionCandidate.accessToken;
+          if (!accessToken) continue;
           candidates = await fetchOrderCandidatesByToken({
             shop: shopCandidate,
-            accessToken: loadedSession.accessToken,
+            accessToken,
             orderNumber,
           });
           fallbackError = null;
@@ -267,6 +274,7 @@ export const loader = async ({ request }) => {
       `Tiendas probadas con sesion: ${triedWithSession.join(", ") || "-"}`,
       `Tiendas con sesion offline: ${offlineShops.join(", ") || "-"}`,
       `Ids de sesion offline: ${offlineSessions.map((s) => s.id).join(", ") || "-"}`,
+      `Ids de sesion totales: ${allSessions.map((s) => s.id).join(", ") || "-"}`,
       `Pedido recibido: ${orderNumber || "-"}`,
       `Email recibido: ${email || "-"}`,
     ].join(" | ");
