@@ -134,20 +134,6 @@ export const loader = async ({ request }) => {
         "Abre esta pagina desde el boton 'Solicitar devolucion' de tu pedido para reconocer tu orden automaticamente.",
     };
   }
-  if (!email) {
-    // Not required to fetch the order, but helps avoid mismatches when multiple orders
-    // share the same number across environments or when searching returns multiple results.
-    // Also makes troubleshooting more deterministic.
-    return {
-      reasons: REASONS,
-      settings,
-      autoOrder: null,
-      shop,
-      error: "Falta el correo del pedido en el enlace (parametro email).",
-      diagnostic:
-        `Incluye el email en la URL: ?shop=${shop}&order=${orderNumber}&email=correo@ejemplo.com`,
-    };
-  }
 
   const rawCandidates = Array.from(new Set([incomingShop, configuredShop].filter(Boolean)));
   const allSessions = await prisma.session.findMany({
@@ -214,18 +200,34 @@ export const loader = async ({ request }) => {
       }
       if (fallbackError) throw fallbackError;
 
-      const match = candidates.find((o) => (o.email || "").toLowerCase() === email);
+      let match = null;
+      if (email) {
+        match = candidates.find((o) => (o.email || "").toLowerCase() === email) || null;
+        if (!match && candidates.length) {
+          const emails = candidates
+            .map((o) => String(o.email || "").trim().toLowerCase())
+            .filter(Boolean);
+          lastError = new Error(
+            `No se encontro el pedido #${orderNumber} con ese correo en ${shopCandidate}. Correos encontrados: ${emails.join(", ") || "-"}`,
+          );
+        }
+      } else {
+        // The order status page button may not expose the email. If Shopify returns a single
+        // candidate for this order number, use it; otherwise require email for disambiguation.
+        if (candidates.length === 1) {
+          match = candidates[0];
+        } else if (candidates.length > 1) {
+          const emails = candidates
+            .map((o) => String(o.email || "").trim().toLowerCase())
+            .filter(Boolean);
+          lastError = new Error(
+            `Hay ${candidates.length} pedidos que coinciden con #${orderNumber} en ${shopCandidate}. Incluye el parametro email para elegir el correcto. Correos encontrados: ${emails.join(", ") || "-"}`,
+          );
+        }
+      }
 
       if (!match) {
-      if (candidates.length) {
-        const emails = candidates
-          .map((o) => String(o.email || "").trim().toLowerCase())
-          .filter(Boolean);
-        lastError = new Error(
-          `No se encontro el pedido #${orderNumber} con ese correo en ${shopCandidate}. Correos encontrados: ${emails.join(", ") || "-"}`,
-        );
-      }
-      continue;
+        continue;
       }
 
       const order = normalizeOrder(match);
