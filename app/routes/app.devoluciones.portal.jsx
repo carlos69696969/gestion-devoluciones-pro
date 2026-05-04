@@ -107,11 +107,15 @@ export const action = async ({ request }) => {
     } catch (error) {
       const raw = String(error?.message || error || "");
       const message = raw.toLowerCase();
-      if (message.includes("access denied") || message.includes("unauthorized") || message.includes("forbidden")) {
+      if (message.includes("access denied")) {
         return {
           ok: false,
           error: "La app no tiene permisos de pedidos. Reinstala la app y acepta permisos.",
+          diagnostic: raw,
         };
+      }
+      if (message.includes("unauthorized") || message.includes("forbidden") || message.includes("401") || message.includes("403")) {
+        return { ok: false, error: "Sesion/token invalido. Abre la app desde Admin para reautenticar.", diagnostic: raw };
       }
       return { ok: false, error: "No se pudo buscar el pedido en este momento.", diagnostic: raw };
     }
@@ -189,6 +193,7 @@ export default function ReturnsPortal() {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const order = actionData?.order;
+  const diagnostic = actionData?.diagnostic;
 
   return (
     <s-page heading="Portal de devoluciones">
@@ -208,6 +213,9 @@ export default function ReturnsPortal() {
               Buscar pedido
             </button>
             {actionData?.error ? <p style={{ color: "#b42318" }}>{actionData.error}</p> : null}
+            {typeof diagnostic === "string" && diagnostic.trim() ? (
+              <p style={{ color: "#475467", fontSize: 13 }}>{diagnostic}</p>
+            ) : null}
           </div>
         </Form>
       </s-section>
