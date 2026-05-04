@@ -225,12 +225,29 @@
 
 .radioItem {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: #fff;
+}
+
+.radioContent {
+  display: grid;
+  gap: 4px;
+  padding-top: 1px;
+}
+
+.radioTitle {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.radioDesc {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.35;
 }
 
 .photoGrid {

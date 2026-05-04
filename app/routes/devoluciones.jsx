@@ -799,7 +799,12 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                     checked={returnMethod === "branch"}
                     onChange={() => setReturnMethod("branch")}
                   />
-                  <span>Entrega en sucursal (sin costo)</span>
+                  <div className={styles.radioContent}>
+                    <div className={styles.radioTitle}>Entrega en sucursal (sin costo)</div>
+                    <div className={styles.radioDesc}>
+                      Entrega el producto en nuestra sucursal{settings?.branchAddress ? `: ${settings.branchAddress}` : "."}
+                    </div>
+                  </div>
                 </label>
                 <label className={styles.radioItem}>
                   <input
@@ -809,9 +814,14 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                     checked={returnMethod === "pickup"}
                     onChange={() => setReturnMethod("pickup")}
                   />
-                  <span>
-                    Recoleccion a domicilio ({requiresReview ? "Gratis" : `$${toMXN(settings.pickupCost)} MXN`})
-                  </span>
+                  <div className={styles.radioContent}>
+                    <div className={styles.radioTitle}>
+                      Recoleccion a domicilio ({requiresReview ? "Gratis" : `$${toMXN(settings.pickupCost)} MXN`}) 🚚
+                    </div>
+                    <div className={styles.radioDesc}>
+                      Nosotros recogemos el paquete a tu domicilio.
+                    </div>
+                  </div>
                 </label>
               </div>
 
