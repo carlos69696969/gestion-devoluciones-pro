@@ -126,12 +126,12 @@ export const loader = async ({ request }) => {
     return { error: "Falta el dominio de la tienda.", autoOrder: null, settings: null, reasons: REASONS };
   }
 
-  const settings = await getOrCreateSettings(shop);
+  const baseSettings = await getOrCreateSettings(shop);
 
   if (!orderNumber) {
     return {
       reasons: REASONS,
-      settings,
+      settings: baseSettings,
       autoOrder: null,
       shop,
       info:
@@ -170,7 +170,7 @@ export const loader = async ({ request }) => {
   if (!candidateShops.length) {
     return {
       reasons: REASONS,
-      settings,
+      settings: baseSettings,
       autoOrder: null,
       shop,
       error: "No se encontro sesion valida para la tienda.",
@@ -251,6 +251,10 @@ export const loader = async ({ request }) => {
       }
 
       const order = normalizeOrder(match);
+      // IMPORTANT: settings are stored per-shop. If the store has multiple myshopify.com
+      // domains, we may find the order using a different domain than the one in the URL.
+      // Always use the canonical shopCandidate for settings so admin changes apply.
+      const settings = await getOrCreateSettings(shopCandidate);
       const limitDate = addDays(order.createdAt, settings.returnWindowDays);
       const now = new Date();
       const isExpired = now > limitDate;
@@ -294,7 +298,7 @@ export const loader = async ({ request }) => {
 
     return {
       reasons: REASONS,
-      settings,
+      settings: baseSettings,
       autoOrder: null,
       shop,
       error: isOrdersScopeError
