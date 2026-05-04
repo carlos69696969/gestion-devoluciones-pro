@@ -1,6 +1,7 @@
 /* eslint-disable react/prop-types */
 import { useMemo, useState } from "react";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
+import styles from "../styles/devoluciones.module.css";
 
 const REASONS = [
   "Me quedo grande",
@@ -445,32 +446,48 @@ export default function PublicReturnsPortal() {
   const isSubmitting = navigation.state === "submitting";
 
   return (
-    <main style={{ maxWidth: 980, margin: "30px auto", padding: "0 16px" }}>
-      <h1>Portal de devoluciones</h1>
-      {info ? <p>{info}</p> : null}
-      {error ? <p style={{ color: "#b42318" }}>{error}</p> : null}
-      {typeof diagnostic === "string" ? (
-        <p style={{ color: "#475467", fontSize: 14 }}>{diagnostic}</p>
-      ) : null}
-      {message ? <p style={{ color: isExpired ? "#b42318" : "#027a48" }}>{message}</p> : null}
+    <main className={styles.page}>
+      <div className={styles.container}>
+        <div className={styles.header}>
+          <div>
+            <h1 className={styles.h1}>Portal de devoluciones</h1>
+            {info ? <p className={`${styles.notice} ${styles.noticeMuted}`}>{info}</p> : null}
+            {typeof diagnostic === "string" ? (
+              <p className={`${styles.notice} ${styles.noticeMuted}`}>{diagnostic}</p>
+            ) : null}
+            {error ? <p className={`${styles.notice} ${styles.noticeError}`}>{error}</p> : null}
+            {message ? (
+              <p
+                className={`${styles.notice} ${
+                  isExpired ? styles.noticeError : styles.noticeSuccess
+                }`}
+              >
+                {message}
+              </p>
+            ) : null}
+          </div>
+        </div>
 
-      {autoOrder && !isExpired ? (
-        <ReturnsRequestForm
-          order={autoOrder}
-          reasons={reasons}
-          settings={settings}
-          shop={shop}
-          isSubmitting={isSubmitting}
-          actionData={actionData}
-        />
-      ) : null}
+        {autoOrder && !isExpired ? (
+          <ReturnsRequestForm
+            order={autoOrder}
+            reasons={reasons}
+            settings={settings}
+            shop={shop}
+            isSubmitting={isSubmitting}
+            actionData={actionData}
+          />
+        ) : null}
 
-      {autoOrder && isExpired ? (
-        <section style={{ border: "1px solid #ddd", borderRadius: 8, padding: 16 }}>
-          <h2>Periodo vencido</h2>
-          <p>No puedes continuar. Fecha limite: {new Date(limitDate).toLocaleDateString("es-MX")}.</p>
-        </section>
-      ) : null}
+        {autoOrder && isExpired ? (
+          <section className={styles.card}>
+            <h2 className={styles.cardTitle}>Periodo vencido</h2>
+            <p className={styles.cardMeta}>
+              No puedes continuar. Fecha limite: {new Date(limitDate).toLocaleDateString("es-MX")}.
+            </p>
+          </section>
+        ) : null}
+      </div>
     </main>
   );
 }
@@ -596,16 +613,18 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
   };
 
   return (
-    <section style={{ border: "1px solid #ddd", padding: 16, borderRadius: 8 }}>
-      <h2 style={{ marginTop: 0 }}>Solicitud para pedido {order.name}</h2>
-      <p>Cliente: {order.customerName} | Email: {order.customerEmail}</p>
+    <section className={styles.card}>
+      <h2 className={styles.cardTitle}>Solicitud para pedido {order.name}</h2>
+      <p className={styles.cardMeta}>
+        Cliente: {order.customerName} | Email: {order.customerEmail}
+      </p>
       <Form method="post">
         <input type="hidden" name="shop" value={shop} />
         <input type="hidden" name="payload" value={JSON.stringify(payload)} />
-        <div style={{ display: "grid", gap: 16 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <strong>Paso {step} de 4</strong>
-            <span style={{ color: "#667085" }}>
+        <div className={styles.fieldGrid}>
+          <div className={styles.stepHeader}>
+            <span className={styles.stepPill}>Paso {step} de 4</span>
+            <span className={styles.stepName}>
               {step === 1
                 ? "Productos"
                 : step === 2
@@ -616,17 +635,18 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
             </span>
           </div>
 
-          {clientError ? <p style={{ color: "#b42318" }}>{clientError}</p> : null}
+          {clientError ? <p className={`${styles.notice} ${styles.noticeError}`}>{clientError}</p> : null}
 
           {step === 1 ? (
             <div>
-              <h3>1) Productos a devolver</h3>
+              <div className={styles.divider} />
+              <h3 className={styles.sectionTitle}>1) Productos a devolver</h3>
               {order.items.map((item) => {
                 const reason = reasonsByItem[item.id] || "";
                 const needsEvidence = MANUAL_REVIEW_REASONS.has(reason);
                 return (
-                  <div key={item.id} style={{ border: "1px solid #ddd", padding: 10, borderRadius: 6, marginBottom: 10 }}>
-                    <label style={{ display: "grid", gridTemplateColumns: "auto 64px 1fr", gap: 10, alignItems: "center" }}>
+                  <div key={item.id} className={styles.productRow}>
+                    <label className={styles.productLabel}>
                       <input
                         type="checkbox"
                         checked={Boolean(selected[item.id])}
@@ -638,21 +658,21 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                         <img
                           alt={item.imageAlt || item.title}
                           src={item.imageUrl}
-                          style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1px solid #eee" }}
+                          className={styles.img}
                         />
                       ) : (
-                        <div style={{ width: 64, height: 64, borderRadius: 8, border: "1px solid #eee", background: "#f2f4f7" }} />
+                        <div className={styles.imgPlaceholder} />
                       )}
                       <div>
-                        <div style={{ fontWeight: 600 }}>{item.title}</div>
-                        <div style={{ color: "#667085", fontSize: 13 }}>
+                        <div className={styles.productTitle}>{item.title}</div>
+                        <div className={styles.productMeta}>
                           x{item.quantity} - ${toMXN(item.unitPrice)} c/u
                         </div>
                       </div>
                     </label>
 
                     {selected[item.id] ? (
-                      <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                      <div className={styles.fieldGrid} style={{ marginTop: 10 }}>
                         <label>
                           Motivo
                           <select
@@ -660,6 +680,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                             onChange={(event) =>
                               setReasonsByItem((prev) => ({ ...prev, [item.id]: event.target.value }))
                             }
+                            className={styles.select}
                           >
                             <option value="">Selecciona un motivo</option>
                             {reasons.map((option) => (
@@ -679,6 +700,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                                 onChange={(event) =>
                                   setDetailsByItem((prev) => ({ ...prev, [item.id]: event.target.value }))
                                 }
+                                className={styles.textarea}
                               />
                             </label>
                             <label>
@@ -708,8 +730,8 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                 );
               })}
 
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button type="button" disabled={isSubmitting} onClick={() => nextFrom(1)}>
+              <div className={`${styles.btnRow} ${styles.btnRowRight}`}>
+                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitting} onClick={() => nextFrom(1)}>
                   Siguiente
                 </button>
               </div>
@@ -718,34 +740,38 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
 
           {step === 2 ? (
             <div>
-              <h3>2) Metodo de devolucion</h3>
-              <label>
-                <input
-                  type="radio"
-                  name="returnMethodChoice"
-                  value="branch"
-                  checked={returnMethod === "branch"}
-                  onChange={() => setReturnMethod("branch")}
-                />{" "}
-                Entrega en sucursal (sin costo)
-              </label>
-              <br />
-              <label>
-                <input
-                  type="radio"
-                  name="returnMethodChoice"
-                  value="pickup"
-                  checked={returnMethod === "pickup"}
-                  onChange={() => setReturnMethod("pickup")}
-                />{" "}
-                Recoleccion a domicilio ({requiresReview ? "Gratis" : `$${toMXN(settings.pickupCost)} MXN`})
-              </label>
+              <div className={styles.divider} />
+              <h3 className={styles.sectionTitle}>2) Metodo de devolucion</h3>
+              <div className={styles.radioBlock}>
+                <label className={styles.radioItem}>
+                  <input
+                    type="radio"
+                    name="returnMethodChoice"
+                    value="branch"
+                    checked={returnMethod === "branch"}
+                    onChange={() => setReturnMethod("branch")}
+                  />
+                  <span>Entrega en sucursal (sin costo)</span>
+                </label>
+                <label className={styles.radioItem}>
+                  <input
+                    type="radio"
+                    name="returnMethodChoice"
+                    value="pickup"
+                    checked={returnMethod === "pickup"}
+                    onChange={() => setReturnMethod("pickup")}
+                  />
+                  <span>
+                    Recoleccion a domicilio ({requiresReview ? "Gratis" : `$${toMXN(settings.pickupCost)} MXN`})
+                  </span>
+                </label>
+              </div>
 
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
-                <button type="button" disabled={isSubmitting} onClick={() => goToStep(1)}>
+              <div className={styles.btnRow}>
+                <button type="button" className={styles.btn} disabled={isSubmitting} onClick={() => goToStep(1)}>
                   Atras
                 </button>
-                <button type="button" disabled={isSubmitting} onClick={() => nextFrom(2)}>
+                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitting} onClick={() => nextFrom(2)}>
                   Siguiente
                 </button>
               </div>
@@ -754,80 +780,93 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
 
           {step === 3 ? (
             <div>
-              <h3>3) Datos de contacto</h3>
-              <div style={{ display: "grid", gap: 8 }}>
+              <div className={styles.divider} />
+              <h3 className={styles.sectionTitle}>3) Datos de contacto</h3>
+              <div className={styles.fieldGrid}>
                 <input
                   placeholder="Nombre del cliente"
                   value={customerName}
                   onChange={(event) => setCustomerName(event.target.value)}
+                  className={styles.input}
                 />
                 <input
                   placeholder="Telefono"
                   value={customerPhone}
                   onChange={(event) => setCustomerPhone(event.target.value)}
+                  className={styles.input}
                 />
               </div>
 
               {returnMethod === "branch" ? (
-                <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, marginTop: 12 }}>
-                  <h3>Entrega en sucursal</h3>
+                <div className={styles.summary} style={{ marginTop: 12 }}>
+                  <h3 className={styles.sectionTitle}>Entrega en sucursal</h3>
                   <p><strong>Direccion:</strong> {settings.branchAddress}</p>
                   <p><strong>Instrucciones:</strong> {settings.branchInstructions}</p>
                   <p><strong>Horarios:</strong> {settings.branchHours}</p>
                 </div>
               ) : (
-                <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 12, display: "grid", gap: 8, marginTop: 12 }}>
-                  <h3>Recoleccion a domicilio</h3>
+                <div className={styles.summary} style={{ marginTop: 12 }}>
+                  <h3 className={styles.sectionTitle}>Recoleccion a domicilio</h3>
                   <p><strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
                   <p><strong>Horarios disponibles:</strong> {settings.pickupHours}</p>
+                  <div className={styles.fieldGrid} style={{ marginTop: 10 }}>
                   <input
                     placeholder="Direccion completa"
                     value={pickup.pickupAddress}
                     onChange={(event) => setPickup((prev) => ({ ...prev, pickupAddress: event.target.value }))}
+                    className={styles.input}
                   />
                   <input
                     placeholder="Colonia"
                     value={pickup.pickupNeighborhood}
                     onChange={(event) => setPickup((prev) => ({ ...prev, pickupNeighborhood: event.target.value }))}
+                    className={styles.input}
                   />
                   <input
                     placeholder="Ciudad"
                     value={pickup.pickupCity}
                     onChange={(event) => setPickup((prev) => ({ ...prev, pickupCity: event.target.value }))}
+                    className={styles.input}
                   />
                   <input
                     placeholder="Estado"
                     value={pickup.pickupState}
                     onChange={(event) => setPickup((prev) => ({ ...prev, pickupState: event.target.value }))}
+                    className={styles.input}
                   />
                   <input
                     placeholder="Codigo postal"
                     value={pickup.pickupPostalCode}
                     onChange={(event) => setPickup((prev) => ({ ...prev, pickupPostalCode: event.target.value }))}
+                    className={styles.input}
                   />
                   <input
                     placeholder="Referencias"
                     value={pickup.pickupReferences}
                     onChange={(event) => setPickup((prev) => ({ ...prev, pickupReferences: event.target.value }))}
+                    className={styles.input}
                   />
                   <input
                     type="date"
                     value={pickup.pickupDate}
                     onChange={(event) => setPickup((prev) => ({ ...prev, pickupDate: event.target.value }))}
+                    className={styles.input}
                   />
                   <input
                     placeholder="Horario de recoleccion"
                     value={pickup.pickupTimeSlot}
                     onChange={(event) => setPickup((prev) => ({ ...prev, pickupTimeSlot: event.target.value }))}
+                    className={styles.input}
                   />
+                  </div>
                 </div>
               )}
 
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
-                <button type="button" disabled={isSubmitting} onClick={() => goToStep(2)}>
+              <div className={styles.btnRow}>
+                <button type="button" className={styles.btn} disabled={isSubmitting} onClick={() => goToStep(2)}>
                   Atras
                 </button>
-                <button type="button" disabled={isSubmitting} onClick={() => nextFrom(3)}>
+                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitting} onClick={() => nextFrom(3)}>
                   Confirmar
                 </button>
               </div>
@@ -836,8 +875,9 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
 
           {step === 4 ? (
             <div>
-              <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 12 }}>
-                <h3>4) Confirmacion y resumen</h3>
+              <div className={styles.divider} />
+              <div className={styles.summary}>
+                <h3 className={styles.sectionTitle}>4) Confirmacion y resumen</h3>
                 <p><strong>Nombre:</strong> {customerName || "-"}</p>
                 <p><strong>Telefono:</strong> {customerPhone || "-"}</p>
                 <p><strong>Productos:</strong> {selectedItems.map((x) => `${x.title} (${x.reason})`).join(", ") || "-"}</p>
@@ -868,11 +908,13 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
               {actionData?.error ? <p style={{ color: "#b42318" }}>{actionData.error}</p> : null}
               {actionData?.saved ? <p style={{ color: "#027a48" }}>{actionData.message}</p> : null}
 
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
-                <button type="button" disabled={isSubmitting} onClick={() => goToStep(3)}>
+              <div className={styles.btnRow}>
+                <button type="button" className={styles.btn} disabled={isSubmitting} onClick={() => goToStep(3)}>
                   Atras
                 </button>
-                <button disabled={isSubmitting} type="submit">Confirmar devolucion</button>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitting} type="submit">
+                  Confirmar devolucion
+                </button>
               </div>
             </div>
           ) : null}
