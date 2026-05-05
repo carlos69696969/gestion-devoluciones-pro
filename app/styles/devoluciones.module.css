@@ -335,6 +335,12 @@
   gap: 12px;
 }
 
+.portalActionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .completedCard {
   border: 1px solid var(--border);
   border-radius: 12px;

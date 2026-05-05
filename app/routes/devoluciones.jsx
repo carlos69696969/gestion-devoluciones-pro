@@ -758,6 +758,8 @@ export default function PublicReturnsPortal() {
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
+  const hasExistingReturns = completedRequests.length > 0;
+  const [portalMode, setPortalMode] = useState(hasExistingReturns ? "summary" : "new");
 
   return (
     <main className={styles.page}>
@@ -782,7 +784,36 @@ export default function PublicReturnsPortal() {
           </div>
         </div>
 
-        {autoOrder && !isExpired && hasEligibleItems ? (
+        {autoOrder && !isExpired && hasExistingReturns ? (
+          <section className={styles.card}>
+            <h2 className={styles.cardTitle}>Opciones de devolución</h2>
+            <p className={styles.cardMeta}>
+              {hasEligibleItems
+                ? "Ya tienes una devolución registrada. Puedes verla o solicitar una nueva devolución para los productos que aún están disponibles."
+                : "Ya tienes una devolución registrada. Puedes entrar para ver su estado y detalle."}
+            </p>
+            <div className={styles.portalActionRow}>
+              <button
+                type="button"
+                className={`${styles.btn} ${portalMode === "summary" ? styles.btnPrimary : ""}`}
+                onClick={() => setPortalMode("summary")}
+              >
+                Ver mi devolución
+              </button>
+              {hasEligibleItems ? (
+                <button
+                  type="button"
+                  className={`${styles.btn} ${portalMode === "new" ? styles.btnPrimary : ""}`}
+                  onClick={() => setPortalMode("new")}
+                >
+                  Solicitar nueva devolución
+                </button>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {autoOrder && !isExpired && hasEligibleItems && (!hasExistingReturns || portalMode === "new") ? (
           <ReturnsRequestForm
             order={autoOrder}
             reasons={reasons}
@@ -803,24 +834,32 @@ export default function PublicReturnsPortal() {
           </section>
         ) : null}
 
-        {autoOrder && !isExpired && !hasEligibleItems ? (
-          <section className={styles.card}>
-            <h2 className={styles.cardTitle}>{completedTitle}</h2>
-            <p className={styles.cardMeta}>{completedText}</p>
-            {completedRefundText ? <p className={styles.cardMeta}>{completedRefundText}</p> : null}
-            <div className={styles.divider} />
-            <div className={styles.completedGrid}>
-              {completedRequests.map((requestItem) => (
-                <CompletedReturnSummary
-                  key={requestItem.id}
-                  requestItem={requestItem}
-                />
-              ))}
-            </div>
-          </section>
+        {autoOrder && !isExpired && hasExistingReturns && portalMode === "summary" ? (
+          <CompletedReturnsSection
+            completedTitle={completedTitle}
+            completedText={completedText}
+            completedRefundText={completedRefundText}
+            completedRequests={completedRequests}
+          />
         ) : null}
       </div>
     </main>
+  );
+}
+
+function CompletedReturnsSection({ completedTitle, completedText, completedRefundText, completedRequests }) {
+  return (
+    <section className={styles.card}>
+      <h2 className={styles.cardTitle}>{completedTitle}</h2>
+      <p className={styles.cardMeta}>{completedText}</p>
+      {completedRefundText ? <p className={styles.cardMeta}>{completedRefundText}</p> : null}
+      <div className={styles.divider} />
+      <div className={styles.completedGrid}>
+        {completedRequests.map((requestItem) => (
+          <CompletedReturnSummary key={requestItem.id} requestItem={requestItem} />
+        ))}
+      </div>
+    </section>
   );
 }
 
