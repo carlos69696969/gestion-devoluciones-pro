@@ -16,8 +16,10 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
-        <s-link href="/app">Portal devoluciones</s-link>
-        <s-link href="/app/devoluciones/admin">Panel admin</s-link>
+        <s-link href="/app">Portal de devoluciones</s-link>
+        <s-link href="/app/devoluciones/portal">Devoluciones de portales</s-link>
+        <s-link href="/app/devoluciones/admin">Administrador del panel</s-link>
+        <s-link href="/app/devoluciones/solicitudes">Solicitudes de devolucion</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>
