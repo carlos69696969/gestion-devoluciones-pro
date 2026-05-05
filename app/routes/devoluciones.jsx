@@ -981,7 +981,32 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
               <div className={styles.divider} />
               <div className={styles.summary}>
                 <h3 className={styles.sectionTitle}>4) Confirmacion y resumen</h3>
-                <p><strong>Productos:</strong> {selectedItems.map((x) => `${x.title} (${x.reason})`).join(", ") || "-"}</p>
+                <p><strong>Productos a devolver:</strong></p>
+                {selectedItems.length ? (
+                  <div className={styles.summaryItems}>
+                    {selectedItems.map((item) => (
+                      <div key={item.id} className={styles.summaryItem}>
+                        {item.imageUrl ? (
+                          <img
+                            alt={item.imageAlt || item.title}
+                            src={item.imageUrl}
+                            className={styles.img}
+                          />
+                        ) : (
+                          <div className={styles.imgPlaceholder} />
+                        )}
+                        <div>
+                          <div className={styles.productTitle}>{item.title}</div>
+                          <div className={styles.productMeta}>
+                            x{item.quantity} · Motivo: {item.reason || "-"}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p>-</p>
+                )}
                 <p><strong>Monto estimado a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
                 {returnMethod === "branch" ? (
                   <>

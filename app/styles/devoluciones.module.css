@@ -239,6 +239,23 @@
   padding-top: 1px;
 }
 
+.summaryItems {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 10px;
+}
+
+.summaryItem {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
 .radioTitle {
   font-weight: 800;
   letter-spacing: -0.01em;
