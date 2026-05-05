@@ -81,15 +81,11 @@ async function fetchOrderSnapshot(admin, orderId) {
             }
           }
         }
-        transactions(first: 20) {
-          edges {
-            node {
-              id
-              kind
-              status
-              gateway
-            }
-          }
+        transactions {
+          id
+          kind
+          status
+          gateway
         }
       }
     }`,
@@ -112,11 +108,11 @@ async function fetchOrderSnapshot(admin, orderId) {
       productId: node.product?.id || "",
       unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
     })),
-    transactions: (order.transactions?.edges || []).map(({ node }) => ({
-      id: node.id,
-      kind: node.kind,
-      status: node.status,
-      gateway: node.gateway || "",
+    transactions: (order.transactions || []).map((transaction) => ({
+      id: transaction.id,
+      kind: transaction.kind,
+      status: transaction.status,
+      gateway: transaction.gateway || "",
     })),
   };
 }
