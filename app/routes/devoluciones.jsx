@@ -17,6 +17,20 @@ const ADMIN_API_VERSION = "2025-10";
 const ITEM_BLOCK_STATUSES = new Set(["aprobada", "recibida", "reembolsada", "completada"]);
 const DELIVERED_RETURN_STATUSES = new Set(["recibida", "reembolsada", "completada"]);
 
+function jsonWithCors(data) {
+  return Response.json(data, {
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
+}
+
+function maybeProbeResponse(isProbe, payload) {
+  return isProbe ? jsonWithCors(payload) : payload;
+}
+
 function normalizePortalMode(value) {
   const mode = String(value || "").trim().toLowerCase();
   if (mode === "new") return "new";
@@ -252,23 +266,24 @@ export const loader = async ({ request }) => {
   const orderNumber = (url.searchParams.get("order") || "").trim();
   const email = (url.searchParams.get("email") || "").trim().toLowerCase();
   const requestedMode = normalizePortalMode(url.searchParams.get("mode"));
+  const isProbe = url.searchParams.get("probe") === "1";
 
   if (!shop) {
-    return {
+    return maybeProbeResponse(isProbe, {
       error: "Falta el dominio de la tienda.",
       autoOrder: null,
       settings: null,
       reasons: DEFAULT_REASONS,
       evidenceReasons: DEFAULT_EVIDENCE_REASONS,
       requestedMode,
-    };
+    });
   }
 
   const baseSettings = await getOrCreateSettings(shop);
   const baseReasonConfig = getReasonConfig(baseSettings);
 
   if (!orderNumber) {
-    return {
+    return maybeProbeResponse(isProbe, {
       reasons: baseReasonConfig.reasons,
       evidenceReasons: baseReasonConfig.evidenceReasons,
       settings: baseSettings,
@@ -277,7 +292,7 @@ export const loader = async ({ request }) => {
       requestedMode,
       info:
         "Abre esta pagina desde el boton 'Solicitar devolucion' de tu pedido para reconocer tu orden automaticamente.",
-    };
+    });
   }
 
   const rawCandidates = Array.from(new Set([incomingShop, configuredShop].filter(Boolean)));
@@ -309,7 +324,7 @@ export const loader = async ({ request }) => {
     : Array.from(new Set([...offlineShops, ...sessionShops]));
 
   if (!candidateShops.length) {
-    return {
+    return maybeProbeResponse(isProbe, {
       reasons: baseReasonConfig.reasons,
       evidenceReasons: baseReasonConfig.evidenceReasons,
       settings: baseSettings,
@@ -318,7 +333,7 @@ export const loader = async ({ request }) => {
       requestedMode,
       error: "No se encontro sesion valida para la tienda.",
       diagnostic: `Tiendas recibidas: ${rawCandidates.join(", ") || "-"} | Agrega la tienda correcta en el parametro shop del boton y reinstala la app para regenerar sesion offline.`,
-    };
+    });
   }
   let lastError = null;
   let triedWithSession = [];
@@ -508,7 +523,7 @@ export const loader = async ({ request }) => {
           ? "Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, puede reflejarse en un plazo de 5 a 10 dias habiles."
           : "";
 
-      return {
+      return maybeProbeResponse(isProbe, {
         reasons,
         evidenceReasons,
         settings,
@@ -531,7 +546,7 @@ export const loader = async ({ request }) => {
           : hasEligibleItems
             ? `Estas dentro del periodo de devolucion (${settings.returnWindowDays} dias). Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`
             : completionTitle,
-      };
+      });
     } catch (err) {
       lastError = err;
     }
@@ -558,7 +573,7 @@ export const loader = async ({ request }) => {
       `Email recibido: ${email || "-"}`,
     ].join(" | ");
 
-    return {
+    return maybeProbeResponse(isProbe, {
       reasons: getReasonConfig(baseSettings).reasons,
       evidenceReasons: getReasonConfig(baseSettings).evidenceReasons,
       settings: baseSettings,
@@ -569,7 +584,7 @@ export const loader = async ({ request }) => {
         ? "La app no tiene permisos de pedidos (read_orders) para esta tienda."
         : "No se pudo cargar el pedido automaticamente.",
       diagnostic: `${diagnostic} | Shop original: ${incomingShop || "-"} | Error tecnico: ${rawMessage || "-"}`,
-    };
+    });
   }
 };
 
