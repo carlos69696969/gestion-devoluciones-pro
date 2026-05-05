@@ -186,8 +186,40 @@
   width: 240px;
 }
 
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.rejectForm {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.rejectForm .input {
+  width: 320px;
+}
+
+.errorMsg {
+  margin: 8px 0;
+  color: #b42318;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.successMsg {
+  margin: 8px 0;
+  color: #027a48;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 @media (max-width: 720px) {
   .grid2 { grid-template-columns: 1fr; }
   .statusForm .select { width: 100%; }
+  .rejectForm .input { width: 100%; }
 }
-

@@ -1,51 +1,334 @@
-import { Form, useLoaderData, useNavigation } from "react-router";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import styles from "../styles/admin.module.css";
 
-const STATUS_OPTIONS = ["pendiente", "en_revision", "aprobada", "rechazada", "completada"];
+const STATUS_LABEL = {
+  pendiente: "pendiente",
+  en_revision: "en revision",
+  aprobada: "aprobada",
+  rechazada: "rechazada",
+  recibida: "recibida",
+  reembolsada: "reembolsada",
+  completada: "completada",
+};
+
+function toMoney(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+function itemKeyFromRecord(item) {
+  const lineItemId = String(item?.lineItemId || "").trim();
+  if (lineItemId) return `line:${lineItemId}`;
+  const variantId = String(item?.variantId || "").trim();
+  if (variantId) return `variant:${variantId}`;
+  const productId = String(item?.productId || "").trim();
+  if (productId) return `product:${productId}`;
+  return `title:${String(item?.title || "").trim().toLowerCase()}`;
+}
+
+function parsePhotoUrls(rawValue) {
+  if (!rawValue) return [];
+  try {
+    const parsed = JSON.parse(rawValue);
+    return Array.isArray(parsed) ? parsed.filter(Boolean).slice(0, 2) : [];
+  } catch {
+    return [String(rawValue)].filter(Boolean);
+  }
+}
+
+function pickParentTransaction(transactions) {
+  const success = transactions.filter((tx) => String(tx.status || "").toUpperCase() === "SUCCESS");
+  return (
+    success.find((tx) => ["CAPTURE", "SALE"].includes(String(tx.kind || "").toUpperCase())) ||
+    success[0] ||
+    null
+  );
+}
+
+async function fetchOrderSnapshot(admin, orderId) {
+  const response = await admin.graphql(
+    `#graphql
+    query OrderForRefund($id: ID!) {
+      order(id: $id) {
+        id
+        lineItems(first: 100) {
+          edges {
+            node {
+              id
+              title
+              quantity
+              variant { id }
+              product { id }
+              originalUnitPriceSet {
+                shopMoney { amount currencyCode }
+              }
+            }
+          }
+        }
+        transactions(first: 20) {
+          edges {
+            node {
+              id
+              kind
+              status
+              gateway
+            }
+          }
+        }
+      }
+    }`,
+    { variables: { id: orderId } },
+  );
+  const payload = await response.json();
+  const errors = payload?.errors || [];
+  if (errors.length) {
+    throw new Error(errors[0]?.message || "No se pudo consultar la orden en Shopify.");
+  }
+  const order = payload?.data?.order;
+  if (!order) throw new Error("No se encontro la orden en Shopify.");
+  return {
+    orderId: order.id,
+    lineItems: (order.lineItems?.edges || []).map(({ node }) => ({
+      id: node.id,
+      title: node.title,
+      quantity: Number(node.quantity || 0),
+      variantId: node.variant?.id || "",
+      productId: node.product?.id || "",
+      unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+    })),
+    transactions: (order.transactions?.edges || []).map(({ node }) => ({
+      id: node.id,
+      kind: node.kind,
+      status: node.status,
+      gateway: node.gateway || "",
+    })),
+  };
+}
+
+function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
+  const usedLineIds = new Set();
+  const refundableLines = [];
+  let subtotal = 0;
+
+  const byLine = new Map(orderLineItems.map((line) => [line.id, line]));
+  const byVariant = new Map(orderLineItems.map((line) => [line.variantId, line]).filter(([k]) => k));
+  const byProduct = new Map(orderLineItems.map((line) => [line.productId, line]).filter(([k]) => k));
+
+  for (const item of requestItems) {
+    let line = null;
+    const lineItemId = String(item.lineItemId || "").trim();
+    if (lineItemId && byLine.has(lineItemId)) {
+      line = byLine.get(lineItemId);
+    }
+    if (!line) {
+      const variantId = String(item.variantId || "").trim();
+      if (variantId && byVariant.has(variantId)) line = byVariant.get(variantId);
+    }
+    if (!line) {
+      const productId = String(item.productId || "").trim();
+      if (productId && byProduct.has(productId)) line = byProduct.get(productId);
+    }
+    if (!line) {
+      const title = String(item.title || "").trim().toLowerCase();
+      line =
+        orderLineItems.find(
+          (candidate) => !usedLineIds.has(candidate.id) && String(candidate.title || "").trim().toLowerCase() === title,
+        ) || null;
+    }
+
+    if (!line || usedLineIds.has(line.id)) {
+      throw new Error(`No se pudo mapear el producto "${item.title}" a una linea de la orden.`);
+    }
+    usedLineIds.add(line.id);
+
+    const quantity = Math.max(1, Math.min(Number(item.quantity || 1), Number(line.quantity || 1)));
+    subtotal += Number(line.unitPrice || 0) * quantity;
+    refundableLines.push({
+      lineItemId: line.id,
+      quantity,
+      restockType: "NO_RESTOCK",
+    });
+  }
+
+  return { refundLineItems: refundableLines, subtotal };
+}
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
-
   const requests = await prisma.returnRequest.findMany({
     where: { shop: session.shop },
     include: { items: true },
     orderBy: { createdAt: "desc" },
   });
-
-  return { requests, statusOptions: STATUS_OPTIONS };
+  return { requests };
 };
 
 export const action = async ({ request }) => {
-  await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
+  const id = Number(formData.get("id") || 0);
+  if (!id) return { ok: false, error: "Solicitud invalida." };
 
-  if (intent === "update_status") {
-    const id = Number(formData.get("id"));
-    const status = String(formData.get("status"));
-    if (!id || !STATUS_OPTIONS.includes(status)) {
-      return { ok: false };
+  const requestRow = await prisma.returnRequest.findFirst({
+    where: { id, shop: session.shop },
+    include: { items: true },
+  });
+  if (!requestRow) return { ok: false, error: "No se encontro la solicitud." };
+
+  if (intent === "approve_request") {
+    await prisma.returnRequest.update({
+      where: { id },
+      data: {
+        status: "aprobada",
+        rejectionReason: null,
+      },
+    });
+    return { ok: true, message: "Solicitud aprobada." };
+  }
+
+  if (intent === "reject_request") {
+    const rejectionReason = String(formData.get("rejectionReason") || "").trim();
+    if (!rejectionReason) {
+      return { ok: false, error: "Escribe el motivo de rechazo." };
     }
     await prisma.returnRequest.update({
       where: { id },
-      data: { status },
+      data: {
+        status: "rechazada",
+        rejectionReason,
+      },
     });
-    return { ok: true };
+    return { ok: true, message: "Solicitud rechazada." };
   }
 
-  return { ok: false };
+  if (intent === "mark_received") {
+    if (String(requestRow.status || "").toLowerCase() !== "aprobada") {
+      return { ok: false, error: "Solo puedes marcar como recibida una solicitud aprobada." };
+    }
+    await prisma.returnRequest.update({
+      where: { id },
+      data: {
+        status: "recibida",
+        receivedAt: new Date(),
+      },
+    });
+    return { ok: true, message: "Solicitud marcada como recibida." };
+  }
+
+  if (intent === "process_refund") {
+    if (String(requestRow.status || "").toLowerCase() !== "recibida") {
+      return { ok: false, error: "Primero marca la solicitud como recibida." };
+    }
+
+    try {
+      const snapshot = await fetchOrderSnapshot(admin, requestRow.shopifyOrderId);
+      const { refundLineItems, subtotal } = mapRequestItemsToRefundLineItems(
+        requestRow.items,
+        snapshot.lineItems,
+      );
+      if (!refundLineItems.length) {
+        return { ok: false, error: "No hay lineas para reembolsar." };
+      }
+
+      const returnCost = requestRow.returnMethod === "pickup" ? Number(requestRow.returnCost || 0) : 0;
+      const finalRefund = subtotal - returnCost;
+      if (finalRefund <= 0) {
+        return {
+          ok: false,
+          error:
+            "No se puede procesar este reembolso: el costo de recoleccion es mayor o igual al subtotal.",
+        };
+      }
+
+      const parentTransaction = pickParentTransaction(snapshot.transactions);
+      if (!parentTransaction?.id || !parentTransaction?.gateway) {
+        return {
+          ok: false,
+          error:
+            "No se encontro una transaccion de pago valida para reembolsar al metodo original.",
+        };
+      }
+
+      const response = await admin.graphql(
+        `#graphql
+        mutation RefundRequest($input: RefundInput!) {
+          refundCreate(input: $input) {
+            refund { id }
+            userErrors { field message }
+          }
+        }`,
+        {
+          variables: {
+            input: {
+              orderId: requestRow.shopifyOrderId,
+              note: `Devolucion #${requestRow.id} desde Portal de devoluciones`,
+              notify: false,
+              refundLineItems,
+              transactions: [
+                {
+                  orderId: requestRow.shopifyOrderId,
+                  kind: "REFUND",
+                  gateway: parentTransaction.gateway,
+                  parentId: parentTransaction.id,
+                  amount: Number(finalRefund).toFixed(2),
+                },
+              ],
+            },
+          },
+        },
+      );
+      const payload = await response.json();
+      const topErrors = payload?.errors || [];
+      const userErrors = payload?.data?.refundCreate?.userErrors || [];
+      if (topErrors.length || userErrors.length) {
+        const first = topErrors[0]?.message || userErrors[0]?.message || "No se pudo procesar el reembolso.";
+        await prisma.returnRequest.update({
+          where: { id },
+          data: { refundError: first },
+        });
+        return { ok: false, error: first };
+      }
+
+      const refundId = String(payload?.data?.refundCreate?.refund?.id || "");
+      await prisma.returnRequest.update({
+        where: { id },
+        data: {
+          status: "reembolsada",
+          refundedAt: new Date(),
+          shopifyRefundId: refundId || null,
+          refundedSubtotal: subtotal,
+          finalRefund,
+          refundError: null,
+        },
+      });
+      return { ok: true, message: "Reembolso procesado al metodo de pago original." };
+    } catch (error) {
+      const message = String(error?.message || error || "No se pudo procesar el reembolso.");
+      await prisma.returnRequest.update({
+        where: { id },
+        data: { refundError: message },
+      });
+      return { ok: false, error: message };
+    }
+  }
+
+  return { ok: false, error: "Accion no valida." };
 };
 
 export default function ReturnsRequests() {
-  const { requests, statusOptions } = useLoaderData();
+  const { requests } = useLoaderData();
+  const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
 
   return (
     <s-page heading="Solicitudes de devolucion">
+      {actionData?.error ? <p className={styles.errorMsg}>{actionData.error}</p> : null}
+      {actionData?.message ? <p className={styles.successMsg}>{actionData.message}</p> : null}
+
       {requests.length === 0 ? (
         <s-section>
           <p>No hay solicitudes por ahora.</p>
@@ -53,110 +336,159 @@ export default function ReturnsRequests() {
       ) : (
         <s-section>
           <div className={`${styles.wrap} ${styles.reqGrid}`}>
-            {requests.map((request) => (
-              <article key={request.id} className={styles.card}>
-                <div className={styles.reqHeader}>
-                  <div>
-                    <h3 className={styles.reqTitle}>Pedido #{request.orderNumber}</h3>
-                    <p className={styles.meta}>
-                      {request.customerName} · {request.customerEmail} · {request.customerPhone || "-"}
-                    </p>
-                  </div>
-                  <span className={styles.pill}>
-                    Estado: <strong>{request.status}</strong>
-                  </span>
-                </div>
-
-                <div className={styles.kv}>
-                  <div className={styles.kvRow}>
-                    <span className={styles.kvKey}>Metodo</span>
-                    <span className={styles.kvVal}>
-                      {request.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}
+            {requests.map((request) => {
+              const status = String(request.status || "").toLowerCase();
+              return (
+                <article key={request.id} className={styles.card}>
+                  <div className={styles.reqHeader}>
+                    <div>
+                      <h3 className={styles.reqTitle}>Pedido #{request.orderNumber}</h3>
+                      <p className={styles.meta}>
+                        {request.customerName} · {request.customerEmail} · {request.customerPhone || "-"}
+                      </p>
+                    </div>
+                    <span className={styles.pill}>
+                      Estado: <strong>{STATUS_LABEL[status] || status}</strong>
                     </span>
                   </div>
-                  <div className={styles.kvRow}>
-                    <span className={styles.kvKey}>Reembolso</span>
-                    <span className={styles.kvVal}>
-                      ${request.finalRefund.toFixed(2)} MXN{" "}
-                      <span style={{ color: "#6d7175", fontWeight: 700 }}>
-                        (est. ${request.estimatedRefund.toFixed(2)})
+
+                  <div className={styles.kv}>
+                    <div className={styles.kvRow}>
+                      <span className={styles.kvKey}>Metodo</span>
+                      <span className={styles.kvVal}>
+                        {request.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}
                       </span>
-                    </span>
+                    </div>
+                    <div className={styles.kvRow}>
+                      <span className={styles.kvKey}>Subtotal (sin impuestos)</span>
+                      <span className={styles.kvVal}>${toMoney(request.refundedSubtotal || request.estimatedRefund)} MXN</span>
+                    </div>
+                    <div className={styles.kvRow}>
+                      <span className={styles.kvKey}>Costo devolucion</span>
+                      <span className={styles.kvVal}>${toMoney(request.returnCost)} MXN</span>
+                    </div>
+                    <div className={styles.kvRow}>
+                      <span className={styles.kvKey}>Reembolso final</span>
+                      <span className={styles.kvVal}>${toMoney(request.finalRefund)} MXN</span>
+                    </div>
+                    <div className={styles.kvRow}>
+                      <span className={styles.kvKey}>Fecha solicitud</span>
+                      <span className={styles.kvVal}>{new Date(request.createdAt).toLocaleString("es-MX")}</span>
+                    </div>
+                    {request.receivedAt ? (
+                      <div className={styles.kvRow}>
+                        <span className={styles.kvKey}>Recibida</span>
+                        <span className={styles.kvVal}>{new Date(request.receivedAt).toLocaleString("es-MX")}</span>
+                      </div>
+                    ) : null}
+                    {request.refundedAt ? (
+                      <div className={styles.kvRow}>
+                        <span className={styles.kvKey}>Reembolsada</span>
+                        <span className={styles.kvVal}>{new Date(request.refundedAt).toLocaleString("es-MX")}</span>
+                      </div>
+                    ) : null}
                   </div>
-                  <div className={styles.kvRow}>
-                    <span className={styles.kvKey}>Costo devolucion</span>
-                    <span className={styles.kvVal}>${request.returnCost.toFixed(2)} MXN</span>
-                  </div>
-                  <div className={styles.kvRow}>
-                    <span className={styles.kvKey}>Fecha</span>
-                    <span className={styles.kvVal}>{new Date(request.createdAt).toLocaleString("es-MX")}</span>
-                  </div>
-                </div>
 
-                {request.returnMethod === "pickup" ? (
-                  <p className={styles.meta}>
-                    Recoleccion:{" "}
-                    {[request.pickupAddress, request.pickupCity, request.pickupState, request.pickupPostalCode]
-                      .filter(Boolean)
-                      .join(", ") || "-"}
-                    {" · "}Dia: {request.pickupDate || "-"}
-                    {request.pickupNotes ? ` · Notas: ${request.pickupNotes}` : ""}
-                  </p>
-                ) : (
-                  <p className={styles.meta}>
-                    Sucursal: {request.branchAddress || "-"} · Horarios: {request.branchHours || "-"}
-                  </p>
-                )}
+                  {request.returnMethod === "pickup" ? (
+                    <p className={styles.meta}>
+                      Recoleccion:{" "}
+                      {[request.pickupAddress, request.pickupCity, request.pickupState, request.pickupPostalCode]
+                        .filter(Boolean)
+                        .join(", ") || "-"}
+                      {" · "}Dia: {request.pickupDate || "-"}
+                      {request.pickupNotes ? ` · Notas: ${request.pickupNotes}` : ""}
+                    </p>
+                  ) : (
+                    <p className={styles.meta}>
+                      Sucursal: {request.branchAddress || "-"} · Horarios: {request.branchHours || "-"}
+                    </p>
+                  )}
 
-                <details className={styles.details}>
-                  <summary className={styles.summary}>Ver productos, motivos, fotos y descripcion</summary>
-                  <ul className={styles.productList}>
-                    {request.items.map((item) => {
-                      let photos = [];
-                      try {
-                        photos = item.photoDataUrl ? JSON.parse(item.photoDataUrl) : [];
-                        if (!Array.isArray(photos)) photos = [];
-                      } catch {
-                        photos = item.photoDataUrl ? [item.photoDataUrl] : [];
-                      }
+                  {request.rejectionReason ? (
+                    <p className={styles.errorMsg}>Motivo de rechazo: {request.rejectionReason}</p>
+                  ) : null}
+                  {request.refundError ? (
+                    <p className={styles.errorMsg}>Error de reembolso: {request.refundError}</p>
+                  ) : null}
+                  {request.shopifyRefundId ? (
+                    <p className={styles.successMsg}>Refund ID: {request.shopifyRefundId}</p>
+                  ) : null}
 
-                      return (
-                        <li key={item.id} style={{ marginBottom: 10 }}>
-                          <div>
-                            {item.title} x{item.quantity} - Motivo: {item.reason}
-                          </div>
-                          {item.details ? <div>Descripcion: {item.details}</div> : null}
-                          {photos.length ? (
-                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
-                              {photos.slice(0, 2).map((src, idx) => (
-                                <a key={`${item.id}_${idx}`} href={src} target="_blank" rel="noreferrer">
-                                  Ver foto {idx + 1}
-                                </a>
-                              ))}
+                  <details className={styles.details}>
+                    <summary className={styles.summary}>Ver productos, motivos, fotos y descripcion</summary>
+                    <ul className={styles.productList}>
+                      {request.items.map((item) => {
+                        const photos = parsePhotoUrls(item.photoDataUrl);
+                        return (
+                          <li key={item.id} style={{ marginBottom: 10 }}>
+                            <div>
+                              {item.title} x{item.quantity} - Motivo: {item.reason}
                             </div>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </details>
+                            {item.details ? <div>Descripcion: {item.details}</div> : null}
+                            {photos.length ? (
+                              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+                                {photos.map((src, idx) => (
+                                  <a key={`${itemKeyFromRecord(item)}_${idx}`} href={src} target="_blank" rel="noreferrer">
+                                    Ver foto {idx + 1}
+                                  </a>
+                                ))}
+                              </div>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </details>
 
-                <Form method="post" className={styles.statusForm}>
-                  <input type="hidden" name="intent" value="update_status" />
-                  <input type="hidden" name="id" value={request.id} />
-                  <select className={styles.select} name="status" defaultValue={request.status}>
-                    {statusOptions.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                  <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
-                    Guardar estado
-                  </button>
-                </Form>
-              </article>
-            ))}
+                  <div className={styles.actionRow}>
+                    {status === "en_revision" ? (
+                      <>
+                        <Form method="post">
+                          <input type="hidden" name="intent" value="approve_request" />
+                          <input type="hidden" name="id" value={request.id} />
+                          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+                            Aprobar
+                          </button>
+                        </Form>
+                        <Form method="post" className={styles.rejectForm}>
+                          <input type="hidden" name="intent" value="reject_request" />
+                          <input type="hidden" name="id" value={request.id} />
+                          <input
+                            className={styles.input}
+                            name="rejectionReason"
+                            placeholder="Motivo de rechazo (obligatorio)"
+                            defaultValue=""
+                          />
+                          <button className={styles.btn} type="submit" disabled={isSubmitting}>
+                            Rechazar
+                          </button>
+                        </Form>
+                      </>
+                    ) : null}
+
+                    {status === "aprobada" ? (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="mark_received" />
+                        <input type="hidden" name="id" value={request.id} />
+                        <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+                          Marcar como recibida
+                        </button>
+                      </Form>
+                    ) : null}
+
+                    {status === "recibida" ? (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="process_refund" />
+                        <input type="hidden" name="id" value={request.id} />
+                        <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+                          Procesar reembolso
+                        </button>
+                      </Form>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </s-section>
       )}
@@ -165,4 +497,3 @@ export default function ReturnsRequests() {
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
-

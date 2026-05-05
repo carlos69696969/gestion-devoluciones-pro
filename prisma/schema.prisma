@@ -47,6 +47,12 @@ model ReturnRequest {
   finalRefund       Float        @default(0)
   status            String       @default("pendiente")
   requiresReview    Boolean      @default(false)
+  rejectionReason   String?
+  receivedAt        DateTime?
+  refundedAt        DateTime?
+  shopifyRefundId   String?
+  refundError       String?
+  refundedSubtotal  Float        @default(0)
   branchAddress     String?
   branchInstructions String?
   branchHours       String?
@@ -72,6 +78,7 @@ model ReturnRequest {
 model ReturnItem {
   id              Int           @id @default(autoincrement())
   returnRequestId Int
+  lineItemId      String?
   productId       String
   variantId       String?
   title           String

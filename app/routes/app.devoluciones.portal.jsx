@@ -167,6 +167,7 @@ export const action = async ({ request }) => {
           return { ok: false, error: "Completa todos los datos de recoleccion." };
         }
       }
+      const settings = await getOrCreateSettings(session.shop);
 
       await prisma.returnRequest.create({
         data: {
@@ -176,7 +177,7 @@ export const action = async ({ request }) => {
           customerName: payload.order.customerName,
           customerEmail: payload.order.customerEmail,
           returnMethod: payload.returnMethod,
-          returnCost: payload.returnMethod === "pickup" ? PICKUP_COST : 0,
+          returnCost: payload.returnMethod === "pickup" ? Number(settings.pickupCost || 0) : 0,
           pickupFullName: payload.pickupFullName || null,
           pickupPhone: payload.pickupPhone || null,
           pickupAddress: payload.pickupAddress || null,
@@ -187,6 +188,7 @@ export const action = async ({ request }) => {
           pickupReferences: payload.pickupReferences || null,
           items: {
             create: payload.items.map((item) => ({
+              lineItemId: item.id || null,
               productId: item.productId || "",
               variantId: item.variantId || null,
               title: item.title,

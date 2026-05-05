@@ -14,6 +14,7 @@ const DEFAULT_REASONS = [
 
 const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
 const ADMIN_API_VERSION = "2025-10";
+const ITEM_BLOCK_STATUSES = new Set(["aprobada", "recibida", "reembolsada", "completada"]);
 
 function parseLines(value) {
   return String(value || "")
@@ -30,6 +31,16 @@ function reasonKey(value) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
+}
+
+function itemKeyFromRecord(item) {
+  const lineItemId = String(item?.lineItemId || "").trim();
+  if (lineItemId) return `line:${lineItemId}`;
+  const variantId = String(item?.variantId || "").trim();
+  if (variantId) return `variant:${variantId}`;
+  const productId = String(item?.productId || "").trim();
+  if (productId) return `product:${productId}`;
+  return `title:${String(item?.title || "").trim().toLowerCase()}`;
 }
 
 function getReasonConfig(settings) {
@@ -186,10 +197,11 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
 
 export const loader = async ({ request }) => {
   const { default: prisma } = await import("../db.server");
-  const { sessionStorage } = await import("../shopify.server");
   const url = new URL(request.url);
+  // eslint-disable-next-line no-undef
+  const env = process.env || {};
   const incomingShop = (url.searchParams.get("shop") || "").trim().toLowerCase();
-  const configuredShop = (process.env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
+  const configuredShop = String(env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
   const shop = incomingShop || configuredShop;
   const orderNumber = (url.searchParams.get("order") || "").trim();
   const email = (url.searchParams.get("email") || "").trim().toLowerCase();
@@ -337,6 +349,45 @@ export const loader = async ({ request }) => {
       // Always use the canonical shopCandidate for settings so admin changes apply.
       const settings = await getOrCreateSettings(shopCandidate);
       const { reasons, evidenceReasons } = getReasonConfig(settings);
+      const previousRequests = await prisma.returnRequest.findMany({
+        where: {
+          shop: shopCandidate,
+          shopifyOrderId: order.id,
+        },
+        include: { items: true },
+        orderBy: { createdAt: "desc" },
+      });
+      const blockedItemKeys = new Set();
+      const rejectedReasonsByItemKey = new Map();
+      for (const requestRow of previousRequests) {
+        for (const item of requestRow.items) {
+          const key = itemKeyFromRecord(item);
+          if (ITEM_BLOCK_STATUSES.has(String(requestRow.status || "").toLowerCase())) {
+            blockedItemKeys.add(key);
+          }
+          if (
+            String(requestRow.status || "").toLowerCase() === "rechazada" &&
+            String(requestRow.rejectionReason || "").trim() &&
+            !rejectedReasonsByItemKey.has(key)
+          ) {
+            rejectedReasonsByItemKey.set(key, String(requestRow.rejectionReason).trim());
+          }
+        }
+      }
+      const itemsWithEligibility = order.items.map((item) => {
+        const key = itemKeyFromRecord({
+          lineItemId: item.id,
+          variantId: item.variantId,
+          productId: item.productId,
+          title: item.title,
+        });
+        return {
+          ...item,
+          isAlreadyReturned: blockedItemKeys.has(key),
+          lastRejectedReason: rejectedReasonsByItemKey.get(key) || "",
+        };
+      });
+      const hasEligibleItems = itemsWithEligibility.some((item) => !item.isAlreadyReturned);
       const limitDate = addDays(order.createdAt, settings.returnWindowDays);
       const now = new Date();
       const isExpired = now > limitDate;
@@ -345,13 +396,19 @@ export const loader = async ({ request }) => {
         reasons,
         evidenceReasons,
         settings,
-        autoOrder: order,
+        autoOrder: {
+          ...order,
+          items: itemsWithEligibility,
+        },
         shop: shopCandidate,
+        hasEligibleItems,
         isExpired,
         limitDate: limitDate.toISOString(),
         message: isExpired
           ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
-          : `Estas dentro del periodo de devolucion (${settings.returnWindowDays} dias). Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`,
+          : hasEligibleItems
+            ? `Estas dentro del periodo de devolucion (${settings.returnWindowDays} dias). Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`
+            : "Todos los productos de este pedido fueron devueltos.",
       };
     } catch (err) {
       lastError = err;
@@ -412,6 +469,36 @@ export const action = async ({ request }) => {
   }
 
   const requiresReview = payload.items.some((item) => evidenceSet.has(reasonKey(item.reason)));
+  const previousRequests = await prisma.returnRequest.findMany({
+    where: {
+      shop,
+      shopifyOrderId: String(payload?.order?.id || ""),
+      status: { in: Array.from(ITEM_BLOCK_STATUSES) },
+    },
+    include: { items: true },
+  });
+  const blockedItemKeys = new Set();
+  for (const requestRow of previousRequests) {
+    for (const item of requestRow.items) {
+      blockedItemKeys.add(itemKeyFromRecord(item));
+    }
+  }
+  const duplicatedItem = payload.items.find((item) =>
+    blockedItemKeys.has(
+      itemKeyFromRecord({
+        lineItemId: item.id,
+        variantId: item.variantId,
+        productId: item.productId,
+        title: item.title,
+      }),
+    ),
+  );
+  if (duplicatedItem) {
+    return {
+      ok: false,
+      error: `El producto "${duplicatedItem.title}" ya fue devuelto o ya tiene devolucion aprobada.`,
+    };
+  }
 
   for (const item of payload.items) {
     if (evidenceSet.has(reasonKey(item.reason))) {
@@ -437,8 +524,6 @@ export const action = async ({ request }) => {
 
   if (payload.returnMethod === "pickup") {
     const required = [
-      "pickupFullName",
-      "pickupPhone",
       "pickupAddress",
       "pickupCity",
       "pickupState",
@@ -470,9 +555,17 @@ export const action = async ({ request }) => {
   }
 
   const estimatedRefund = Number(payload.estimatedRefund || 0);
-  const pickupCost = requiresReview ? 0 : Number(settings.pickupCost || 0);
+  const pickupCost = Number(settings.pickupCost || 0);
   const returnCost = payload.returnMethod === "pickup" ? pickupCost : 0;
-  const finalRefund = Math.max(0, estimatedRefund - returnCost);
+  const finalRefundRaw = estimatedRefund - returnCost;
+  if (payload.returnMethod === "pickup" && finalRefundRaw <= 0) {
+    return {
+      ok: false,
+      error:
+        "El costo de recoleccion es mayor o igual al subtotal de productos. Elige entrega en sucursal para continuar.",
+    };
+  }
+  const finalRefund = Math.max(0, finalRefundRaw);
 
   await prisma.returnRequest.create({
     data: {
@@ -507,6 +600,7 @@ export const action = async ({ request }) => {
       pickupReferences: payload.pickupReferences || null,
       items: {
         create: payload.items.map((item) => ({
+          lineItemId: item.id || null,
           productId: item.productId || "",
           variantId: item.variantId || null,
           title: item.title,
@@ -539,6 +633,7 @@ export default function PublicReturnsPortal() {
     settings,
     autoOrder,
     shop,
+    hasEligibleItems,
     error,
     info,
     isExpired,
@@ -573,7 +668,7 @@ export default function PublicReturnsPortal() {
           </div>
         </div>
 
-        {autoOrder && !isExpired ? (
+        {autoOrder && !isExpired && hasEligibleItems ? (
           <ReturnsRequestForm
             order={autoOrder}
             reasons={reasons}
@@ -591,6 +686,13 @@ export default function PublicReturnsPortal() {
             <p className={styles.cardMeta}>
               No puedes continuar. Fecha limite: {new Date(limitDate).toLocaleDateString("es-MX")}.
             </p>
+          </section>
+        ) : null}
+
+        {autoOrder && !isExpired && !hasEligibleItems ? (
+          <section className={styles.card}>
+            <h2 className={styles.cardTitle}>Devoluciones completadas</h2>
+            <p className={styles.cardMeta}>Todos los productos de este pedido fueron devueltos.</p>
           </section>
         ) : null}
       </div>
@@ -617,18 +719,18 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
   const [detailsByItem, setDetailsByItem] = useState({});
   const [photoByItem, setPhotoByItem] = useState({});
   const [returnMethod, setReturnMethod] = useState("branch");
-  const [customerName, setCustomerName] = useState(order.customerName || "");
-  const [customerPhone, setCustomerPhone] = useState(order.customerPhone || "");
-  const ship = order.shippingAddress || {};
+  const customerName = order.customerName || "";
+  const customerPhone = order.customerPhone || "";
+  const ship = order.shippingAddress || null;
   const pickupAddressLines = useMemo(() => {
-    const name = String(ship.name || customerName || "").trim();
-    const phone = String(ship.phone || customerPhone || "").trim();
-    const line1 = String(ship.address1 || "").trim();
-    const line2 = String(ship.address2 || "").trim();
-    const zip = String(ship.zip || "").trim();
-    const city = String(ship.city || "").trim();
-    const province = String(ship.province || "").trim();
-    const country = String(ship.country || "").trim();
+    const name = String(ship?.name || customerName || "").trim();
+    const phone = String(ship?.phone || customerPhone || "").trim();
+    const line1 = String(ship?.address1 || "").trim();
+    const line2 = String(ship?.address2 || "").trim();
+    const zip = String(ship?.zip || "").trim();
+    const city = String(ship?.city || "").trim();
+    const province = String(ship?.province || "").trim();
+    const country = String(ship?.country || "").trim();
 
     const lines = [];
     if (name) lines.push(name);
@@ -644,11 +746,11 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
   const [pickup, setPickup] = useState({
     pickupFullName: order.customerName || "",
     pickupPhone: order.customerPhone || "",
-    pickupAddress: ship.address1 || "",
-    pickupNeighborhood: ship.address2 || "",
-    pickupCity: ship.city || "",
-    pickupState: ship.province || "",
-    pickupPostalCode: ship.zip || "",
+    pickupAddress: ship?.address1 || "",
+    pickupNeighborhood: ship?.address2 || "",
+    pickupCity: ship?.city || "",
+    pickupState: ship?.province || "",
+    pickupPostalCode: ship?.zip || "",
     pickupReferences: "",
     pickupDate: "",
     pickupNotes: "",
@@ -666,7 +768,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
           // Back-compat: keep the first photo as a single field too
           photoDataUrl: Array.isArray(photoByItem[item.id]) ? (photoByItem[item.id][0] || "") : "",
         })),
-    [order.items, reasons, reasonsByItem, selected, detailsByItem, photoByItem],
+    [order.items, reasonsByItem, selected, detailsByItem, photoByItem],
   );
 
   const requiresReview = selectedItems.some((item) => evidenceSet.has(reasonKey(item.reason)));
@@ -674,7 +776,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 1),
     0,
   );
-  const pickupCost = requiresReview ? 0 : Number(settings.pickupCost || 0);
+  const pickupCost = Number(settings.pickupCost || 0);
   const returnCost = returnMethod === "pickup" ? pickupCost : 0;
   const finalRefund = Math.max(0, estimatedRefund - returnCost);
 
@@ -720,6 +822,9 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     if (currentStep === 2) {
       if (returnMethod !== "branch" && returnMethod !== "pickup") {
         return "Selecciona un metodo de devolucion.";
+      }
+      if (returnMethod === "pickup" && estimatedRefund - pickupCost <= 0) {
+        return "El costo de recoleccion es mayor o igual al subtotal de productos. Elige entrega en sucursal.";
       }
     }
 
@@ -790,11 +895,14 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
               {order.items.map((item) => {
                 const reason = reasonsByItem[item.id] || "";
                 const needsEvidence = evidenceSet.has(reasonKey(reason));
+                const isAlreadyReturned = Boolean(item.isAlreadyReturned);
+                const lastRejectedReason = String(item.lastRejectedReason || "").trim();
                 return (
                   <div key={item.id} className={styles.productRow}>
                     <label className={styles.productLabel}>
                       <input
                         type="checkbox"
+                        disabled={isAlreadyReturned}
                         checked={Boolean(selected[item.id])}
                         onChange={(event) =>
                           setSelected((prev) => ({ ...prev, [item.id]: event.target.checked }))
@@ -814,10 +922,20 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                         <div className={styles.productMeta}>
                           x{item.quantity} - ${toMXN(item.unitPrice)} c/u
                         </div>
+                        {isAlreadyReturned ? (
+                          <div className={`${styles.notice} ${styles.noticeMuted}`} style={{ marginTop: 4 }}>
+                            Este producto ya fue devuelto o ya tiene devolucion aprobada.
+                          </div>
+                        ) : null}
+                        {!isAlreadyReturned && lastRejectedReason ? (
+                          <div className={`${styles.notice} ${styles.noticeError}`} style={{ marginTop: 4 }}>
+                            Motivo de rechazo anterior: {lastRejectedReason}
+                          </div>
+                        ) : null}
                       </div>
                     </label>
 
-                    {selected[item.id] ? (
+                    {selected[item.id] && !isAlreadyReturned ? (
                       <div className={styles.fieldGrid} style={{ marginTop: 10 }}>
                         <label>
                           <span className={styles.fieldLabel}>Motivo</span>
@@ -933,45 +1051,46 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                   style={{ marginTop: 6 }}
                 >
                   <strong className={styles.noteWord}>Nota:</strong> Tu solicitud sera revisada antes de ser aprobada.
-                  Revisaremos las fotos y el motivo de la devolucion. Si tu solicitud es aprobada, tu devolucion no
-                  tendra ningun costo. Por favor, elige tu metodo de devolucion.
+                  Revisaremos las fotos y el motivo de la devolucion. Por favor, elige tu metodo de devolucion.
                 </p>
               ) : null}
               <div className={styles.divider} />
               <h3 className={styles.sectionTitle}>2) Metodo de devolucion</h3>
               <div className={styles.radioBlock}>
-                <label className={styles.radioItem}>
+                <div className={styles.radioItem}>
                   <input
+                    id="return_method_branch"
                     type="radio"
                     name="returnMethodChoice"
                     value="branch"
                     checked={returnMethod === "branch"}
                     onChange={() => setReturnMethod("branch")}
                   />
-                  <div className={styles.radioContent}>
+                  <label htmlFor="return_method_branch" className={styles.radioContent}>
                     <div className={styles.radioTitle}>Entrega en sucursal (sin costo)</div>
                     <div className={styles.radioDesc}>
                       Entrega el producto en nuestra sucursal{settings?.branchAddress ? `: ${settings.branchAddress}` : "."}
                     </div>
-                  </div>
-                </label>
-                <label className={styles.radioItem}>
+                  </label>
+                </div>
+                <div className={styles.radioItem}>
                   <input
+                    id="return_method_pickup"
                     type="radio"
                     name="returnMethodChoice"
                     value="pickup"
                     checked={returnMethod === "pickup"}
                     onChange={() => setReturnMethod("pickup")}
                   />
-                  <div className={styles.radioContent}>
+                  <label htmlFor="return_method_pickup" className={styles.radioContent}>
                     <div className={styles.radioTitle}>
-                      Recoleccion a domicilio ({requiresReview ? "Gratis" : `$${toMXN(settings.pickupCost)} MXN`}) 🚚
+                      Recoleccion a domicilio ($${toMXN(settings.pickupCost)} MXN) 🚚
                     </div>
                     <div className={styles.radioDesc}>
                       Nosotros recogemos el paquete a tu domicilio.
                     </div>
-                  </div>
-                </label>
+                  </label>
+                </div>
               </div>
 
               <div className={styles.btnRow}>
