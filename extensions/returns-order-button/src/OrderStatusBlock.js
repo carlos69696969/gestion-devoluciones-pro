@@ -4,6 +4,12 @@ import "@shopify/ui-extensions/customer-account";
 const RETURN_PORTAL_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones";
 const FORCED_SHOP_DOMAIN = "cariana-3.myshopify.com";
 
+function clearNodeChildren(node) {
+  while (node.firstChild) {
+    node.removeChild(node.firstChild);
+  }
+}
+
 async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
   try {
     const url = new URL(RETURN_PORTAL_URL);
@@ -94,6 +100,8 @@ export default function extension() {
   const actions = document.createElement("s-stack");
   actions.setAttribute("gap", "small");
   actions.setAttribute("direction", "block");
+  const noEligibleText = document.createElement("s-text");
+  noEligibleText.textContent = "Este pedido ya no tiene productos disponibles para devolucion.";
 
   wrapper.appendChild(title);
   wrapper.appendChild(description);
@@ -107,7 +115,7 @@ export default function extension() {
     const hasEligibleItems =
       eligibility?.hasEligibleItems === undefined ? true : Boolean(eligibility?.hasEligibleItems);
 
-    actions.replaceChildren();
+    clearNodeChildren(actions);
     if (hasExistingReturns) {
       actions.appendChild(viewButton);
     }
@@ -116,17 +124,13 @@ export default function extension() {
     }
 
     if (!hasExistingReturns && !hasEligibleItems) {
-      const noEligibleText = document.createElement("s-text");
-      noEligibleText.textContent = "Este pedido ya no tiene productos disponibles para devolucion.";
-      if (!wrapper.contains(noEligibleText)) {
+      if (!noEligibleText.parentNode) {
         wrapper.appendChild(noEligibleText);
       }
     } else {
-      // Remove stale empty-state text if previously shown.
-      const stale = Array.from(wrapper.querySelectorAll("s-text")).find((node) =>
-        String(node.textContent || "").includes("ya no tiene productos disponibles"),
-      );
-      if (stale) stale.remove();
+      if (noEligibleText.parentNode) {
+        noEligibleText.parentNode.removeChild(noEligibleText);
+      }
     }
   });
 }
