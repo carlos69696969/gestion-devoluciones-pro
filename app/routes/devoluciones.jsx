@@ -913,7 +913,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                   <h3 className={styles.sectionTitle}>Entrega en sucursal</h3>
                   <p><strong>Cliente:</strong> {order.customerName || "Cliente"}</p>
                   {order.customerPhone ? <p><strong>Telefono:</strong> {order.customerPhone}</p> : null}
-                  <p><strong>Direccion:</strong> {settings.branchAddress}</p>
+                  <p><strong>Direccion de la sucursal:</strong> {settings.branchAddress}</p>
                   <p><strong>Instrucciones:</strong> {settings.branchInstructions}</p>
                   <p><strong>Horarios de entrega:</strong> {settings.branchHours}</p>
                 </div>
