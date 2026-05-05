@@ -22,18 +22,46 @@ function parseLines(value) {
     .filter(Boolean);
 }
 
+function reasonKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    // Make comparisons accent-insensitive (e.g. "dañado" vs "danado").
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
 function getReasonConfig(settings) {
   const reasons = parseLines(settings?.returnReasons);
-  const normalizedReasons = reasons.length ? reasons : DEFAULT_REASONS.slice();
-
+  const baseReasons = reasons.length ? reasons : DEFAULT_REASONS.slice();
   const evidence = parseLines(settings?.evidenceReasons);
-  const normalizedEvidence = (evidence.length ? evidence : DEFAULT_EVIDENCE_REASONS)
-    .filter((reason) => normalizedReasons.includes(reason));
+  const baseEvidence = evidence.length ? evidence : DEFAULT_EVIDENCE_REASONS.slice();
+
+  // Ensure evidence reasons are also selectable: if an evidence reason isn't in the main list,
+  // append it automatically. Comparisons are done using reasonKey so accents/case don't matter.
+  const reasonsByKey = new Map();
+  const mergedReasons = [];
+  for (const reason of baseReasons) {
+    const key = reasonKey(reason);
+    if (!key || reasonsByKey.has(key)) continue;
+    reasonsByKey.set(key, reason);
+    mergedReasons.push(reason);
+  }
+  for (const reason of baseEvidence) {
+    const key = reasonKey(reason);
+    if (!key || reasonsByKey.has(key)) continue;
+    reasonsByKey.set(key, reason);
+    mergedReasons.push(reason);
+  }
+
+  const evidenceKeySet = new Set(baseEvidence.map((r) => reasonKey(r)).filter(Boolean));
+  const mergedEvidence = mergedReasons.filter((r) => evidenceKeySet.has(reasonKey(r)));
 
   return {
-    reasons: normalizedReasons,
-    evidenceReasons: normalizedEvidence,
-    evidenceSet: new Set(normalizedEvidence),
+    reasons: mergedReasons,
+    evidenceReasons: mergedEvidence,
+    evidenceSet: evidenceKeySet,
   };
 }
 
@@ -383,10 +411,10 @@ export const action = async ({ request }) => {
     return { ok: false, error: "Selecciona al menos un producto." };
   }
 
-  const requiresReview = payload.items.some((item) => evidenceSet.has(String(item.reason || "")));
+  const requiresReview = payload.items.some((item) => evidenceSet.has(reasonKey(item.reason)));
 
   for (const item of payload.items) {
-    if (evidenceSet.has(item.reason)) {
+    if (evidenceSet.has(reasonKey(item.reason))) {
       if (!String(item.details || "").trim()) {
         return {
           ok: false,
@@ -571,7 +599,10 @@ export default function PublicReturnsPortal() {
 }
 
 function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, isSubmitting, actionData }) {
-  const evidenceSet = useMemo(() => new Set(evidenceReasons || []), [evidenceReasons]);
+  const evidenceSet = useMemo(
+    () => new Set((evidenceReasons || []).map((reason) => reasonKey(reason)).filter(Boolean)),
+    [evidenceReasons],
+  );
   const limitDateObj = useMemo(
     () => addDays(order.createdAt, settings.returnWindowDays),
     [order.createdAt, settings.returnWindowDays],
@@ -638,7 +669,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     [order.items, reasons, reasonsByItem, selected, detailsByItem, photoByItem],
   );
 
-  const requiresReview = selectedItems.some((item) => evidenceSet.has(item.reason));
+  const requiresReview = selectedItems.some((item) => evidenceSet.has(reasonKey(item.reason)));
   const estimatedRefund = selectedItems.reduce(
     (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 1),
     0,
@@ -671,14 +702,14 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
       if (!selectedItems.length) return "Selecciona al menos un producto.";
       const missingReason = selectedItems.some((item) => !String(item.reason || "").trim());
       if (missingReason) return "Selecciona un motivo para cada producto seleccionado.";
-      const needsEvidence = selectedItems.some((item) => evidenceSet.has(item.reason));
+      const needsEvidence = selectedItems.some((item) => evidenceSet.has(reasonKey(item.reason)));
       if (needsEvidence) {
         const missingDetails = selectedItems.some(
-          (item) => evidenceSet.has(item.reason) && !String(item.details || "").trim(),
+          (item) => evidenceSet.has(reasonKey(item.reason)) && !String(item.details || "").trim(),
         );
         if (missingDetails) return "Completa la descripcion del problema en los productos marcados.";
         const missingPhoto = selectedItems.some((item) => {
-          if (!evidenceSet.has(item.reason)) return false;
+          if (!evidenceSet.has(reasonKey(item.reason))) return false;
           const photos = Array.isArray(item.photoDataUrls) ? item.photoDataUrls : [];
           return photos.length < 1;
         });
@@ -758,7 +789,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
               <h3 className={styles.sectionTitle}>1) Productos a devolver</h3>
               {order.items.map((item) => {
                 const reason = reasonsByItem[item.id] || "";
-                const needsEvidence = evidenceSet.has(reason);
+                const needsEvidence = evidenceSet.has(reasonKey(reason));
                 return (
                   <div key={item.id} className={styles.productRow}>
                     <label className={styles.productLabel}>
