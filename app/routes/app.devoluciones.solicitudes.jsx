@@ -108,6 +108,78 @@ async function fetchOrderSnapshot(admin, orderId) {
   };
 }
 
+function putImageCandidate(map, key, imageUrl, imageAlt) {
+  if (!key || !imageUrl || map[key]) return;
+  map[key] = { imageUrl, imageAlt: imageAlt || "" };
+}
+
+async function fetchOrderItemImageMaps(admin, orderIds) {
+  const uniqueIds = Array.from(new Set(orderIds.filter(Boolean)));
+  if (!uniqueIds.length) return {};
+
+  try {
+    const response = await admin.graphql(
+      `#graphql
+      query OrdersForReturnImages($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on Order {
+            id
+            lineItems(first: 100) {
+              edges {
+                node {
+                  id
+                  title
+                  variant {
+                    id
+                    image {
+                      url
+                      altText
+                    }
+                  }
+                  product {
+                    id
+                    featuredImage {
+                      url
+                      altText
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`,
+      { variables: { ids: uniqueIds } },
+    );
+    const payload = await response.json();
+    const nodes = payload?.data?.nodes || [];
+    const byOrder = {};
+
+    for (const order of nodes) {
+      if (!order?.id) continue;
+      const imageMap = {};
+      const lines = order?.lineItems?.edges || [];
+      for (const edge of lines) {
+        const line = edge?.node;
+        if (!line) continue;
+        const imageUrl = line?.variant?.image?.url || line?.product?.featuredImage?.url || "";
+        const imageAlt = line?.variant?.image?.altText || line?.product?.featuredImage?.altText || "";
+        if (!imageUrl) continue;
+
+        putImageCandidate(imageMap, itemKeyFromRecord({ lineItemId: line.id }), imageUrl, imageAlt);
+        putImageCandidate(imageMap, itemKeyFromRecord({ variantId: line?.variant?.id }), imageUrl, imageAlt);
+        putImageCandidate(imageMap, itemKeyFromRecord({ productId: line?.product?.id }), imageUrl, imageAlt);
+        putImageCandidate(imageMap, itemKeyFromRecord({ title: line.title }), imageUrl, imageAlt);
+      }
+      byOrder[order.id] = imageMap;
+    }
+
+    return byOrder;
+  } catch {
+    return {};
+  }
+}
+
 function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
   const usedLineIds = new Set();
   const refundableLines = [];
@@ -157,12 +229,33 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
 }
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
-  const requests = await prisma.returnRequest.findMany({
+  const { admin, session } = await authenticate.admin(request);
+  const rawRequests = await prisma.returnRequest.findMany({
     where: { shop: session.shop },
     include: { items: true },
     orderBy: { createdAt: "desc" },
   });
+
+  const imagesByOrder = await fetchOrderItemImageMaps(
+    admin,
+    rawRequests.map((requestRow) => requestRow.shopifyOrderId),
+  );
+
+  const requests = rawRequests.map((requestRow) => {
+    const imageMap = imagesByOrder[requestRow.shopifyOrderId] || {};
+    return {
+      ...requestRow,
+      items: requestRow.items.map((item) => {
+        const image = imageMap[itemKeyFromRecord(item)] || null;
+        return {
+          ...item,
+          imageUrl: image?.imageUrl || "",
+          imageAlt: image?.imageAlt || "",
+        };
+      }),
+    };
+  });
+
   return { requests };
 };
 
@@ -423,7 +516,7 @@ function RequestCard({ request, isSubmitting }) {
         <div>
           <h3 className={styles.reqTitle}>Pedido #{request.orderNumber}</h3>
           <p className={styles.meta}>
-            {request.customerName} · {request.customerEmail} · {request.customerPhone || "-"}
+            {request.customerName} | {request.customerEmail} | {request.customerPhone || "-"}
           </p>
         </div>
         <span className={styles.pill}>
@@ -431,84 +524,111 @@ function RequestCard({ request, isSubmitting }) {
         </span>
       </div>
 
-      <div className={styles.kv}>
-        <div className={styles.kvRow}>
-          <span className={styles.kvKey}>Metodo</span>
-          <span className={styles.kvVal}>
-            {request.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}
-          </span>
-        </div>
-        <div className={styles.kvRow}>
-          <span className={styles.kvKey}>Subtotal (sin impuestos)</span>
-          <span className={styles.kvVal}>${toMoney(request.refundedSubtotal || request.estimatedRefund)} MXN</span>
-        </div>
-        <div className={styles.kvRow}>
-          <span className={styles.kvKey}>Costo devolucion</span>
-          <span className={styles.kvVal}>${toMoney(request.returnCost)} MXN</span>
-        </div>
-        <div className={styles.kvRow}>
-          <span className={styles.kvKey}>Reembolso final</span>
-          <span className={styles.kvVal}>${toMoney(request.finalRefund)} MXN</span>
-        </div>
-        <div className={styles.kvRow}>
-          <span className={styles.kvKey}>Fecha solicitud</span>
-          <span className={styles.kvVal}>{new Date(request.createdAt).toLocaleString("es-MX")}</span>
-        </div>
-        {request.receivedAt ? (
-          <div className={styles.kvRow}>
-            <span className={styles.kvKey}>Recibida</span>
-            <span className={styles.kvVal}>{new Date(request.receivedAt).toLocaleString("es-MX")}</span>
-          </div>
-        ) : null}
-        {request.refundedAt ? (
-          <div className={styles.kvRow}>
-            <span className={styles.kvKey}>Reembolsada</span>
-            <span className={styles.kvVal}>{new Date(request.refundedAt).toLocaleString("es-MX")}</span>
-          </div>
-        ) : null}
-      </div>
-
-      {request.returnMethod === "pickup" ? (
-        <p className={styles.meta}>
-          Recoleccion:{" "}
-          {[request.pickupAddress, request.pickupCity, request.pickupState, request.pickupPostalCode]
-            .filter(Boolean)
-            .join(", ") || "-"}
-          {" · "}Dia: {request.pickupDate || "-"}
-          {request.pickupNotes ? ` · Notas: ${request.pickupNotes}` : ""}
-        </p>
-      ) : (
-        <p className={styles.meta}>
-          Sucursal: {request.branchAddress || "-"} · Horarios: {request.branchHours || "-"}
-        </p>
-      )}
-
-      {request.rejectionReason ? (
-        <p className={styles.errorMsg}>Motivo de rechazo: {request.rejectionReason}</p>
-      ) : null}
-      {request.refundError ? (
-        <p className={styles.errorMsg}>Error de reembolso: {request.refundError}</p>
-      ) : null}
-      {request.shopifyRefundId ? (
-        <p className={styles.successMsg}>Refund ID: {request.shopifyRefundId}</p>
-      ) : null}
-
       <details className={styles.details}>
-        <summary className={styles.summary}>Ver productos, motivos, fotos y descripcion</summary>
+        <summary className={styles.summary}>Ver orden</summary>
+
+        <div className={styles.kv}>
+          <div className={styles.kvRow}>
+            <span className={styles.kvKey}>Metodo</span>
+            <span className={styles.kvVal}>
+              {request.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}
+            </span>
+          </div>
+          <div className={styles.kvRow}>
+            <span className={styles.kvKey}>Subtotal (sin impuestos)</span>
+            <span className={styles.kvVal}>${toMoney(request.refundedSubtotal || request.estimatedRefund)} MXN</span>
+          </div>
+          <div className={styles.kvRow}>
+            <span className={styles.kvKey}>Costo devolucion</span>
+            <span className={styles.kvVal}>${toMoney(request.returnCost)} MXN</span>
+          </div>
+          <div className={styles.kvRow}>
+            <span className={styles.kvKey}>Reembolso final</span>
+            <span className={styles.kvVal}>${toMoney(request.finalRefund)} MXN</span>
+          </div>
+          <div className={styles.kvRow}>
+            <span className={styles.kvKey}>Fecha solicitud</span>
+            <span className={styles.kvVal}>{new Date(request.createdAt).toLocaleString("es-MX")}</span>
+          </div>
+          {request.receivedAt ? (
+            <div className={styles.kvRow}>
+              <span className={styles.kvKey}>Recibida</span>
+              <span className={styles.kvVal}>{new Date(request.receivedAt).toLocaleString("es-MX")}</span>
+            </div>
+          ) : null}
+          {request.refundedAt ? (
+            <div className={styles.kvRow}>
+              <span className={styles.kvKey}>Reembolsada</span>
+              <span className={styles.kvVal}>{new Date(request.refundedAt).toLocaleString("es-MX")}</span>
+            </div>
+          ) : null}
+        </div>
+
+        {request.returnMethod === "pickup" ? (
+          <p className={styles.meta}>
+            Recoleccion:{" "}
+            {[request.pickupAddress, request.pickupCity, request.pickupState, request.pickupPostalCode]
+              .filter(Boolean)
+              .join(", ") || "-"}
+            {" | "}Dia: {request.pickupDate || "-"}
+            {request.pickupNotes ? ` | Notas: ${request.pickupNotes}` : ""}
+          </p>
+        ) : (
+          <p className={styles.meta}>
+            Sucursal: {request.branchAddress || "-"} | Horarios: {request.branchHours || "-"}
+          </p>
+        )}
+
+        {request.rejectionReason ? (
+          <p className={styles.errorMsg}>Motivo de rechazo: {request.rejectionReason}</p>
+        ) : null}
+        {request.refundError ? (
+          <p className={styles.errorMsg}>Error de reembolso: {request.refundError}</p>
+        ) : null}
+        {request.shopifyRefundId ? (
+          <p className={styles.successMsg}>Refund ID: {request.shopifyRefundId}</p>
+        ) : null}
+
+        <h4 className={styles.orderDetailTitle}>Productos, motivos, fotos y descripcion</h4>
         <ul className={styles.productList}>
           {request.items.map((item) => {
             const photos = parsePhotoUrls(item.photoDataUrl);
             return (
-              <li key={item.id} style={{ marginBottom: 10 }}>
-                <div>
-                  {item.title} x{item.quantity} - Motivo: {item.reason}
+              <li key={item.id} className={styles.productItem}>
+                <div className={styles.productItemHeader}>
+                  {item.imageUrl ? (
+                    <img
+                      src={item.imageUrl}
+                      alt={item.imageAlt || item.title}
+                      className={styles.productThumb}
+                    />
+                  ) : (
+                    <div className={styles.productThumbPlaceholder} />
+                  )}
+                  <div className={styles.productCopy}>
+                    <p className={styles.productLineTitle}>
+                      {item.title} x{item.quantity}
+                    </p>
+                    <p className={styles.productLineMeta}>Motivo: {item.reason}</p>
+                  </div>
                 </div>
-                {item.details ? <div>Descripcion: {item.details}</div> : null}
+                {item.details ? <p className={styles.productLineMeta}>Descripcion: {item.details}</p> : null}
                 {photos.length ? (
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+                  <div className={styles.evidencePhotos}>
                     {photos.map((src, idx) => (
-                      <a key={`${itemKeyFromRecord(item)}_${idx}`} href={src} target="_blank" rel="noreferrer">
-                        Ver foto {idx + 1}
+                      <a
+                        key={`${itemKeyFromRecord(item)}_${idx}`}
+                        href={src}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={styles.evidenceLink}
+                      >
+                        <img
+                          src={src}
+                          alt={`Evidencia ${idx + 1}`}
+                          className={styles.evidencePhoto}
+                        />
+                        <span>Foto {idx + 1}</span>
                       </a>
                     ))}
                   </div>
@@ -570,3 +690,4 @@ function RequestCard({ request, isSubmitting }) {
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
+
