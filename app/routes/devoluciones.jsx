@@ -923,7 +923,10 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
           {step === 2 ? (
             <div>
               {requiresReview ? (
-                <p className={`${styles.notice} ${styles.noticeMuted}`} style={{ marginTop: 6 }}>
+                <p
+                  className={`${styles.notice} ${styles.noticeMuted} ${styles.noteMsg}`}
+                  style={{ marginTop: 6 }}
+                >
                   <strong className={styles.noteWord}>Nota:</strong> Tu solicitud sera revisada antes de ser aprobada.
                   Revisaremos las fotos y el motivo de la devolucion. Si tu solicitud es aprobada, tu devolucion no
                   tendra ningun costo. Por favor, elige tu metodo de devolucion.

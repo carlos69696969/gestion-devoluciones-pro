@@ -53,6 +53,7 @@
 .noticeSuccess { color: var(--success); }
 .noticeMuted { color: var(--muted); }
 .noteWord { color: var(--danger); }
+.noteMsg { font-weight: 600; }
 
 .card {
   background: var(--card);
