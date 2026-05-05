@@ -15,6 +15,7 @@ const DEFAULT_REASONS = [
 const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
 const ADMIN_API_VERSION = "2025-10";
 const ITEM_BLOCK_STATUSES = new Set(["aprobada", "recibida", "reembolsada", "completada"]);
+const DELIVERED_RETURN_STATUSES = new Set(["recibida", "reembolsada", "completada"]);
 
 function parseLines(value) {
   return String(value || "")
@@ -127,6 +128,44 @@ function addDays(date, days) {
 
 function toMXN(value) {
   return Number(value || 0).toFixed(2);
+}
+
+function parsePhotoDataUrls(rawValue) {
+  if (!rawValue) return [];
+  try {
+    const parsed = JSON.parse(rawValue);
+    return Array.isArray(parsed) ? parsed.filter(Boolean).slice(0, 2) : [];
+  } catch {
+    const single = String(rawValue || "").trim();
+    return single ? [single] : [];
+  }
+}
+
+function buildOrderImageMap(items) {
+  const imageMap = new Map();
+  for (const item of items || []) {
+    const value = { imageUrl: item.imageUrl || "", imageAlt: item.imageAlt || item.title || "" };
+    const keys = [
+      itemKeyFromRecord({ lineItemId: item.id }),
+      itemKeyFromRecord({ variantId: item.variantId }),
+      itemKeyFromRecord({ productId: item.productId }),
+      itemKeyFromRecord({ title: item.title }),
+    ];
+    for (const key of keys) {
+      if (!key || imageMap.has(key)) continue;
+      imageMap.set(key, value);
+    }
+  }
+  return imageMap;
+}
+
+function statusLabelForCustomer(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "aprobada") return "aprobada";
+  if (normalized === "recibida") return "recibida";
+  if (normalized === "reembolsada") return "reembolsada";
+  if (normalized === "completada") return "completada";
+  return normalized || "-";
 }
 
 async function getOrCreateSettings(shop) {
@@ -387,10 +426,69 @@ export const loader = async ({ request }) => {
           lastRejectedReason: rejectedReasonsByItemKey.get(key) || "",
         };
       });
+      const orderImageMap = buildOrderImageMap(order.items);
+      const completedRequests = previousRequests
+        .filter((requestRow) => ITEM_BLOCK_STATUSES.has(String(requestRow.status || "").toLowerCase()))
+        .map((requestRow) => ({
+          id: requestRow.id,
+          status: String(requestRow.status || "").toLowerCase(),
+          statusLabel: statusLabelForCustomer(requestRow.status),
+          createdAt: requestRow.createdAt,
+          receivedAt: requestRow.receivedAt,
+          refundedAt: requestRow.refundedAt,
+          orderNumber: requestRow.orderNumber,
+          customerName: requestRow.customerName || order.customerName || "-",
+          customerEmail: requestRow.customerEmail || order.customerEmail || "-",
+          customerPhone: requestRow.customerPhone || order.customerPhone || "-",
+          returnMethod: requestRow.returnMethod,
+          branchAddress: requestRow.branchAddress || settings.branchAddress || "-",
+          branchInstructions: requestRow.branchInstructions || settings.branchInstructions || "-",
+          branchHours: requestRow.branchHours || settings.branchHours || "-",
+          pickupAddress: requestRow.pickupAddress || "-",
+          pickupNeighborhood: requestRow.pickupNeighborhood || "-",
+          pickupCity: requestRow.pickupCity || "-",
+          pickupState: requestRow.pickupState || "-",
+          pickupPostalCode: requestRow.pickupPostalCode || "-",
+          pickupDate: requestRow.pickupDate || "-",
+          pickupNotes: requestRow.pickupNotes || "",
+          estimatedRefund: Number(requestRow.estimatedRefund || 0),
+          returnCost: Number(requestRow.returnCost || 0),
+          finalRefund: Number(requestRow.finalRefund || 0),
+          items: (requestRow.items || []).map((item) => {
+            const image =
+              orderImageMap.get(
+                itemKeyFromRecord({
+                  lineItemId: item.lineItemId,
+                  variantId: item.variantId,
+                  productId: item.productId,
+                  title: item.title,
+                }),
+              ) || {};
+            return {
+              id: item.id,
+              title: item.title,
+              quantity: Number(item.quantity || 1),
+              reason: item.reason || "-",
+              details: item.details || "",
+              photoDataUrls: parsePhotoDataUrls(item.photoDataUrl),
+              imageUrl: image.imageUrl || "",
+              imageAlt: image.imageAlt || item.title || "Producto",
+            };
+          }),
+        }));
       const hasEligibleItems = itemsWithEligibility.some((item) => !item.isAlreadyReturned);
       const limitDate = addDays(order.createdAt, settings.returnWindowDays);
       const now = new Date();
       const isExpired = now > limitDate;
+      const allDelivered =
+        completedRequests.length > 0 &&
+        completedRequests.every((requestRow) => DELIVERED_RETURN_STATUSES.has(requestRow.status));
+      const completionTitle = allDelivered
+        ? "Devolucion completada con exito."
+        : "Solicitud de devolucion completada.";
+      const completionText = allDelivered
+        ? "Todos los productos de este pedido fueron devueltos con exito."
+        : "Tu solicitud ya fue registrada. Aqui puedes ver todos los datos de tu devolucion.";
 
       return {
         reasons,
@@ -404,11 +502,15 @@ export const loader = async ({ request }) => {
         hasEligibleItems,
         isExpired,
         limitDate: limitDate.toISOString(),
+        completedRequests,
+        completedAllDelivered: allDelivered,
+        completedTitle: completionTitle,
+        completedText: completionText,
         message: isExpired
           ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
           : hasEligibleItems
             ? `Estas dentro del periodo de devolucion (${settings.returnWindowDays} dias). Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`
-            : "Todos los productos de este pedido fueron devueltos.",
+            : completionTitle,
       };
     } catch (err) {
       lastError = err;
@@ -640,6 +742,9 @@ export default function PublicReturnsPortal() {
     limitDate,
     message,
     diagnostic,
+    completedRequests = [],
+    completedTitle = "Solicitud de devolucion completada.",
+    completedText = "",
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -691,12 +796,99 @@ export default function PublicReturnsPortal() {
 
         {autoOrder && !isExpired && !hasEligibleItems ? (
           <section className={styles.card}>
-            <h2 className={styles.cardTitle}>Devoluciones completadas</h2>
-            <p className={styles.cardMeta}>Todos los productos de este pedido fueron devueltos.</p>
+            <h2 className={styles.cardTitle}>{completedTitle}</h2>
+            <p className={styles.cardMeta}>{completedText}</p>
+            <div className={styles.divider} />
+            <div className={styles.completedGrid}>
+              {completedRequests.map((requestItem) => (
+                <CompletedReturnSummary
+                  key={requestItem.id}
+                  requestItem={requestItem}
+                />
+              ))}
+            </div>
           </section>
         ) : null}
       </div>
     </main>
+  );
+}
+
+function CompletedReturnSummary({ requestItem }) {
+  return (
+    <article className={styles.completedCard}>
+      <h3 className={styles.completedTitle}>Pedido #{requestItem.orderNumber}</h3>
+      <p className={styles.completedMeta}>
+        Cliente: {requestItem.customerName} | Email: {requestItem.customerEmail} | Telefono: {requestItem.customerPhone}
+      </p>
+      <p className={styles.completedStatus}>
+        Estado de devolucion: <strong>{requestItem.statusLabel}</strong>
+      </p>
+
+      <div className={styles.summary}>
+        <p><strong>Metodo:</strong> {requestItem.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}</p>
+        <p><strong>Subtotal (sin impuestos):</strong> ${toMXN(requestItem.estimatedRefund)} MXN</p>
+        <p><strong>Costo devolucion:</strong> ${toMXN(requestItem.returnCost)} MXN</p>
+        <p><strong>Reembolso final:</strong> ${toMXN(requestItem.finalRefund)} MXN</p>
+        <p><strong>Fecha de solicitud:</strong> {new Date(requestItem.createdAt).toLocaleString("es-MX")}</p>
+        {requestItem.receivedAt ? (
+          <p><strong>Fecha recibida:</strong> {new Date(requestItem.receivedAt).toLocaleString("es-MX")}</p>
+        ) : null}
+        {requestItem.refundedAt ? (
+          <p><strong>Fecha reembolsada:</strong> {new Date(requestItem.refundedAt).toLocaleString("es-MX")}</p>
+        ) : null}
+
+        {requestItem.returnMethod === "pickup" ? (
+          <>
+            <p>
+              <strong>Direccion de recoleccion:</strong>{" "}
+              {[requestItem.pickupAddress, requestItem.pickupNeighborhood, requestItem.pickupCity, requestItem.pickupState, requestItem.pickupPostalCode]
+                .filter((value) => value && value !== "-")
+                .join(", ") || "-"}
+            </p>
+            <p><strong>Dia de recoleccion:</strong> {requestItem.pickupDate || "-"}</p>
+            {requestItem.pickupNotes ? <p><strong>Instrucciones del cliente:</strong> {requestItem.pickupNotes}</p> : null}
+          </>
+        ) : (
+          <>
+            <p><strong>Direccion de la sucursal:</strong> {requestItem.branchAddress || "-"}</p>
+            <p><strong>Instrucciones:</strong> {requestItem.branchInstructions || "-"}</p>
+            <p><strong>Horarios de entrega:</strong> {requestItem.branchHours || "-"}</p>
+          </>
+        )}
+      </div>
+
+      <h4 className={styles.orderDetailTitle}>Productos devueltos</h4>
+      <ul className={styles.productList}>
+        {requestItem.items.map((item) => (
+          <li key={item.id} className={styles.productItem}>
+            <div className={styles.productItemHeader}>
+              {item.imageUrl ? (
+                <img src={item.imageUrl} alt={item.imageAlt || item.title} className={styles.productThumb} />
+              ) : (
+                <div className={styles.productThumbPlaceholder} />
+              )}
+              <div className={styles.productCopy}>
+                <p className={styles.productLineTitle}>{item.title} x{item.quantity}</p>
+                <p className={styles.productLineMeta}>Motivo: {item.reason || "-"}</p>
+              </div>
+            </div>
+            {item.details ? <p className={styles.productLineMeta}>Descripcion: {item.details}</p> : null}
+            {item.photoDataUrls?.length ? (
+              <div className={styles.evidencePhotos}>
+                {item.photoDataUrls.map((src, idx) => (
+                  <a key={`${item.id}_${idx}`} href={src} target="_blank" rel="noreferrer" className={styles.evidenceLink}>
+                    <img src={src} alt={`Evidencia ${idx + 1}`} className={styles.evidencePhoto} />
+                    <span>Foto {idx + 1}</span>
+                  </a>
+                ))}
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+
+    </article>
   );
 }
 
