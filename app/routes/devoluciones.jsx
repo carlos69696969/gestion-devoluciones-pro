@@ -779,7 +779,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
             </span>
           </div>
 
-          {clientError && !(step === 3 && returnMethod === "pickup") ? (
+          {clientError && !(step === 3 && returnMethod === "pickup") && step !== 1 ? (
             <p className={`${styles.notice} ${styles.noticeError}`}>{clientError}</p>
           ) : null}
 
@@ -820,7 +820,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                     {selected[item.id] ? (
                       <div className={styles.fieldGrid} style={{ marginTop: 10 }}>
                         <label>
-                          Motivo
+                          <span className={styles.fieldLabel}>Motivo</span>
                           <select
                             value={reason}
                             onChange={(event) =>
@@ -840,7 +840,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                       {needsEvidence ? (
                         <>
                           <label>
-                            Descripcion del problema (obligatoria)
+                            <span className={styles.fieldLabel}>Descripcion del problema (obligatoria)</span>
                             <textarea
                               value={detailsByItem[item.id] || ""}
                               onChange={(event) =>
@@ -850,9 +850,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                             />
                           </label>
                           <div>
-                            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>
-                              Foto del problema (obligatoria)
-                            </div>
+                            <div className={styles.fieldLabel}>Foto del problema (obligatoria)</div>
                             {(() => {
                               const photos = Array.isArray(photoByItem[item.id]) ? photoByItem[item.id] : [];
                               const slots = Math.min(photos.length + 1, 2);
@@ -912,7 +910,14 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                 );
               })}
 
-              <div className={`${styles.btnRow} ${styles.btnRowRight}`}>
+              <div className={styles.btnRow}>
+                {clientError ? (
+                  <p className={`${styles.notice} ${styles.noticeError}`} style={{ margin: 0 }}>
+                    {clientError}
+                  </p>
+                ) : (
+                  <span />
+                )}
                 <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitting} onClick={() => nextFrom(1)}>
                   Siguiente
                 </button>
@@ -1016,7 +1021,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
 
                   <div className={styles.fieldGrid} style={{ marginTop: 10 }}>
                     <label>
-                      Que dia quieres que pasemos por tu paquete
+                      <span className={styles.fieldLabel}>Que dia quieres que pasemos por tu paquete</span>
                       <input
                         type="date"
                         value={pickup.pickupDate}
