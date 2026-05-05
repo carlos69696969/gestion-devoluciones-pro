@@ -657,8 +657,6 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
     }
 
     if (currentStep === 3) {
-      if (!String(customerName || "").trim()) return "Captura tu nombre.";
-      if (!String(customerPhone || "").trim()) return "Captura tu telefono.";
       if (returnMethod === "pickup") {
         const required = [
           ["pickupAddress", "Direccion completa"],
@@ -909,20 +907,6 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
             <div>
               <div className={styles.divider} />
               <h3 className={styles.sectionTitle}>3) Datos de contacto</h3>
-              <div className={styles.fieldGrid}>
-                <input
-                  placeholder="Nombre del cliente"
-                  value={customerName}
-                  onChange={(event) => setCustomerName(event.target.value)}
-                  className={styles.input}
-                />
-                <input
-                  placeholder="Telefono"
-                  value={customerPhone}
-                  onChange={(event) => setCustomerPhone(event.target.value)}
-                  className={styles.input}
-                />
-              </div>
 
               {returnMethod === "branch" ? (
                 <div className={styles.summary} style={{ marginTop: 12 }}>
@@ -997,8 +981,6 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
               <div className={styles.divider} />
               <div className={styles.summary}>
                 <h3 className={styles.sectionTitle}>4) Confirmacion y resumen</h3>
-                <p><strong>Nombre:</strong> {customerName || "-"}</p>
-                <p><strong>Telefono:</strong> {customerPhone || "-"}</p>
                 <p><strong>Productos:</strong> {selectedItems.map((x) => `${x.title} (${x.reason})`).join(", ") || "-"}</p>
                 <p><strong>Monto estimado a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
                 {returnMethod === "branch" ? (
