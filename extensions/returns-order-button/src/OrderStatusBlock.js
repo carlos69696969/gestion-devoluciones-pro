@@ -29,7 +29,7 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
   }
 }
 
-export default async function extension() {
+export default function extension() {
   const shopifyObj = globalThis?.shopify || {};
   const targetValue =
     shopifyObj?.target?.value ||
@@ -95,25 +95,38 @@ export default async function extension() {
   actions.setAttribute("gap", "small");
   actions.setAttribute("direction", "block");
 
-  const eligibility = await getEligibility({ shopDomain, orderNumber: orderName, customerEmail });
-  const hasExistingReturns = Boolean(eligibility?.hasExistingReturns);
-  const hasEligibleItems =
-    eligibility?.hasEligibleItems === undefined ? true : Boolean(eligibility?.hasEligibleItems);
-
   wrapper.appendChild(title);
   wrapper.appendChild(description);
-  if (hasExistingReturns) {
-    actions.appendChild(viewButton);
-  }
-  if (hasEligibleItems) {
-    actions.appendChild(button);
-  }
-  if (!hasExistingReturns && !hasEligibleItems) {
-    const noEligibleText = document.createElement("s-text");
-    noEligibleText.textContent = "Este pedido ya no tiene productos disponibles para devolucion.";
-    wrapper.appendChild(noEligibleText);
-  } else {
-    wrapper.appendChild(actions);
-  }
+  actions.appendChild(button);
+  wrapper.appendChild(actions);
   document.body.appendChild(wrapper);
+
+  // Resolve eligibility in background; never block initial render to avoid blank extension UI.
+  getEligibility({ shopDomain, orderNumber: orderName, customerEmail }).then((eligibility) => {
+    const hasExistingReturns = Boolean(eligibility?.hasExistingReturns);
+    const hasEligibleItems =
+      eligibility?.hasEligibleItems === undefined ? true : Boolean(eligibility?.hasEligibleItems);
+
+    actions.replaceChildren();
+    if (hasExistingReturns) {
+      actions.appendChild(viewButton);
+    }
+    if (hasEligibleItems) {
+      actions.appendChild(button);
+    }
+
+    if (!hasExistingReturns && !hasEligibleItems) {
+      const noEligibleText = document.createElement("s-text");
+      noEligibleText.textContent = "Este pedido ya no tiene productos disponibles para devolucion.";
+      if (!wrapper.contains(noEligibleText)) {
+        wrapper.appendChild(noEligibleText);
+      }
+    } else {
+      // Remove stale empty-state text if previously shown.
+      const stale = Array.from(wrapper.querySelectorAll("s-text")).find((node) =>
+        String(node.textContent || "").includes("ya no tiene productos disponibles"),
+      );
+      if (stale) stale.remove();
+    }
+  });
 }
