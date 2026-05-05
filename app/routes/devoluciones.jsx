@@ -480,15 +480,22 @@ export const loader = async ({ request }) => {
       const limitDate = addDays(order.createdAt, settings.returnWindowDays);
       const now = new Date();
       const isExpired = now > limitDate;
-      const allDelivered =
-        completedRequests.length > 0 &&
-        completedRequests.every((requestRow) => DELIVERED_RETURN_STATUSES.has(requestRow.status));
+  const allDelivered =
+    completedRequests.length > 0 &&
+    completedRequests.every((requestRow) => DELIVERED_RETURN_STATUSES.has(requestRow.status));
+      const hasRefundProcessed = completedRequests.some((requestRow) =>
+        ["reembolsada", "completada"].includes(String(requestRow.status || "").toLowerCase()),
+      );
       const completionTitle = allDelivered
         ? "Devolucion completada con exito."
         : "Solicitud de devolucion completada.";
       const completionText = allDelivered
         ? "Todos los productos de este pedido fueron devueltos con exito."
         : "Tu solicitud ya fue registrada. Aqui puedes ver todos los datos de tu devolucion.";
+      const completionRefundText =
+        allDelivered && hasRefundProcessed
+          ? "Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, puede reflejarse en un plazo de 5 a 10 dias habiles."
+          : "";
 
       return {
         reasons,
@@ -506,6 +513,7 @@ export const loader = async ({ request }) => {
         completedAllDelivered: allDelivered,
         completedTitle: completionTitle,
         completedText: completionText,
+        completedRefundText: completionRefundText,
         message: isExpired
           ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
           : hasEligibleItems
@@ -745,6 +753,7 @@ export default function PublicReturnsPortal() {
     completedRequests = [],
     completedTitle = "Solicitud de devolucion completada.",
     completedText = "",
+    completedRefundText = "",
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -798,6 +807,7 @@ export default function PublicReturnsPortal() {
           <section className={styles.card}>
             <h2 className={styles.cardTitle}>{completedTitle}</h2>
             <p className={styles.cardMeta}>{completedText}</p>
+            {completedRefundText ? <p className={styles.cardMeta}>{completedRefundText}</p> : null}
             <div className={styles.divider} />
             <div className={styles.completedGrid}>
               {completedRequests.map((requestItem) => (
