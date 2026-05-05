@@ -52,6 +52,7 @@
 .noticeError { color: var(--danger); }
 .noticeSuccess { color: var(--success); }
 .noticeMuted { color: var(--muted); }
+.noteWord { color: var(--danger); }
 
 .card {
   background: var(--card);
