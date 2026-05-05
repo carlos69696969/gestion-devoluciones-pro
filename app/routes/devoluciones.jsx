@@ -379,7 +379,6 @@ export const action = async ({ request }) => {
       "pickupFullName",
       "pickupPhone",
       "pickupAddress",
-      "pickupNeighborhood",
       "pickupCity",
       "pickupState",
       "pickupPostalCode",
@@ -554,6 +553,27 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
   const [customerName, setCustomerName] = useState(order.customerName || "");
   const [customerPhone, setCustomerPhone] = useState(order.customerPhone || "");
   const ship = order.shippingAddress || {};
+  const pickupAddressLines = useMemo(() => {
+    const name = String(ship.name || customerName || "").trim();
+    const phone = String(ship.phone || customerPhone || "").trim();
+    const line1 = String(ship.address1 || "").trim();
+    const line2 = String(ship.address2 || "").trim();
+    const zip = String(ship.zip || "").trim();
+    const city = String(ship.city || "").trim();
+    const province = String(ship.province || "").trim();
+    const country = String(ship.country || "").trim();
+
+    const lines = [];
+    if (name) lines.push(name);
+    if (line1) lines.push(line1);
+    if (line2) lines.push(line2);
+
+    const cityLine = [zip, city, province].filter(Boolean).join(" ");
+    if (cityLine) lines.push(cityLine);
+    if (country) lines.push(country);
+    if (phone) lines.push(phone);
+    return lines;
+  }, [ship, customerName, customerPhone]);
   const [pickup, setPickup] = useState({
     pickupFullName: order.customerName || "",
     pickupPhone: order.customerPhone || "",
@@ -642,7 +662,6 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
       if (returnMethod === "pickup") {
         const required = [
           ["pickupAddress", "Direccion completa"],
-          ["pickupNeighborhood", "Colonia"],
           ["pickupCity", "Ciudad"],
           ["pickupState", "Estado"],
           ["pickupPostalCode", "Codigo postal"],
@@ -695,7 +714,9 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
             </span>
           </div>
 
-          {clientError ? <p className={`${styles.notice} ${styles.noticeError}`}>{clientError}</p> : null}
+          {clientError && !(step === 3 && returnMethod === "pickup") ? (
+            <p className={`${styles.notice} ${styles.noticeError}`}>{clientError}</p>
+          ) : null}
 
           {step === 1 ? (
             <div>
@@ -915,60 +936,47 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                   <h3 className={styles.sectionTitle}>Recoleccion a domicilio</h3>
                   <p><strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
                   <p><strong>Horario de recoleccion:</strong> {settings.pickupHours}</p>
+                  <div className={styles.summary} style={{ marginTop: 12, background: "#fff" }}>
+                    <h3 className={styles.sectionTitle} style={{ marginTop: 0 }}>
+                      Direccion de recoleccion
+                    </h3>
+                    {pickupAddressLines.length ? (
+                      <div style={{ display: "grid", gap: 2, color: "var(--text)" }}>
+                        {pickupAddressLines.map((line) => (
+                          <div key={line}>{line}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className={styles.notice}>No encontramos direccion de envio en este pedido.</div>
+                    )}
+                  </div>
+
                   <div className={styles.fieldGrid} style={{ marginTop: 10 }}>
-                  <input
-                    placeholder="Direccion completa"
-                    value={pickup.pickupAddress}
-                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupAddress: event.target.value }))}
-                    className={styles.input}
-                  />
-                  <input
-                    placeholder="Colonia"
-                    value={pickup.pickupNeighborhood}
-                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupNeighborhood: event.target.value }))}
-                    className={styles.input}
-                  />
-                  <input
-                    placeholder="Ciudad"
-                    value={pickup.pickupCity}
-                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupCity: event.target.value }))}
-                    className={styles.input}
-                  />
-                  <input
-                    placeholder="Estado"
-                    value={pickup.pickupState}
-                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupState: event.target.value }))}
-                    className={styles.input}
-                  />
-                  <input
-                    placeholder="Codigo postal"
-                    value={pickup.pickupPostalCode}
-                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupPostalCode: event.target.value }))}
-                    className={styles.input}
-                  />
-                  <input
-                    placeholder="Referencias"
-                    value={pickup.pickupReferences}
-                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupReferences: event.target.value }))}
-                    className={styles.input}
-                  />
-                  <label>
-                    Que dia quieres que pasemos por tu paquete
-                    <input
-                      type="date"
-                      value={pickup.pickupDate}
-                      onChange={(event) => setPickup((prev) => ({ ...prev, pickupDate: event.target.value }))}
-                      max={limitDateISO}
-                      className={styles.input}
-                    />
-                  </label>
-                  <textarea
-                    placeholder="Instrucciones (opcional). Ej: dejar con el vecino, tocar timbre, etc."
-                    value={pickup.pickupNotes}
-                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupNotes: event.target.value }))}
-                    className={styles.textarea}
-                    rows={3}
-                  />
+                    <label>
+                      Que dia quieres que pasemos por tu paquete
+                      <input
+                        type="date"
+                        value={pickup.pickupDate}
+                        onChange={(event) => setPickup((prev) => ({ ...prev, pickupDate: event.target.value }))}
+                        max={limitDateISO}
+                        className={styles.input}
+                      />
+                    </label>
+
+                    <label>
+                      Instrucciones (opcional)
+                      <textarea
+                        placeholder="Ej: dejar con el vecino, tocar timbre, etc."
+                        value={pickup.pickupNotes}
+                        onChange={(event) => setPickup((prev) => ({ ...prev, pickupNotes: event.target.value }))}
+                        className={styles.textarea}
+                        rows={3}
+                      />
+                    </label>
+
+                    {clientError ? (
+                      <p className={`${styles.notice} ${styles.noticeError}`}>{clientError}</p>
+                    ) : null}
                   </div>
                 </div>
               )}
