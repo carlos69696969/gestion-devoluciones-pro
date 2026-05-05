@@ -21,6 +21,13 @@ const VIEW_MODE = {
   REVIEW: "review",
 };
 
+function getStatusClassName(status) {
+  if (status === "aprobada") return "statusApproved";
+  if (status === "recibida") return "statusReceived";
+  if (status === "reembolsada") return "statusRefunded";
+  return "statusDefault";
+}
+
 function normalizeViewMode(rawValue) {
   const value = String(rawValue || "").trim().toLowerCase();
   if (value === VIEW_MODE.PICKUP) return VIEW_MODE.PICKUP;
@@ -541,6 +548,7 @@ export default function ReturnsRequests() {
 
 function RequestCard({ request, isSubmitting }) {
   const status = String(request.status || "").toLowerCase();
+  const statusClassName = styles[getStatusClassName(status)];
   return (
     <article className={styles.card}>
       <div className={styles.reqHeader}>
@@ -551,7 +559,7 @@ function RequestCard({ request, isSubmitting }) {
           </p>
         </div>
         <span className={styles.pill}>
-          Estado: <strong>{STATUS_LABEL[status] || status}</strong>
+          Estado: <strong className={statusClassName}>{STATUS_LABEL[status] || status}</strong>
         </span>
       </div>
 

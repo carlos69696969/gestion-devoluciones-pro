@@ -127,6 +127,22 @@
   color: #202223;
 }
 
+.statusDefault {
+  color: #202223;
+}
+
+.statusApproved {
+  color: #0047ab;
+}
+
+.statusReceived {
+  color: #a97900;
+}
+
+.statusRefunded {
+  color: #008060;
+}
+
 .meta {
   margin: 6px 0 0;
   color: #6d7175;
