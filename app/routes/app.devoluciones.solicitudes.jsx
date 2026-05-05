@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -318,11 +319,51 @@ export const action = async ({ request }) => {
   return { ok: false, error: "Accion no valida." };
 };
 
+function formatPickupDateHeading(pickupDate) {
+  const raw = String(pickupDate || "").trim();
+  if (!raw) return "sin fecha definida";
+  const date = new Date(`${raw}T00:00:00`);
+  if (!Number.isFinite(date.getTime())) return "sin fecha definida";
+  return date.toLocaleDateString("es-MX", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function buildPickupGroups(requests) {
+  const groups = new Map();
+  for (const request of requests) {
+    const key = String(request.pickupDate || "").trim() || "sin_fecha";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(request);
+  }
+
+  const keys = Array.from(groups.keys()).sort((a, b) => {
+    if (a === "sin_fecha") return 1;
+    if (b === "sin_fecha") return -1;
+    const aMs = new Date(`${a}T00:00:00`).getTime();
+    const bMs = new Date(`${b}T00:00:00`).getTime();
+    return aMs - bMs;
+  });
+
+  return keys.map((key) => ({
+    key,
+    heading: key === "sin_fecha" ? "sin fecha definida" : formatPickupDateHeading(key),
+    requests: groups.get(key) || [],
+  }));
+}
+
 export default function ReturnsRequests() {
   const { requests } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
+
+  const pickupRequests = requests.filter((request) => request.returnMethod === "pickup");
+  const branchRequests = requests.filter((request) => request.returnMethod !== "pickup");
+  const pickupGroups = buildPickupGroups(pickupRequests);
 
   return (
     <s-page heading="Solicitudes de devolucion">
@@ -334,165 +375,197 @@ export default function ReturnsRequests() {
           <p>No hay solicitudes por ahora.</p>
         </s-section>
       ) : (
-        <s-section>
-          <div className={`${styles.wrap} ${styles.reqGrid}`}>
-            {requests.map((request) => {
-              const status = String(request.status || "").toLowerCase();
-              return (
-                <article key={request.id} className={styles.card}>
-                  <div className={styles.reqHeader}>
-                    <div>
-                      <h3 className={styles.reqTitle}>Pedido #{request.orderNumber}</h3>
-                      <p className={styles.meta}>
-                        {request.customerName} · {request.customerEmail} · {request.customerPhone || "-"}
-                      </p>
+        <>
+          <s-section heading="Entregas en sucursal">
+            {branchRequests.length === 0 ? (
+              <p>No hay solicitudes de entrega en sucursal.</p>
+            ) : (
+              <div className={`${styles.wrap} ${styles.reqGrid}`}>
+                {branchRequests.map((request) => (
+                  <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+                ))}
+              </div>
+            )}
+          </s-section>
+
+          <s-section heading="Recolecciones a domicilio">
+            {pickupGroups.length === 0 ? (
+              <p>No hay solicitudes de recoleccion a domicilio.</p>
+            ) : (
+              <div className={`${styles.wrap} ${styles.reqGrid}`}>
+                {pickupGroups.map((group) => (
+                  <div key={group.key} className={styles.card}>
+                    <h3 className={styles.reqTitle}>
+                      Ordenes de devolucion para recoger el {group.heading}
+                    </h3>
+                    <div className={styles.divider} />
+                    <div className={styles.reqGrid}>
+                      {group.requests.map((request) => (
+                        <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+                      ))}
                     </div>
-                    <span className={styles.pill}>
-                      Estado: <strong>{STATUS_LABEL[status] || status}</strong>
-                    </span>
                   </div>
-
-                  <div className={styles.kv}>
-                    <div className={styles.kvRow}>
-                      <span className={styles.kvKey}>Metodo</span>
-                      <span className={styles.kvVal}>
-                        {request.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}
-                      </span>
-                    </div>
-                    <div className={styles.kvRow}>
-                      <span className={styles.kvKey}>Subtotal (sin impuestos)</span>
-                      <span className={styles.kvVal}>${toMoney(request.refundedSubtotal || request.estimatedRefund)} MXN</span>
-                    </div>
-                    <div className={styles.kvRow}>
-                      <span className={styles.kvKey}>Costo devolucion</span>
-                      <span className={styles.kvVal}>${toMoney(request.returnCost)} MXN</span>
-                    </div>
-                    <div className={styles.kvRow}>
-                      <span className={styles.kvKey}>Reembolso final</span>
-                      <span className={styles.kvVal}>${toMoney(request.finalRefund)} MXN</span>
-                    </div>
-                    <div className={styles.kvRow}>
-                      <span className={styles.kvKey}>Fecha solicitud</span>
-                      <span className={styles.kvVal}>{new Date(request.createdAt).toLocaleString("es-MX")}</span>
-                    </div>
-                    {request.receivedAt ? (
-                      <div className={styles.kvRow}>
-                        <span className={styles.kvKey}>Recibida</span>
-                        <span className={styles.kvVal}>{new Date(request.receivedAt).toLocaleString("es-MX")}</span>
-                      </div>
-                    ) : null}
-                    {request.refundedAt ? (
-                      <div className={styles.kvRow}>
-                        <span className={styles.kvKey}>Reembolsada</span>
-                        <span className={styles.kvVal}>{new Date(request.refundedAt).toLocaleString("es-MX")}</span>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {request.returnMethod === "pickup" ? (
-                    <p className={styles.meta}>
-                      Recoleccion:{" "}
-                      {[request.pickupAddress, request.pickupCity, request.pickupState, request.pickupPostalCode]
-                        .filter(Boolean)
-                        .join(", ") || "-"}
-                      {" · "}Dia: {request.pickupDate || "-"}
-                      {request.pickupNotes ? ` · Notas: ${request.pickupNotes}` : ""}
-                    </p>
-                  ) : (
-                    <p className={styles.meta}>
-                      Sucursal: {request.branchAddress || "-"} · Horarios: {request.branchHours || "-"}
-                    </p>
-                  )}
-
-                  {request.rejectionReason ? (
-                    <p className={styles.errorMsg}>Motivo de rechazo: {request.rejectionReason}</p>
-                  ) : null}
-                  {request.refundError ? (
-                    <p className={styles.errorMsg}>Error de reembolso: {request.refundError}</p>
-                  ) : null}
-                  {request.shopifyRefundId ? (
-                    <p className={styles.successMsg}>Refund ID: {request.shopifyRefundId}</p>
-                  ) : null}
-
-                  <details className={styles.details}>
-                    <summary className={styles.summary}>Ver productos, motivos, fotos y descripcion</summary>
-                    <ul className={styles.productList}>
-                      {request.items.map((item) => {
-                        const photos = parsePhotoUrls(item.photoDataUrl);
-                        return (
-                          <li key={item.id} style={{ marginBottom: 10 }}>
-                            <div>
-                              {item.title} x{item.quantity} - Motivo: {item.reason}
-                            </div>
-                            {item.details ? <div>Descripcion: {item.details}</div> : null}
-                            {photos.length ? (
-                              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
-                                {photos.map((src, idx) => (
-                                  <a key={`${itemKeyFromRecord(item)}_${idx}`} href={src} target="_blank" rel="noreferrer">
-                                    Ver foto {idx + 1}
-                                  </a>
-                                ))}
-                              </div>
-                            ) : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </details>
-
-                  <div className={styles.actionRow}>
-                    {status === "en_revision" ? (
-                      <>
-                        <Form method="post">
-                          <input type="hidden" name="intent" value="approve_request" />
-                          <input type="hidden" name="id" value={request.id} />
-                          <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
-                            Aprobar
-                          </button>
-                        </Form>
-                        <Form method="post" className={styles.rejectForm}>
-                          <input type="hidden" name="intent" value="reject_request" />
-                          <input type="hidden" name="id" value={request.id} />
-                          <input
-                            className={styles.input}
-                            name="rejectionReason"
-                            placeholder="Motivo de rechazo (obligatorio)"
-                            defaultValue=""
-                          />
-                          <button className={styles.btn} type="submit" disabled={isSubmitting}>
-                            Rechazar
-                          </button>
-                        </Form>
-                      </>
-                    ) : null}
-
-                    {status === "aprobada" ? (
-                      <Form method="post">
-                        <input type="hidden" name="intent" value="mark_received" />
-                        <input type="hidden" name="id" value={request.id} />
-                        <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
-                          Marcar como recibida
-                        </button>
-                      </Form>
-                    ) : null}
-
-                    {status === "recibida" ? (
-                      <Form method="post">
-                        <input type="hidden" name="intent" value="process_refund" />
-                        <input type="hidden" name="id" value={request.id} />
-                        <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
-                          Procesar reembolso
-                        </button>
-                      </Form>
-                    ) : null}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </s-section>
+                ))}
+              </div>
+            )}
+          </s-section>
+        </>
       )}
     </s-page>
+  );
+}
+
+function RequestCard({ request, isSubmitting }) {
+  const status = String(request.status || "").toLowerCase();
+  return (
+    <article className={styles.card}>
+      <div className={styles.reqHeader}>
+        <div>
+          <h3 className={styles.reqTitle}>Pedido #{request.orderNumber}</h3>
+          <p className={styles.meta}>
+            {request.customerName} · {request.customerEmail} · {request.customerPhone || "-"}
+          </p>
+        </div>
+        <span className={styles.pill}>
+          Estado: <strong>{STATUS_LABEL[status] || status}</strong>
+        </span>
+      </div>
+
+      <div className={styles.kv}>
+        <div className={styles.kvRow}>
+          <span className={styles.kvKey}>Metodo</span>
+          <span className={styles.kvVal}>
+            {request.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}
+          </span>
+        </div>
+        <div className={styles.kvRow}>
+          <span className={styles.kvKey}>Subtotal (sin impuestos)</span>
+          <span className={styles.kvVal}>${toMoney(request.refundedSubtotal || request.estimatedRefund)} MXN</span>
+        </div>
+        <div className={styles.kvRow}>
+          <span className={styles.kvKey}>Costo devolucion</span>
+          <span className={styles.kvVal}>${toMoney(request.returnCost)} MXN</span>
+        </div>
+        <div className={styles.kvRow}>
+          <span className={styles.kvKey}>Reembolso final</span>
+          <span className={styles.kvVal}>${toMoney(request.finalRefund)} MXN</span>
+        </div>
+        <div className={styles.kvRow}>
+          <span className={styles.kvKey}>Fecha solicitud</span>
+          <span className={styles.kvVal}>{new Date(request.createdAt).toLocaleString("es-MX")}</span>
+        </div>
+        {request.receivedAt ? (
+          <div className={styles.kvRow}>
+            <span className={styles.kvKey}>Recibida</span>
+            <span className={styles.kvVal}>{new Date(request.receivedAt).toLocaleString("es-MX")}</span>
+          </div>
+        ) : null}
+        {request.refundedAt ? (
+          <div className={styles.kvRow}>
+            <span className={styles.kvKey}>Reembolsada</span>
+            <span className={styles.kvVal}>{new Date(request.refundedAt).toLocaleString("es-MX")}</span>
+          </div>
+        ) : null}
+      </div>
+
+      {request.returnMethod === "pickup" ? (
+        <p className={styles.meta}>
+          Recoleccion:{" "}
+          {[request.pickupAddress, request.pickupCity, request.pickupState, request.pickupPostalCode]
+            .filter(Boolean)
+            .join(", ") || "-"}
+          {" · "}Dia: {request.pickupDate || "-"}
+          {request.pickupNotes ? ` · Notas: ${request.pickupNotes}` : ""}
+        </p>
+      ) : (
+        <p className={styles.meta}>
+          Sucursal: {request.branchAddress || "-"} · Horarios: {request.branchHours || "-"}
+        </p>
+      )}
+
+      {request.rejectionReason ? (
+        <p className={styles.errorMsg}>Motivo de rechazo: {request.rejectionReason}</p>
+      ) : null}
+      {request.refundError ? (
+        <p className={styles.errorMsg}>Error de reembolso: {request.refundError}</p>
+      ) : null}
+      {request.shopifyRefundId ? (
+        <p className={styles.successMsg}>Refund ID: {request.shopifyRefundId}</p>
+      ) : null}
+
+      <details className={styles.details}>
+        <summary className={styles.summary}>Ver productos, motivos, fotos y descripcion</summary>
+        <ul className={styles.productList}>
+          {request.items.map((item) => {
+            const photos = parsePhotoUrls(item.photoDataUrl);
+            return (
+              <li key={item.id} style={{ marginBottom: 10 }}>
+                <div>
+                  {item.title} x{item.quantity} - Motivo: {item.reason}
+                </div>
+                {item.details ? <div>Descripcion: {item.details}</div> : null}
+                {photos.length ? (
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+                    {photos.map((src, idx) => (
+                      <a key={`${itemKeyFromRecord(item)}_${idx}`} href={src} target="_blank" rel="noreferrer">
+                        Ver foto {idx + 1}
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      </details>
+
+      <div className={styles.actionRow}>
+        {status === "en_revision" ? (
+          <>
+            <Form method="post">
+              <input type="hidden" name="intent" value="approve_request" />
+              <input type="hidden" name="id" value={request.id} />
+              <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+                Aprobar
+              </button>
+            </Form>
+            <Form method="post" className={styles.rejectForm}>
+              <input type="hidden" name="intent" value="reject_request" />
+              <input type="hidden" name="id" value={request.id} />
+              <input
+                className={styles.input}
+                name="rejectionReason"
+                placeholder="Motivo de rechazo (obligatorio)"
+                defaultValue=""
+              />
+              <button className={styles.btn} type="submit" disabled={isSubmitting}>
+                Rechazar
+              </button>
+            </Form>
+          </>
+        ) : null}
+
+        {status === "aprobada" ? (
+          <Form method="post">
+            <input type="hidden" name="intent" value="mark_received" />
+            <input type="hidden" name="id" value={request.id} />
+            <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+              Marcar como recibida
+            </button>
+          </Form>
+        ) : null}
+
+        {status === "recibida" ? (
+          <Form method="post">
+            <input type="hidden" name="intent" value="process_refund" />
+            <input type="hidden" name="id" value={request.id} />
+            <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+              Procesar reembolso
+            </button>
+          </Form>
+        ) : null}
+      </div>
+    </article>
   );
 }
 

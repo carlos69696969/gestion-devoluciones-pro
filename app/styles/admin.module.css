@@ -134,6 +134,12 @@
   line-height: 1.4;
 }
 
+.divider {
+  height: 1px;
+  background: #e1e3e5;
+  margin: 12px 0;
+}
+
 .kv {
   display: grid;
   gap: 6px;
