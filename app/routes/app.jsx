@@ -19,7 +19,9 @@ export default function App() {
         <s-link href="/app">Portal de devoluciones</s-link>
         <s-link href="/app/devoluciones/portal">Devoluciones de portales</s-link>
         <s-link href="/app/devoluciones/admin">Administrador del panel</s-link>
-        <s-link href="/app/devoluciones/solicitudes">Solicitudes de devolucion</s-link>
+        <s-link href="/app/devoluciones/solicitudes?tipo=pickup">Recoleccion a domicilio</s-link>
+        <s-link href="/app/devoluciones/solicitudes?tipo=branch">Entrega en sucursal</s-link>
+        <s-link href="/app/devoluciones/solicitudes?tipo=review">Ordenes en revision</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>

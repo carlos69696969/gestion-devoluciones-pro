@@ -15,6 +15,19 @@ const STATUS_LABEL = {
   completada: "completada",
 };
 
+const VIEW_MODE = {
+  PICKUP: "pickup",
+  BRANCH: "branch",
+  REVIEW: "review",
+};
+
+function normalizeViewMode(rawValue) {
+  const value = String(rawValue || "").trim().toLowerCase();
+  if (value === VIEW_MODE.PICKUP) return VIEW_MODE.PICKUP;
+  if (value === VIEW_MODE.REVIEW) return VIEW_MODE.REVIEW;
+  return VIEW_MODE.BRANCH;
+}
+
 function toMoney(value) {
   return Number(value || 0).toFixed(2);
 }
@@ -230,6 +243,8 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const viewMode = normalizeViewMode(url.searchParams.get("tipo"));
   const rawRequests = await prisma.returnRequest.findMany({
     where: { shop: session.shop },
     include: { items: true },
@@ -256,7 +271,7 @@ export const loader = async ({ request }) => {
     };
   });
 
-  return { requests };
+  return { requests, viewMode };
 };
 
 export const action = async ({ request }) => {
@@ -449,61 +464,81 @@ function buildPickupGroups(requests) {
 }
 
 export default function ReturnsRequests() {
-  const { requests } = useLoaderData();
+  const { requests, viewMode } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
 
+  const reviewRequests = requests.filter(
+    (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
+  );
   const pickupRequests = requests.filter((request) => request.returnMethod === "pickup");
   const branchRequests = requests.filter((request) => request.returnMethod !== "pickup");
   const pickupGroups = buildPickupGroups(pickupRequests);
 
+  const pageHeading =
+    viewMode === VIEW_MODE.PICKUP
+      ? "Recoleccion a domicilio"
+      : viewMode === VIEW_MODE.REVIEW
+        ? "Ordenes en revision"
+        : "Entrega en sucursal";
+
   return (
-    <s-page heading="Solicitudes de devolucion">
+    <s-page heading={pageHeading}>
       {actionData?.error ? <p className={styles.errorMsg}>{actionData.error}</p> : null}
       {actionData?.message ? <p className={styles.successMsg}>{actionData.message}</p> : null}
 
-      {requests.length === 0 ? (
-        <s-section>
-          <p>No hay solicitudes por ahora.</p>
+      {viewMode === VIEW_MODE.BRANCH ? (
+        <s-section heading="Entregas en sucursal">
+          {branchRequests.length === 0 ? (
+            <p>No hay solicitudes de entrega en sucursal.</p>
+          ) : (
+            <div className={`${styles.wrap} ${styles.reqGrid}`}>
+              {branchRequests.map((request) => (
+                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+              ))}
+            </div>
+          )}
         </s-section>
-      ) : (
-        <>
-          <s-section heading="Entregas en sucursal">
-            {branchRequests.length === 0 ? (
-              <p>No hay solicitudes de entrega en sucursal.</p>
-            ) : (
-              <div className={`${styles.wrap} ${styles.reqGrid}`}>
-                {branchRequests.map((request) => (
-                  <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
-                ))}
-              </div>
-            )}
-          </s-section>
+      ) : null}
 
-          <s-section heading="Recolecciones a domicilio">
-            {pickupGroups.length === 0 ? (
-              <p>No hay solicitudes de recoleccion a domicilio.</p>
-            ) : (
-              <div className={`${styles.wrap} ${styles.reqGrid}`}>
-                {pickupGroups.map((group) => (
-                  <div key={group.key} className={styles.card}>
-                    <h3 className={styles.reqTitle}>
-                      Ordenes de devolucion para recoger el {group.heading}
-                    </h3>
-                    <div className={styles.divider} />
-                    <div className={styles.reqGrid}>
-                      {group.requests.map((request) => (
-                        <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
-                      ))}
-                    </div>
+      {viewMode === VIEW_MODE.PICKUP ? (
+        <s-section heading="Recolecciones a domicilio">
+          {pickupGroups.length === 0 ? (
+            <p>No hay solicitudes de recoleccion a domicilio.</p>
+          ) : (
+            <div className={`${styles.wrap} ${styles.reqGrid}`}>
+              {pickupGroups.map((group) => (
+                <div key={group.key} className={styles.card}>
+                  <h3 className={styles.reqTitle}>
+                    Ordenes de devolucion para recoger el {group.heading}
+                  </h3>
+                  <div className={styles.divider} />
+                  <div className={styles.reqGrid}>
+                    {group.requests.map((request) => (
+                      <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </s-section>
-        </>
-      )}
+                </div>
+              ))}
+            </div>
+          )}
+        </s-section>
+      ) : null}
+
+      {viewMode === VIEW_MODE.REVIEW ? (
+        <s-section heading="Ordenes en revision">
+          {reviewRequests.length === 0 ? (
+            <p>No hay ordenes en revision.</p>
+          ) : (
+            <div className={`${styles.wrap} ${styles.reqGrid}`}>
+              {reviewRequests.map((request) => (
+                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+              ))}
+            </div>
+          )}
+        </s-section>
+      ) : null}
     </s-page>
   );
 }
