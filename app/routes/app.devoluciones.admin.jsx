@@ -51,6 +51,8 @@ export const action = async ({ request }) => {
       update: {
         pickupCost: Number(formData.get("pickupCost") || 0),
         returnWindowDays: Number(formData.get("returnWindowDays") || 30),
+        returnReasons: String(formData.get("returnReasons") || ""),
+        evidenceReasons: String(formData.get("evidenceReasons") || ""),
         branchInstructions: String(formData.get("branchInstructions") || ""),
         branchAddress: String(formData.get("branchAddress") || ""),
         branchHours: String(formData.get("branchHours") || ""),
@@ -61,6 +63,8 @@ export const action = async ({ request }) => {
         shop: session.shop,
         pickupCost: Number(formData.get("pickupCost") || 0),
         returnWindowDays: Number(formData.get("returnWindowDays") || 30),
+        returnReasons: String(formData.get("returnReasons") || ""),
+        evidenceReasons: String(formData.get("evidenceReasons") || ""),
         branchInstructions: String(formData.get("branchInstructions") || ""),
         branchAddress: String(formData.get("branchAddress") || ""),
         branchHours: String(formData.get("branchHours") || ""),
@@ -123,6 +127,33 @@ export default function ReturnsAdmin() {
                 <label className={styles.label}>
                   Horarios de recoleccion
                   <input className={styles.input} name="pickupHours" defaultValue={settings.pickupHours} />
+                </label>
+              </div>
+
+              <div className={styles.grid2}>
+                <label className={styles.label}>
+                  Motivos de devolucion (uno por linea)
+                  <span className={styles.help}>
+                    Estos son los motivos que veran tus clientes al solicitar devolucion.
+                  </span>
+                  <textarea
+                    className={styles.textarea}
+                    name="returnReasons"
+                    defaultValue={settings.returnReasons || ""}
+                    placeholder={"Me quedo grande\nMe quedo chico\nNo era lo que pedi\nLlego danado\nOtro"}
+                  />
+                </label>
+                <label className={styles.label}>
+                  Motivos que requieren evidencia (uno por linea)
+                  <span className={styles.help}>
+                    Si un motivo esta aqui, pediremos descripcion y al menos 1 foto.
+                  </span>
+                  <textarea
+                    className={styles.textarea}
+                    name="evidenceReasons"
+                    defaultValue={settings.evidenceReasons || ""}
+                    placeholder={"No era lo que pedi\nLlego danado"}
+                  />
                 </label>
               </div>
 

@@ -87,6 +87,8 @@ model ReturnSettings {
   shop                String   @unique
   pickupCost          Float    @default(100)
   returnWindowDays    Int      @default(30)
+  returnReasons       String   @default("")
+  evidenceReasons     String   @default("")
   branchInstructions  String   @default("Entrega el paquete sellado con tu numero de pedido.")
   branchAddress       String   @default("Sucursal principal por definir")
   branchHours         String   @default("Lunes a Viernes de 9:00 a 18:00")

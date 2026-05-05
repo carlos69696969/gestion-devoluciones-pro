@@ -5,19 +5,33 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
-const REASONS = [
-  "No era mi talla",
-  "Producto defectuoso",
-  "Me llego otro producto",
+const DEFAULT_REASONS = [
+  "Me quedo grande",
+  "Me quedo chico",
   "Ya no lo quiero",
+  "No era lo que pedi",
+  "Llego danado",
   "Otro",
 ];
 
-const PICKUP_COST = 100;
+function parseLines(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+async function getOrCreateSettings(shop) {
+  const existing = await prisma.returnSettings.findUnique({ where: { shop } });
+  if (existing) return existing;
+  return prisma.returnSettings.create({ data: { shop } });
+}
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-  return { reasons: REASONS, pickupCost: PICKUP_COST };
+  const { session } = await authenticate.admin(request);
+  const settings = await getOrCreateSettings(session.shop);
+  const reasons = parseLines(settings.returnReasons);
+  return { reasons: reasons.length ? reasons : DEFAULT_REASONS, pickupCost: settings.pickupCost };
 };
 
 function normalizeOrder(orderNode) {

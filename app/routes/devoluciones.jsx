@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import styles from "../styles/devoluciones.module.css";
 
-const REASONS = [
+const DEFAULT_REASONS = [
   "Me quedo grande",
   "Me quedo chico",
   "Ya no lo quiero",
@@ -12,8 +12,30 @@ const REASONS = [
   "Otro",
 ];
 
-const MANUAL_REVIEW_REASONS = new Set(["No era lo que pedi", "Llego danado"]);
+const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
 const ADMIN_API_VERSION = "2025-10";
+
+function parseLines(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function getReasonConfig(settings) {
+  const reasons = parseLines(settings?.returnReasons);
+  const normalizedReasons = reasons.length ? reasons : DEFAULT_REASONS.slice();
+
+  const evidence = parseLines(settings?.evidenceReasons);
+  const normalizedEvidence = (evidence.length ? evidence : DEFAULT_EVIDENCE_REASONS)
+    .filter((reason) => normalizedReasons.includes(reason));
+
+  return {
+    reasons: normalizedReasons,
+    evidenceReasons: normalizedEvidence,
+    evidenceSet: new Set(normalizedEvidence),
+  };
+}
 
 function normalizeOrder(orderNode) {
   const fallbackName =
@@ -145,14 +167,22 @@ export const loader = async ({ request }) => {
   const email = (url.searchParams.get("email") || "").trim().toLowerCase();
 
   if (!shop) {
-    return { error: "Falta el dominio de la tienda.", autoOrder: null, settings: null, reasons: REASONS };
+    return {
+      error: "Falta el dominio de la tienda.",
+      autoOrder: null,
+      settings: null,
+      reasons: DEFAULT_REASONS,
+      evidenceReasons: DEFAULT_EVIDENCE_REASONS,
+    };
   }
 
   const baseSettings = await getOrCreateSettings(shop);
+  const baseReasonConfig = getReasonConfig(baseSettings);
 
   if (!orderNumber) {
     return {
-      reasons: REASONS,
+      reasons: baseReasonConfig.reasons,
+      evidenceReasons: baseReasonConfig.evidenceReasons,
       settings: baseSettings,
       autoOrder: null,
       shop,
@@ -191,7 +221,8 @@ export const loader = async ({ request }) => {
 
   if (!candidateShops.length) {
     return {
-      reasons: REASONS,
+      reasons: baseReasonConfig.reasons,
+      evidenceReasons: baseReasonConfig.evidenceReasons,
       settings: baseSettings,
       autoOrder: null,
       shop,
@@ -277,12 +308,14 @@ export const loader = async ({ request }) => {
       // domains, we may find the order using a different domain than the one in the URL.
       // Always use the canonical shopCandidate for settings so admin changes apply.
       const settings = await getOrCreateSettings(shopCandidate);
+      const { reasons, evidenceReasons } = getReasonConfig(settings);
       const limitDate = addDays(order.createdAt, settings.returnWindowDays);
       const now = new Date();
       const isExpired = now > limitDate;
 
       return {
-        reasons: REASONS,
+        reasons,
+        evidenceReasons,
         settings,
         autoOrder: order,
         shop: shopCandidate,
@@ -319,7 +352,8 @@ export const loader = async ({ request }) => {
     ].join(" | ");
 
     return {
-      reasons: REASONS,
+      reasons: getReasonConfig(baseSettings).reasons,
+      evidenceReasons: getReasonConfig(baseSettings).evidenceReasons,
       settings: baseSettings,
       autoOrder: null,
       shop,
@@ -343,17 +377,16 @@ export const action = async ({ request }) => {
 
   const settings = await getOrCreateSettings(shop);
   const payload = JSON.parse(payloadRaw);
+  const { evidenceSet } = getReasonConfig(settings);
 
   if (!payload.items?.length) {
     return { ok: false, error: "Selecciona al menos un producto." };
   }
 
-  const requiresReview = payload.items.some((item) =>
-    MANUAL_REVIEW_REASONS.has(String(item.reason || "")),
-  );
+  const requiresReview = payload.items.some((item) => evidenceSet.has(String(item.reason || "")));
 
   for (const item of payload.items) {
-    if (MANUAL_REVIEW_REASONS.has(item.reason)) {
+    if (evidenceSet.has(item.reason)) {
       if (!String(item.details || "").trim()) {
         return {
           ok: false,
@@ -474,6 +507,7 @@ export const action = async ({ request }) => {
 export default function PublicReturnsPortal() {
   const {
     reasons,
+    evidenceReasons,
     settings,
     autoOrder,
     shop,
@@ -515,6 +549,7 @@ export default function PublicReturnsPortal() {
           <ReturnsRequestForm
             order={autoOrder}
             reasons={reasons}
+            evidenceReasons={evidenceReasons}
             settings={settings}
             shop={shop}
             isSubmitting={isSubmitting}
@@ -535,7 +570,8 @@ export default function PublicReturnsPortal() {
   );
 }
 
-function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, actionData }) {
+function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, isSubmitting, actionData }) {
+  const evidenceSet = useMemo(() => new Set(evidenceReasons || []), [evidenceReasons]);
   const limitDateObj = useMemo(
     () => addDays(order.createdAt, settings.returnWindowDays),
     [order.createdAt, settings.returnWindowDays],
@@ -602,7 +638,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
     [order.items, reasons, reasonsByItem, selected, detailsByItem, photoByItem],
   );
 
-  const requiresReview = selectedItems.some((item) => MANUAL_REVIEW_REASONS.has(item.reason));
+  const requiresReview = selectedItems.some((item) => evidenceSet.has(item.reason));
   const estimatedRefund = selectedItems.reduce(
     (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 1),
     0,
@@ -635,14 +671,14 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
       if (!selectedItems.length) return "Selecciona al menos un producto.";
       const missingReason = selectedItems.some((item) => !String(item.reason || "").trim());
       if (missingReason) return "Selecciona un motivo para cada producto seleccionado.";
-      const needsEvidence = selectedItems.some((item) => MANUAL_REVIEW_REASONS.has(item.reason));
+      const needsEvidence = selectedItems.some((item) => evidenceSet.has(item.reason));
       if (needsEvidence) {
         const missingDetails = selectedItems.some(
-          (item) => MANUAL_REVIEW_REASONS.has(item.reason) && !String(item.details || "").trim(),
+          (item) => evidenceSet.has(item.reason) && !String(item.details || "").trim(),
         );
         if (missingDetails) return "Completa la descripcion del problema en los productos marcados.";
         const missingPhoto = selectedItems.some((item) => {
-          if (!MANUAL_REVIEW_REASONS.has(item.reason)) return false;
+          if (!evidenceSet.has(item.reason)) return false;
           const photos = Array.isArray(item.photoDataUrls) ? item.photoDataUrls : [];
           return photos.length < 1;
         });
@@ -722,7 +758,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
               <h3 className={styles.sectionTitle}>1) Productos a devolver</h3>
               {order.items.map((item) => {
                 const reason = reasonsByItem[item.id] || "";
-                const needsEvidence = MANUAL_REVIEW_REASONS.has(reason);
+                const needsEvidence = evidenceSet.has(reason);
                 return (
                   <div key={item.id} className={styles.productRow}>
                     <label className={styles.productLabel}>
