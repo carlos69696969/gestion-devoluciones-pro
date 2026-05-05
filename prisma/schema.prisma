@@ -54,6 +54,7 @@ model ReturnRequest {
   pickupHours       String?
   pickupDate        String?
   pickupTimeSlot    String?
+  pickupNotes       String?
   limitDate         DateTime?
   pickupFullName    String?
   pickupPhone       String?

@@ -24,6 +24,18 @@ function normalizeOrder(orderNode) {
     orderNode.shippingAddress?.phone ||
     orderNode.billingAddress?.phone ||
     "";
+  const shipping = orderNode.shippingAddress
+    ? {
+        name: orderNode.shippingAddress.name || "",
+        phone: orderNode.shippingAddress.phone || "",
+        address1: orderNode.shippingAddress.address1 || "",
+        address2: orderNode.shippingAddress.address2 || "",
+        city: orderNode.shippingAddress.city || "",
+        province: orderNode.shippingAddress.province || "",
+        zip: orderNode.shippingAddress.zip || "",
+        country: orderNode.shippingAddress.country || "",
+      }
+    : null;
   return {
     id: orderNode.id,
     orderNumber: orderNode.name?.replace("#", "") || "",
@@ -31,6 +43,7 @@ function normalizeOrder(orderNode) {
     customerName: fallbackName,
     customerEmail: orderNode.email || "",
     customerPhone: fallbackPhone,
+    shippingAddress: shipping,
     createdAt: orderNode.createdAt,
     items: orderNode.lineItems.edges.map(({ node }) => ({
       id: node.id,
@@ -82,7 +95,16 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                 name
                 email
                 createdAt
-                shippingAddress { name phone }
+                shippingAddress {
+                  name
+                  phone
+                  address1
+                  address2
+                  city
+                  province
+                  zip
+                  country
+                }
                 billingAddress { name phone }
                 lineItems(first: 50) {
                   edges {
@@ -362,7 +384,6 @@ export const action = async ({ request }) => {
       "pickupState",
       "pickupPostalCode",
       "pickupDate",
-      "pickupTimeSlot",
     ];
     const missing = required.find((field) => !String(payload[field] || "").trim());
     if (missing) {
@@ -376,6 +397,16 @@ export const action = async ({ request }) => {
       ok: false,
       error: `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`,
     };
+  }
+
+  if (payload.returnMethod === "pickup" && String(payload.pickupDate || "").trim()) {
+    const selectedDate = new Date(`${payload.pickupDate}T23:59:59`);
+    if (Number.isFinite(selectedDate.getTime()) && selectedDate.getTime() > limitDate.getTime()) {
+      return {
+        ok: false,
+        error: `Esa fecha sobrepasa el tiempo de devolucion. Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`,
+      };
+    }
   }
 
   const estimatedRefund = Number(payload.estimatedRefund || 0);
@@ -403,7 +434,8 @@ export const action = async ({ request }) => {
       pickupInstructions: settings.pickupInstructions,
       pickupHours: settings.pickupHours,
       pickupDate: payload.pickupDate || null,
-      pickupTimeSlot: payload.pickupTimeSlot || null,
+      pickupTimeSlot: null,
+      pickupNotes: payload.pickupNotes || null,
       limitDate,
       pickupFullName: payload.pickupFullName || null,
       pickupPhone: payload.pickupPhone || null,
@@ -505,6 +537,11 @@ export default function PublicReturnsPortal() {
 }
 
 function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, actionData }) {
+  const limitDateObj = useMemo(
+    () => addDays(order.createdAt, settings.returnWindowDays),
+    [order.createdAt, settings.returnWindowDays],
+  );
+  const limitDateISO = useMemo(() => limitDateObj.toISOString().slice(0, 10), [limitDateObj]);
   const [step, setStep] = useState(1);
   const [clientError, setClientError] = useState("");
   const [selected, setSelected] = useState({});
@@ -516,17 +553,18 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
   const [returnMethod, setReturnMethod] = useState("branch");
   const [customerName, setCustomerName] = useState(order.customerName || "");
   const [customerPhone, setCustomerPhone] = useState(order.customerPhone || "");
+  const ship = order.shippingAddress || {};
   const [pickup, setPickup] = useState({
     pickupFullName: order.customerName || "",
     pickupPhone: order.customerPhone || "",
-    pickupAddress: "",
-    pickupNeighborhood: "",
-    pickupCity: "",
-    pickupState: "",
-    pickupPostalCode: "",
+    pickupAddress: ship.address1 || "",
+    pickupNeighborhood: ship.address2 || "",
+    pickupCity: ship.city || "",
+    pickupState: ship.province || "",
+    pickupPostalCode: ship.zip || "",
     pickupReferences: "",
     pickupDate: "",
-    pickupTimeSlot: "",
+    pickupNotes: "",
   });
 
   const selectedItems = useMemo(
@@ -609,10 +647,16 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
           ["pickupState", "Estado"],
           ["pickupPostalCode", "Codigo postal"],
           ["pickupDate", "Dia de recoleccion"],
-          ["pickupTimeSlot", "Horario de recoleccion"],
         ];
         const missing = required.find(([key]) => !String(pickup[key] || "").trim());
         if (missing) return `Completa: ${missing[1]}.`;
+
+        if (String(pickup.pickupDate || "").trim()) {
+          const selectedDate = new Date(`${pickup.pickupDate}T23:59:59`);
+          if (Number.isFinite(selectedDate.getTime()) && selectedDate.getTime() > limitDateObj.getTime()) {
+            return `Esa fecha sobrepasa el tiempo de devolucion. Fecha limite: ${limitDateObj.toLocaleDateString("es-MX")}.`;
+          }
+        }
       }
     }
 
@@ -870,7 +914,7 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                 <div className={styles.summary} style={{ marginTop: 12 }}>
                   <h3 className={styles.sectionTitle}>Recoleccion a domicilio</h3>
                   <p><strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
-                  <p><strong>Horarios disponibles:</strong> {settings.pickupHours}</p>
+                  <p><strong>Horario de recoleccion:</strong> {settings.pickupHours}</p>
                   <div className={styles.fieldGrid} style={{ marginTop: 10 }}>
                   <input
                     placeholder="Direccion completa"
@@ -908,17 +952,22 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                     onChange={(event) => setPickup((prev) => ({ ...prev, pickupReferences: event.target.value }))}
                     className={styles.input}
                   />
-                  <input
-                    type="date"
-                    value={pickup.pickupDate}
-                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupDate: event.target.value }))}
-                    className={styles.input}
-                  />
-                  <input
-                    placeholder="Horario de recoleccion"
-                    value={pickup.pickupTimeSlot}
-                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupTimeSlot: event.target.value }))}
-                    className={styles.input}
+                  <label>
+                    Que dia quieres que pasemos por tu paquete
+                    <input
+                      type="date"
+                      value={pickup.pickupDate}
+                      onChange={(event) => setPickup((prev) => ({ ...prev, pickupDate: event.target.value }))}
+                      max={limitDateISO}
+                      className={styles.input}
+                    />
+                  </label>
+                  <textarea
+                    placeholder="Instrucciones (opcional). Ej: dejar con el vecino, tocar timbre, etc."
+                    value={pickup.pickupNotes}
+                    onChange={(event) => setPickup((prev) => ({ ...prev, pickupNotes: event.target.value }))}
+                    className={styles.textarea}
+                    rows={3}
                   />
                   </div>
                 </div>
@@ -959,8 +1008,8 @@ function ReturnsRequestForm({ order, reasons, settings, shop, isSubmitting, acti
                         .join(", ") || "-"}
                     </p>
                     <p><strong>Dia:</strong> {pickup.pickupDate || "-"}</p>
-                    <p><strong>Horario:</strong> {pickup.pickupTimeSlot || "-"}</p>
                     <p><strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
+                    <p><strong>Instrucciones del cliente:</strong> {pickup.pickupNotes || "-"}</p>
                     <p><strong>Costo recoleccion:</strong> ${toMXN(returnCost)} MXN</p>
                     <p><strong>Total final a reembolsar:</strong> ${toMXN(finalRefund)} MXN</p>
                   </>
