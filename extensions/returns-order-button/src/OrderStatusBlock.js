@@ -38,6 +38,10 @@ export default function extension() {
   if (shopDomain && String(shopDomain).includes(".myshopify.com")) {
     url.searchParams.set("shop", String(shopDomain));
   }
+  const viewUrl = new URL(url.toString());
+  viewUrl.searchParams.set("mode", "summary");
+  const newRequestUrl = new URL(url.toString());
+  newRequestUrl.searchParams.set("mode", "new");
 
   const wrapper = document.createElement("s-stack");
   wrapper.setAttribute("padding", "base");
@@ -50,13 +54,19 @@ export default function extension() {
   const description = document.createElement("s-text");
   description.textContent = "Inicia aqui la devolucion de este pedido.";
 
+  const viewButton = document.createElement("s-button");
+  viewButton.textContent = "Ver mi devolucion";
+  viewButton.setAttribute("href", viewUrl.toString());
+  viewButton.setAttribute("target", "_blank");
+
   const button = document.createElement("s-button");
   button.textContent = "Solicitar devolucion";
-  button.setAttribute("href", url.toString());
+  button.setAttribute("href", newRequestUrl.toString());
   button.setAttribute("target", "_blank");
 
   wrapper.appendChild(title);
   wrapper.appendChild(description);
+  wrapper.appendChild(viewButton);
   wrapper.appendChild(button);
   document.body.appendChild(wrapper);
 }

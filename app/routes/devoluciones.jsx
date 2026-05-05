@@ -17,6 +17,13 @@ const ADMIN_API_VERSION = "2025-10";
 const ITEM_BLOCK_STATUSES = new Set(["aprobada", "recibida", "reembolsada", "completada"]);
 const DELIVERED_RETURN_STATUSES = new Set(["recibida", "reembolsada", "completada"]);
 
+function normalizePortalMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  if (mode === "new") return "new";
+  if (mode === "summary") return "summary";
+  return "";
+}
+
 function parseLines(value) {
   return String(value || "")
     .split(/\r?\n/)
@@ -244,6 +251,7 @@ export const loader = async ({ request }) => {
   const shop = incomingShop || configuredShop;
   const orderNumber = (url.searchParams.get("order") || "").trim();
   const email = (url.searchParams.get("email") || "").trim().toLowerCase();
+  const requestedMode = normalizePortalMode(url.searchParams.get("mode"));
 
   if (!shop) {
     return {
@@ -252,6 +260,7 @@ export const loader = async ({ request }) => {
       settings: null,
       reasons: DEFAULT_REASONS,
       evidenceReasons: DEFAULT_EVIDENCE_REASONS,
+      requestedMode,
     };
   }
 
@@ -265,6 +274,7 @@ export const loader = async ({ request }) => {
       settings: baseSettings,
       autoOrder: null,
       shop,
+      requestedMode,
       info:
         "Abre esta pagina desde el boton 'Solicitar devolucion' de tu pedido para reconocer tu orden automaticamente.",
     };
@@ -305,6 +315,7 @@ export const loader = async ({ request }) => {
       settings: baseSettings,
       autoOrder: null,
       shop,
+      requestedMode,
       error: "No se encontro sesion valida para la tienda.",
       diagnostic: `Tiendas recibidas: ${rawCandidates.join(", ") || "-"} | Agrega la tienda correcta en el parametro shop del boton y reinstala la app para regenerar sesion offline.`,
     };
@@ -506,6 +517,7 @@ export const loader = async ({ request }) => {
           items: itemsWithEligibility,
         },
         shop: shopCandidate,
+        requestedMode,
         hasEligibleItems,
         isExpired,
         limitDate: limitDate.toISOString(),
@@ -552,6 +564,7 @@ export const loader = async ({ request }) => {
       settings: baseSettings,
       autoOrder: null,
       shop,
+      requestedMode,
       error: isOrdersScopeError
         ? "La app no tiene permisos de pedidos (read_orders) para esta tienda."
         : "No se pudo cargar el pedido automaticamente.",
@@ -754,12 +767,21 @@ export default function PublicReturnsPortal() {
     completedTitle = "Solicitud de devolucion completada.",
     completedText = "",
     completedRefundText = "",
+    requestedMode = "",
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const hasExistingReturns = completedRequests.length > 0;
-  const [portalMode, setPortalMode] = useState(hasExistingReturns ? "summary" : "new");
+  const initialPortalMode =
+    requestedMode === "new" && hasEligibleItems
+      ? "new"
+      : requestedMode === "summary" && hasExistingReturns
+        ? "summary"
+        : hasExistingReturns
+          ? "summary"
+          : "new";
+  const [portalMode, setPortalMode] = useState(initialPortalMode);
 
   return (
     <main className={styles.page}>
