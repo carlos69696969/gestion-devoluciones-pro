@@ -373,6 +373,11 @@
   color: var(--danger);
 }
 
+.refundedText {
+  color: #39ff14;
+  font-weight: 800;
+}
+
 .orderDetailTitle {
   margin: 10px 0 8px;
   font-size: 16px;

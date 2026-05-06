@@ -924,7 +924,7 @@ function CompletedReturnsSection({ completedTitle, completedText, completedRefun
     <section className={styles.card}>
       <h2 className={styles.cardTitle}>{completedTitle}</h2>
       <p className={styles.cardMeta}>{completedText}</p>
-      {completedRefundText ? <p className={styles.cardMeta}>{completedRefundText}</p> : null}
+      {completedRefundText ? <p className={`${styles.cardMeta} ${styles.refundedText}`}>{completedRefundText}</p> : null}
       <div className={styles.divider} />
       <div className={styles.completedGrid}>
         {completedRequests.map((requestItem) => (
@@ -936,9 +936,11 @@ function CompletedReturnsSection({ completedTitle, completedText, completedRefun
 }
 
 function CompletedReturnSummary({ requestItem }) {
+  const normalizedStatus = String(requestItem.status || "").toLowerCase();
   const isRejectedOrDenied = ["rechazada", "denegada"].includes(
-    String(requestItem.status || "").toLowerCase(),
+    normalizedStatus,
   );
+  const isRefunded = normalizedStatus === "reembolsada";
   return (
     <article className={styles.completedCard}>
       <h3 className={styles.completedTitle}>Pedido #{requestItem.orderNumber}</h3>
@@ -946,7 +948,10 @@ function CompletedReturnSummary({ requestItem }) {
         Cliente: {requestItem.customerName} | Email: {requestItem.customerEmail} | Telefono: {requestItem.customerPhone}
       </p>
       <p className={styles.completedStatus}>
-        Estado de devolucion: <strong className={isRejectedOrDenied ? styles.deniedText : ""}>{requestItem.statusLabel}</strong>
+        Estado de devolucion:{" "}
+        <strong className={isRejectedOrDenied ? styles.deniedText : isRefunded ? styles.refundedText : ""}>
+          {requestItem.statusLabel}
+        </strong>
       </p>
       {requestItem.rejectionReason ? (
         <p className={styles.completedStatus}>
