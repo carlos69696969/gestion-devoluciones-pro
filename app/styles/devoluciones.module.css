@@ -378,6 +378,11 @@
   font-weight: 800;
 }
 
+.approvedText {
+  color: #001f5c;
+  font-weight: 800;
+}
+
 .refundedText {
   color: #39ff14;
   font-weight: 800;
@@ -389,6 +394,11 @@
 }
 
 .reviewHintText {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.approvedHintText {
   color: var(--text);
   font-weight: 800;
 }
