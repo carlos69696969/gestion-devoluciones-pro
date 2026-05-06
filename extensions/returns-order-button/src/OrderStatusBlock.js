@@ -77,7 +77,7 @@ export default function extension() {
   actions.setAttribute("gap", "small");
 
   const viewButton = document.createElement("s-button");
-  viewButton.textContent = "Ver mi devolucion";
+  viewButton.textContent = "Ver mi pedido";
   viewButton.setAttribute(
     "href",
     buildPortalUrl({ orderName, customerEmail, shopDomain, mode: "summary" }),
