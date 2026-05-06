@@ -1240,7 +1240,6 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                 const reason = reasonsByItem[item.id] || "";
                 const needsEvidence = evidenceSet.has(reasonKey(reason));
                 const isAlreadyReturned = Boolean(item.isAlreadyReturned);
-                const lastRejectedReason = String(item.lastRejectedReason || "").trim();
                 return (
                   <div key={item.id} className={styles.productRow}>
                     <label className={styles.productLabel}>
@@ -1269,11 +1268,6 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                         {isAlreadyReturned ? (
                           <div className={`${styles.notice} ${styles.noticeMuted}`} style={{ marginTop: 4 }}>
                             Este producto ya tiene una devolucion activa, ya fue devuelto o fue denegado.
-                          </div>
-                        ) : null}
-                        {lastRejectedReason ? (
-                          <div className={`${styles.notice} ${styles.noticeError}`} style={{ marginTop: 4 }}>
-                            Motivo de rechazo anterior: {lastRejectedReason}
                           </div>
                         ) : null}
                       </div>
