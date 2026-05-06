@@ -23,7 +23,7 @@ const VIEW_MODE = {
   HISTORY: "history",
 };
 
-const ACTIVE_STATUSES = new Set(["en_revision", "aprobada", "recibida"]);
+const METHOD_QUEUE_STATUSES = new Set(["aprobada", "recibida"]);
 const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada"]);
 
 function getStatusClassName(status) {
@@ -509,12 +509,10 @@ export default function ReturnsRequests() {
   const isSubmitting = navigation.state === "submitting";
 
   const reviewRequests = requests.filter(
-    (requestRow) =>
-      String(requestRow.status || "").toLowerCase() === "en_revision" &&
-      ACTIVE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
+    (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
   );
   const activeRequests = requests.filter((requestRow) =>
-    ACTIVE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
+    METHOD_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
   );
   const pickupRequests = activeRequests.filter((request) => request.returnMethod === "pickup");
   const branchRequests = activeRequests.filter((request) => request.returnMethod !== "pickup");
