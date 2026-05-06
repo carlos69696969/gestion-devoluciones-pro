@@ -866,40 +866,6 @@ export default function PublicReturnsPortal() {
           </div>
         </div>
 
-        {autoOrder && !isExpired && hasExistingReturns ? (
-          <section className={styles.card}>
-            <h2 className={styles.cardTitle}>Opciones de devolución</h2>
-            <p className={styles.cardMeta}>
-              {hasEligibleItems
-                ? "Ya tienes una devolución registrada. Puedes verla o solicitar una nueva devolución para los productos que aún están disponibles."
-                : "Ya tienes una devolución registrada. Puedes entrar para ver su estado y detalle."}
-            </p>
-            <div className={styles.portalActionRow}>
-              <button
-                type="button"
-                className={`${styles.btn} ${portalMode === "summary" ? styles.btnPrimary : ""}`}
-                onClick={() => setPortalMode("summary")}
-              >
-                Ver mi devolución
-              </button>
-              {hasEligibleItems ? (
-                <button
-                  type="button"
-                  className={`${styles.btn} ${portalMode === "new" ? styles.btnPrimary : ""}`}
-                  onClick={() => setPortalMode("new")}
-                >
-                  Solicitar nueva devolución
-                </button>
-              ) : null}
-            </div>
-            {requestedMode === "new" && !hasEligibleItems ? (
-              <p className={styles.cardMeta}>
-                Ya no hay productos disponibles para una nueva devolucion en este pedido.
-              </p>
-            ) : null}
-          </section>
-        ) : null}
-
         {autoOrder && !isExpired && hasEligibleItems && (!hasExistingReturns || portalMode === "new") ? (
           <ReturnsRequestForm
             order={autoOrder}
