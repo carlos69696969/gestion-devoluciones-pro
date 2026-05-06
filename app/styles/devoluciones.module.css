@@ -378,6 +378,11 @@
   font-weight: 800;
 }
 
+.refundProcessedText {
+  color: #202223;
+  font-weight: 700;
+}
+
 .orderDetailTitle {
   margin: 10px 0 8px;
   font-size: 16px;

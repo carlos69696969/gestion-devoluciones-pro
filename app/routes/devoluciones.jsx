@@ -924,7 +924,7 @@ function CompletedReturnsSection({ completedTitle, completedText, completedRefun
     <section className={styles.card}>
       <h2 className={styles.cardTitle}>{completedTitle}</h2>
       <p className={styles.cardMeta}>{completedText}</p>
-      {completedRefundText ? <p className={`${styles.cardMeta} ${styles.refundedText}`}>{completedRefundText}</p> : null}
+      {completedRefundText ? <p className={`${styles.cardMeta} ${styles.refundProcessedText}`}>{completedRefundText}</p> : null}
       <div className={styles.divider} />
       <div className={styles.completedGrid}>
         {completedRequests.map((requestItem) => (
