@@ -20,10 +20,12 @@ const VIEW_MODE = {
   PICKUP: "pickup",
   BRANCH: "branch",
   REVIEW: "review",
+  REFUNDS: "refunds",
   HISTORY: "history",
 };
 
-const METHOD_QUEUE_STATUSES = new Set(["aprobada", "recibida"]);
+const METHOD_QUEUE_STATUSES = new Set(["aprobada"]);
+const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
 const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada"]);
 
 function getStatusClassName(status) {
@@ -40,6 +42,7 @@ function normalizeViewMode(rawValue) {
   const value = String(rawValue || "").trim().toLowerCase();
   if (value === VIEW_MODE.PICKUP) return VIEW_MODE.PICKUP;
   if (value === VIEW_MODE.REVIEW) return VIEW_MODE.REVIEW;
+  if (value === VIEW_MODE.REFUNDS) return VIEW_MODE.REFUNDS;
   if (value === VIEW_MODE.HISTORY) return VIEW_MODE.HISTORY;
   return VIEW_MODE.BRANCH;
 }
@@ -514,6 +517,9 @@ export default function ReturnsRequests() {
   const activeRequests = requests.filter((requestRow) =>
     METHOD_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
   );
+  const refundQueueRequests = requests.filter((requestRow) =>
+    REFUND_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
+  );
   const pickupRequests = activeRequests.filter((request) => request.returnMethod === "pickup");
   const branchRequests = activeRequests.filter((request) => request.returnMethod !== "pickup");
   const historyRequests = requests
@@ -526,6 +532,8 @@ export default function ReturnsRequests() {
       ? "Recoleccion a domicilio"
       : viewMode === VIEW_MODE.REVIEW
         ? "Ordenes en revision"
+        : viewMode === VIEW_MODE.REFUNDS
+          ? "Procesar reembolsos"
         : viewMode === VIEW_MODE.HISTORY
           ? "Historial"
         : "Entrega en sucursal";
@@ -580,6 +588,20 @@ export default function ReturnsRequests() {
           ) : (
             <div className={`${styles.wrap} ${styles.reqGrid}`}>
               {reviewRequests.map((request) => (
+                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+              ))}
+            </div>
+          )}
+        </s-section>
+      ) : null}
+
+      {viewMode === VIEW_MODE.REFUNDS ? (
+        <s-section heading="Solicitudes listas para procesar reembolsos">
+          {refundQueueRequests.length === 0 ? (
+            <p>No hay solicitudes listas para procesar reembolsos.</p>
+          ) : (
+            <div className={`${styles.wrap} ${styles.reqGrid}`}>
+              {refundQueueRequests.map((request) => (
                 <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
               ))}
             </div>
