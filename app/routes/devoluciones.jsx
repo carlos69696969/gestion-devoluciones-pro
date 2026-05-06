@@ -15,6 +15,7 @@ const DEFAULT_REASONS = [
 const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
 const ADMIN_API_VERSION = "2025-10";
 const ITEM_BLOCK_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada"]);
+const ACTIVE_RETURN_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada"]);
 const DELIVERED_RETURN_STATUSES = new Set(["recibida", "reembolsada", "completada"]);
 
 function jsonWithCors(data) {
@@ -465,7 +466,7 @@ export const loader = async ({ request }) => {
       });
       const orderImageMap = buildOrderImageMap(order.items);
       const completedRequests = previousRequests
-        .filter((requestRow) => ITEM_BLOCK_STATUSES.has(String(requestRow.status || "").toLowerCase()))
+        .filter((requestRow) => ACTIVE_RETURN_STATUSES.has(String(requestRow.status || "").toLowerCase()))
         .map((requestRow) => ({
           id: requestRow.id,
           status: String(requestRow.status || "").toLowerCase(),
@@ -531,18 +532,25 @@ export const loader = async ({ request }) => {
       const limitDate = addDays(order.createdAt, settings.returnWindowDays);
       const now = new Date();
       const isExpired = now > limitDate;
-  const allDelivered =
-    completedRequests.length > 0 &&
-    completedRequests.every((requestRow) => DELIVERED_RETURN_STATUSES.has(requestRow.status));
+      const hasPendingReview = completedRequests.some(
+        (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
+      );
+      const allDelivered =
+        completedRequests.length > 0 &&
+        completedRequests.every((requestRow) => DELIVERED_RETURN_STATUSES.has(requestRow.status));
       const hasRefundProcessed = completedRequests.some((requestRow) =>
         ["reembolsada", "completada"].includes(String(requestRow.status || "").toLowerCase()),
       );
-      const completionTitle = allDelivered
-        ? "Devolucion completada con exito."
-        : "Solicitud de devolucion completada.";
-      const completionText = allDelivered
-        ? "Todos los productos de este pedido fueron devueltos con exito."
-        : "Tu solicitud ya fue registrada. Aqui puedes ver todos los datos de tu devolucion.";
+      const completionTitle = hasPendingReview
+        ? "Solicitud de devolucion en revision."
+        : allDelivered
+          ? "Devolucion completada con exito."
+          : "Solicitud de devolucion registrada.";
+      const completionText = hasPendingReview
+        ? "Tu solicitud ya fue registrada. Estamos revisandola y aqui puedes ver su estado."
+        : allDelivered
+          ? "Todos los productos de este pedido fueron devueltos con exito."
+          : "Tu solicitud ya fue registrada. Aqui puedes ver todos los datos de tu devolucion.";
       const completionRefundText =
         allDelivered && hasRefundProcessed
           ? "Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, puede reflejarse en un plazo de 5 a 10 dias habiles."
@@ -660,7 +668,7 @@ export const action = async ({ request }) => {
   if (duplicatedItem) {
     return {
       ok: false,
-      error: `El producto "${duplicatedItem.title}" ya fue devuelto o ya tiene devolucion aprobada.`,
+      error: `El producto "${duplicatedItem.title}" ya tiene una devolucion activa o ya fue devuelto.`,
     };
   }
 
@@ -1258,7 +1266,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                         </div>
                         {isAlreadyReturned ? (
                           <div className={`${styles.notice} ${styles.noticeMuted}`} style={{ marginTop: 4 }}>
-                            Este producto ya fue devuelto o ya tiene devolucion aprobada.
+                            Este producto ya tiene una devolucion activa o ya fue devuelto.
                           </div>
                         ) : null}
                         {!isAlreadyReturned && lastRejectedReason ? (
