@@ -2,11 +2,12 @@
 import "@shopify/ui-extensions/customer-account";
 
 const RETURN_PORTAL_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones";
+const RETURN_PROBE_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones/probe";
 const FORCED_SHOP_DOMAIN = "cariana-3.myshopify.com";
 
 async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
   try {
-    const url = new URL(RETURN_PORTAL_URL);
+    const url = new URL(RETURN_PROBE_URL);
     if (orderNumber) {
       url.searchParams.set("order", String(orderNumber).replace("#", ""));
     }
@@ -16,30 +17,9 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
     if (shopDomain && String(shopDomain).includes(".myshopify.com")) {
       url.searchParams.set("shop", String(shopDomain));
     }
-    url.searchParams.set("probe", "1");
     const response = await fetch(url.toString(), { method: "GET" });
     if (!response.ok) return null;
-    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
-    let data = null;
-
-    if (contentType.includes("application/json")) {
-      data = await response.json();
-    } else {
-      const html = await response.text();
-      const htmlHasExistingReturns =
-        /"hasExistingReturns":true/.test(html) || /"hasExistingReturns",true/.test(html);
-      const htmlHasEligibleItems =
-        /"hasEligibleItems":true/.test(html) || /"hasEligibleItems",true/.test(html)
-          ? true
-          : /"hasEligibleItems":false/.test(html) || /"hasEligibleItems",false/.test(html)
-            ? false
-            : undefined;
-      data = {
-        hasExistingReturns: htmlHasExistingReturns,
-        hasEligibleItems: htmlHasEligibleItems,
-      };
-    }
-
+    const data = await response.json();
     const hasConfirmedReturnsFromProbe =
       typeof data?.hasExistingReturns === "boolean"
         ? data.hasExistingReturns
