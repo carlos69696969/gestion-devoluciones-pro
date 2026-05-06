@@ -20,7 +20,11 @@ const VIEW_MODE = {
   PICKUP: "pickup",
   BRANCH: "branch",
   REVIEW: "review",
+  HISTORY: "history",
 };
+
+const ACTIVE_STATUSES = new Set(["en_revision", "aprobada", "recibida"]);
+const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada"]);
 
 function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
@@ -36,6 +40,7 @@ function normalizeViewMode(rawValue) {
   const value = String(rawValue || "").trim().toLowerCase();
   if (value === VIEW_MODE.PICKUP) return VIEW_MODE.PICKUP;
   if (value === VIEW_MODE.REVIEW) return VIEW_MODE.REVIEW;
+  if (value === VIEW_MODE.HISTORY) return VIEW_MODE.HISTORY;
   return VIEW_MODE.BRANCH;
 }
 
@@ -489,6 +494,14 @@ function buildPickupGroups(requests) {
   }));
 }
 
+function historyTimestampMs(request) {
+  const status = String(request?.status || "").toLowerCase();
+  const sourceDate =
+    status === "reembolsada" && request?.refundedAt ? request.refundedAt : request?.updatedAt || request?.createdAt;
+  const ms = new Date(sourceDate).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 export default function ReturnsRequests() {
   const { requests, viewMode } = useLoaderData();
   const actionData = useActionData();
@@ -496,10 +509,18 @@ export default function ReturnsRequests() {
   const isSubmitting = navigation.state === "submitting";
 
   const reviewRequests = requests.filter(
-    (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
+    (requestRow) =>
+      String(requestRow.status || "").toLowerCase() === "en_revision" &&
+      ACTIVE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
   );
-  const pickupRequests = requests.filter((request) => request.returnMethod === "pickup");
-  const branchRequests = requests.filter((request) => request.returnMethod !== "pickup");
+  const activeRequests = requests.filter((requestRow) =>
+    ACTIVE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
+  );
+  const pickupRequests = activeRequests.filter((request) => request.returnMethod === "pickup");
+  const branchRequests = activeRequests.filter((request) => request.returnMethod !== "pickup");
+  const historyRequests = requests
+    .filter((requestRow) => HISTORY_STATUSES.has(String(requestRow.status || "").toLowerCase()))
+    .sort((a, b) => historyTimestampMs(b) - historyTimestampMs(a));
   const pickupGroups = buildPickupGroups(pickupRequests);
 
   const pageHeading =
@@ -507,6 +528,8 @@ export default function ReturnsRequests() {
       ? "Recoleccion a domicilio"
       : viewMode === VIEW_MODE.REVIEW
         ? "Ordenes en revision"
+        : viewMode === VIEW_MODE.HISTORY
+          ? "Historial"
         : "Entrega en sucursal";
 
   return (
@@ -565,6 +588,20 @@ export default function ReturnsRequests() {
           )}
         </s-section>
       ) : null}
+
+      {viewMode === VIEW_MODE.HISTORY ? (
+        <s-section heading="Historial de devoluciones">
+          {historyRequests.length === 0 ? (
+            <p>No hay ordenes en historial.</p>
+          ) : (
+            <div className={`${styles.wrap} ${styles.reqGrid}`}>
+              {historyRequests.map((request) => (
+                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+              ))}
+            </div>
+          )}
+        </s-section>
+      ) : null}
     </s-page>
   );
 }
@@ -572,6 +609,9 @@ export default function ReturnsRequests() {
 function RequestCard({ request, isSubmitting }) {
   const status = String(request.status || "").toLowerCase();
   const statusClassName = styles[getStatusClassName(status)];
+  const isHistoryStatus = HISTORY_STATUSES.has(status);
+  const closedAt =
+    status === "reembolsada" && request.refundedAt ? request.refundedAt : request.updatedAt || null;
   return (
     <article className={styles.card}>
       <div className={styles.reqHeader}>
@@ -612,6 +652,12 @@ function RequestCard({ request, isSubmitting }) {
             <span className={styles.kvKey}>Fecha solicitud</span>
             <span className={styles.kvVal}>{new Date(request.createdAt).toLocaleString("es-MX")}</span>
           </div>
+          {isHistoryStatus && closedAt ? (
+            <div className={styles.kvRow}>
+              <span className={styles.kvKey}>Fecha de cierre</span>
+              <span className={styles.kvVal}>{new Date(closedAt).toLocaleString("es-MX")}</span>
+            </div>
+          ) : null}
           {request.receivedAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Recibida</span>
