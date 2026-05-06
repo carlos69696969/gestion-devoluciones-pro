@@ -20,13 +20,13 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
     const response = await fetch(url.toString(), { method: "GET" });
     if (!response.ok) return null;
     const data = await response.json();
-    const hasExistingReturnsFromProbe =
+    const hasConfirmedReturnsFromProbe =
       typeof data?.hasExistingReturns === "boolean"
         ? data.hasExistingReturns
         : Array.isArray(data?.completedRequests) && data.completedRequests.length > 0;
     return {
       hasEligibleItems: Boolean(data?.hasEligibleItems),
-      hasExistingReturns: hasExistingReturnsFromProbe,
+      hasConfirmedReturns: hasConfirmedReturnsFromProbe,
     };
   } catch {
     return null;
@@ -101,7 +101,7 @@ export default function extension() {
   document.body.appendChild(wrapper);
 
   getEligibility({ shopDomain, orderNumber: orderName, customerEmail }).then((eligibility) => {
-    const hasExistingReturns = Boolean(eligibility?.hasExistingReturns);
+    const hasConfirmedReturns = Boolean(eligibility?.hasConfirmedReturns);
     const hasEligibleItems =
       eligibility?.hasEligibleItems === undefined ? true : Boolean(eligibility?.hasEligibleItems);
 
@@ -109,14 +109,14 @@ export default function extension() {
       actions.removeChild(actions.firstChild);
     }
 
-    if (hasExistingReturns) {
+    if (hasConfirmedReturns) {
       actions.appendChild(viewButton);
     }
     if (hasEligibleItems) {
       actions.appendChild(requestButton);
     }
 
-    if (!hasExistingReturns && !hasEligibleItems) {
+    if (!hasConfirmedReturns && !hasEligibleItems) {
       if (!noEligibleText.parentNode) wrapper.appendChild(noEligibleText);
     } else if (noEligibleText.parentNode) {
       noEligibleText.parentNode.removeChild(noEligibleText);

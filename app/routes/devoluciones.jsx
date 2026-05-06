@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import styles from "../styles/devoluciones.module.css";
 
@@ -14,7 +14,7 @@ const DEFAULT_REASONS = [
 
 const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
 const ADMIN_API_VERSION = "2025-10";
-const ITEM_BLOCK_STATUSES = new Set(["aprobada", "recibida", "reembolsada", "completada"]);
+const ITEM_BLOCK_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada"]);
 const DELIVERED_RETURN_STATUSES = new Set(["recibida", "reembolsada", "completada"]);
 
 function jsonWithCors(data) {
@@ -186,6 +186,7 @@ function buildOrderImageMap(items) {
 
 function statusLabelForCustomer(status) {
   const normalized = String(status || "").toLowerCase();
+  if (normalized === "en_revision") return "en revision";
   if (normalized === "aprobada") return "aprobada";
   if (normalized === "recibida") return "recibida";
   if (normalized === "reembolsada") return "reembolsada";
@@ -719,9 +720,10 @@ export const action = async ({ request }) => {
 
   const estimatedRefund = Number(payload.estimatedRefund || 0);
   const pickupCost = Number(settings.pickupCost || 0);
-  const returnCost = payload.returnMethod === "pickup" ? pickupCost : 0;
+  const effectivePickupCost = requiresReview ? 0 : pickupCost;
+  const returnCost = payload.returnMethod === "pickup" ? effectivePickupCost : 0;
   const finalRefundRaw = estimatedRefund - returnCost;
-  if (payload.returnMethod === "pickup" && finalRefundRaw <= 0) {
+  if (payload.returnMethod === "pickup" && returnCost > 0 && finalRefundRaw <= 0) {
     return {
       ok: false,
       error:
@@ -812,7 +814,7 @@ export default function PublicReturnsPortal() {
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
-  const hasExistingReturns = completedRequests.length > 0;
+  const hasExistingReturns = completedRequests.length > 0 || Boolean(actionData?.saved);
   const initialPortalMode =
     requestedMode === "new" && hasEligibleItems
       ? "new"
@@ -822,6 +824,12 @@ export default function PublicReturnsPortal() {
           ? "summary"
           : "new";
   const [portalMode, setPortalMode] = useState(initialPortalMode);
+
+  useEffect(() => {
+    if (actionData?.saved) {
+      setPortalMode("summary");
+    }
+  }, [actionData?.saved]);
 
   return (
     <main className={styles.page}>
@@ -1014,6 +1022,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
   );
   const limitDateISO = useMemo(() => limitDateObj.toISOString().slice(0, 10), [limitDateObj]);
   const [step, setStep] = useState(1);
+  const [submitLocked, setSubmitLocked] = useState(false);
   const [clientError, setClientError] = useState("");
   const [selected, setSelected] = useState({});
   const [reasonsByItem, setReasonsByItem] = useState(
@@ -1080,7 +1089,8 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     0,
   );
   const pickupCost = Number(settings.pickupCost || 0);
-  const returnCost = returnMethod === "pickup" ? pickupCost : 0;
+  const effectivePickupCost = requiresReview ? 0 : pickupCost;
+  const returnCost = returnMethod === "pickup" ? effectivePickupCost : 0;
   const finalRefund = Math.max(0, estimatedRefund - returnCost);
 
   const payload = useMemo(
@@ -1126,7 +1136,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
       if (returnMethod !== "branch" && returnMethod !== "pickup") {
         return "Selecciona un metodo de devolucion.";
       }
-      if (returnMethod === "pickup" && estimatedRefund - pickupCost <= 0) {
+      if (returnMethod === "pickup" && returnCost > 0 && estimatedRefund - returnCost <= 0) {
         return "El costo de recoleccion es mayor o igual al subtotal de productos. Elige entrega en sucursal.";
       }
     }
@@ -1164,13 +1174,34 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     goToStep(currentStep + 1);
   };
 
+  useEffect(() => {
+    if (actionData?.saved) {
+      setSubmitLocked(true);
+      return;
+    }
+    if (actionData?.error) {
+      setSubmitLocked(false);
+    }
+  }, [actionData?.saved, actionData?.error]);
+
+  const isSubmitBusy = isSubmitting || submitLocked || Boolean(actionData?.saved);
+
+  const handleSubmit = (event) => {
+    if (step !== 4) return;
+    if (isSubmitBusy) {
+      event.preventDefault();
+      return;
+    }
+    setSubmitLocked(true);
+  };
+
   return (
     <section className={styles.card}>
       <h2 className={styles.cardTitle}>Solicitud para pedido {order.name}</h2>
       <p className={styles.cardMeta}>
         Cliente: {order.customerName} | Email: {order.customerEmail}
       </p>
-      <Form method="post">
+      <Form method="post" onSubmit={handleSubmit}>
         <input type="hidden" name="shop" value={shop} />
         <input type="hidden" name="payload" value={JSON.stringify(payload)} />
         <div className={styles.fieldGrid}>
@@ -1339,7 +1370,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                 ) : (
                   <span />
                 )}
-                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitting} onClick={() => nextFrom(1)}>
+                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitBusy} onClick={() => nextFrom(1)}>
                   Siguiente
                 </button>
               </div>
@@ -1387,7 +1418,9 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                   />
                   <label htmlFor="return_method_pickup" className={styles.radioContent}>
                     <div className={styles.radioTitle}>
-                      Recoleccion a domicilio ($${toMXN(settings.pickupCost)} MXN) 🚚
+                      {requiresReview
+                        ? "Recoleccion a domicilio (sin costo) 🚚"
+                        : `Recoleccion a domicilio ($${toMXN(pickupCost)} MXN) 🚚`}
                     </div>
                     <div className={styles.radioDesc}>
                       Nosotros recogemos el paquete a tu domicilio.
@@ -1397,10 +1430,10 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
               </div>
 
               <div className={styles.btnRow}>
-                <button type="button" className={styles.btn} disabled={isSubmitting} onClick={() => goToStep(1)}>
+                <button type="button" className={styles.btn} disabled={isSubmitBusy} onClick={() => goToStep(1)}>
                   Atras
                 </button>
-                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitting} onClick={() => nextFrom(2)}>
+                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitBusy} onClick={() => nextFrom(2)}>
                   Siguiente
                 </button>
               </div>
@@ -1472,10 +1505,10 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
               )}
 
               <div className={styles.btnRow}>
-                <button type="button" className={styles.btn} disabled={isSubmitting} onClick={() => goToStep(2)}>
+                <button type="button" className={styles.btn} disabled={isSubmitBusy} onClick={() => goToStep(2)}>
                   Atras
                 </button>
-                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitting} onClick={() => nextFrom(3)}>
+                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitBusy} onClick={() => nextFrom(3)}>
                   Siguiente
                 </button>
               </div>
@@ -1540,14 +1573,16 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
               {actionData?.error ? <p style={{ color: "#b42318" }}>{actionData.error}</p> : null}
               {actionData?.saved ? <p style={{ color: "#027a48" }}>{actionData.message}</p> : null}
 
-              <div className={styles.btnRow}>
-                <button type="button" className={styles.btn} disabled={isSubmitting} onClick={() => goToStep(3)}>
-                  Atras
-                </button>
-                <button className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitting} type="submit">
-                  Confirmar devolucion
-                </button>
-              </div>
+              {!actionData?.saved ? (
+                <div className={styles.btnRow}>
+                  <button type="button" className={styles.btn} disabled={isSubmitBusy} onClick={() => goToStep(3)}>
+                    Atras
+                  </button>
+                  <button className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitBusy} type="submit">
+                    Confirmar devolucion
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
