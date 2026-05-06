@@ -151,6 +151,10 @@ function toMXN(value) {
   return Number(value || 0).toFixed(2);
 }
 
+function normalizeOrderNumber(value) {
+  return String(value || "").replace("#", "").trim();
+}
+
 function parsePhotoDataUrls(rawValue) {
   if (!rawValue) return [];
   try {
@@ -377,6 +381,12 @@ export const loader = async ({ request }) => {
         }
       }
       if (fallbackError) throw fallbackError;
+
+      // Shopify search by `name:#XXXX` can return close matches like #XXXX0.
+      // Keep only exact order-number matches to avoid ambiguity when email is not available.
+      candidates = candidates.filter(
+        (orderNode) => normalizeOrderNumber(orderNode?.name) === normalizeOrderNumber(orderNumber),
+      );
 
       let match = null;
       if (email) {
