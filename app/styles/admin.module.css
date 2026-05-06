@@ -138,8 +138,16 @@
   color: #202223;
 }
 
+.statusReview {
+  color: #d63384;
+}
+
 .statusApproved {
   color: #0047ab;
+}
+
+.statusRejected {
+  color: #b42318;
 }
 
 .statusReceived {

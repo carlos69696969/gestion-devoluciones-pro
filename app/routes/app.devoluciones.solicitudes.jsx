@@ -23,7 +23,9 @@ const VIEW_MODE = {
 };
 
 function getStatusClassName(status) {
+  if (status === "en_revision") return "statusReview";
   if (status === "aprobada") return "statusApproved";
+  if (status === "rechazada") return "statusRejected";
   if (status === "recibida") return "statusReceived";
   if (status === "reembolsada") return "statusRefunded";
   if (status === "denegada") return "statusDenied";
