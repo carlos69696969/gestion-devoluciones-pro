@@ -1,4 +1,4 @@
-const ACTIVE_RETURN_STATUSES = ["en_revision", "aprobada", "recibida", "reembolsada", "completada"];
+const ACTIVE_RETURN_STATUSES = ["en_revision", "aprobada", "recibida", "reembolsada", "completada", "denegada"];
 
 function jsonWithCors(data) {
   return Response.json(data, {

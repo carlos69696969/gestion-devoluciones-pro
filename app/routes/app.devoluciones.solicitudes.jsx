@@ -10,6 +10,7 @@ const STATUS_LABEL = {
   en_revision: "en revision",
   aprobada: "aprobada",
   rechazada: "rechazada",
+  denegada: "denegada",
   recibida: "recibida",
   reembolsada: "reembolsada",
   completada: "completada",
@@ -25,6 +26,7 @@ function getStatusClassName(status) {
   if (status === "aprobada") return "statusApproved";
   if (status === "recibida") return "statusReceived";
   if (status === "reembolsada") return "statusRefunded";
+  if (status === "denegada") return "statusDenied";
   return "statusDefault";
 }
 
@@ -330,6 +332,25 @@ export const action = async ({ request }) => {
     return { ok: true, message: "Solicitud marcada como recibida." };
   }
 
+  if (intent === "deny_received") {
+    if (String(requestRow.status || "").toLowerCase() !== "recibida") {
+      return { ok: false, error: "Solo puedes denegar una solicitud marcada como recibida." };
+    }
+    const rejectionReason = String(formData.get("rejectionReason") || "").trim();
+    if (!rejectionReason) {
+      return { ok: false, error: "Escribe el motivo de denegacion." };
+    }
+    await prisma.returnRequest.update({
+      where: { id },
+      data: {
+        status: "denegada",
+        rejectionReason,
+        refundError: null,
+      },
+    });
+    return { ok: true, message: "Solicitud denegada." };
+  }
+
   if (intent === "process_refund") {
     if (String(requestRow.status || "").toLowerCase() !== "recibida") {
       return { ok: false, error: "Primero marca la solicitud como recibida." };
@@ -619,7 +640,7 @@ function RequestCard({ request, isSubmitting }) {
         )}
 
         {request.rejectionReason ? (
-          <p className={styles.errorMsg}>Motivo de rechazo: {request.rejectionReason}</p>
+          <p className={styles.errorMsg}>Motivo de rechazo/denegacion: {request.rejectionReason}</p>
         ) : null}
         {request.refundError ? (
           <p className={styles.errorMsg}>Error de reembolso: {request.refundError}</p>
@@ -715,13 +736,28 @@ function RequestCard({ request, isSubmitting }) {
         ) : null}
 
         {status === "recibida" ? (
-          <Form method="post">
-            <input type="hidden" name="intent" value="process_refund" />
-            <input type="hidden" name="id" value={request.id} />
-            <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
-              Procesar reembolso
-            </button>
-          </Form>
+          <>
+            <Form method="post">
+              <input type="hidden" name="intent" value="process_refund" />
+              <input type="hidden" name="id" value={request.id} />
+              <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+                Procesar reembolso
+              </button>
+            </Form>
+            <Form method="post" className={styles.rejectForm}>
+              <input type="hidden" name="intent" value="deny_received" />
+              <input type="hidden" name="id" value={request.id} />
+              <input
+                className={styles.input}
+                name="rejectionReason"
+                placeholder="Motivo de denegacion (obligatorio)"
+                defaultValue=""
+              />
+              <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
+                Denegar devolucion
+              </button>
+            </Form>
+          </>
         ) : null}
       </div>
     </article>

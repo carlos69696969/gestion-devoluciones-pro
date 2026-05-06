@@ -14,8 +14,8 @@ const DEFAULT_REASONS = [
 
 const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
 const ADMIN_API_VERSION = "2025-10";
-const ITEM_BLOCK_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada"]);
-const ACTIVE_RETURN_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada"]);
+const ITEM_BLOCK_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada", "denegada"]);
+const ACTIVE_RETURN_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada", "denegada"]);
 const DELIVERED_RETURN_STATUSES = new Set(["recibida", "reembolsada", "completada"]);
 
 function jsonWithCors(data) {
@@ -190,6 +190,7 @@ function statusLabelForCustomer(status) {
   if (normalized === "en_revision") return "en revision";
   if (normalized === "aprobada") return "aprobada";
   if (normalized === "recibida") return "recibida";
+  if (normalized === "denegada") return "denegada";
   if (normalized === "reembolsada") return "reembolsada";
   if (normalized === "completada") return "completada";
   return normalized || "-";
@@ -443,7 +444,7 @@ export const loader = async ({ request }) => {
             blockedItemKeys.add(key);
           }
           if (
-            String(requestRow.status || "").toLowerCase() === "rechazada" &&
+            ["rechazada", "denegada"].includes(String(requestRow.status || "").toLowerCase()) &&
             String(requestRow.rejectionReason || "").trim() &&
             !rejectedReasonsByItemKey.has(key)
           ) {
@@ -471,6 +472,7 @@ export const loader = async ({ request }) => {
           id: requestRow.id,
           status: String(requestRow.status || "").toLowerCase(),
           statusLabel: statusLabelForCustomer(requestRow.status),
+          rejectionReason: String(requestRow.rejectionReason || "").trim(),
           createdAt: requestRow.createdAt,
           receivedAt: requestRow.receivedAt,
           refundedAt: requestRow.refundedAt,
@@ -535,6 +537,9 @@ export const loader = async ({ request }) => {
       const hasPendingReview = completedRequests.some(
         (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
       );
+      const hasDenied = completedRequests.some(
+        (requestRow) => String(requestRow.status || "").toLowerCase() === "denegada",
+      );
       const allDelivered =
         completedRequests.length > 0 &&
         completedRequests.every((requestRow) => DELIVERED_RETURN_STATUSES.has(requestRow.status));
@@ -543,11 +548,15 @@ export const loader = async ({ request }) => {
       );
       const completionTitle = hasPendingReview
         ? "Solicitud de devolucion en revision."
+        : hasDenied
+          ? "Devolucion denegada."
         : allDelivered
           ? "Devolucion completada con exito."
           : "Solicitud de devolucion registrada.";
       const completionText = hasPendingReview
         ? "Tu solicitud ya fue registrada. Estamos revisandola y aqui puedes ver su estado."
+        : hasDenied
+          ? "Tu devolucion fue denegada. Revisa el motivo de denegacion en el detalle."
         : allDelivered
           ? "Todos los productos de este pedido fueron devueltos con exito."
           : "Tu solicitud ya fue registrada. Aqui puedes ver todos los datos de tu devolucion.";
@@ -575,6 +584,7 @@ export const loader = async ({ request }) => {
         completedTitle: completionTitle,
         completedText: completionText,
         completedRefundText: completionRefundText,
+        hasDeniedStatus: hasDenied,
         message: isExpired
           ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
           : hasEligibleItems
@@ -668,7 +678,7 @@ export const action = async ({ request }) => {
   if (duplicatedItem) {
     return {
       ok: false,
-      error: `El producto "${duplicatedItem.title}" ya tiene una devolucion activa o ya fue devuelto.`,
+      error: `El producto "${duplicatedItem.title}" ya tiene una devolucion activa, ya fue devuelto o fue denegado.`,
     };
   }
 
@@ -818,6 +828,7 @@ export default function PublicReturnsPortal() {
     completedText = "",
     completedRefundText = "",
     requestedMode = "",
+    hasDeniedStatus = false,
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -850,7 +861,7 @@ export default function PublicReturnsPortal() {
             {message ? (
               <p
                 className={`${styles.notice} ${
-                  isExpired ? styles.noticeError : styles.noticeSuccess
+                  isExpired || hasDeniedStatus ? styles.noticeError : styles.noticeSuccess
                 }`}
               >
                 {message}
@@ -926,6 +937,11 @@ function CompletedReturnSummary({ requestItem }) {
       <p className={styles.completedStatus}>
         Estado de devolucion: <strong>{requestItem.statusLabel}</strong>
       </p>
+      {requestItem.rejectionReason ? (
+        <p className={styles.completedStatus}>
+          Motivo de denegacion: <strong>{requestItem.rejectionReason}</strong>
+        </p>
+      ) : null}
 
       <div className={styles.summary}>
         <p><strong>Metodo:</strong> {requestItem.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}</p>
@@ -1241,10 +1257,10 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                         </div>
                         {isAlreadyReturned ? (
                           <div className={`${styles.notice} ${styles.noticeMuted}`} style={{ marginTop: 4 }}>
-                            Este producto ya tiene una devolucion activa o ya fue devuelto.
+                            Este producto ya tiene una devolucion activa, ya fue devuelto o fue denegado.
                           </div>
                         ) : null}
-                        {!isAlreadyReturned && lastRejectedReason ? (
+                        {lastRejectedReason ? (
                           <div className={`${styles.notice} ${styles.noticeError}`} style={{ marginTop: 4 }}>
                             Motivo de rechazo anterior: {lastRejectedReason}
                           </div>

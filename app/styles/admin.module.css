@@ -90,6 +90,13 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
 }
 
+.btnDanger {
+  border-color: transparent;
+  background: #c4322a;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -141,6 +148,10 @@
 
 .statusRefunded {
   color: #008060;
+}
+
+.statusDenied {
+  color: #b42318;
 }
 
 .meta {
