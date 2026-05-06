@@ -823,6 +823,7 @@ export default function PublicReturnsPortal() {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const hasExistingReturns = completedRequests.length > 0 || Boolean(actionData?.saved);
+  const hasNoEligibleItems = autoOrder && !isExpired && !hasEligibleItems;
   const initialPortalMode =
     requestedMode === "new" && hasEligibleItems
       ? "new"
@@ -876,6 +877,13 @@ export default function PublicReturnsPortal() {
             isSubmitting={isSubmitting}
             actionData={actionData}
           />
+        ) : null}
+
+        {hasNoEligibleItems ? (
+          <section className={styles.card}>
+            <h2 className={styles.cardTitle}>No hay productos disponibles</h2>
+            <p className={styles.cardMeta}>Este pedido ya no tiene productos para devolver.</p>
+          </section>
         ) : null}
 
         {autoOrder && isExpired ? (
