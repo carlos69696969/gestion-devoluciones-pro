@@ -383,6 +383,11 @@
   font-weight: 800;
 }
 
+.receivedText {
+  color: #ff8c00;
+  font-weight: 800;
+}
+
 .refundedText {
   color: #39ff14;
   font-weight: 800;
@@ -399,6 +404,11 @@
 }
 
 .approvedHintText {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.receivedHintText {
   color: var(--text);
   font-weight: 800;
 }

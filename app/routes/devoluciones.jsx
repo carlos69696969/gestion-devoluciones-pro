@@ -942,6 +942,7 @@ function CompletedReturnSummary({ requestItem }) {
   );
   const isReview = normalizedStatus === "en_revision";
   const isApproved = normalizedStatus === "aprobada";
+  const isReceived = normalizedStatus === "recibida";
   const isRefunded = normalizedStatus === "reembolsada";
   return (
     <article className={styles.completedCard}>
@@ -959,6 +960,8 @@ function CompletedReturnSummary({ requestItem }) {
                 ? styles.reviewText
                 : isApproved
                   ? styles.approvedText
+                : isReceived
+                  ? styles.receivedText
                 : isRefunded
                   ? styles.refundedText
                   : ""
@@ -967,6 +970,11 @@ function CompletedReturnSummary({ requestItem }) {
           {requestItem.statusLabel}
         </strong>
       </p>
+      {isReceived ? (
+        <p className={`${styles.completedStatus} ${styles.receivedHintText}`}>
+          Recibimos tu producto con exito, lo revisaremos. Una vez finalicemos realizaremos tu reembolso, regresa mas tarde para ver el estado de tu devolucion.
+        </p>
+      ) : null}
       {isApproved ? (
         <p className={`${styles.completedStatus} ${styles.approvedHintText}`}>
           {requestItem.returnMethod === "pickup"
