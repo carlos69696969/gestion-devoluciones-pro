@@ -928,6 +928,7 @@ function CompletedReturnsSection({ completedTitle, completedText, completedRefun
 }
 
 function CompletedReturnSummary({ requestItem }) {
+  const isDenied = String(requestItem.status || "").toLowerCase() === "denegada";
   return (
     <article className={styles.completedCard}>
       <h3 className={styles.completedTitle}>Pedido #{requestItem.orderNumber}</h3>
@@ -935,11 +936,11 @@ function CompletedReturnSummary({ requestItem }) {
         Cliente: {requestItem.customerName} | Email: {requestItem.customerEmail} | Telefono: {requestItem.customerPhone}
       </p>
       <p className={styles.completedStatus}>
-        Estado de devolucion: <strong>{requestItem.statusLabel}</strong>
+        Estado de devolucion: <strong className={isDenied ? styles.deniedText : ""}>{requestItem.statusLabel}</strong>
       </p>
       {requestItem.rejectionReason ? (
         <p className={styles.completedStatus}>
-          Motivo de denegacion: <strong>{requestItem.rejectionReason}</strong>
+          Motivo de denegacion: <strong className={styles.deniedText}>{requestItem.rejectionReason}</strong>
         </p>
       ) : null}
 
