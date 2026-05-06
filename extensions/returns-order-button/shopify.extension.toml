@@ -9,3 +9,6 @@ type = "ui_extension"
 [[extensions.targeting]]
 target = "customer-account.order-status.block.render"
 module = "./src/OrderStatusBlock.js"
+
+[extensions.capabilities]
+network_access = true
