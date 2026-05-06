@@ -389,7 +389,8 @@
 }
 
 .reviewHintText {
-  color: #202223;
+  color: var(--text);
+  font-weight: 800;
 }
 
 .orderDetailTitle {
