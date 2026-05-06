@@ -839,6 +839,10 @@ export default function PublicReturnsPortal() {
     }
   }, [actionData?.saved]);
 
+  useEffect(() => {
+    setPortalMode(initialPortalMode);
+  }, [initialPortalMode]);
+
   return (
     <main className={styles.page}>
       <div className={styles.container}>
@@ -888,6 +892,11 @@ export default function PublicReturnsPortal() {
                 </button>
               ) : null}
             </div>
+            {requestedMode === "new" && !hasEligibleItems ? (
+              <p className={styles.cardMeta}>
+                Ya no hay productos disponibles para una nueva devolucion en este pedido.
+              </p>
+            ) : null}
           </section>
         ) : null}
 
