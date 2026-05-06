@@ -102,6 +102,18 @@ export default function extension() {
   document.body.appendChild(wrapper);
 
   getEligibility({ shopDomain, orderNumber: orderName, customerEmail }).then((eligibility) => {
+    if (!eligibility) {
+      while (actions.firstChild) {
+        actions.removeChild(actions.firstChild);
+      }
+      actions.appendChild(viewButton);
+      actions.appendChild(requestButton);
+      if (noEligibleText.parentNode) {
+        noEligibleText.parentNode.removeChild(noEligibleText);
+      }
+      return;
+    }
+
     const hasConfirmedReturns = Boolean(eligibility?.hasConfirmedReturns);
     const hasEligibleItems =
       eligibility?.hasEligibleItems === undefined ? true : Boolean(eligibility?.hasEligibleItems);
