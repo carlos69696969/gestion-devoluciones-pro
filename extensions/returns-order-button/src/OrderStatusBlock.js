@@ -5,28 +5,51 @@ const RETURN_PORTAL_URL = "https://gestion-devoluciones-pro.onrender.com/devoluc
 const RETURN_PROBE_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones/probe";
 const FORCED_SHOP_DOMAIN = "cariana-3.myshopify.com";
 
+async function fetchProbe({ shopDomain, orderNumber, customerEmail, includeShop = true, includeEmail = true }) {
+  const url = new URL(RETURN_PROBE_URL);
+  if (orderNumber) {
+    url.searchParams.set("order", String(orderNumber).replace("#", ""));
+  }
+  if (includeEmail && customerEmail) {
+    url.searchParams.set("email", String(customerEmail));
+  }
+  if (includeShop && shopDomain && String(shopDomain).includes(".myshopify.com")) {
+    url.searchParams.set("shop", String(shopDomain));
+  }
+
+  const response = await fetch(url.toString(), { method: "GET" });
+  if (!response.ok) return null;
+  return response.json();
+}
+
 async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
   try {
-    const url = new URL(RETURN_PROBE_URL);
-    if (orderNumber) {
-      url.searchParams.set("order", String(orderNumber).replace("#", ""));
+    const primary = await fetchProbe({ shopDomain, orderNumber, customerEmail });
+    if (!primary) return null;
+
+    let hasConfirmedReturnsFromProbe =
+      typeof primary?.hasExistingReturns === "boolean"
+        ? primary.hasExistingReturns
+        : Array.isArray(primary?.completedRequests) && primary.completedRequests.length > 0;
+
+    // Silent fallback: retry using only the order number in case shop/email aliases differ.
+    if (!hasConfirmedReturnsFromProbe && orderNumber) {
+      const fallback = await fetchProbe({
+        shopDomain,
+        orderNumber,
+        customerEmail,
+        includeShop: false,
+        includeEmail: false,
+      });
+      hasConfirmedReturnsFromProbe =
+        typeof fallback?.hasExistingReturns === "boolean"
+          ? fallback.hasExistingReturns
+          : Array.isArray(fallback?.completedRequests) && fallback.completedRequests.length > 0;
     }
-    if (customerEmail) {
-      url.searchParams.set("email", String(customerEmail));
-    }
-    if (shopDomain && String(shopDomain).includes(".myshopify.com")) {
-      url.searchParams.set("shop", String(shopDomain));
-    }
-    const response = await fetch(url.toString(), { method: "GET" });
-    if (!response.ok) return null;
-    const data = await response.json();
-    const hasConfirmedReturnsFromProbe =
-      typeof data?.hasExistingReturns === "boolean"
-        ? data.hasExistingReturns
-        : Array.isArray(data?.completedRequests) && data.completedRequests.length > 0;
+
     return {
       hasEligibleItems:
-        typeof data?.hasEligibleItems === "boolean" ? data.hasEligibleItems : undefined,
+        typeof primary?.hasEligibleItems === "boolean" ? primary.hasEligibleItems : undefined,
       hasConfirmedReturns: hasConfirmedReturnsFromProbe,
     };
   } catch {
@@ -106,7 +129,6 @@ export default function extension() {
       while (actions.firstChild) {
         actions.removeChild(actions.firstChild);
       }
-      actions.appendChild(viewButton);
       actions.appendChild(requestButton);
       if (noEligibleText.parentNode) {
         noEligibleText.parentNode.removeChild(noEligibleText);
