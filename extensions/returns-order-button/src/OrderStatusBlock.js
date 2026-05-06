@@ -19,13 +19,34 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
     url.searchParams.set("probe", "1");
     const response = await fetch(url.toString(), { method: "GET" });
     if (!response.ok) return null;
-    const data = await response.json();
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    let data = null;
+
+    if (contentType.includes("application/json")) {
+      data = await response.json();
+    } else {
+      const html = await response.text();
+      const htmlHasExistingReturns =
+        /"hasExistingReturns":true/.test(html) || /"hasExistingReturns",true/.test(html);
+      const htmlHasEligibleItems =
+        /"hasEligibleItems":true/.test(html) || /"hasEligibleItems",true/.test(html)
+          ? true
+          : /"hasEligibleItems":false/.test(html) || /"hasEligibleItems",false/.test(html)
+            ? false
+            : undefined;
+      data = {
+        hasExistingReturns: htmlHasExistingReturns,
+        hasEligibleItems: htmlHasEligibleItems,
+      };
+    }
+
     const hasConfirmedReturnsFromProbe =
       typeof data?.hasExistingReturns === "boolean"
         ? data.hasExistingReturns
         : Array.isArray(data?.completedRequests) && data.completedRequests.length > 0;
     return {
-      hasEligibleItems: Boolean(data?.hasEligibleItems),
+      hasEligibleItems:
+        typeof data?.hasEligibleItems === "boolean" ? data.hasEligibleItems : undefined,
       hasConfirmedReturns: hasConfirmedReturnsFromProbe,
     };
   } catch {
