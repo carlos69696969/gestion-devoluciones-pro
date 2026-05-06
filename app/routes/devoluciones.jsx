@@ -823,26 +823,18 @@ export default function PublicReturnsPortal() {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const hasExistingReturns = completedRequests.length > 0 || Boolean(actionData?.saved);
-  const hasNoEligibleItems = autoOrder && !isExpired && !hasEligibleItems;
-  const initialPortalMode =
-    requestedMode === "new" && hasEligibleItems
-      ? "new"
-      : requestedMode === "summary" && hasExistingReturns
-        ? "summary"
-        : hasExistingReturns
-          ? "summary"
-          : "new";
-  const [portalMode, setPortalMode] = useState(initialPortalMode);
-
-  useEffect(() => {
-    if (actionData?.saved) {
-      setPortalMode("summary");
-    }
-  }, [actionData?.saved]);
-
-  useEffect(() => {
-    setPortalMode(initialPortalMode);
-  }, [initialPortalMode]);
+  const effectivePortalMode = (() => {
+    if (actionData?.saved) return "summary";
+    if (requestedMode === "new") return "new";
+    if (requestedMode === "summary") return hasExistingReturns ? "summary" : "new";
+    return hasExistingReturns ? "summary" : "new";
+  })();
+  const hasNoEligibleItems =
+    autoOrder && !isExpired && effectivePortalMode === "new" && !hasEligibleItems;
+  const showNewRequestForm =
+    autoOrder && !isExpired && effectivePortalMode === "new" && hasEligibleItems;
+  const showSummaryView =
+    autoOrder && !isExpired && effectivePortalMode === "summary" && hasExistingReturns;
 
   return (
     <main className={styles.page}>
@@ -867,7 +859,7 @@ export default function PublicReturnsPortal() {
           </div>
         </div>
 
-        {autoOrder && !isExpired && hasEligibleItems && (!hasExistingReturns || portalMode === "new") ? (
+        {showNewRequestForm ? (
           <ReturnsRequestForm
             order={autoOrder}
             reasons={reasons}
@@ -895,7 +887,7 @@ export default function PublicReturnsPortal() {
           </section>
         ) : null}
 
-        {autoOrder && !isExpired && hasExistingReturns && portalMode === "summary" ? (
+        {showSummaryView ? (
           <CompletedReturnsSection
             completedTitle={completedTitle}
             completedText={completedText}
