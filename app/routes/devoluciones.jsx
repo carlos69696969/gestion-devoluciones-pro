@@ -15,7 +15,7 @@ const DEFAULT_REASONS = [
 const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
 const ADMIN_API_VERSION = "2025-10";
 const ITEM_BLOCK_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada", "denegada"]);
-const ACTIVE_RETURN_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada", "denegada"]);
+const ACTIVE_RETURN_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada", "rechazada", "denegada"]);
 const DELIVERED_RETURN_STATUSES = new Set(["recibida", "reembolsada", "completada"]);
 
 function jsonWithCors(data) {
@@ -189,6 +189,7 @@ function statusLabelForCustomer(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return "en revision";
   if (normalized === "aprobada") return "aprobada";
+  if (normalized === "rechazada") return "rechazada";
   if (normalized === "recibida") return "recibida";
   if (normalized === "denegada") return "denegada";
   if (normalized === "reembolsada") return "reembolsada";
@@ -537,6 +538,9 @@ export const loader = async ({ request }) => {
       const hasPendingReview = completedRequests.some(
         (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
       );
+      const hasRejected = completedRequests.some(
+        (requestRow) => String(requestRow.status || "").toLowerCase() === "rechazada",
+      );
       const hasDenied = completedRequests.some(
         (requestRow) => String(requestRow.status || "").toLowerCase() === "denegada",
       );
@@ -548,6 +552,8 @@ export const loader = async ({ request }) => {
       );
       const completionTitle = hasPendingReview
         ? "Solicitud de devolucion en revision."
+        : hasRejected
+          ? "Solicitud de devolucion rechazada."
         : hasDenied
           ? "Devolucion denegada."
         : allDelivered
@@ -555,6 +561,8 @@ export const loader = async ({ request }) => {
           : "Solicitud de devolucion registrada.";
       const completionText = hasPendingReview
         ? "Tu solicitud ya fue registrada. Estamos revisandola y aqui puedes ver su estado."
+        : hasRejected
+          ? "Tu solicitud fue rechazada. Puedes revisar el motivo y volver a solicitar tu devolucion."
         : hasDenied
           ? "Tu devolucion fue denegada. Revisa el motivo de denegacion en el detalle."
         : allDelivered
