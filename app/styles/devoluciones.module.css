@@ -373,6 +373,11 @@
   color: var(--danger);
 }
 
+.reviewText {
+  color: #ff2df1;
+  font-weight: 800;
+}
+
 .refundedText {
   color: #39ff14;
   font-weight: 800;
@@ -381,6 +386,10 @@
 .refundProcessedText {
   color: #202223;
   font-weight: 700;
+}
+
+.reviewHintText {
+  color: #202223;
 }
 
 .orderDetailTitle {

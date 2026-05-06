@@ -940,6 +940,7 @@ function CompletedReturnSummary({ requestItem }) {
   const isRejectedOrDenied = ["rechazada", "denegada"].includes(
     normalizedStatus,
   );
+  const isReview = normalizedStatus === "en_revision";
   const isRefunded = normalizedStatus === "reembolsada";
   return (
     <article className={styles.completedCard}>
@@ -949,10 +950,25 @@ function CompletedReturnSummary({ requestItem }) {
       </p>
       <p className={styles.completedStatus}>
         Estado de devolucion:{" "}
-        <strong className={isRejectedOrDenied ? styles.deniedText : isRefunded ? styles.refundedText : ""}>
+        <strong
+          className={
+            isRejectedOrDenied
+              ? styles.deniedText
+              : isReview
+                ? styles.reviewText
+                : isRefunded
+                  ? styles.refundedText
+                  : ""
+          }
+        >
           {requestItem.statusLabel}
         </strong>
       </p>
+      {isReview ? (
+        <p className={`${styles.completedStatus} ${styles.reviewHintText}`}>
+          Tu solicitud esta siendo revisada por nuestro equipo, regresa mas tarde para revisar el estado de tu solicitud.
+        </p>
+      ) : null}
       {requestItem.rejectionReason ? (
         <p className={styles.completedStatus}>
           Motivo de denegacion: <strong className={styles.deniedText}>{requestItem.rejectionReason}</strong>
