@@ -101,7 +101,9 @@ export default function extension() {
   actions.setAttribute("gap", "small");
 
   const viewButton = document.createElement("s-button");
-  viewButton.textContent = "Ver mi pedido";
+  viewButton.textContent = "Ver mi devolucion";
+  viewButton.style.width = "260px";
+  viewButton.style.maxWidth = "100%";
   viewButton.setAttribute(
     "href",
     buildPortalUrl({ orderName, customerEmail, shopDomain, mode: "summary" }),
@@ -110,6 +112,8 @@ export default function extension() {
 
   const requestButton = document.createElement("s-button");
   requestButton.textContent = "Solicitar devolucion";
+  requestButton.style.width = "260px";
+  requestButton.style.maxWidth = "100%";
   requestButton.setAttribute(
     "href",
     buildPortalUrl({ orderName, customerEmail, shopDomain, mode: "new" }),
