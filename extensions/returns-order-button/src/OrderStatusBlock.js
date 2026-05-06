@@ -20,9 +20,13 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
     const response = await fetch(url.toString(), { method: "GET" });
     if (!response.ok) return null;
     const data = await response.json();
+    const hasExistingReturnsFromProbe =
+      typeof data?.hasExistingReturns === "boolean"
+        ? data.hasExistingReturns
+        : Array.isArray(data?.completedRequests) && data.completedRequests.length > 0;
     return {
       hasEligibleItems: Boolean(data?.hasEligibleItems),
-      hasExistingReturns: Array.isArray(data?.completedRequests) && data.completedRequests.length > 0,
+      hasExistingReturns: hasExistingReturnsFromProbe,
     };
   } catch {
     return null;
@@ -119,4 +123,3 @@ export default function extension() {
     }
   });
 }
-

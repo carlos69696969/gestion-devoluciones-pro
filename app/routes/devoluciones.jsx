@@ -512,6 +512,20 @@ export const loader = async ({ request }) => {
             };
           }),
         }));
+      const existingRequestCountAnyShop = await prisma.returnRequest.count({
+        where: {
+          orderNumber: order.orderNumber,
+          ...(email
+            ? {
+                customerEmail: {
+                  equals: email,
+                  mode: "insensitive",
+                },
+              }
+            : {}),
+        },
+      });
+      const hasExistingReturns = completedRequests.length > 0 || existingRequestCountAnyShop > 0;
       const hasEligibleItems = itemsWithEligibility.some((item) => !item.isAlreadyReturned);
       const limitDate = addDays(order.createdAt, settings.returnWindowDays);
       const now = new Date();
@@ -543,6 +557,7 @@ export const loader = async ({ request }) => {
         },
         shop: shopCandidate,
         requestedMode,
+        hasExistingReturns,
         hasEligibleItems,
         isExpired,
         limitDate: limitDate.toISOString(),
