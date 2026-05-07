@@ -10,7 +10,7 @@ const STATUS_LABEL = {
   en_revision: "en revision",
   aprobada: "aprobada",
   intento_fallido_1: "intento de devolucion fallido",
-  intento_fallido_2: "intento de devolucion fallido",
+  intento_fallido_2: "segundo intento de devolucion fallido",
   rechazada: "rechazada",
   denegada: "denegada",
   recibida: "recibida",
@@ -692,6 +692,7 @@ function RequestCard({ request, isSubmitting }) {
   const status = String(request.status || "").toLowerCase();
   const isPickupMethod = request.returnMethod === "pickup";
   const isPickupFailedAttempt = isPickupFailedAttemptStatus(status);
+  const attemptLabel = status === "intento_fallido_2" ? "Segundo intento de recoleccion fallido" : "Intento de recoleccion fallido";
   const canMarkReceived = status === "aprobada" || isPickupFailedAttempt;
   const canRegisterPickupFailedAttempt =
     isPickupMethod && (status === "aprobada" || status === "intento_fallido_1");
@@ -775,9 +776,6 @@ function RequestCard({ request, isSubmitting }) {
           </p>
         )}
 
-        {isPickupFailedAttempt && request.rejectionReason ? (
-          <p className={styles.attemptWarnMsg}>Motivo del intento fallido: {request.rejectionReason}</p>
-        ) : null}
         {!isPickupFailedAttempt && request.rejectionReason ? (
           <p className={styles.errorMsg}>Motivo de rechazo/denegacion: {request.rejectionReason}</p>
         ) : null}
@@ -838,6 +836,12 @@ function RequestCard({ request, isSubmitting }) {
         </ul>
       </details>
 
+      {isPickupFailedAttempt && request.rejectionReason ? (
+        <p className={styles.attemptWarnMsg}>
+          {attemptLabel}: {request.rejectionReason}
+        </p>
+      ) : null}
+
       <div className={styles.actionRow}>
         {status === "en_revision" ? (
           <>
@@ -875,7 +879,11 @@ function RequestCard({ request, isSubmitting }) {
         ) : null}
 
         {canRegisterPickupFailedAttempt ? (
-          <Form method="post" className={styles.rejectForm}>
+          <Form
+            key={`pickup-attempt-${request.id}-${new Date(request.updatedAt).toISOString()}`}
+            method="post"
+            className={styles.rejectForm}
+          >
             <input type="hidden" name="intent" value="pickup_attempt_failed" />
             <input type="hidden" name="id" value={request.id} />
             <input

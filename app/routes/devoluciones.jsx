@@ -208,7 +208,8 @@ function statusLabelForCustomer(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return "en revision";
   if (normalized === "aprobada") return "aprobada";
-  if (normalized === "intento_fallido_1" || normalized === "intento_fallido_2") return "intento de devolucion fallido";
+  if (normalized === "intento_fallido_1") return "intento de devolucion fallido";
+  if (normalized === "intento_fallido_2") return "segundo intento de devolucion fallido";
   if (normalized === "rechazada") return "rechazada";
   if (normalized === "recibida") return "recibida";
   if (normalized === "denegada") return "denegada";
@@ -966,6 +967,10 @@ function CompletedReturnSummary({ requestItem }) {
   const normalizedStatus = String(requestItem.status || "").toLowerCase();
   const isFailedPickupAttempt =
     normalizedStatus === "intento_fallido_1" || normalizedStatus === "intento_fallido_2";
+  const failedAttemptLabel =
+    normalizedStatus === "intento_fallido_2"
+      ? "Segundo intento de devolucion fallido"
+      : "Intento de devolucion fallido";
   const isRejectedOrDenied = ["rechazada", "denegada"].includes(
     normalizedStatus,
   );
@@ -1008,7 +1013,7 @@ function CompletedReturnSummary({ requestItem }) {
       ) : null}
       {isFailedPickupAttempt ? (
         <p className={`${styles.completedStatus} ${styles.failedPickupHintText}`}>
-          Intento de devolucion fallido: {requestItem.rejectionReason || "No se encontro al cliente en el domicilio para entregar el paquete."}
+          {failedAttemptLabel}: {requestItem.rejectionReason || "No se encontro al cliente en el domicilio para entregar el paquete."}
         </p>
       ) : null}
       {isApproved ? (
