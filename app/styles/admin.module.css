@@ -357,6 +357,33 @@
   font-weight: 700;
 }
 
+.reasonHistory {
+  margin: 10px 0 6px;
+  padding: 10px;
+  border: 1px solid #e1e3e5;
+  border-radius: 10px;
+  background: #fafbfb;
+}
+
+.reasonHistoryTitle {
+  margin: 0 0 6px;
+  color: #202223;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.reasonHistoryList {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.reasonHistoryItem {
+  margin: 4px 0;
+  color: #4f5560;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .successMsg {
   margin: 8px 0;
   color: #027a48;

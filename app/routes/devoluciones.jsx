@@ -186,6 +186,30 @@ function parsePhotoDataUrls(rawValue) {
   }
 }
 
+function parseReasonEntries(rawValue) {
+  const text = String(rawValue || "").trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    const entries = Array.isArray(parsed?.entries) ? parsed.entries : [];
+    return entries
+      .map((entry) => ({
+        kind: String(entry?.kind || "").trim() || "legacy",
+        reason: String(entry?.reason || "").trim(),
+        at: entry?.at ? String(entry.at) : "",
+      }))
+      .filter((entry) => entry.reason);
+  } catch {
+    return [{ kind: "legacy", reason: text, at: "" }];
+  }
+}
+
+function latestReasonFromRaw(rawValue) {
+  const entries = parseReasonEntries(rawValue);
+  if (!entries.length) return "";
+  return entries[entries.length - 1]?.reason || "";
+}
+
 function buildOrderImageMap(items) {
   const imageMap = new Map();
   for (const item of items || []) {
@@ -467,10 +491,10 @@ export const loader = async ({ request }) => {
           }
           if (
             ["rechazada", "denegada"].includes(String(requestRow.status || "").toLowerCase()) &&
-            String(requestRow.rejectionReason || "").trim() &&
+            latestReasonFromRaw(requestRow.rejectionReason) &&
             !rejectedReasonsByItemKey.has(key)
           ) {
-            rejectedReasonsByItemKey.set(key, String(requestRow.rejectionReason).trim());
+            rejectedReasonsByItemKey.set(key, latestReasonFromRaw(requestRow.rejectionReason));
           }
         }
       }
@@ -494,7 +518,7 @@ export const loader = async ({ request }) => {
           id: requestRow.id,
           status: String(requestRow.status || "").toLowerCase(),
           statusLabel: statusLabelForCustomer(requestRow.status),
-          rejectionReason: String(requestRow.rejectionReason || "").trim(),
+          rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
           createdAt: requestRow.createdAt,
           receivedAt: requestRow.receivedAt,
           refundedAt: requestRow.refundedAt,

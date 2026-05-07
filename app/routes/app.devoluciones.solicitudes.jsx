@@ -78,6 +78,50 @@ function parsePhotoUrls(rawValue) {
   }
 }
 
+function parseReasonEntries(rawValue) {
+  const text = String(rawValue || "").trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    const entries = Array.isArray(parsed?.entries) ? parsed.entries : [];
+    return entries
+      .map((entry) => ({
+        kind: String(entry?.kind || "").trim() || "legacy",
+        reason: String(entry?.reason || "").trim(),
+        at: entry?.at ? String(entry.at) : "",
+      }))
+      .filter((entry) => entry.reason);
+  } catch {
+    return [{ kind: "legacy", reason: text, at: "" }];
+  }
+}
+
+function appendReasonEntry(rawValue, entry) {
+  const entries = parseReasonEntries(rawValue);
+  entries.push({
+    kind: String(entry?.kind || "legacy"),
+    reason: String(entry?.reason || "").trim(),
+    at: new Date().toISOString(),
+  });
+  return JSON.stringify({ entries });
+}
+
+function latestReasonFromRaw(rawValue) {
+  const entries = parseReasonEntries(rawValue);
+  if (!entries.length) return "";
+  return entries[entries.length - 1]?.reason || "";
+}
+
+function reasonEntryLabel(entry) {
+  const kind = String(entry?.kind || "").toLowerCase();
+  if (kind === "attempt_failed_1") return "Intento de recoleccion fallido (1 de 2)";
+  if (kind === "attempt_failed_2") return "Intento de recoleccion fallido (2 de 2)";
+  if (kind === "rejected_after_attempts") return "Motivo de rechazo final";
+  if (kind === "review_rejected") return "Motivo de rechazo";
+  if (kind === "denied_after_received") return "Motivo de denegacion";
+  return "Motivo";
+}
+
 function pickParentTransaction(transactions) {
   const success = transactions.filter((tx) => String(tx.status || "").toUpperCase() === "SUCCESS");
   return (
@@ -280,8 +324,11 @@ export const loader = async ({ request }) => {
 
   const requests = rawRequests.map((requestRow) => {
     const imageMap = imagesByOrder[requestRow.shopifyOrderId] || {};
+    const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
     return {
       ...requestRow,
+      rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
+      reasonEntries,
       items: requestRow.items.map((item) => {
         const image = imageMap[itemKeyFromRecord(item)] || null;
         return {
@@ -329,7 +376,10 @@ export const action = async ({ request }) => {
       where: { id },
       data: {
         status: "rechazada",
-        rejectionReason,
+        rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+          kind: "review_rejected",
+          reason: rejectionReason,
+        }),
       },
     });
     return { ok: true, message: "Solicitud rechazada." };
@@ -350,7 +400,6 @@ export const action = async ({ request }) => {
       data: {
         status: "recibida",
         receivedAt: new Date(),
-        rejectionReason: null,
       },
     });
     return { ok: true, message: "Solicitud marcada como recibida." };
@@ -373,7 +422,10 @@ export const action = async ({ request }) => {
       where: { id },
       data: {
         status: nextStatus,
-        rejectionReason,
+        rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+          kind: nextStatus === "intento_fallido_1" ? "attempt_failed_1" : "attempt_failed_2",
+          reason: rejectionReason,
+        }),
       },
     });
     return {
@@ -397,7 +449,10 @@ export const action = async ({ request }) => {
       where: { id },
       data: {
         status: "rechazada",
-        rejectionReason,
+        rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+          kind: "rejected_after_attempts",
+          reason: rejectionReason,
+        }),
         refundError: null,
       },
     });
@@ -416,7 +471,10 @@ export const action = async ({ request }) => {
       where: { id },
       data: {
         status: "denegada",
-        rejectionReason,
+        rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+          kind: "denied_after_received",
+          reason: rejectionReason,
+        }),
         refundError: null,
       },
     });
@@ -692,11 +750,15 @@ function RequestCard({ request, isSubmitting }) {
   const status = String(request.status || "").toLowerCase();
   const isPickupMethod = request.returnMethod === "pickup";
   const isPickupFailedAttempt = isPickupFailedAttemptStatus(status);
-  const attemptLabel = status === "intento_fallido_2" ? "Segundo intento de recoleccion fallido" : "Intento de recoleccion fallido";
   const canMarkReceived = status === "aprobada" || isPickupFailedAttempt;
   const canRegisterPickupFailedAttempt =
     isPickupMethod && (status === "aprobada" || status === "intento_fallido_1");
   const canRejectAfterFailedPickups = isPickupMethod && status === "intento_fallido_2";
+  const remainingPickupAttempts = status === "aprobada" ? 2 : status === "intento_fallido_1" ? 1 : 0;
+  const failedAttemptButtonLabel =
+    remainingPickupAttempts === 1
+      ? "Intento de recoleccion fallido (te queda 1)"
+      : `Intento de recoleccion fallido (te quedan ${remainingPickupAttempts})`;
   const statusClassName = styles[getStatusClassName(status)];
   const isHistoryStatus = HISTORY_STATUSES.has(status);
   const closedAt =
@@ -776,8 +838,17 @@ function RequestCard({ request, isSubmitting }) {
           </p>
         )}
 
-        {!isPickupFailedAttempt && request.rejectionReason ? (
-          <p className={styles.errorMsg}>Motivo de rechazo/denegacion: {request.rejectionReason}</p>
+        {request.reasonEntries?.length ? (
+          <div className={styles.reasonHistory}>
+            <p className={styles.reasonHistoryTitle}>Historial de motivos enviados</p>
+            <ul className={styles.reasonHistoryList}>
+              {request.reasonEntries.map((entry, idx) => (
+                <li key={`${request.id}_reason_${idx}`} className={styles.reasonHistoryItem}>
+                  <strong>{reasonEntryLabel(entry)}:</strong> {entry.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
         {request.refundError ? (
           <p className={styles.errorMsg}>Error de reembolso: {request.refundError}</p>
@@ -836,12 +907,6 @@ function RequestCard({ request, isSubmitting }) {
         </ul>
       </details>
 
-      {isPickupFailedAttempt && request.rejectionReason ? (
-        <p className={styles.attemptWarnMsg}>
-          {attemptLabel}: {request.rejectionReason}
-        </p>
-      ) : null}
-
       <div className={styles.actionRow}>
         {status === "en_revision" ? (
           <>
@@ -893,7 +958,7 @@ function RequestCard({ request, isSubmitting }) {
               defaultValue=""
             />
             <button className={`${styles.btn} ${styles.btnWarning}`} type="submit" disabled={isSubmitting}>
-              Intento de recoleccion fallido
+              {failedAttemptButtonLabel}
             </button>
           </Form>
         ) : null}
