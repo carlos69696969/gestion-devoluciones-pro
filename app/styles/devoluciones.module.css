@@ -393,6 +393,11 @@
   font-weight: 800;
 }
 
+.secondFailedPickupText {
+  color: #b42318;
+  font-weight: 800;
+}
+
 .refundedText {
   color: #39ff14;
   font-weight: 800;

@@ -967,6 +967,7 @@ function CompletedReturnSummary({ requestItem }) {
   const normalizedStatus = String(requestItem.status || "").toLowerCase();
   const isFailedPickupAttempt =
     normalizedStatus === "intento_fallido_1" || normalizedStatus === "intento_fallido_2";
+  const isSecondFailedPickupAttempt = normalizedStatus === "intento_fallido_2";
   const failedAttemptLabel =
     normalizedStatus === "intento_fallido_2"
       ? "Segundo intento de devolucion fallido"
@@ -995,7 +996,9 @@ function CompletedReturnSummary({ requestItem }) {
                 : isApproved
                   ? styles.approvedText
                 : isFailedPickupAttempt
-                  ? styles.failedPickupText
+                  ? isSecondFailedPickupAttempt
+                    ? styles.secondFailedPickupText
+                    : styles.failedPickupText
                 : isReceived
                   ? styles.receivedText
                 : isRefunded
