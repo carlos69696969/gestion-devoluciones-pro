@@ -388,6 +388,11 @@
   font-weight: 800;
 }
 
+.failedPickupText {
+  color: #ff8c00;
+  font-weight: 800;
+}
+
 .refundedText {
   color: #39ff14;
   font-weight: 800;
@@ -409,6 +414,11 @@
 }
 
 .receivedHintText {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.failedPickupHintText {
   color: var(--text);
   font-weight: 800;
 }

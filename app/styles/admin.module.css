@@ -97,6 +97,14 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
 }
 
+.btnWarning {
+  border-color: transparent;
+  background: #ff8c00;
+  color: #111827;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  font-weight: 800;
+}
+
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -152,6 +160,10 @@
 
 .statusReceived {
   color: #a97900;
+}
+
+.statusAttemptFailed {
+  color: #ff8c00;
 }
 
 .statusRefunded {
@@ -334,6 +346,13 @@
 .errorMsg {
   margin: 8px 0;
   color: #b42318;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.attemptWarnMsg {
+  margin: 8px 0;
+  color: #a85b00;
   font-size: 14px;
   font-weight: 700;
 }

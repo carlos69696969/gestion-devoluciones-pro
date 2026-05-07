@@ -9,6 +9,8 @@ const STATUS_LABEL = {
   pendiente: "pendiente",
   en_revision: "en revision",
   aprobada: "aprobada",
+  intento_fallido_1: "intento de devolucion fallido",
+  intento_fallido_2: "intento de devolucion fallido",
   rechazada: "rechazada",
   denegada: "denegada",
   recibida: "recibida",
@@ -24,18 +26,23 @@ const VIEW_MODE = {
   HISTORY: "history",
 };
 
-const METHOD_QUEUE_STATUSES = new Set(["aprobada"]);
+const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento_fallido_2"]);
 const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
 const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada"]);
 
 function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
   if (status === "aprobada") return "statusApproved";
+  if (status === "intento_fallido_1" || status === "intento_fallido_2") return "statusAttemptFailed";
   if (status === "rechazada") return "statusRejected";
   if (status === "recibida") return "statusReceived";
   if (status === "reembolsada") return "statusRefunded";
   if (status === "denegada") return "statusDenied";
   return "statusDefault";
+}
+
+function isPickupFailedAttemptStatus(status) {
+  return status === "intento_fallido_1" || status === "intento_fallido_2";
 }
 
 function normalizeViewMode(rawValue) {
@@ -329,17 +336,72 @@ export const action = async ({ request }) => {
   }
 
   if (intent === "mark_received") {
-    if (String(requestRow.status || "").toLowerCase() !== "aprobada") {
-      return { ok: false, error: "Solo puedes marcar como recibida una solicitud aprobada." };
+    const currentStatus = String(requestRow.status || "").toLowerCase();
+    const canMarkReceived =
+      currentStatus === "aprobada" || isPickupFailedAttemptStatus(currentStatus);
+    if (!canMarkReceived) {
+      return {
+        ok: false,
+        error: "Solo puedes marcar como recibida una solicitud aprobada o con intento fallido.",
+      };
     }
     await prisma.returnRequest.update({
       where: { id },
       data: {
         status: "recibida",
         receivedAt: new Date(),
+        rejectionReason: null,
       },
     });
     return { ok: true, message: "Solicitud marcada como recibida." };
+  }
+
+  if (intent === "pickup_attempt_failed") {
+    const currentStatus = String(requestRow.status || "").toLowerCase();
+    if (requestRow.returnMethod !== "pickup") {
+      return { ok: false, error: "Solo aplica a solicitudes de recoleccion a domicilio." };
+    }
+    if (currentStatus !== "aprobada" && currentStatus !== "intento_fallido_1") {
+      return { ok: false, error: "Ya no puedes registrar mas intentos fallidos para esta solicitud." };
+    }
+    const rejectionReason = String(formData.get("rejectionReason") || "").trim();
+    if (!rejectionReason) {
+      return { ok: false, error: "Escribe la descripcion obligatoria del intento fallido." };
+    }
+    const nextStatus = currentStatus === "aprobada" ? "intento_fallido_1" : "intento_fallido_2";
+    await prisma.returnRequest.update({
+      where: { id },
+      data: {
+        status: nextStatus,
+        rejectionReason,
+      },
+    });
+    return {
+      ok: true,
+      message:
+        nextStatus === "intento_fallido_1"
+          ? "Intento de recoleccion fallido registrado (1 de 2)."
+          : "Intento de recoleccion fallido registrado (2 de 2). Ahora puedes rechazar la devolucion.",
+    };
+  }
+
+  if (intent === "reject_after_failed_pickups") {
+    if (String(requestRow.status || "").toLowerCase() !== "intento_fallido_2") {
+      return { ok: false, error: "Solo puedes rechazar despues de dos intentos fallidos." };
+    }
+    const rejectionReason = String(formData.get("rejectionReason") || "").trim();
+    if (!rejectionReason) {
+      return { ok: false, error: "Escribe el motivo obligatorio de rechazo." };
+    }
+    await prisma.returnRequest.update({
+      where: { id },
+      data: {
+        status: "rechazada",
+        rejectionReason,
+        refundError: null,
+      },
+    });
+    return { ok: true, message: "Solicitud rechazada por intentos de recoleccion fallidos." };
   }
 
   if (intent === "deny_received") {
@@ -628,6 +690,12 @@ export default function ReturnsRequests() {
 
 function RequestCard({ request, isSubmitting }) {
   const status = String(request.status || "").toLowerCase();
+  const isPickupMethod = request.returnMethod === "pickup";
+  const isPickupFailedAttempt = isPickupFailedAttemptStatus(status);
+  const canMarkReceived = status === "aprobada" || isPickupFailedAttempt;
+  const canRegisterPickupFailedAttempt =
+    isPickupMethod && (status === "aprobada" || status === "intento_fallido_1");
+  const canRejectAfterFailedPickups = isPickupMethod && status === "intento_fallido_2";
   const statusClassName = styles[getStatusClassName(status)];
   const isHistoryStatus = HISTORY_STATUSES.has(status);
   const closedAt =
@@ -707,7 +775,10 @@ function RequestCard({ request, isSubmitting }) {
           </p>
         )}
 
-        {request.rejectionReason ? (
+        {isPickupFailedAttempt && request.rejectionReason ? (
+          <p className={styles.attemptWarnMsg}>Motivo del intento fallido: {request.rejectionReason}</p>
+        ) : null}
+        {!isPickupFailedAttempt && request.rejectionReason ? (
           <p className={styles.errorMsg}>Motivo de rechazo/denegacion: {request.rejectionReason}</p>
         ) : null}
         {request.refundError ? (
@@ -793,12 +864,44 @@ function RequestCard({ request, isSubmitting }) {
           </>
         ) : null}
 
-        {status === "aprobada" ? (
+        {canMarkReceived ? (
           <Form method="post">
             <input type="hidden" name="intent" value="mark_received" />
             <input type="hidden" name="id" value={request.id} />
             <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
               Marcar como recibida
+            </button>
+          </Form>
+        ) : null}
+
+        {canRegisterPickupFailedAttempt ? (
+          <Form method="post" className={styles.rejectForm}>
+            <input type="hidden" name="intent" value="pickup_attempt_failed" />
+            <input type="hidden" name="id" value={request.id} />
+            <input
+              className={styles.input}
+              name="rejectionReason"
+              placeholder="Descripcion del intento fallido (obligatoria)"
+              defaultValue=""
+            />
+            <button className={`${styles.btn} ${styles.btnWarning}`} type="submit" disabled={isSubmitting}>
+              Intento de recoleccion fallido
+            </button>
+          </Form>
+        ) : null}
+
+        {canRejectAfterFailedPickups ? (
+          <Form method="post" className={styles.rejectForm}>
+            <input type="hidden" name="intent" value="reject_after_failed_pickups" />
+            <input type="hidden" name="id" value={request.id} />
+            <input
+              className={styles.input}
+              name="rejectionReason"
+              placeholder="Motivo de rechazo (obligatorio)"
+              defaultValue=""
+            />
+            <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
+              Rechazar devolucion
             </button>
           </Form>
         ) : null}

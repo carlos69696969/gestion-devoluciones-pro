@@ -14,8 +14,27 @@ const DEFAULT_REASONS = [
 
 const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
 const ADMIN_API_VERSION = "2025-10";
-const ITEM_BLOCK_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada", "denegada"]);
-const ACTIVE_RETURN_STATUSES = new Set(["en_revision", "aprobada", "recibida", "reembolsada", "completada", "rechazada", "denegada"]);
+const ITEM_BLOCK_STATUSES = new Set([
+  "en_revision",
+  "aprobada",
+  "intento_fallido_1",
+  "intento_fallido_2",
+  "recibida",
+  "reembolsada",
+  "completada",
+  "denegada",
+]);
+const ACTIVE_RETURN_STATUSES = new Set([
+  "en_revision",
+  "aprobada",
+  "intento_fallido_1",
+  "intento_fallido_2",
+  "recibida",
+  "reembolsada",
+  "completada",
+  "rechazada",
+  "denegada",
+]);
 const DELIVERED_RETURN_STATUSES = new Set(["recibida", "reembolsada", "completada"]);
 
 function jsonWithCors(data) {
@@ -189,6 +208,7 @@ function statusLabelForCustomer(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return "en revision";
   if (normalized === "aprobada") return "aprobada";
+  if (normalized === "intento_fallido_1" || normalized === "intento_fallido_2") return "intento de devolucion fallido";
   if (normalized === "rechazada") return "rechazada";
   if (normalized === "recibida") return "recibida";
   if (normalized === "denegada") return "denegada";
@@ -538,6 +558,9 @@ export const loader = async ({ request }) => {
       const hasPendingReview = completedRequests.some(
         (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
       );
+      const hasFailedPickupAttempt = completedRequests.some((requestRow) =>
+        ["intento_fallido_1", "intento_fallido_2"].includes(String(requestRow.status || "").toLowerCase()),
+      );
       const hasRejected = completedRequests.some(
         (requestRow) => String(requestRow.status || "").toLowerCase() === "rechazada",
       );
@@ -552,6 +575,8 @@ export const loader = async ({ request }) => {
       );
       const completionTitle = hasPendingReview
         ? "Solicitud de devolucion en revision."
+        : hasFailedPickupAttempt
+          ? "Intento de devolucion fallido."
         : hasRejected
           ? "Solicitud de devolucion rechazada."
         : hasDenied
@@ -561,6 +586,8 @@ export const loader = async ({ request }) => {
           : "Solicitud de devolucion registrada.";
       const completionText = hasPendingReview
         ? "Tu solicitud ya fue registrada. Estamos revisandola y aqui puedes ver su estado."
+        : hasFailedPickupAttempt
+          ? "Tuvimos un intento de recoleccion fallido. Revisa el motivo en el detalle y espera el siguiente intento."
         : hasRejected
           ? "Tu solicitud fue rechazada. Puedes revisar el motivo y volver a solicitar tu devolucion."
         : hasDenied
@@ -937,6 +964,8 @@ function CompletedReturnsSection({ completedTitle, completedText, completedRefun
 
 function CompletedReturnSummary({ requestItem }) {
   const normalizedStatus = String(requestItem.status || "").toLowerCase();
+  const isFailedPickupAttempt =
+    normalizedStatus === "intento_fallido_1" || normalizedStatus === "intento_fallido_2";
   const isRejectedOrDenied = ["rechazada", "denegada"].includes(
     normalizedStatus,
   );
@@ -960,6 +989,8 @@ function CompletedReturnSummary({ requestItem }) {
                 ? styles.reviewText
                 : isApproved
                   ? styles.approvedText
+                : isFailedPickupAttempt
+                  ? styles.failedPickupText
                 : isReceived
                   ? styles.receivedText
                 : isRefunded
@@ -975,6 +1006,11 @@ function CompletedReturnSummary({ requestItem }) {
           Recibimos tu producto con exito, lo revisaremos. Una vez finalicemos realizaremos tu reembolso, regresa mas tarde para ver el estado de tu devolucion.
         </p>
       ) : null}
+      {isFailedPickupAttempt ? (
+        <p className={`${styles.completedStatus} ${styles.failedPickupHintText}`}>
+          Intento de devolucion fallido: {requestItem.rejectionReason || "No se encontro al cliente en el domicilio para entregar el paquete."}
+        </p>
+      ) : null}
       {isApproved ? (
         <p className={`${styles.completedStatus} ${styles.approvedHintText}`}>
           {requestItem.returnMethod === "pickup"
@@ -987,7 +1023,7 @@ function CompletedReturnSummary({ requestItem }) {
           Tu solicitud esta siendo revisada por nuestro equipo, regresa mas tarde para revisar el estado de tu solicitud.
         </p>
       ) : null}
-      {requestItem.rejectionReason ? (
+      {requestItem.rejectionReason && isRejectedOrDenied ? (
         <p className={styles.completedStatus}>
           Motivo de denegacion: <strong className={styles.deniedText}>{requestItem.rejectionReason}</strong>
         </p>
