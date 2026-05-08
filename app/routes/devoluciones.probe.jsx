@@ -28,7 +28,7 @@ function normalizeOrderNumber(value) {
 }
 
 function latestDeliveredAtFromOrderNode(orderNode) {
-  const fulfillments = Array.isArray(orderNode?.fulfillments?.nodes) ? orderNode.fulfillments.nodes : [];
+  const fulfillments = Array.isArray(orderNode?.fulfillments) ? orderNode.fulfillments : [];
   let latestMs = 0;
 
   for (const fulfillment of fulfillments) {
@@ -70,14 +70,12 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                 email
                 createdAt
                 displayFulfillmentStatus
-                fulfillments(first: 30) {
-                  nodes {
-                    deliveredAt
-                    events(first: 20, reverse: true, sortKey: HAPPENED_AT) {
-                      nodes {
-                        status
-                        happenedAt
-                      }
+                fulfillments {
+                  deliveredAt
+                  events(first: 20, reverse: true, sortKey: HAPPENED_AT) {
+                    nodes {
+                      status
+                      happenedAt
                     }
                   }
                 }
