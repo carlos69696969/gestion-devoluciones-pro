@@ -45,16 +45,28 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
         typeof fallback?.hasExistingReturns === "boolean"
           ? fallback.hasExistingReturns
           : Array.isArray(fallback?.completedRequests) && fallback.completedRequests.length > 0;
+      if (!primary?.limitDate && fallback?.limitDate) {
+        primary.limitDate = fallback.limitDate;
+      }
     }
 
     return {
       hasEligibleItems:
         typeof primary?.hasEligibleItems === "boolean" ? primary.hasEligibleItems : undefined,
       hasConfirmedReturns: hasConfirmedReturnsFromProbe,
+      limitDate: primary?.limitDate || "",
     };
   } catch {
     return null;
   }
+}
+
+function formatLimitDate(limitDateISO) {
+  const raw = String(limitDateISO || "").trim();
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (!Number.isFinite(date.getTime())) return "";
+  return date.toLocaleDateString("es-MX");
 }
 
 function buildPortalUrl({ orderName, customerEmail, shopDomain, mode }) {
@@ -135,6 +147,11 @@ export default function extension() {
       }
       return;
     }
+
+    const formattedLimitDate = formatLimitDate(eligibility?.limitDate);
+    description.textContent = formattedLimitDate
+      ? `Tienes hasta ${formattedLimitDate} para solicitar una devolucion.`
+      : "Inicia aqui la devolucion de este pedido.";
 
     const hasConfirmedReturns = Boolean(eligibility?.hasConfirmedReturns);
     const hasEligibleItems =
