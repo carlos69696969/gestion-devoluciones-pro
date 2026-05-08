@@ -2,11 +2,12 @@
 import "@shopify/ui-extensions/customer-account";
 
 const RETURN_PORTAL_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones";
-const RETURN_PROBE_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones/probe";
+const RETURN_PROBE_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones";
 const FORCED_SHOP_DOMAIN = "cariana-3.myshopify.com";
 
 async function fetchProbe({ shopDomain, orderNumber, customerEmail, includeShop = true, includeEmail = true }) {
   const url = new URL(RETURN_PROBE_URL);
+  url.searchParams.set("probe", "1");
   if (orderNumber) {
     url.searchParams.set("order", String(orderNumber).replace("#", ""));
   }
@@ -55,6 +56,7 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
         typeof primary?.hasEligibleItems === "boolean" ? primary.hasEligibleItems : undefined,
       hasConfirmedReturns: hasConfirmedReturnsFromProbe,
       limitDate: primary?.limitDate || "",
+      isDelivered: Boolean(primary?.isDelivered),
     };
   } catch {
     return null;
@@ -141,7 +143,6 @@ export default function extension() {
       while (actions.firstChild) {
         actions.removeChild(actions.firstChild);
       }
-      actions.appendChild(requestButton);
       if (noEligibleText.parentNode) {
         noEligibleText.parentNode.removeChild(noEligibleText);
       }
@@ -156,6 +157,7 @@ export default function extension() {
     const hasConfirmedReturns = Boolean(eligibility?.hasConfirmedReturns);
     const hasEligibleItems =
       eligibility?.hasEligibleItems === undefined ? true : Boolean(eligibility?.hasEligibleItems);
+    const isDelivered = Boolean(eligibility?.isDelivered);
 
     while (actions.firstChild) {
       actions.removeChild(actions.firstChild);
@@ -164,7 +166,7 @@ export default function extension() {
     if (hasConfirmedReturns) {
       actions.appendChild(viewButton);
     }
-    if (hasEligibleItems) {
+    if (hasEligibleItems && isDelivered) {
       actions.appendChild(requestButton);
     }
 

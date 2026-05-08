@@ -147,6 +147,7 @@ function normalizeOrder(orderNode) {
     id: orderNode.id,
     orderNumber: orderNode.name?.replace("#", "") || "",
     name: orderNode.name || "",
+    displayFulfillmentStatus: String(orderNode.displayFulfillmentStatus || "").toUpperCase(),
     customerName: fallbackName,
     customerEmail: orderNode.email || "",
     customerPhone: fallbackPhone,
@@ -291,6 +292,7 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                 name
                 email
                 createdAt
+                displayFulfillmentStatus
                 shippingAddress {
                   name
                   phone
@@ -648,6 +650,7 @@ export const loader = async ({ request }) => {
         allDelivered && hasRefundProcessed
           ? "Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, puede reflejarse en un plazo de 5 a 10 dias habiles."
           : "";
+      const isDelivered = String(order.displayFulfillmentStatus || "").toUpperCase() === "FULFILLED";
 
       return maybeProbeResponse(isProbe, {
         reasons,
@@ -669,6 +672,7 @@ export const loader = async ({ request }) => {
         completedText: completionText,
         completedRefundText: completionRefundText,
         hasDeniedStatus: hasDenied,
+        isDelivered,
         message: isExpired
           ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
           : hasEligibleItems
