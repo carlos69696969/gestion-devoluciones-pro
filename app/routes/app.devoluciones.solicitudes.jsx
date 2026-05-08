@@ -844,7 +844,8 @@ function RequestCard({ request, isSubmitting }) {
             <ul className={styles.reasonHistoryList}>
               {request.reasonEntries.map((entry, idx) => (
                 <li key={`${request.id}_reason_${idx}`} className={styles.reasonHistoryItem}>
-                  <strong>{reasonEntryLabel(entry)}:</strong> {entry.reason}
+                  <strong>{reasonEntryLabel(entry)}:</strong>{" "}
+                  <span className={styles.reasonHistoryMessage}>{entry.reason}</span>
                 </li>
               ))}
             </ul>

@@ -384,6 +384,10 @@
   line-height: 1.35;
 }
 
+.reasonHistoryMessage {
+  color: #b42318;
+}
+
 .successMsg {
   margin: 8px 0;
   color: #027a48;
