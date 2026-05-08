@@ -2,12 +2,11 @@
 import "@shopify/ui-extensions/customer-account";
 
 const RETURN_PORTAL_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones";
-const RETURN_PROBE_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones";
+const RETURN_PROBE_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones/probe";
 const FORCED_SHOP_DOMAIN = "cariana-3.myshopify.com";
 
 async function fetchProbe({ shopDomain, orderNumber, customerEmail, includeShop = true, includeEmail = true }) {
   const url = new URL(RETURN_PROBE_URL);
-  url.searchParams.set("probe", "1");
   if (orderNumber) {
     url.searchParams.set("order", String(orderNumber).replace("#", ""));
   }
