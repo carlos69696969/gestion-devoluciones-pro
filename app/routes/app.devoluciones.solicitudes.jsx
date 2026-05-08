@@ -11,6 +11,7 @@ const STATUS_LABEL = {
   aprobada: "aprobada",
   intento_fallido_1: "intento de devolucion fallido",
   intento_fallido_2: "segundo intento de devolucion fallido",
+  por_devolver: "pendiente por devolver",
   rechazada: "rechazada",
   denegada: "denegada",
   recibida: "recibida",
@@ -23,17 +24,22 @@ const VIEW_MODE = {
   BRANCH: "branch",
   REVIEW: "review",
   REFUNDS: "refunds",
+  TO_RETURN: "to_return",
   HISTORY: "history",
 };
 
 const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento_fallido_2"]);
 const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
+const RETURN_TO_CUSTOMER_STATUSES = new Set(["por_devolver"]);
 const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada"]);
+const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito a tu domicilio.";
+const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
 
 function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
   if (status === "aprobada") return "statusApproved";
   if (status === "intento_fallido_1" || status === "intento_fallido_2") return "statusAttemptFailed";
+  if (status === "por_devolver") return "statusPendingReturn";
   if (status === "rechazada") return "statusRejected";
   if (status === "recibida") return "statusReceived";
   if (status === "reembolsada") return "statusRefunded";
@@ -50,6 +56,7 @@ function normalizeViewMode(rawValue) {
   if (value === VIEW_MODE.PICKUP) return VIEW_MODE.PICKUP;
   if (value === VIEW_MODE.REVIEW) return VIEW_MODE.REVIEW;
   if (value === VIEW_MODE.REFUNDS) return VIEW_MODE.REFUNDS;
+  if (value === VIEW_MODE.TO_RETURN) return VIEW_MODE.TO_RETURN;
   if (value === VIEW_MODE.HISTORY) return VIEW_MODE.HISTORY;
   return VIEW_MODE.BRANCH;
 }
@@ -96,6 +103,10 @@ function parseReasonEntries(rawValue) {
   }
 }
 
+function isReturnedToCustomerEntry(entry) {
+  return String(entry?.kind || "").toLowerCase() === RETURNED_TO_CUSTOMER_KIND;
+}
+
 function appendReasonEntry(rawValue, entry) {
   const entries = parseReasonEntries(rawValue);
   entries.push({
@@ -108,8 +119,11 @@ function appendReasonEntry(rawValue, entry) {
 
 function latestReasonFromRaw(rawValue) {
   const entries = parseReasonEntries(rawValue);
-  if (!entries.length) return "";
-  return entries[entries.length - 1]?.reason || "";
+  for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
+    if (isReturnedToCustomerEntry(entries[idx])) continue;
+    return entries[idx]?.reason || "";
+  }
+  return "";
 }
 
 function reasonEntryLabel(entry) {
@@ -119,6 +133,7 @@ function reasonEntryLabel(entry) {
   if (kind === "rejected_after_attempts") return "Motivo de rechazo final";
   if (kind === "review_rejected") return "Motivo de rechazo";
   if (kind === "denied_after_received") return "Motivo de denegacion";
+  if (kind === RETURNED_TO_CUSTOMER_KIND) return "Devuelto al cliente";
   return "Motivo";
 }
 
@@ -325,10 +340,13 @@ export const loader = async ({ request }) => {
   const requests = rawRequests.map((requestRow) => {
     const imageMap = imagesByOrder[requestRow.shopifyOrderId] || {};
     const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
+    const visibleReasonEntries = reasonEntries.filter((entry) => !isReturnedToCustomerEntry(entry));
+    const wasReturnedToCustomer = reasonEntries.some((entry) => isReturnedToCustomerEntry(entry));
     return {
       ...requestRow,
       rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
-      reasonEntries,
+      reasonEntries: visibleReasonEntries,
+      wasReturnedToCustomer,
       items: requestRow.items.map((item) => {
         const image = imageMap[itemKeyFromRecord(item)] || null;
         return {
@@ -470,7 +488,7 @@ export const action = async ({ request }) => {
     await prisma.returnRequest.update({
       where: { id },
       data: {
-        status: "denegada",
+        status: "por_devolver",
         rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
           kind: "denied_after_received",
           reason: rejectionReason,
@@ -478,7 +496,24 @@ export const action = async ({ request }) => {
         refundError: null,
       },
     });
-    return { ok: true, message: "Solicitud denegada." };
+    return { ok: true, message: "Solicitud denegada y enviada a devoluciones por devolver." };
+  }
+
+  if (intent === "mark_returned_to_customer") {
+    if (String(requestRow.status || "").toLowerCase() !== "por_devolver") {
+      return { ok: false, error: "Solo puedes confirmar devoluciones pendientes por devolver." };
+    }
+    await prisma.returnRequest.update({
+      where: { id },
+      data: {
+        status: "rechazada",
+        rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+          kind: RETURNED_TO_CUSTOMER_KIND,
+          reason: RETURNED_TO_CUSTOMER_MESSAGE,
+        }),
+      },
+    });
+    return { ok: true, message: "Devolucion marcada como devuelta al cliente y enviada al historial." };
   }
 
   if (intent === "process_refund") {
@@ -640,6 +675,9 @@ export default function ReturnsRequests() {
   const refundQueueRequests = requests.filter((requestRow) =>
     REFUND_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
   );
+  const returnToCustomerQueueRequests = requests.filter((requestRow) =>
+    RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase()),
+  );
   const pickupRequests = activeRequests.filter((request) => request.returnMethod === "pickup");
   const branchRequests = activeRequests.filter((request) => request.returnMethod !== "pickup");
   const historyRequests = requests
@@ -652,8 +690,10 @@ export default function ReturnsRequests() {
       ? "Recoleccion a domicilio"
       : viewMode === VIEW_MODE.REVIEW
         ? "Ordenes en revision"
-        : viewMode === VIEW_MODE.REFUNDS
+      : viewMode === VIEW_MODE.REFUNDS
           ? "Procesar reembolsos"
+        : viewMode === VIEW_MODE.TO_RETURN
+          ? "Devoluciones a devolver"
         : viewMode === VIEW_MODE.HISTORY
           ? "Historial"
         : "Entrega en sucursal";
@@ -729,6 +769,20 @@ export default function ReturnsRequests() {
         </s-section>
       ) : null}
 
+      {viewMode === VIEW_MODE.TO_RETURN ? (
+        <s-section heading="Solicitudes pendientes por devolver al cliente">
+          {returnToCustomerQueueRequests.length === 0 ? (
+            <p>No hay solicitudes pendientes por devolver al cliente.</p>
+          ) : (
+            <div className={`${styles.wrap} ${styles.reqGrid}`}>
+              {returnToCustomerQueueRequests.map((request) => (
+                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+              ))}
+            </div>
+          )}
+        </s-section>
+      ) : null}
+
       {viewMode === VIEW_MODE.HISTORY ? (
         <s-section heading="Historial de devoluciones">
           {historyRequests.length === 0 ? (
@@ -754,12 +808,17 @@ function RequestCard({ request, isSubmitting }) {
   const canRegisterPickupFailedAttempt =
     isPickupMethod && (status === "aprobada" || status === "intento_fallido_1");
   const canRejectAfterFailedPickups = isPickupMethod && status === "intento_fallido_2";
+  const canMarkReturnedToCustomer = status === "por_devolver";
   const remainingPickupAttempts = status === "aprobada" ? 2 : status === "intento_fallido_1" ? 1 : 0;
   const failedAttemptButtonLabel =
     remainingPickupAttempts === 1
       ? "Intento de recoleccion fallido (te queda 1)"
       : `Intento de recoleccion fallido (te quedan ${remainingPickupAttempts})`;
   const statusClassName = styles[getStatusClassName(status)];
+  const statusText =
+    status === "rechazada" && request.wasReturnedToCustomer
+      ? "rechazada · devuelto al cliente"
+      : STATUS_LABEL[status] || status;
   const isHistoryStatus = HISTORY_STATUSES.has(status);
   const closedAt =
     status === "reembolsada" && request.refundedAt ? request.refundedAt : request.updatedAt || null;
@@ -773,7 +832,7 @@ function RequestCard({ request, isSubmitting }) {
           </p>
         </div>
         <span className={styles.pill}>
-          Estado: <strong className={statusClassName}>{STATUS_LABEL[status] || status}</strong>
+          Estado: <strong className={statusClassName}>{statusText}</strong>
         </span>
       </div>
 
@@ -1003,6 +1062,16 @@ function RequestCard({ request, isSubmitting }) {
               </button>
             </Form>
           </>
+        ) : null}
+
+        {canMarkReturnedToCustomer ? (
+          <Form method="post">
+            <input type="hidden" name="intent" value="mark_returned_to_customer" />
+            <input type="hidden" name="id" value={request.id} />
+            <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+              Devuelto con exito
+            </button>
+          </Form>
         ) : null}
       </div>
     </article>

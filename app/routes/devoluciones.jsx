@@ -14,12 +14,15 @@ const DEFAULT_REASONS = [
 
 const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
 const ADMIN_API_VERSION = "2025-10";
+const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
+const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito a tu domicilio.";
 const ITEM_BLOCK_STATUSES = new Set([
   "en_revision",
   "aprobada",
   "intento_fallido_1",
   "intento_fallido_2",
   "recibida",
+  "por_devolver",
   "reembolsada",
   "completada",
   "denegada",
@@ -30,6 +33,7 @@ const ACTIVE_RETURN_STATUSES = new Set([
   "intento_fallido_1",
   "intento_fallido_2",
   "recibida",
+  "por_devolver",
   "reembolsada",
   "completada",
   "rechazada",
@@ -206,8 +210,16 @@ function parseReasonEntries(rawValue) {
 
 function latestReasonFromRaw(rawValue) {
   const entries = parseReasonEntries(rawValue);
-  if (!entries.length) return "";
-  return entries[entries.length - 1]?.reason || "";
+  for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
+    if (String(entries[idx]?.kind || "").toLowerCase() === RETURNED_TO_CUSTOMER_KIND) continue;
+    return entries[idx]?.reason || "";
+  }
+  return "";
+}
+
+function hasReturnedToCustomerFromRaw(rawValue) {
+  const entries = parseReasonEntries(rawValue);
+  return entries.some((entry) => String(entry?.kind || "").toLowerCase() === RETURNED_TO_CUSTOMER_KIND);
 }
 
 function buildOrderImageMap(items) {
@@ -234,6 +246,7 @@ function statusLabelForCustomer(status) {
   if (normalized === "aprobada") return "aprobada";
   if (normalized === "intento_fallido_1") return "intento de devolucion fallido";
   if (normalized === "intento_fallido_2") return "segundo intento de devolucion fallido";
+  if (normalized === "por_devolver") return "pendiente por devolver";
   if (normalized === "rechazada") return "rechazada";
   if (normalized === "recibida") return "recibida";
   if (normalized === "denegada") return "denegada";
@@ -490,7 +503,7 @@ export const loader = async ({ request }) => {
             blockedItemKeys.add(key);
           }
           if (
-            ["rechazada", "denegada"].includes(String(requestRow.status || "").toLowerCase()) &&
+            ["rechazada", "denegada", "por_devolver"].includes(String(requestRow.status || "").toLowerCase()) &&
             latestReasonFromRaw(requestRow.rejectionReason) &&
             !rejectedReasonsByItemKey.has(key)
           ) {
@@ -519,6 +532,7 @@ export const loader = async ({ request }) => {
           status: String(requestRow.status || "").toLowerCase(),
           statusLabel: statusLabelForCustomer(requestRow.status),
           rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
+          wasReturnedToCustomer: hasReturnedToCustomerFromRaw(requestRow.rejectionReason),
           createdAt: requestRow.createdAt,
           receivedAt: requestRow.receivedAt,
           refundedAt: requestRow.refundedAt,
@@ -590,7 +604,7 @@ export const loader = async ({ request }) => {
         (requestRow) => String(requestRow.status || "").toLowerCase() === "rechazada",
       );
       const hasDenied = completedRequests.some(
-        (requestRow) => String(requestRow.status || "").toLowerCase() === "denegada",
+        (requestRow) => ["denegada", "por_devolver"].includes(String(requestRow.status || "").toLowerCase()),
       );
       const allDelivered =
         completedRequests.length > 0 &&
@@ -992,11 +1006,12 @@ function CompletedReturnSummary({ requestItem }) {
   const isFailedPickupAttempt =
     normalizedStatus === "intento_fallido_1" || normalizedStatus === "intento_fallido_2";
   const isSecondFailedPickupAttempt = normalizedStatus === "intento_fallido_2";
+  const isPendingToReturn = normalizedStatus === "por_devolver";
   const failedAttemptLabel =
     normalizedStatus === "intento_fallido_2"
       ? "Segundo intento de devolucion fallido"
       : "Intento de devolucion fallido";
-  const isRejectedOrDenied = ["rechazada", "denegada"].includes(
+  const isRejectedOrDenied = ["rechazada", "denegada", "por_devolver"].includes(
     normalizedStatus,
   );
   const isReview = normalizedStatus === "en_revision";
@@ -1058,6 +1073,16 @@ function CompletedReturnSummary({ requestItem }) {
       {requestItem.rejectionReason && isRejectedOrDenied ? (
         <p className={styles.completedStatus}>
           Motivo de denegacion: <strong className={styles.deniedText}>{requestItem.rejectionReason}</strong>
+        </p>
+      ) : null}
+      {requestItem.wasReturnedToCustomer ? (
+        <p className={`${styles.completedStatus} ${styles.returnedToCustomerHintText}`}>
+          {RETURNED_TO_CUSTOMER_MESSAGE}
+        </p>
+      ) : null}
+      {isPendingToReturn ? (
+        <p className={`${styles.completedStatus} ${styles.returnedToCustomerHintText}`}>
+          Estamos devolviendo tu paquete. Esta solicitud pasara a historial cuando quede devuelta al cliente.
         </p>
       ) : null}
 

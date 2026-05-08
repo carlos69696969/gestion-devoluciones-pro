@@ -21,6 +21,7 @@ export default function App() {
         <s-link href="/app/devoluciones/solicitudes?tipo=branch">Entrega en sucursal</s-link>
         <s-link href="/app/devoluciones/solicitudes?tipo=review">Ordenes en revision</s-link>
         <s-link href="/app/devoluciones/solicitudes?tipo=refunds">Procesar reembolsos</s-link>
+        <s-link href="/app/devoluciones/solicitudes?tipo=to_return">Devoluciones a devolver</s-link>
         <s-link href="/app/devoluciones/solicitudes?tipo=history">Historial</s-link>
       </s-app-nav>
       <Outlet />

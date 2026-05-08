@@ -166,6 +166,10 @@
   color: #ff8c00;
 }
 
+.statusPendingReturn {
+  color: #b42318;
+}
+
 .statusRefunded {
   color: #008060;
 }
