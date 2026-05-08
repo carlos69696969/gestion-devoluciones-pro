@@ -5,6 +5,7 @@ const ACTIVE_RETURN_STATUSES = [
   "intento_fallido_2",
   "recibida",
   "por_devolver",
+  "reembolso_denegado",
   "reembolsada",
   "completada",
   "rechazada",

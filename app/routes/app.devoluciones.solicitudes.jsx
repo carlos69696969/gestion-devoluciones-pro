@@ -13,7 +13,8 @@ const STATUS_LABEL = {
   intento_fallido_2: "segundo intento de devolucion fallido",
   por_devolver: "pendiente por devolver",
   rechazada: "rechazada",
-  denegada: "denegada",
+  denegada: "reembolso denegado",
+  reembolso_denegado: "reembolso denegado",
   recibida: "recibida",
   reembolsada: "reembolsada",
   completada: "completada",
@@ -31,7 +32,7 @@ const VIEW_MODE = {
 const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento_fallido_2"]);
 const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
 const RETURN_TO_CUSTOMER_STATUSES = new Set(["por_devolver"]);
-const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada"]);
+const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada", "reembolso_denegado"]);
 const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito a tu domicilio.";
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
 
@@ -41,6 +42,7 @@ function getStatusClassName(status) {
   if (status === "intento_fallido_1" || status === "intento_fallido_2") return "statusAttemptFailed";
   if (status === "por_devolver") return "statusPendingReturn";
   if (status === "rechazada") return "statusRejected";
+  if (status === "reembolso_denegado") return "statusDenied";
   if (status === "recibida") return "statusReceived";
   if (status === "reembolsada") return "statusRefunded";
   if (status === "denegada") return "statusDenied";
@@ -507,7 +509,7 @@ export const action = async ({ request }) => {
         refundError: null,
       },
     });
-    return { ok: true, message: "Solicitud denegada y enviada a devoluciones por devolver." };
+    return { ok: true, message: "Reembolso denegado y enviado a devoluciones por devolver." };
   }
 
   if (intent === "mark_returned_to_customer") {
@@ -517,7 +519,7 @@ export const action = async ({ request }) => {
     await prisma.returnRequest.update({
       where: { id },
       data: {
-        status: "rechazada",
+        status: "reembolso_denegado",
         rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
           kind: RETURNED_TO_CUSTOMER_KIND,
           reason: RETURNED_TO_CUSTOMER_MESSAGE,
@@ -826,7 +828,7 @@ function RequestCard({ request, isSubmitting }) {
       ? "Intento de recoleccion fallido (te queda 1)"
       : `Intento de recoleccion fallido (te quedan ${remainingPickupAttempts})`;
   const statusClassName = styles[getStatusClassName(status)];
-  const isRejectedReturnedToCustomer = status === "rechazada" && request.wasReturnedToCustomer;
+  const isDeniedReturnedToCustomer = status === "reembolso_denegado" && request.wasReturnedToCustomer;
   const isHistoryStatus = HISTORY_STATUSES.has(status);
   const closedAt =
     status === "reembolsada" && request.refundedAt ? request.refundedAt : request.updatedAt || null;
@@ -842,9 +844,9 @@ function RequestCard({ request, isSubmitting }) {
         <span className={styles.pill}>
           Estado:{" "}
           <strong className={statusClassName}>
-            {isRejectedReturnedToCustomer ? (
+            {isDeniedReturnedToCustomer ? (
               <>
-                rechazada - <span className={styles.returnedToCustomerStatus}>devuelto al cliente</span>
+                reembolso denegado - <span className={styles.returnedToCustomerStatus}>devuelto al cliente</span>
               </>
             ) : (
               STATUS_LABEL[status] || status

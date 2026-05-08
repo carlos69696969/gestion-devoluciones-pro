@@ -23,6 +23,7 @@ const ITEM_BLOCK_STATUSES = new Set([
   "intento_fallido_2",
   "recibida",
   "por_devolver",
+  "reembolso_denegado",
   "reembolsada",
   "completada",
   "denegada",
@@ -34,6 +35,7 @@ const ACTIVE_RETURN_STATUSES = new Set([
   "intento_fallido_2",
   "recibida",
   "por_devolver",
+  "reembolso_denegado",
   "reembolsada",
   "completada",
   "rechazada",
@@ -251,6 +253,14 @@ function latestReturnedToCustomerAtFromRaw(rawValue) {
   return "";
 }
 
+function isRefundDeniedAfterReceivedFromRaw(rawValue) {
+  const entries = parseReasonEntries(rawValue);
+  return entries.some((entry) => {
+    const kind = String(entry?.kind || "").toLowerCase();
+    return kind === "denied_after_received" || kind === RETURNED_TO_CUSTOMER_KIND;
+  });
+}
+
 function buildOrderImageMap(items) {
   const imageMap = new Map();
   for (const item of items || []) {
@@ -276,9 +286,10 @@ function statusLabelForCustomer(status) {
   if (normalized === "intento_fallido_1") return "intento de devolucion fallido";
   if (normalized === "intento_fallido_2") return "segundo intento de devolucion fallido";
   if (normalized === "por_devolver") return "pendiente por devolver";
+  if (normalized === "reembolso_denegado") return "reembolso denegado";
   if (normalized === "rechazada") return "rechazada";
   if (normalized === "recibida") return "recibida";
-  if (normalized === "denegada") return "denegada";
+  if (normalized === "denegada") return "reembolso denegado";
   if (normalized === "reembolsada") return "reembolsada";
   if (normalized === "completada") return "completada";
   return normalized || "-";
@@ -540,9 +551,15 @@ export const loader = async ({ request }) => {
           const key = itemKeyFromRecord(item);
           if (ITEM_BLOCK_STATUSES.has(String(requestRow.status || "").toLowerCase())) {
             blockedItemKeys.add(key);
+          } else if (
+            String(requestRow.status || "").toLowerCase() === "rechazada" &&
+            isRefundDeniedAfterReceivedFromRaw(requestRow.rejectionReason)
+          ) {
+            // Backward compatibility: old denied returns were stored as "rechazada".
+            blockedItemKeys.add(key);
           }
           if (
-            ["rechazada", "denegada", "por_devolver"].includes(String(requestRow.status || "").toLowerCase()) &&
+            ["rechazada", "denegada", "por_devolver", "reembolso_denegado"].includes(String(requestRow.status || "").toLowerCase()) &&
             latestReasonFromRaw(requestRow.rejectionReason) &&
             !rejectedReasonsByItemKey.has(key)
           ) {
@@ -646,7 +663,10 @@ export const loader = async ({ request }) => {
         (requestRow) => String(requestRow.status || "").toLowerCase() === "rechazada",
       );
       const hasDenied = completedRequests.some(
-        (requestRow) => ["denegada", "por_devolver"].includes(String(requestRow.status || "").toLowerCase()),
+        (requestRow) =>
+          ["denegada", "por_devolver", "reembolso_denegado"].includes(
+            String(requestRow.status || "").toLowerCase(),
+          ),
       );
       const allDelivered =
         completedRequests.length > 0 &&
@@ -661,7 +681,7 @@ export const loader = async ({ request }) => {
         : hasRejected
           ? "Solicitud de devolucion rechazada."
         : hasDenied
-          ? "Devolucion denegada."
+          ? "Reembolso denegado."
         : allDelivered
           ? "Devolucion completada con exito."
           : "Solicitud de devolucion registrada.";
@@ -672,7 +692,7 @@ export const loader = async ({ request }) => {
         : hasRejected
           ? "Tu solicitud fue rechazada. Puedes revisar el motivo y volver a solicitar tu devolucion."
         : hasDenied
-          ? "Tu devolucion fue denegada. Revisa el motivo de denegacion en el detalle."
+          ? "Tu reembolso fue denegado. Revisa el motivo de denegacion en el detalle."
         : allDelivered
           ? "Todos los productos de este pedido fueron devueltos con exito."
           : "Tu solicitud ya fue registrada. Aqui puedes ver todos los datos de tu devolucion.";
@@ -1072,7 +1092,7 @@ function CompletedReturnSummary({ requestItem }) {
     normalizedStatus === "intento_fallido_2"
       ? "Segundo intento de devolucion fallido"
       : "Intento de devolucion fallido";
-  const isRejectedOrDenied = ["rechazada", "denegada", "por_devolver"].includes(
+  const isRejectedOrDenied = ["rechazada", "denegada", "por_devolver", "reembolso_denegado"].includes(
     normalizedStatus,
   );
   const isReview = normalizedStatus === "en_revision";
