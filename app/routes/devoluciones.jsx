@@ -222,6 +222,15 @@ function hasReturnedToCustomerFromRaw(rawValue) {
   return entries.some((entry) => String(entry?.kind || "").toLowerCase() === RETURNED_TO_CUSTOMER_KIND);
 }
 
+function latestReturnedToCustomerAtFromRaw(rawValue) {
+  const entries = parseReasonEntries(rawValue);
+  for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
+    if (String(entries[idx]?.kind || "").toLowerCase() !== RETURNED_TO_CUSTOMER_KIND) continue;
+    return String(entries[idx]?.at || "").trim();
+  }
+  return "";
+}
+
 function buildOrderImageMap(items) {
   const imageMap = new Map();
   for (const item of items || []) {
@@ -533,6 +542,7 @@ export const loader = async ({ request }) => {
           statusLabel: statusLabelForCustomer(requestRow.status),
           rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
           wasReturnedToCustomer: hasReturnedToCustomerFromRaw(requestRow.rejectionReason),
+          returnedToCustomerAt: latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason),
           createdAt: requestRow.createdAt,
           receivedAt: requestRow.receivedAt,
           refundedAt: requestRow.refundedAt,
@@ -1094,6 +1104,9 @@ function CompletedReturnSummary({ requestItem }) {
         <p><strong>Fecha de solicitud:</strong> {new Date(requestItem.createdAt).toLocaleString("es-MX")}</p>
         {requestItem.receivedAt ? (
           <p><strong>Fecha recibida:</strong> {new Date(requestItem.receivedAt).toLocaleString("es-MX")}</p>
+        ) : null}
+        {requestItem.returnedToCustomerAt ? (
+          <p><strong>Fecha devuelta al cliente:</strong> {new Date(requestItem.returnedToCustomerAt).toLocaleString("es-MX")}</p>
         ) : null}
         {requestItem.refundedAt ? (
           <p><strong>Fecha reembolsada:</strong> {new Date(requestItem.refundedAt).toLocaleString("es-MX")}</p>

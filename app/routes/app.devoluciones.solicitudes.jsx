@@ -107,6 +107,15 @@ function isReturnedToCustomerEntry(entry) {
   return String(entry?.kind || "").toLowerCase() === RETURNED_TO_CUSTOMER_KIND;
 }
 
+function latestReturnedToCustomerAtFromRaw(rawValue) {
+  const entries = parseReasonEntries(rawValue);
+  for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
+    if (!isReturnedToCustomerEntry(entries[idx])) continue;
+    return String(entries[idx]?.at || "").trim();
+  }
+  return "";
+}
+
 function appendReasonEntry(rawValue, entry) {
   const entries = parseReasonEntries(rawValue);
   entries.push({
@@ -342,11 +351,13 @@ export const loader = async ({ request }) => {
     const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
     const visibleReasonEntries = reasonEntries.filter((entry) => !isReturnedToCustomerEntry(entry));
     const wasReturnedToCustomer = reasonEntries.some((entry) => isReturnedToCustomerEntry(entry));
+    const returnedToCustomerAt = latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason);
     return {
       ...requestRow,
       rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
       reasonEntries: visibleReasonEntries,
       wasReturnedToCustomer,
+      returnedToCustomerAt,
       items: requestRow.items.map((item) => {
         const image = imageMap[itemKeyFromRecord(item)] || null;
         return {
@@ -815,10 +826,7 @@ function RequestCard({ request, isSubmitting }) {
       ? "Intento de recoleccion fallido (te queda 1)"
       : `Intento de recoleccion fallido (te quedan ${remainingPickupAttempts})`;
   const statusClassName = styles[getStatusClassName(status)];
-  const statusText =
-    status === "rechazada" && request.wasReturnedToCustomer
-      ? "rechazada · devuelto al cliente"
-      : STATUS_LABEL[status] || status;
+  const isRejectedReturnedToCustomer = status === "rechazada" && request.wasReturnedToCustomer;
   const isHistoryStatus = HISTORY_STATUSES.has(status);
   const closedAt =
     status === "reembolsada" && request.refundedAt ? request.refundedAt : request.updatedAt || null;
@@ -832,7 +840,16 @@ function RequestCard({ request, isSubmitting }) {
           </p>
         </div>
         <span className={styles.pill}>
-          Estado: <strong className={statusClassName}>{statusText}</strong>
+          Estado:{" "}
+          <strong className={statusClassName}>
+            {isRejectedReturnedToCustomer ? (
+              <>
+                rechazada - <span className={styles.returnedToCustomerStatus}>devuelto al cliente</span>
+              </>
+            ) : (
+              STATUS_LABEL[status] || status
+            )}
+          </strong>
         </span>
       </div>
 
@@ -872,6 +889,12 @@ function RequestCard({ request, isSubmitting }) {
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Recibida</span>
               <span className={styles.kvVal}>{new Date(request.receivedAt).toLocaleString("es-MX")}</span>
+            </div>
+          ) : null}
+          {request.returnedToCustomerAt ? (
+            <div className={styles.kvRow}>
+              <span className={styles.kvKey}>Devuelta al cliente</span>
+              <span className={styles.kvVal}>{new Date(request.returnedToCustomerAt).toLocaleString("es-MX")}</span>
             </div>
           ) : null}
           {request.refundedAt ? (
@@ -1079,4 +1102,3 @@ function RequestCard({ request, isSubmitting }) {
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
-

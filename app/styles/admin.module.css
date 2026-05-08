@@ -158,6 +158,11 @@
   color: #b42318;
 }
 
+.returnedToCustomerStatus {
+  color: #39ff14;
+  font-weight: 800;
+}
+
 .statusReceived {
   color: #a97900;
 }
