@@ -27,6 +27,31 @@ function normalizeOrderNumber(value) {
   return String(value || "").replace("#", "").trim();
 }
 
+function latestDeliveredAtFromOrderNode(orderNode) {
+  const fulfillments = Array.isArray(orderNode?.fulfillments?.nodes) ? orderNode.fulfillments.nodes : [];
+  let latestMs = 0;
+
+  for (const fulfillment of fulfillments) {
+    const deliveredAt = String(fulfillment?.deliveredAt || "").trim();
+    if (deliveredAt) {
+      const deliveredMs = new Date(deliveredAt).getTime();
+      if (Number.isFinite(deliveredMs) && deliveredMs > latestMs) latestMs = deliveredMs;
+    }
+
+    const events = Array.isArray(fulfillment?.events?.nodes) ? fulfillment.events.nodes : [];
+    for (const eventNode of events) {
+      if (String(eventNode?.status || "").toUpperCase() !== "DELIVERED") continue;
+      const happenedAt = String(eventNode?.happenedAt || "").trim();
+      if (!happenedAt) continue;
+      const eventMs = new Date(happenedAt).getTime();
+      if (Number.isFinite(eventMs) && eventMs > latestMs) latestMs = eventMs;
+    }
+  }
+
+  if (!latestMs) return "";
+  return new Date(latestMs).toISOString();
+}
+
 async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
   const response = await fetch(`https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
     method: "POST",
@@ -45,6 +70,17 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                 email
                 createdAt
                 displayFulfillmentStatus
+                fulfillments(first: 30) {
+                  nodes {
+                    deliveredAt
+                    events(first: 20, reverse: true, sortKey: HAPPENED_AT) {
+                      nodes {
+                        status
+                        happenedAt
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -126,13 +162,14 @@ async function resolveDeliveryStatus({ prisma, requestedShop, orderNumber, custo
     const settings =
       (await prisma.returnSettings.findUnique({ where: { shop: shopCandidate } })) ||
       (await prisma.returnSettings.create({ data: { shop: shopCandidate } }));
-    const createdAt = new Date(match.createdAt);
-    const limitDate = Number.isFinite(createdAt.getTime())
-      ? new Date(createdAt.getTime() + Number(settings.returnWindowDays || 0) * 24 * 60 * 60 * 1000)
+    const deliveredAt = latestDeliveredAtFromOrderNode(match);
+    const deliveredMs = deliveredAt ? new Date(deliveredAt).getTime() : NaN;
+    const limitDate = Number.isFinite(deliveredMs)
+      ? new Date(deliveredMs + Number(settings.returnWindowDays || 0) * 24 * 60 * 60 * 1000)
       : null;
 
     return {
-      isDelivered: String(match.displayFulfillmentStatus || "").toUpperCase() === "FULFILLED",
+      isDelivered: Boolean(deliveredAt),
       limitDate: limitDate ? limitDate.toISOString() : "",
     };
   }

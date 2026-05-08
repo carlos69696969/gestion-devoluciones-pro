@@ -135,10 +135,17 @@ export default function extension() {
   wrapper.appendChild(title);
   wrapper.appendChild(description);
   wrapper.appendChild(actions);
-  document.body.appendChild(wrapper);
+
+  const mountWrapper = () => {
+    if (!wrapper.parentNode) document.body.appendChild(wrapper);
+  };
+  const unmountWrapper = () => {
+    if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
+  };
 
   getEligibility({ shopDomain, orderNumber: orderName, customerEmail }).then((eligibility) => {
     if (!eligibility) {
+      unmountWrapper();
       while (actions.firstChild) {
         actions.removeChild(actions.firstChild);
       }
@@ -157,6 +164,13 @@ export default function extension() {
     const hasEligibleItems =
       eligibility?.hasEligibleItems === undefined ? true : Boolean(eligibility?.hasEligibleItems);
     const isDelivered = Boolean(eligibility?.isDelivered);
+
+    if (!isDelivered) {
+      unmountWrapper();
+      return;
+    }
+
+    mountWrapper();
 
     while (actions.firstChild) {
       actions.removeChild(actions.firstChild);

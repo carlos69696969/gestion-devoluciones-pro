@@ -143,11 +143,30 @@ function normalizeOrder(orderNode) {
         country: orderNode.shippingAddress.country || "",
       }
     : null;
+  const fulfillments = Array.isArray(orderNode?.fulfillments?.nodes) ? orderNode.fulfillments.nodes : [];
+  let latestDeliveredMs = 0;
+  for (const fulfillment of fulfillments) {
+    const deliveredAt = String(fulfillment?.deliveredAt || "").trim();
+    if (deliveredAt) {
+      const deliveredMs = new Date(deliveredAt).getTime();
+      if (Number.isFinite(deliveredMs) && deliveredMs > latestDeliveredMs) latestDeliveredMs = deliveredMs;
+    }
+    const events = Array.isArray(fulfillment?.events?.nodes) ? fulfillment.events.nodes : [];
+    for (const eventNode of events) {
+      if (String(eventNode?.status || "").toUpperCase() !== "DELIVERED") continue;
+      const happenedAt = String(eventNode?.happenedAt || "").trim();
+      if (!happenedAt) continue;
+      const eventMs = new Date(happenedAt).getTime();
+      if (Number.isFinite(eventMs) && eventMs > latestDeliveredMs) latestDeliveredMs = eventMs;
+    }
+  }
+  const deliveredAtISO = latestDeliveredMs ? new Date(latestDeliveredMs).toISOString() : "";
   return {
     id: orderNode.id,
     orderNumber: orderNode.name?.replace("#", "") || "",
     name: orderNode.name || "",
     displayFulfillmentStatus: String(orderNode.displayFulfillmentStatus || "").toUpperCase(),
+    deliveredAt: deliveredAtISO,
     customerName: fallbackName,
     customerEmail: orderNode.email || "",
     customerPhone: fallbackPhone,
@@ -293,6 +312,17 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                 email
                 createdAt
                 displayFulfillmentStatus
+                fulfillments(first: 30) {
+                  nodes {
+                    deliveredAt
+                    events(first: 20, reverse: true, sortKey: HAPPENED_AT) {
+                      nodes {
+                        status
+                        happenedAt
+                      }
+                    }
+                  }
+                }
                 shippingAddress {
                   name
                   phone
@@ -603,9 +633,11 @@ export const loader = async ({ request }) => {
       });
       const hasExistingReturns = completedRequests.length > 0 || existingRequestCountAnyShop > 0;
       const hasEligibleItems = itemsWithEligibility.some((item) => !item.isAlreadyReturned);
-      const limitDate = addDays(order.createdAt, settings.returnWindowDays);
+      const isDelivered = Boolean(order.deliveredAt);
+      const limitBaseDate = isDelivered ? new Date(order.deliveredAt) : null;
+      const limitDate = limitBaseDate ? addDays(limitBaseDate, settings.returnWindowDays) : null;
       const now = new Date();
-      const isExpired = now > limitDate;
+      const isExpired = limitDate ? now > limitDate : false;
       const hasPendingReview = completedRequests.some(
         (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
       );
@@ -650,8 +682,6 @@ export const loader = async ({ request }) => {
         allDelivered && hasRefundProcessed
           ? "Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, puede reflejarse en un plazo de 5 a 10 dias habiles."
           : "";
-      const isDelivered = String(order.displayFulfillmentStatus || "").toUpperCase() === "FULFILLED";
-
       return maybeProbeResponse(isProbe, {
         reasons,
         evidenceReasons,
@@ -665,7 +695,7 @@ export const loader = async ({ request }) => {
         hasExistingReturns,
         hasEligibleItems,
         isExpired,
-        limitDate: limitDate.toISOString(),
+        limitDate: limitDate ? limitDate.toISOString() : "",
         completedRequests,
         completedAllDelivered: allDelivered,
         completedTitle: completionTitle,
@@ -673,11 +703,13 @@ export const loader = async ({ request }) => {
         completedRefundText: completionRefundText,
         hasDeniedStatus: hasDenied,
         isDelivered,
-        message: isExpired
-          ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
-          : hasEligibleItems
-            ? `Estas dentro del periodo de devolucion (${settings.returnWindowDays} dias). Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`
-            : completionTitle,
+        message: !isDelivered
+          ? "Tu pedido aun no esta marcado como entregado. Las devoluciones se habilitan cuando se marca como entregado."
+          : isExpired
+            ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
+            : hasEligibleItems
+              ? `Estas dentro del periodo de devolucion (${settings.returnWindowDays} dias). Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`
+              : completionTitle,
       });
     } catch (err) {
       lastError = err;
@@ -806,7 +838,23 @@ export const action = async ({ request }) => {
     }
   }
 
-  const limitDate = addDays(payload.order.createdAt, settings.returnWindowDays);
+  const deliveredAt = String(payload?.order?.deliveredAt || "").trim();
+  if (!deliveredAt) {
+    return {
+      ok: false,
+      error: "Tu pedido aun no esta marcado como entregado. Las devoluciones se habilitan cuando se marca como entregado.",
+    };
+  }
+
+  const deliveryDate = new Date(deliveredAt);
+  if (!Number.isFinite(deliveryDate.getTime())) {
+    return {
+      ok: false,
+      error: "No pudimos validar la fecha de entrega de tu pedido. Intenta de nuevo en unos minutos.",
+    };
+  }
+
+  const limitDate = addDays(deliveryDate, settings.returnWindowDays);
   if (new Date() > limitDate) {
     return {
       ok: false,
@@ -917,6 +965,7 @@ export default function PublicReturnsPortal() {
     completedRefundText = "",
     requestedMode = "",
     hasDeniedStatus = false,
+    isDelivered = false,
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -929,11 +978,11 @@ export default function PublicReturnsPortal() {
     return hasExistingReturns ? "summary" : "new";
   })();
   const hasNoEligibleItems =
-    autoOrder && !isExpired && effectivePortalMode === "new" && !hasEligibleItems;
+    autoOrder && isDelivered && !isExpired && effectivePortalMode === "new" && !hasEligibleItems;
   const showNewRequestForm =
-    autoOrder && !isExpired && effectivePortalMode === "new" && hasEligibleItems;
+    autoOrder && isDelivered && !isExpired && effectivePortalMode === "new" && hasEligibleItems;
   const showSummaryView =
-    autoOrder && !isExpired && effectivePortalMode === "summary" && hasExistingReturns;
+    autoOrder && isDelivered && !isExpired && effectivePortalMode === "summary" && hasExistingReturns;
 
   return (
     <main className={styles.page}>
@@ -977,7 +1026,7 @@ export default function PublicReturnsPortal() {
           </section>
         ) : null}
 
-        {autoOrder && isExpired ? (
+        {autoOrder && isDelivered && isExpired ? (
           <section className={styles.card}>
             <h2 className={styles.cardTitle}>Periodo vencido</h2>
             <p className={styles.cardMeta}>
@@ -1176,8 +1225,8 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     [evidenceReasons],
   );
   const limitDateObj = useMemo(
-    () => addDays(order.createdAt, settings.returnWindowDays),
-    [order.createdAt, settings.returnWindowDays],
+    () => addDays(order.deliveredAt || order.createdAt, settings.returnWindowDays),
+    [order.deliveredAt, order.createdAt, settings.returnWindowDays],
   );
   const limitDateISO = useMemo(() => limitDateObj.toISOString().slice(0, 10), [limitDateObj]);
   const [step, setStep] = useState(1);
