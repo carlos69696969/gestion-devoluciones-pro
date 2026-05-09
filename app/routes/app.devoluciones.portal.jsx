@@ -63,10 +63,9 @@ export const action = async ({ request }) => {
   if (intent === "lookup") {
     try {
       const orderNumber = String(formData.get("orderNumber") || "").trim();
-      const email = String(formData.get("email") || "").trim().toLowerCase();
 
-      if (!orderNumber || !email) {
-        return { ok: false, error: "Captura numero de pedido y correo." };
+      if (!orderNumber) {
+        return { ok: false, error: "Captura el numero de pedido." };
       }
 
       const response = await admin.graphql(
@@ -114,12 +113,10 @@ export const action = async ({ request }) => {
         return { ok: false, error: "Shopify devolvio un error al consultar el pedido." };
       }
 
-      const match = data?.data?.orders?.edges
-        ?.map((e) => e.node)
-        ?.find((o) => (o.email || "").toLowerCase() === email);
+      const match = data?.data?.orders?.edges?.map((e) => e.node)?.[0];
 
       if (!match) {
-        return { ok: false, error: "No encontramos un pedido con esos datos." };
+        return { ok: false, error: "No encontramos un pedido con ese numero." };
       }
 
       return { ok: true, order: normalizeOrder(match) };
@@ -225,10 +222,6 @@ export default function ReturnsPortal() {
             <label>
               Numero de pedido
               <input name="orderNumber" required />
-            </label>
-            <label>
-              Correo del pedido
-              <input name="email" type="email" required />
             </label>
             <button type="submit" disabled={isSubmitting}>
               Buscar pedido
