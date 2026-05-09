@@ -1,204 +1,97 @@
-/* eslint-disable react/prop-types */
-import { useMemo, useState } from "react";
-import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Form, useActionData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
-const DEFAULT_REASONS = [
-  "Me quedo grande",
-  "Me quedo chico",
-  "Ya no lo quiero",
-  "No era lo que pedi",
-  "Llego danado",
-  "Otro",
-];
+const STATUS_LABELS = {
+  pendiente: "pendiente",
+  en_revision: "en revision",
+  aprobada: "aprobada",
+  recibida: "recibida",
+  por_devolver: "por devolver",
+  reembolso_denegado: "reembolso denegado",
+  rechazada: "rechazada",
+  reembolsada: "reembolsada",
+  completada: "completada",
+};
 
-function parseLines(value) {
+const STATUS_BADGE_STYLES = {
+  pendiente: { background: "#fff4e5", color: "#8a4b08" },
+  en_revision: { background: "#eff6ff", color: "#1e40af" },
+  aprobada: { background: "#ecfdf3", color: "#027a48" },
+  recibida: { background: "#e0f2fe", color: "#075985" },
+  por_devolver: { background: "#fff7ed", color: "#9a3412" },
+  reembolso_denegado: { background: "#fee2e2", color: "#b42318" },
+  rechazada: { background: "#fee2e2", color: "#b42318" },
+  reembolsada: { background: "#dcfce7", color: "#166534" },
+  completada: { background: "#dcfce7", color: "#166534" },
+  default: { background: "#f2f4f7", color: "#344054" },
+};
+
+function normalizeOrderNumber(value) {
   return String(value || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-async function getOrCreateSettings(shop) {
-  const existing = await prisma.returnSettings.findUnique({ where: { shop } });
-  if (existing) return existing;
-  return prisma.returnSettings.create({ data: { shop } });
+    .trim()
+    .replace(/^#/, "");
 }
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
-  const settings = await getOrCreateSettings(session.shop);
-  const reasons = parseLines(settings.returnReasons);
-  return { reasons: reasons.length ? reasons : DEFAULT_REASONS, pickupCost: settings.pickupCost };
+  await authenticate.admin(request);
+  return null;
 };
 
-function normalizeOrder(orderNode) {
-  const fallbackName =
-    orderNode.shippingAddress?.name ||
-    orderNode.billingAddress?.name ||
-    "Cliente";
-  return {
-    id: orderNode.id,
-    orderNumber: orderNode.name?.replace("#", "") || "",
-    name: orderNode.name || "",
-    customerName: fallbackName,
-    customerEmail: orderNode.email || "",
-    items: orderNode.lineItems.edges.map(({ node }) => ({
-      id: node.id,
-      productId: node.product?.id || "",
-      variantId: node.variant?.id || "",
-      title: node.title,
-      quantity: node.quantity,
-    })),
-  };
-}
-
 export const action = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
 
   if (intent === "lookup") {
     try {
-      const orderNumber = String(formData.get("orderNumber") || "").trim();
+      const orderNumber = normalizeOrderNumber(formData.get("orderNumber"));
 
       if (!orderNumber) {
         return { ok: false, error: "Captura el numero de pedido." };
       }
 
-      const response = await admin.graphql(
-        `#graphql
-        query FindOrders($query: String!) {
-          orders(first: 5, query: $query) {
-            edges {
-              node {
-                id
-                name
-                email
-                shippingAddress { name }
-                billingAddress { name }
-                lineItems(first: 50) {
-                  edges {
-                    node {
-                      id
-                      title
-                      quantity
-                      product { id }
-                      variant { id }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }`,
-        {
-          variables: { query: `name:#${orderNumber}` },
-        },
-      );
-      const data = await response.json();
-
-      if (data?.errors?.length) {
-        const hasAccessDenied = data.errors.some((error) =>
-          String(error?.message || "").toLowerCase().includes("access denied"),
-        );
-        if (hasAccessDenied) {
-          return {
-            ok: false,
-            error: "La app no tiene permisos de pedidos. Reinstala la app y acepta permisos.",
-          };
-        }
-        return { ok: false, error: "Shopify devolvio un error al consultar el pedido." };
-      }
-
-      const match = data?.data?.orders?.edges?.map((e) => e.node)?.[0];
-
-      if (!match) {
-        return { ok: false, error: "No encontramos un pedido con ese numero." };
-      }
-
-      return { ok: true, order: normalizeOrder(match) };
-    } catch (error) {
-      const raw = String(error?.message || error || "");
-      const message = raw.toLowerCase();
-      if (message.includes("access denied")) {
-        return {
-          ok: false,
-          error: "La app no tiene permisos de pedidos. Reinstala la app y acepta permisos.",
-          diagnostic: raw,
-        };
-      }
-      if (message.includes("unauthorized") || message.includes("forbidden") || message.includes("401") || message.includes("403")) {
-        return { ok: false, error: "Sesion/token invalido. Abre la app desde Admin para reautenticar.", diagnostic: raw };
-      }
-      return { ok: false, error: "No se pudo buscar el pedido en este momento.", diagnostic: raw };
-    }
-  }
-
-  if (intent === "submit_return") {
-    try {
-      const payloadRaw = String(formData.get("payload") || "");
-      if (!payloadRaw) {
-        return { ok: false, error: "No hay informacion para guardar." };
-      }
-
-      const payload = JSON.parse(payloadRaw);
-      if (!payload.items?.length) {
-        return { ok: false, error: "Selecciona al menos un producto." };
-      }
-
-      if (payload.returnMethod === "pickup") {
-        const required = [
-          "pickupFullName",
-          "pickupPhone",
-          "pickupAddress",
-          "pickupNeighborhood",
-          "pickupCity",
-          "pickupState",
-          "pickupPostalCode",
-        ];
-        const missing = required.find((field) => !payload[field]);
-        if (missing) {
-          return { ok: false, error: "Completa todos los datos de recoleccion." };
-        }
-      }
-      const settings = await getOrCreateSettings(session.shop);
-
-      await prisma.returnRequest.create({
-        data: {
+      const requests = await prisma.returnRequest.findMany({
+        where: {
           shop: session.shop,
-          shopifyOrderId: payload.order.id,
-          orderNumber: payload.order.orderNumber,
-          customerName: payload.order.customerName,
-          customerEmail: payload.order.customerEmail,
-          returnMethod: payload.returnMethod,
-          returnCost: payload.returnMethod === "pickup" ? Number(settings.pickupCost || 0) : 0,
-          pickupFullName: payload.pickupFullName || null,
-          pickupPhone: payload.pickupPhone || null,
-          pickupAddress: payload.pickupAddress || null,
-          pickupNeighborhood: payload.pickupNeighborhood || null,
-          pickupCity: payload.pickupCity || null,
-          pickupState: payload.pickupState || null,
-          pickupPostalCode: payload.pickupPostalCode || null,
-          pickupReferences: payload.pickupReferences || null,
-          items: {
-            create: payload.items.map((item) => ({
-              lineItemId: item.id || null,
-              productId: item.productId || "",
-              variantId: item.variantId || null,
-              title: item.title,
-              quantity: Number(item.quantity || 1),
-              reason: item.reason,
-            })),
-          },
+          orderNumber,
+        },
+        include: {
+          items: true,
+        },
+        orderBy: {
+          createdAt: "desc",
         },
       });
 
-      return { ok: true, saved: true };
-    } catch {
-      return { ok: false, error: "No se pudo guardar la solicitud de devolucion." };
+      return {
+        ok: true,
+        queried: true,
+        orderNumber,
+        requests: requests.map((requestRow) => ({
+          id: requestRow.id,
+          orderNumber: requestRow.orderNumber,
+          customerName: requestRow.customerName,
+          customerEmail: requestRow.customerEmail,
+          returnMethod: requestRow.returnMethod,
+          status: String(requestRow.status || "").toLowerCase(),
+          rejectionReason: requestRow.rejectionReason || "",
+          createdAt: requestRow.createdAt?.toISOString() || null,
+          updatedAt: requestRow.updatedAt?.toISOString() || null,
+          receivedAt: requestRow.receivedAt?.toISOString() || null,
+          refundedAt: requestRow.refundedAt?.toISOString() || null,
+          items: requestRow.items.map((item) => ({
+            id: item.id,
+            title: item.title,
+            quantity: item.quantity,
+            reason: item.reason,
+          })),
+        })),
+      };
+    } catch (error) {
+      console.error("Error searching return requests by order number", error);
+      return { ok: false, error: "No se pudo buscar la devolucion en este momento." };
     }
   }
 
@@ -206,194 +99,157 @@ export const action = async ({ request }) => {
 };
 
 export default function ReturnsPortal() {
-  const { reasons, pickupCost } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
-  const order = actionData?.order;
-  const diagnostic = actionData?.diagnostic;
+  const requests = Array.isArray(actionData?.requests) ? actionData.requests : [];
+  const hasResults = requests.length > 0;
 
   return (
     <s-page heading="Portal de devoluciones">
-      <s-section heading="1) Buscar pedido">
+      <s-section heading="Buscar devolucion por numero de pedido">
         <Form method="post">
           <input type="hidden" name="intent" value="lookup" />
-          <div style={{ display: "grid", gap: 12, maxWidth: 560 }}>
-            <label>
-              Numero de pedido
-              <input name="orderNumber" required />
-            </label>
-            <button type="submit" disabled={isSubmitting}>
-              Buscar pedido
-            </button>
-            {actionData?.error ? <p style={{ color: "#b42318" }}>{actionData.error}</p> : null}
-            {typeof diagnostic === "string" && diagnostic.trim() ? (
-              <p style={{ color: "#475467", fontSize: 13 }}>{diagnostic}</p>
-            ) : null}
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+              maxWidth: 700,
+              padding: 18,
+              border: "1px solid #e4e7ec",
+              borderRadius: 14,
+              background: "linear-gradient(180deg, #ffffff 0%, #f9fafb 100%)",
+            }}
+          >
+            <p style={{ margin: 0, fontSize: 14, color: "#475467" }}>
+              Ingresa el numero del pedido. Solo se mostraran devoluciones ya registradas.
+            </p>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                name="orderNumber"
+                required
+                placeholder="Ejemplo: 1011"
+                style={{
+                  height: 42,
+                  minWidth: 260,
+                  padding: "0 12px",
+                  borderRadius: 10,
+                  border: "1px solid #d0d5dd",
+                }}
+              />
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                style={{
+                  height: 42,
+                  padding: "0 18px",
+                  borderRadius: 10,
+                  border: "none",
+                  fontWeight: 600,
+                  color: "#ffffff",
+                  background: isSubmitting ? "#98a2b3" : "#175cd3",
+                  cursor: isSubmitting ? "not-allowed" : "pointer",
+                }}
+              >
+                {isSubmitting ? "Buscando..." : "Buscar pedido"}
+              </button>
+            </div>
+            {actionData?.error ? <p style={{ margin: 0, color: "#b42318" }}>{actionData.error}</p> : null}
           </div>
         </Form>
       </s-section>
 
-      {order ? (
-        <s-section heading="2) Selecciona productos y envia solicitud">
-          <ReturnsRequestForm order={order} reasons={reasons} pickupCost={pickupCost} />
-          {actionData?.saved ? (
-            <p style={{ color: "#027a48", marginTop: 12 }}>Solicitud enviada correctamente.</p>
-          ) : null}
+      {hasResults ? (
+        <s-section heading={`Resultado${requests.length > 1 ? "s" : ""}`}>
+          <div style={{ display: "grid", gap: 12 }}>
+            {requests.map((requestRow) => {
+              const status = String(requestRow.status || "").toLowerCase();
+              const badgeStyle = STATUS_BADGE_STYLES[status] || STATUS_BADGE_STYLES.default;
+              return (
+                <article
+                  key={requestRow.id}
+                  style={{
+                    border: "1px solid #e4e7ec",
+                    borderRadius: 14,
+                    backgroundColor: "#ffffff",
+                    padding: 16,
+                    boxShadow: "0 1px 2px rgba(16, 24, 40, 0.05)",
+                  }}
+                >
+                  <header
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <strong style={{ fontSize: 20 }}>Pedido #{requestRow.orderNumber}</strong>
+                    <span
+                      style={{
+                        ...badgeStyle,
+                        borderRadius: 999,
+                        padding: "6px 12px",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {STATUS_LABELS[status] || status || "sin estado"}
+                    </span>
+                  </header>
+
+                  <div style={{ display: "grid", gap: 6, marginTop: 12, color: "#344054" }}>
+                    <p style={{ margin: 0 }}>
+                      <strong>Cliente:</strong> {requestRow.customerName} | {requestRow.customerEmail}
+                    </p>
+                    <p style={{ margin: 0 }}>
+                      <strong>Metodo:</strong>{" "}
+                      {requestRow.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}
+                    </p>
+                    {requestRow.rejectionReason ? (
+                      <p style={{ margin: 0 }}>
+                        <strong>Motivo:</strong> {requestRow.rejectionReason}
+                      </p>
+                    ) : null}
+                    <p style={{ margin: 0 }}>
+                      <strong>Fecha solicitud:</strong>{" "}
+                      {requestRow.createdAt ? new Date(requestRow.createdAt).toLocaleString("es-MX") : "-"}
+                    </p>
+                    {requestRow.receivedAt ? (
+                      <p style={{ margin: 0 }}>
+                        <strong>Fecha recibida:</strong> {new Date(requestRow.receivedAt).toLocaleString("es-MX")}
+                      </p>
+                    ) : null}
+                    {requestRow.refundedAt ? (
+                      <p style={{ margin: 0 }}>
+                        <strong>Fecha reembolso:</strong> {new Date(requestRow.refundedAt).toLocaleString("es-MX")}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div style={{ marginTop: 12 }}>
+                    <strong style={{ display: "block", marginBottom: 8 }}>Productos</strong>
+                    {requestRow.items?.length ? (
+                      <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 4 }}>
+                        {requestRow.items.map((item) => (
+                          <li key={item.id}>
+                            {item.title} x{item.quantity} - Motivo: {item.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p style={{ margin: 0, color: "#667085" }}>Sin productos registrados.</p>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </s-section>
       ) : null}
     </s-page>
-  );
-}
-
-function ReturnsRequestForm({ order, reasons, pickupCost }) {
-  const [selected, setSelected] = useState({});
-  const [reasonsByItem, setReasonsByItem] = useState(
-    Object.fromEntries(order.items.map((item) => [item.id, reasons[0]])),
-  );
-  const [returnMethod, setReturnMethod] = useState("branch");
-  const [pickup, setPickup] = useState({
-    pickupFullName: "",
-    pickupPhone: "",
-    pickupAddress: "",
-    pickupNeighborhood: "",
-    pickupCity: "",
-    pickupState: "",
-    pickupPostalCode: "",
-    pickupReferences: "",
-  });
-
-  const selectedItems = useMemo(
-    () =>
-      order.items
-        .filter((item) => selected[item.id])
-        .map((item) => ({
-          ...item,
-          reason: reasonsByItem[item.id] || reasons[0],
-        })),
-    [order.items, reasons, reasonsByItem, selected],
-  );
-
-  const payload = useMemo(
-    () => ({
-      order,
-      items: selectedItems,
-      returnMethod,
-      ...pickup,
-    }),
-    [order, pickup, returnMethod, selectedItems],
-  );
-
-  return (
-    <Form method="post">
-      <input type="hidden" name="intent" value="submit_return" />
-      <input type="hidden" name="payload" value={JSON.stringify(payload)} />
-      <div style={{ display: "grid", gap: 14 }}>
-        <h3>Pedido {order.name}</h3>
-        {order.items.map((item) => (
-          <div key={item.id} style={{ border: "1px solid #ddd", padding: 10, borderRadius: 6 }}>
-            <label style={{ display: "block" }}>
-              <input
-                checked={Boolean(selected[item.id])}
-                onChange={(event) =>
-                  setSelected((prev) => ({ ...prev, [item.id]: event.target.checked }))
-                }
-                type="checkbox"
-              />{" "}
-              {item.title} (Cantidad: {item.quantity})
-            </label>
-            <label>
-              Motivo
-              <select
-                value={reasonsByItem[item.id] || reasons[0]}
-                onChange={(event) =>
-                  setReasonsByItem((prev) => ({ ...prev, [item.id]: event.target.value }))
-                }
-              >
-                {reasons.map((reason) => (
-                  <option key={reason} value={reason}>
-                    {reason}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        ))}
-
-        <h3>Metodo de devolucion</h3>
-        <label>
-          <input
-            checked={returnMethod === "branch"}
-            onChange={() => setReturnMethod("branch")}
-            type="radio"
-            name="returnMethodChoice"
-            value="branch"
-          />{" "}
-          Entrega en sucursal ($0)
-        </label>
-        <label>
-          <input
-            checked={returnMethod === "pickup"}
-            onChange={() => setReturnMethod("pickup")}
-            type="radio"
-            name="returnMethodChoice"
-            value="pickup"
-          />{" "}
-          Recoleccion a domicilio (${pickupCost} MXN)
-        </label>
-
-        <h3>Datos para recoleccion</h3>
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(220px, 1fr))" }}>
-          <input
-            value={pickup.pickupFullName}
-            onChange={(event) => setPickup((prev) => ({ ...prev, pickupFullName: event.target.value }))}
-            placeholder="Nombre completo"
-          />
-          <input
-            value={pickup.pickupPhone}
-            onChange={(event) => setPickup((prev) => ({ ...prev, pickupPhone: event.target.value }))}
-            placeholder="Telefono"
-          />
-          <input
-            value={pickup.pickupAddress}
-            onChange={(event) => setPickup((prev) => ({ ...prev, pickupAddress: event.target.value }))}
-            placeholder="Direccion completa"
-          />
-          <input
-            value={pickup.pickupNeighborhood}
-            onChange={(event) => setPickup((prev) => ({ ...prev, pickupNeighborhood: event.target.value }))}
-            placeholder="Colonia"
-          />
-          <input
-            value={pickup.pickupCity}
-            onChange={(event) => setPickup((prev) => ({ ...prev, pickupCity: event.target.value }))}
-            placeholder="Ciudad"
-          />
-          <input
-            value={pickup.pickupState}
-            onChange={(event) => setPickup((prev) => ({ ...prev, pickupState: event.target.value }))}
-            placeholder="Estado"
-          />
-          <input
-            value={pickup.pickupPostalCode}
-            onChange={(event) => setPickup((prev) => ({ ...prev, pickupPostalCode: event.target.value }))}
-            placeholder="Codigo postal"
-          />
-          <input
-            value={pickup.pickupReferences}
-            onChange={(event) => setPickup((prev) => ({ ...prev, pickupReferences: event.target.value }))}
-            placeholder="Referencias"
-          />
-        </div>
-
-        <h3>Resumen</h3>
-        <p>Numero de pedido: {order.name}</p>
-        <p>Productos seleccionados: {selectedItems.length}</p>
-        <p>Metodo: {returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}</p>
-        <p>Costo: ${returnMethod === "pickup" ? pickupCost : 0} MXN</p>
-        <button type="submit">Enviar solicitud</button>
-      </div>
-    </Form>
   );
 }
 
