@@ -107,13 +107,104 @@ function getStatusClassName(status) {
   return "statusDefault";
 }
 
+function itemKeyFromRecord(item) {
+  const lineItemId = String(item?.lineItemId || "").trim();
+  if (lineItemId) return `line:${lineItemId}`;
+  const variantId = String(item?.variantId || "").trim();
+  if (variantId) return `variant:${variantId}`;
+  const productId = String(item?.productId || "").trim();
+  if (productId) return `product:${productId}`;
+  return `title:${String(item?.title || "").trim().toLowerCase()}`;
+}
+
+function putImageCandidate(map, key, imageUrl, imageAlt) {
+  if (!key || !imageUrl || map[key]) return;
+  map[key] = { imageUrl, imageAlt: imageAlt || "" };
+}
+
+async function fetchOrderItemImageMaps(admin, orderIds) {
+  const uniqueIds = Array.from(new Set(orderIds.filter(Boolean)));
+  if (!uniqueIds.length) return {};
+
+  try {
+    const response = await admin.graphql(
+      `#graphql
+      query OrdersForReturnImages($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on Order {
+            id
+            lineItems(first: 100) {
+              edges {
+                node {
+                  id
+                  title
+                  variant {
+                    id
+                    image {
+                      url
+                      altText
+                    }
+                  }
+                  product {
+                    id
+                    featuredImage {
+                      url
+                      altText
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`,
+      { variables: { ids: uniqueIds } },
+    );
+    const payload = await response.json();
+    const nodes = payload?.data?.nodes || [];
+    const byOrder = {};
+
+    for (const orderNode of nodes) {
+      const orderId = String(orderNode?.id || "").trim();
+      if (!orderId) continue;
+      const imageMap = {};
+      const edges = Array.isArray(orderNode?.lineItems?.edges) ? orderNode.lineItems.edges : [];
+      for (const edge of edges) {
+        const lineNode = edge?.node;
+        if (!lineNode) continue;
+        const lineItemId = String(lineNode.id || "").trim();
+        const lineTitle = String(lineNode.title || "").trim().toLowerCase();
+        const variantId = String(lineNode?.variant?.id || "").trim();
+        const productId = String(lineNode?.product?.id || "").trim();
+        const variantImageUrl = String(lineNode?.variant?.image?.url || "").trim();
+        const variantImageAlt = String(lineNode?.variant?.image?.altText || "").trim();
+        const productImageUrl = String(lineNode?.product?.featuredImage?.url || "").trim();
+        const productImageAlt = String(lineNode?.product?.featuredImage?.altText || "").trim();
+        const chosenUrl = variantImageUrl || productImageUrl;
+        const chosenAlt = variantImageAlt || productImageAlt;
+
+        putImageCandidate(imageMap, lineItemId ? `line:${lineItemId}` : "", chosenUrl, chosenAlt);
+        putImageCandidate(imageMap, variantId ? `variant:${variantId}` : "", chosenUrl, chosenAlt);
+        putImageCandidate(imageMap, productId ? `product:${productId}` : "", chosenUrl, chosenAlt);
+        putImageCandidate(imageMap, lineTitle ? `title:${lineTitle}` : "", chosenUrl, chosenAlt);
+      }
+      byOrder[orderId] = imageMap;
+    }
+
+    return byOrder;
+  } catch (error) {
+    console.error("Error loading product images for portal results", error);
+    return {};
+  }
+}
+
 export const loader = async ({ request }) => {
   await authenticate.admin(request);
   return null;
 };
 
 export const action = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
 
@@ -136,6 +227,10 @@ export const action = async ({ request }) => {
           createdAt: "desc",
         },
       });
+      const imageMapsByOrder = await fetchOrderItemImageMaps(
+        admin,
+        requests.map((requestRow) => requestRow.shopifyOrderId),
+      );
 
       return {
         ok: true,
@@ -143,6 +238,7 @@ export const action = async ({ request }) => {
           const status = String(requestRow.status || "").toLowerCase();
           const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
           const returnedToCustomerAt = latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason);
+          const imageMap = imageMapsByOrder[String(requestRow.shopifyOrderId || "").trim()] || {};
           return {
             id: requestRow.id,
             orderNumber: requestRow.orderNumber,
@@ -173,11 +269,16 @@ export const action = async ({ request }) => {
             rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
             items: requestRow.items.map((item) => ({
               id: item.id,
+              lineItemId: item.lineItemId || "",
+              productId: item.productId || "",
+              variantId: item.variantId || "",
               title: item.title,
               quantity: item.quantity,
               reason: item.reason,
               details: item.details || "",
               photoDataUrl: item.photoDataUrl || "",
+              imageUrl: imageMap[itemKeyFromRecord(item)]?.imageUrl || "",
+              imageAlt: imageMap[itemKeyFromRecord(item)]?.imageAlt || "",
             })),
           };
         }),
@@ -363,7 +464,15 @@ function ResultCard({ request }) {
             return (
               <li key={item.id} className={styles.productItem}>
                 <div className={styles.productItemHeader}>
-                  <div className={styles.productThumbPlaceholder} />
+                  {item.imageUrl ? (
+                    <img
+                      src={item.imageUrl}
+                      alt={item.imageAlt || item.title}
+                      className={styles.productThumb}
+                    />
+                  ) : (
+                    <div className={styles.productThumbPlaceholder} />
+                  )}
                   <div className={styles.productCopy}>
                     <p className={styles.productLineTitle}>
                       {item.title} x{item.quantity}
