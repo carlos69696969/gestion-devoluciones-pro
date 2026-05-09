@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -217,6 +217,97 @@ async function fetchOrderSnapshot(admin, orderId) {
 function putImageCandidate(map, key, imageUrl, imageAlt) {
   if (!key || !imageUrl || map[key]) return;
   map[key] = { imageUrl, imageAlt: imageAlt || "" };
+}
+
+function ImageViewer({ image, onClose }) {
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+    setDragging(false);
+  }, [image?.src]);
+
+  if (!image?.src) return null;
+
+  const applyZoom = (nextZoom) => {
+    const clamped = Math.min(4, Math.max(1, Number(nextZoom || 1)));
+    setZoom(clamped);
+    if (clamped <= 1) setOffset({ x: 0, y: 0 });
+  };
+
+  const beginDrag = (event) => {
+    if (zoom <= 1) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragging(true);
+    setDragStart({
+      x: event.clientX - offset.x,
+      y: event.clientY - offset.y,
+    });
+  };
+
+  const onDrag = (event) => {
+    if (!dragging || zoom <= 1) return;
+    setOffset({
+      x: event.clientX - dragStart.x,
+      y: event.clientY - dragStart.y,
+    });
+  };
+
+  const finishDrag = (event) => {
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDragging(false);
+  };
+
+  return (
+    <div className={styles.imageViewerOverlay} onClick={onClose} role="presentation">
+      <div className={styles.imageViewerDialog} onClick={(event) => event.stopPropagation()} role="presentation">
+        <div className={styles.imageViewerToolbar}>
+          <button type="button" className={styles.imageViewerBtn} onClick={() => applyZoom(zoom - 0.25)}>
+            -
+          </button>
+          <span className={styles.imageViewerZoom}>{Math.round(zoom * 100)}%</span>
+          <button type="button" className={styles.imageViewerBtn} onClick={() => applyZoom(zoom + 0.25)}>
+            +
+          </button>
+          <button type="button" className={styles.imageViewerBtn} onClick={() => applyZoom(1)}>
+            Reset
+          </button>
+          <button type="button" className={styles.imageViewerBtn} onClick={onClose}>
+            Cerrar
+          </button>
+        </div>
+        <div
+          className={styles.imageViewerStage}
+          onWheel={(event) => {
+            event.preventDefault();
+            applyZoom(zoom + (event.deltaY < 0 ? 0.2 : -0.2));
+          }}
+        >
+          <img
+            src={image.src}
+            alt={image.alt || "Imagen"}
+            className={styles.imageViewerImg}
+            style={{
+              transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+              cursor: zoom > 1 ? (dragging ? "grabbing" : "grab") : "zoom-in",
+            }}
+            onDoubleClick={() => applyZoom(zoom > 1 ? 1 : 2)}
+            onPointerDown={beginDrag}
+            onPointerMove={onDrag}
+            onPointerUp={finishDrag}
+            onPointerCancel={finishDrag}
+            draggable={false}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 async function fetchOrderItemImageMaps(admin, orderIds) {
@@ -1117,17 +1208,7 @@ function RequestCard({ request, isSubmitting }) {
         ) : null}
       </div>
 
-      {viewerImage?.src ? (
-        <div className={styles.imageViewerOverlay} onClick={() => setViewerImage(null)} role="presentation">
-          <div className={styles.imageViewerDialog} onClick={(event) => event.stopPropagation()} role="presentation">
-            <img
-              src={viewerImage.src}
-              alt={viewerImage.alt || "Imagen"}
-              className={styles.imageViewerImg}
-            />
-          </div>
-        </div>
-      ) : null}
+      <ImageViewer image={viewerImage} onClose={() => setViewerImage(null)} />
     </article>
   );
 }

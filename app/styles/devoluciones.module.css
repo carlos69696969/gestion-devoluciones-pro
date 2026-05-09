@@ -551,12 +551,51 @@
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
 }
 
+.imageViewerToolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.imageViewerBtn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.imageViewerZoom {
+  color: #d1d5db;
+  font-size: 12px;
+  min-width: 46px;
+  text-align: center;
+}
+
+.imageViewerStage {
+  overflow: hidden;
+  border-radius: 8px;
+  max-height: calc(92vh - 74px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .imageViewerImg {
   display: block;
   max-width: 100%;
-  max-height: calc(92vh - 20px);
+  max-height: calc(92vh - 74px);
   width: auto;
   height: auto;
   border-radius: 8px;
   object-fit: contain;
+  touch-action: none;
+  user-select: none;
+  transition: transform 80ms linear;
 }
