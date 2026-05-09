@@ -500,11 +500,17 @@
 }
 
 .evidenceLink {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
   display: grid;
   gap: 4px;
   text-decoration: none;
   color: var(--muted);
   font-size: 12px;
+  cursor: zoom-in;
+  text-align: left;
 }
 
 .evidencePhoto {
@@ -513,4 +519,44 @@
   object-fit: cover;
   border-radius: 10px;
   border: 1px solid var(--border);
+}
+
+.imageButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: zoom-in;
+  line-height: 0;
+}
+
+.imageViewerOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 9999;
+}
+
+.imageViewerDialog {
+  max-width: min(92vw, 980px);
+  max-height: 92vh;
+  background: #0b1220;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 10px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+}
+
+.imageViewerImg {
+  display: block;
+  max-width: 100%;
+  max-height: calc(92vh - 20px);
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+  object-fit: contain;
 }

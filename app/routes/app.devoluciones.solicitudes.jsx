@@ -1,4 +1,5 @@
 /* eslint-disable react/prop-types */
+import { useState } from "react";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -814,6 +815,7 @@ export default function ReturnsRequests() {
 }
 
 function RequestCard({ request, isSubmitting }) {
+  const [viewerImage, setViewerImage] = useState(null);
   const status = String(request.status || "").toLowerCase();
   const isPickupMethod = request.returnMethod === "pickup";
   const isPickupFailedAttempt = isPickupFailedAttemptStatus(status);
@@ -950,11 +952,22 @@ function RequestCard({ request, isSubmitting }) {
               <li key={item.id} className={styles.productItem}>
                 <div className={styles.productItemHeader}>
                   {item.imageUrl ? (
-                    <img
-                      src={item.imageUrl}
-                      alt={item.imageAlt || item.title}
-                      className={styles.productThumb}
-                    />
+                    <button
+                      type="button"
+                      className={styles.imageButton}
+                      onClick={() =>
+                        setViewerImage({
+                          src: item.imageUrl,
+                          alt: item.imageAlt || item.title,
+                        })
+                      }
+                    >
+                      <img
+                        src={item.imageUrl}
+                        alt={item.imageAlt || item.title}
+                        className={styles.productThumb}
+                      />
+                    </button>
                   ) : (
                     <div className={styles.productThumbPlaceholder} />
                   )}
@@ -969,12 +982,16 @@ function RequestCard({ request, isSubmitting }) {
                 {photos.length ? (
                   <div className={styles.evidencePhotos}>
                     {photos.map((src, idx) => (
-                      <a
+                      <button
                         key={`${itemKeyFromRecord(item)}_${idx}`}
-                        href={src}
-                        target="_blank"
-                        rel="noreferrer"
+                        type="button"
                         className={styles.evidenceLink}
+                        onClick={() =>
+                          setViewerImage({
+                            src,
+                            alt: `Evidencia ${idx + 1}`,
+                          })
+                        }
                       >
                         <img
                           src={src}
@@ -982,7 +999,7 @@ function RequestCard({ request, isSubmitting }) {
                           className={styles.evidencePhoto}
                         />
                         <span>Foto {idx + 1}</span>
-                      </a>
+                      </button>
                     ))}
                   </div>
                 ) : null}
@@ -1099,6 +1116,18 @@ function RequestCard({ request, isSubmitting }) {
           </Form>
         ) : null}
       </div>
+
+      {viewerImage?.src ? (
+        <div className={styles.imageViewerOverlay} onClick={() => setViewerImage(null)} role="presentation">
+          <div className={styles.imageViewerDialog} onClick={(event) => event.stopPropagation()} role="presentation">
+            <img
+              src={viewerImage.src}
+              alt={viewerImage.alt || "Imagen"}
+              className={styles.imageViewerImg}
+            />
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }

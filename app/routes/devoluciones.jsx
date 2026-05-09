@@ -1082,7 +1082,19 @@ function CompletedReturnsSection({ completedTitle, completedText, completedRefun
   );
 }
 
+function ImageViewer({ image, onClose }) {
+  if (!image?.src) return null;
+  return (
+    <div className={styles.imageViewerOverlay} onClick={onClose} role="presentation">
+      <div className={styles.imageViewerDialog} onClick={(event) => event.stopPropagation()} role="presentation">
+        <img src={image.src} alt={image.alt || "Imagen"} className={styles.imageViewerImg} />
+      </div>
+    </div>
+  );
+}
+
 function CompletedReturnSummary({ requestItem }) {
+  const [viewerImage, setViewerImage] = useState(null);
   const normalizedStatus = String(requestItem.status || "").toLowerCase();
   const isFailedPickupAttempt =
     normalizedStatus === "intento_fallido_1" || normalizedStatus === "intento_fallido_2";
@@ -1209,7 +1221,18 @@ function CompletedReturnSummary({ requestItem }) {
           <li key={item.id} className={styles.productItem}>
             <div className={styles.productItemHeader}>
               {item.imageUrl ? (
-                <img src={item.imageUrl} alt={item.imageAlt || item.title} className={styles.productThumb} />
+                <button
+                  type="button"
+                  className={styles.imageButton}
+                  onClick={() =>
+                    setViewerImage({
+                      src: item.imageUrl,
+                      alt: item.imageAlt || item.title,
+                    })
+                  }
+                >
+                  <img src={item.imageUrl} alt={item.imageAlt || item.title} className={styles.productThumb} />
+                </button>
               ) : (
                 <div className={styles.productThumbPlaceholder} />
               )}
@@ -1222,16 +1245,28 @@ function CompletedReturnSummary({ requestItem }) {
             {item.photoDataUrls?.length ? (
               <div className={styles.evidencePhotos}>
                 {item.photoDataUrls.map((src, idx) => (
-                  <a key={`${item.id}_${idx}`} href={src} target="_blank" rel="noreferrer" className={styles.evidenceLink}>
+                  <button
+                    key={`${item.id}_${idx}`}
+                    type="button"
+                    className={styles.evidenceLink}
+                    onClick={() =>
+                      setViewerImage({
+                        src,
+                        alt: `Evidencia ${idx + 1}`,
+                      })
+                    }
+                  >
                     <img src={src} alt={`Evidencia ${idx + 1}`} className={styles.evidencePhoto} />
                     <span>Foto {idx + 1}</span>
-                  </a>
+                  </button>
                 ))}
               </div>
             ) : null}
           </li>
         ))}
       </ul>
+
+      <ImageViewer image={viewerImage} onClose={() => setViewerImage(null)} />
 
     </article>
   );
@@ -1256,6 +1291,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
   );
   const [detailsByItem, setDetailsByItem] = useState({});
   const [photoByItem, setPhotoByItem] = useState({});
+  const [viewerImage, setViewerImage] = useState(null);
   const [returnMethod, setReturnMethod] = useState("branch");
   const customerName = order.customerName || "";
   const customerPhone = order.customerPhone || "";
@@ -1468,11 +1504,24 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                         }
                       />
                       {item.imageUrl ? (
-                        <img
-                          alt={item.imageAlt || item.title}
-                          src={item.imageUrl}
-                          className={styles.img}
-                        />
+                        <button
+                          type="button"
+                          className={styles.imageButton}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setViewerImage({
+                              src: item.imageUrl,
+                              alt: item.imageAlt || item.title,
+                            });
+                          }}
+                        >
+                          <img
+                            alt={item.imageAlt || item.title}
+                            src={item.imageUrl}
+                            className={styles.img}
+                          />
+                        </button>
                       ) : (
                         <div className={styles.imgPlaceholder} />
                       )}
@@ -1746,11 +1795,22 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                     {selectedItems.map((item) => (
                       <div key={item.id} className={styles.summaryItem}>
                         {item.imageUrl ? (
-                          <img
-                            alt={item.imageAlt || item.title}
-                            src={item.imageUrl}
-                            className={styles.img}
-                          />
+                          <button
+                            type="button"
+                            className={styles.imageButton}
+                            onClick={() =>
+                              setViewerImage({
+                                src: item.imageUrl,
+                                alt: item.imageAlt || item.title,
+                              })
+                            }
+                          >
+                            <img
+                              alt={item.imageAlt || item.title}
+                              src={item.imageUrl}
+                              className={styles.img}
+                            />
+                          </button>
                         ) : (
                           <div className={styles.imgPlaceholder} />
                         )}
@@ -1807,6 +1867,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
           ) : null}
         </div>
       </Form>
+      <ImageViewer image={viewerImage} onClose={() => setViewerImage(null)} />
     </section>
   );
 }
