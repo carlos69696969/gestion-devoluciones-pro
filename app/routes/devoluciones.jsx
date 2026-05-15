@@ -15,6 +15,8 @@ const DEFAULT_REASONS = [
 const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
 const ADMIN_API_VERSION = "2025-10";
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
+const NOT_RETURNED_KIND = "not_returned_after_30_days";
+const PICKUP_DEADLINE_DAYS = 30;
 const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito a tu domicilio.";
 const ITEM_BLOCK_STATUSES = new Set([
   "en_revision",
@@ -24,6 +26,7 @@ const ITEM_BLOCK_STATUSES = new Set([
   "recibida",
   "por_devolver",
   "reembolso_denegado",
+  "no_devuelto",
   "reembolsada",
   "completada",
   "denegada",
@@ -36,6 +39,7 @@ const ACTIVE_RETURN_STATUSES = new Set([
   "recibida",
   "por_devolver",
   "reembolso_denegado",
+  "no_devuelto",
   "reembolsada",
   "completada",
   "rechazada",
@@ -253,6 +257,18 @@ function latestReturnedToCustomerAtFromRaw(rawValue) {
   return "";
 }
 
+function latestEntryAtFromKinds(rawValue, kinds) {
+  const kindSet = new Set((kinds || []).map((kind) => String(kind || "").toLowerCase()));
+  if (!kindSet.size) return "";
+  const entries = parseReasonEntries(rawValue);
+  for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
+    const kind = String(entries[idx]?.kind || "").toLowerCase();
+    if (!kindSet.has(kind)) continue;
+    return String(entries[idx]?.at || "").trim();
+  }
+  return "";
+}
+
 function isRefundDeniedAfterReceivedFromRaw(rawValue) {
   const entries = parseReasonEntries(rawValue);
   return entries.some((entry) => {
@@ -269,7 +285,8 @@ function timelineLabelFromStatus(status) {
   if (normalized === "intento_fallido_2") return "Intento de devolucion fallido (2 de 2)";
   if (normalized === "rechazada") return "Devolucion rechazada";
   if (normalized === "recibida") return "Recibimos tu producto";
-  if (normalized === "por_devolver") return "Pendiente por devolver";
+  if (normalized === "por_devolver") return "Pendiente por recoger";
+  if (normalized === "no_devuelto") return "No devuelto";
   if (normalized === "denegada" || normalized === "reembolso_denegado") return "Reembolso denegado";
   if (normalized === "reembolsada" || normalized === "completada") return "Reembolso procesado";
   return "Estado actualizado";
@@ -281,6 +298,7 @@ function timelineLabelFromReasonEntry(entry) {
   if (kind === "attempt_failed_2") return "Intento de devolucion fallido (2 de 2)";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "Devolucion rechazada";
   if (kind === "denied_after_received") return "Reembolso denegado";
+  if (kind === NOT_RETURNED_KIND) return "No devuelto";
   if (kind === RETURNED_TO_CUSTOMER_KIND) return "Devolucion devuelta al cliente";
   return "";
 }
@@ -352,8 +370,9 @@ function statusLabelForCustomer(status) {
   if (normalized === "aprobada") return "aprobada";
   if (normalized === "intento_fallido_1") return "intento de devolucion fallido";
   if (normalized === "intento_fallido_2") return "segundo intento de devolucion fallido";
-  if (normalized === "por_devolver") return "pendiente por devolver";
+  if (normalized === "por_devolver") return "recoge tu paquete en nuestra sucursal";
   if (normalized === "reembolso_denegado") return "reembolso denegado";
+  if (normalized === "no_devuelto") return "no devuelto";
   if (normalized === "rechazada") return "rechazada";
   if (normalized === "recibida") return "recibida";
   if (normalized === "denegada") return "reembolso denegado";
@@ -626,7 +645,7 @@ export const loader = async ({ request }) => {
             blockedItemKeys.add(key);
           }
           if (
-            ["rechazada", "denegada", "por_devolver", "reembolso_denegado"].includes(String(requestRow.status || "").toLowerCase()) &&
+            ["rechazada", "denegada", "por_devolver", "reembolso_denegado", "no_devuelto"].includes(String(requestRow.status || "").toLowerCase()) &&
             latestReasonFromRaw(requestRow.rejectionReason) &&
             !rejectedReasonsByItemKey.has(key)
           ) {
@@ -650,14 +669,25 @@ export const loader = async ({ request }) => {
       const orderImageMap = buildOrderImageMap(order.items);
       const completedRequests = previousRequests
         .filter((requestRow) => ACTIVE_RETURN_STATUSES.has(String(requestRow.status || "").toLowerCase()))
-        .map((requestRow) => ({
+        .map((requestRow) => {
+          const status = String(requestRow.status || "").toLowerCase();
+          const pendingPickupSinceAt =
+            latestEntryAtFromKinds(requestRow.rejectionReason, ["denied_after_received"]) ||
+            requestRow.updatedAt?.toISOString?.() ||
+            "";
+          const pickupDeadlineDate =
+            ["por_devolver", "reembolso_denegado", "denegada", "no_devuelto"].includes(status) && pendingPickupSinceAt
+              ? addDays(pendingPickupSinceAt, PICKUP_DEADLINE_DAYS)
+              : null;
+          return {
           id: requestRow.id,
-          status: String(requestRow.status || "").toLowerCase(),
+          status,
           statusLabel: statusLabelForCustomer(requestRow.status),
           rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
           reasonEntries: parseReasonEntries(requestRow.rejectionReason),
           wasReturnedToCustomer: hasReturnedToCustomerFromRaw(requestRow.rejectionReason),
           returnedToCustomerAt: latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason),
+          pickupDeadlineAt: pickupDeadlineDate ? pickupDeadlineDate.toISOString() : "",
           createdAt: requestRow.createdAt,
           updatedAt: requestRow.updatedAt,
           receivedAt: requestRow.receivedAt,
@@ -701,7 +731,8 @@ export const loader = async ({ request }) => {
               imageAlt: image.imageAlt || item.title || "Producto",
             };
           }),
-        }));
+        };
+      });
       const existingRequestCountAnyShop = await prisma.returnRequest.count({
         where: {
           orderNumber: order.orderNumber,
@@ -733,7 +764,7 @@ export const loader = async ({ request }) => {
       );
       const hasDenied = completedRequests.some(
         (requestRow) =>
-          ["denegada", "por_devolver", "reembolso_denegado"].includes(
+          ["denegada", "por_devolver", "reembolso_denegado", "no_devuelto"].includes(
             String(requestRow.status || "").toLowerCase(),
           ),
       );
@@ -1256,13 +1287,16 @@ function CompletedReturnSummary({ requestItem }) {
     normalizedStatus === "intento_fallido_2"
       ? "Segundo intento de devolucion fallido"
       : "Intento de devolucion fallido";
-  const isRejectedOrDenied = ["rechazada", "denegada", "por_devolver", "reembolso_denegado"].includes(
+  const isRejectedOrDenied = ["rechazada", "denegada", "por_devolver", "reembolso_denegado", "no_devuelto"].includes(
     normalizedStatus,
   );
   const isReview = normalizedStatus === "en_revision";
   const isApproved = normalizedStatus === "aprobada";
   const isReceived = normalizedStatus === "recibida";
   const isRefunded = normalizedStatus === "reembolsada";
+  const pickupDeadlineLabel = requestItem.pickupDeadlineAt
+    ? new Date(requestItem.pickupDeadlineAt).toLocaleDateString("es-MX")
+    : "";
   return (
     <article className={styles.completedCard}>
       <h3 className={styles.completedTitle}>Pedido #{requestItem.orderNumber}</h3>
@@ -1356,7 +1390,7 @@ function CompletedReturnSummary({ requestItem }) {
       ) : null}
       {isPendingToReturn ? (
         <p className={`${styles.completedStatus} ${styles.returnedToCustomerHintText}`}>
-          Estamos devolviendo tu paquete. Esta solicitud pasara a historial cuando quede devuelta al cliente.
+          Recoge tu paquete en nuestra sucursal: {requestItem.branchAddress || "-"}. Tienes 30 dias para recogerlo. Fecha limite: {pickupDeadlineLabel || "-"}.
         </p>
       ) : null}
 

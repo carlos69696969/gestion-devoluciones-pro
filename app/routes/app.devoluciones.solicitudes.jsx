@@ -12,7 +12,8 @@ const STATUS_LABEL = {
   aprobada: "aprobada",
   intento_fallido_1: "intento de devolucion fallido",
   intento_fallido_2: "segundo intento de devolucion fallido",
-  por_devolver: "pendiente por devolver",
+  por_devolver: "pendiente por recoger",
+  no_devuelto: "no devuelto",
   rechazada: "rechazada",
   denegada: "reembolso denegado",
   reembolso_denegado: "reembolso denegado",
@@ -33,9 +34,12 @@ const VIEW_MODE = {
 const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento_fallido_2"]);
 const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
 const RETURN_TO_CUSTOMER_STATUSES = new Set(["por_devolver"]);
-const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada", "reembolso_denegado"]);
+const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"]);
 const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito a tu domicilio.";
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
+const NOT_RETURNED_KIND = "not_returned_after_30_days";
+const NOT_RETURNED_REASON = "El cliente no recogio su paquete en sucursal dentro de 30 dias.";
+const PICKUP_DEADLINE_DAYS = 30;
 
 function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
@@ -44,6 +48,7 @@ function getStatusClassName(status) {
   if (status === "por_devolver") return "statusPendingReturn";
   if (status === "rechazada") return "statusRejected";
   if (status === "reembolso_denegado") return "statusDenied";
+  if (status === "no_devuelto") return "statusDenied";
   if (status === "recibida") return "statusReceived";
   if (status === "reembolsada") return "statusRefunded";
   if (status === "denegada") return "statusDenied";
@@ -110,6 +115,11 @@ function isReturnedToCustomerEntry(entry) {
   return String(entry?.kind || "").toLowerCase() === RETURNED_TO_CUSTOMER_KIND;
 }
 
+function isSystemProgressEntry(entry) {
+  const kind = String(entry?.kind || "").toLowerCase();
+  return kind === RETURNED_TO_CUSTOMER_KIND || kind === NOT_RETURNED_KIND;
+}
+
 function latestReturnedToCustomerAtFromRaw(rawValue) {
   const entries = parseReasonEntries(rawValue);
   for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
@@ -117,6 +127,26 @@ function latestReturnedToCustomerAtFromRaw(rawValue) {
     return String(entries[idx]?.at || "").trim();
   }
   return "";
+}
+
+function latestEntryAtFromKinds(rawValue, kinds) {
+  const kindSet = new Set((kinds || []).map((kind) => String(kind || "").toLowerCase()));
+  if (!kindSet.size) return "";
+  const entries = parseReasonEntries(rawValue);
+  for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
+    const kind = String(entries[idx]?.kind || "").toLowerCase();
+    if (!kindSet.has(kind)) continue;
+    return String(entries[idx]?.at || "").trim();
+  }
+  return "";
+}
+
+function addDays(dateValue, days) {
+  const base = new Date(dateValue);
+  if (!Number.isFinite(base.getTime())) return null;
+  const result = new Date(base);
+  result.setDate(result.getDate() + Number(days || 0));
+  return result;
 }
 
 function appendReasonEntry(rawValue, entry) {
@@ -132,7 +162,7 @@ function appendReasonEntry(rawValue, entry) {
 function latestReasonFromRaw(rawValue) {
   const entries = parseReasonEntries(rawValue);
   for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
-    if (isReturnedToCustomerEntry(entries[idx])) continue;
+    if (isSystemProgressEntry(entries[idx])) continue;
     return entries[idx]?.reason || "";
   }
   return "";
@@ -146,6 +176,7 @@ function reasonEntryLabel(entry) {
   if (kind === "review_rejected") return "Motivo de rechazo";
   if (kind === "denied_after_received") return "Motivo de denegacion";
   if (kind === RETURNED_TO_CUSTOMER_KIND) return "Devuelto al cliente";
+  if (kind === NOT_RETURNED_KIND) return "No devuelto";
   return "Motivo";
 }
 
@@ -442,16 +473,29 @@ export const loader = async ({ request }) => {
 
   const requests = rawRequests.map((requestRow) => {
     const imageMap = imagesByOrder[requestRow.shopifyOrderId] || {};
+    const status = String(requestRow.status || "").toLowerCase();
     const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
     const visibleReasonEntries = reasonEntries.filter((entry) => !isReturnedToCustomerEntry(entry));
     const wasReturnedToCustomer = reasonEntries.some((entry) => isReturnedToCustomerEntry(entry));
     const returnedToCustomerAt = latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason);
+    const requiresPickupDeadline = ["por_devolver", "no_devuelto", "reembolso_denegado", "denegada"].includes(status);
+    const pendingPickupSinceAt = requiresPickupDeadline
+      ? latestEntryAtFromKinds(requestRow.rejectionReason, ["denied_after_received"]) ||
+        requestRow.updatedAt?.toISOString?.() ||
+        ""
+      : "";
+    const pickupDeadlineDate = requiresPickupDeadline ? addDays(pendingPickupSinceAt, PICKUP_DEADLINE_DAYS) : null;
+    const pickupDeadlineAt = pickupDeadlineDate ? pickupDeadlineDate.toISOString() : "";
+    const isPickupDeadlineExpired =
+      Boolean(pickupDeadlineDate) && new Date().getTime() > pickupDeadlineDate.getTime();
     return {
       ...requestRow,
       rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
       reasonEntries: visibleReasonEntries,
       wasReturnedToCustomer,
       returnedToCustomerAt,
+      pickupDeadlineAt,
+      isPickupDeadlineExpired,
       items: requestRow.items.map((item) => {
         const image = imageMap[itemKeyFromRecord(item)] || null;
         return {
@@ -601,12 +645,12 @@ export const action = async ({ request }) => {
         refundError: null,
       },
     });
-    return { ok: true, message: "Reembolso denegado y enviado a devoluciones por devolver." };
+    return { ok: true, message: "Reembolso denegado y enviado a devoluciones pendientes por recoger." };
   }
 
   if (intent === "mark_returned_to_customer") {
     if (String(requestRow.status || "").toLowerCase() !== "por_devolver") {
-      return { ok: false, error: "Solo puedes confirmar devoluciones pendientes por devolver." };
+      return { ok: false, error: "Solo puedes confirmar devoluciones pendientes por recoger." };
     }
     await prisma.returnRequest.update({
       where: { id },
@@ -619,6 +663,34 @@ export const action = async ({ request }) => {
       },
     });
     return { ok: true, message: "Devolucion marcada como devuelta al cliente y enviada al historial." };
+  }
+
+  if (intent === "mark_not_returned") {
+    if (String(requestRow.status || "").toLowerCase() !== "por_devolver") {
+      return { ok: false, error: "Solo aplica a solicitudes pendientes por recoger." };
+    }
+    const pendingPickupSinceAt =
+      latestEntryAtFromKinds(requestRow.rejectionReason, ["denied_after_received"]) ||
+      requestRow.updatedAt?.toISOString?.() ||
+      "";
+    const pickupDeadlineDate = addDays(pendingPickupSinceAt, PICKUP_DEADLINE_DAYS);
+    if (!pickupDeadlineDate || new Date().getTime() <= pickupDeadlineDate.getTime()) {
+      return {
+        ok: false,
+        error: "Aun no se cumplen los 30 dias para marcar esta solicitud como no devuelta.",
+      };
+    }
+    await prisma.returnRequest.update({
+      where: { id },
+      data: {
+        status: "no_devuelto",
+        rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+          kind: NOT_RETURNED_KIND,
+          reason: NOT_RETURNED_REASON,
+        }),
+      },
+    });
+    return { ok: true, message: "Solicitud marcada como no devuelta y enviada al historial." };
   }
 
   if (intent === "process_refund") {
@@ -875,9 +947,9 @@ export default function ReturnsRequests() {
       ) : null}
 
       {viewMode === VIEW_MODE.TO_RETURN ? (
-        <s-section heading="Solicitudes pendientes por devolver al cliente">
+        <s-section heading="Solicitudes pendientes por recoger en sucursal">
           {returnToCustomerQueueRequests.length === 0 ? (
-            <p>No hay solicitudes pendientes por devolver al cliente.</p>
+            <p>No hay solicitudes pendientes por recoger.</p>
           ) : (
             <div className={`${styles.wrap} ${styles.reqGrid}`}>
               {returnToCustomerQueueRequests.map((request) => (
@@ -915,6 +987,7 @@ function RequestCard({ request, isSubmitting }) {
     isPickupMethod && (status === "aprobada" || status === "intento_fallido_1");
   const canRejectAfterFailedPickups = isPickupMethod && status === "intento_fallido_2";
   const canMarkReturnedToCustomer = status === "por_devolver";
+  const canMarkNotReturned = status === "por_devolver" && Boolean(request.isPickupDeadlineExpired);
   const remainingPickupAttempts = status === "aprobada" ? 2 : status === "intento_fallido_1" ? 1 : 0;
   const failedAttemptButtonLabel =
     remainingPickupAttempts === 1
@@ -996,6 +1069,12 @@ function RequestCard({ request, isSubmitting }) {
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Reembolsada</span>
               <span className={styles.kvVal}>{new Date(request.refundedAt).toLocaleString("es-MX")}</span>
+            </div>
+          ) : null}
+          {request.pickupDeadlineAt ? (
+            <div className={styles.kvRow}>
+              <span className={styles.kvKey}>Fecha limite para recoger</span>
+              <span className={styles.kvVal}>{new Date(request.pickupDeadlineAt).toLocaleString("es-MX")}</span>
             </div>
           ) : null}
         </div>
@@ -1100,6 +1179,12 @@ function RequestCard({ request, isSubmitting }) {
         </ul>
       </details>
 
+      {status === "por_devolver" && request.pickupDeadlineAt ? (
+        <p className={styles.meta}>
+          Fecha limite para recoger en sucursal: {new Date(request.pickupDeadlineAt).toLocaleString("es-MX")}
+        </p>
+      ) : null}
+
       <div className={styles.actionRow}>
         {status === "en_revision" ? (
           <>
@@ -1203,6 +1288,16 @@ function RequestCard({ request, isSubmitting }) {
             <input type="hidden" name="id" value={request.id} />
             <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
               Devuelto con exito
+            </button>
+          </Form>
+        ) : null}
+
+        {canMarkNotReturned ? (
+          <Form method="post">
+            <input type="hidden" name="intent" value="mark_not_returned" />
+            <input type="hidden" name="id" value={request.id} />
+            <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
+              No devuelto
             </button>
           </Form>
         ) : null}
