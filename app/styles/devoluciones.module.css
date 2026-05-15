@@ -369,6 +369,78 @@
   line-height: 1.4;
 }
 
+.statusTimelineCurrent {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fafbfb;
+}
+
+.statusTimelineTitle {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.statusTimelineCurrentLine {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+.statusTimelineToggle {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.statusTimelineList {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.statusTimelineItem {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+
+.statusTimelineItem:last-child {
+  border-bottom: 0;
+}
+
+.statusTimelineItemTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.statusTimelineItemAt {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.statusTimelineItemNote {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
 .deniedText {
   color: var(--danger);
 }

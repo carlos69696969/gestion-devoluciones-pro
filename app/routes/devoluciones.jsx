@@ -261,6 +261,73 @@ function isRefundDeniedAfterReceivedFromRaw(rawValue) {
   });
 }
 
+function timelineLabelFromStatus(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "en_revision") return "Solicitud en revision";
+  if (normalized === "aprobada") return "Devolucion aprobada";
+  if (normalized === "intento_fallido_1") return "Intento de devolucion fallido (1 de 2)";
+  if (normalized === "intento_fallido_2") return "Intento de devolucion fallido (2 de 2)";
+  if (normalized === "rechazada") return "Devolucion rechazada";
+  if (normalized === "recibida") return "Recibimos tu producto";
+  if (normalized === "por_devolver") return "Pendiente por devolver";
+  if (normalized === "denegada" || normalized === "reembolso_denegado") return "Reembolso denegado";
+  if (normalized === "reembolsada" || normalized === "completada") return "Reembolso procesado";
+  return "Estado actualizado";
+}
+
+function timelineLabelFromReasonEntry(entry) {
+  const kind = String(entry?.kind || "").toLowerCase();
+  if (kind === "attempt_failed_1") return "Intento de devolucion fallido (1 de 2)";
+  if (kind === "attempt_failed_2") return "Intento de devolucion fallido (2 de 2)";
+  if (kind === "review_rejected" || kind === "rejected_after_attempts") return "Devolucion rechazada";
+  if (kind === "denied_after_received") return "Reembolso denegado";
+  if (kind === RETURNED_TO_CUSTOMER_KIND) return "Devolucion devuelta al cliente";
+  return "";
+}
+
+function parseEventMs(value) {
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  const ms = new Date(text).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function buildStatusTimeline(requestItem) {
+  const events = [];
+  const pushEvent = (label, at, note = "") => {
+    const atMs = parseEventMs(at);
+    if (!label || !atMs) return;
+    events.push({
+      id: `${label}-${atMs}-${events.length}`,
+      label,
+      at,
+      atMs,
+      note,
+    });
+  };
+
+  pushEvent("Solicitud de devolucion creada", requestItem.createdAt);
+  pushEvent("Recibimos tu producto", requestItem.receivedAt);
+  pushEvent("Reembolso procesado", requestItem.refundedAt);
+  pushEvent("Devolucion devuelta al cliente", requestItem.returnedToCustomerAt);
+
+  for (const entry of requestItem.reasonEntries || []) {
+    const label = timelineLabelFromReasonEntry(entry);
+    if (!label) continue;
+    pushEvent(label, entry.at, entry.reason || "");
+  }
+
+  pushEvent(timelineLabelFromStatus(requestItem.status), requestItem.updatedAt);
+
+  const dedup = new Map();
+  for (const event of events) {
+    const key = `${event.label}|${event.atMs}`;
+    if (!dedup.has(key)) dedup.set(key, event);
+  }
+
+  return Array.from(dedup.values()).sort((a, b) => b.atMs - a.atMs);
+}
+
 function buildOrderImageMap(items) {
   const imageMap = new Map();
   for (const item of items || []) {
@@ -588,9 +655,11 @@ export const loader = async ({ request }) => {
           status: String(requestRow.status || "").toLowerCase(),
           statusLabel: statusLabelForCustomer(requestRow.status),
           rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
+          reasonEntries: parseReasonEntries(requestRow.rejectionReason),
           wasReturnedToCustomer: hasReturnedToCustomerFromRaw(requestRow.rejectionReason),
           returnedToCustomerAt: latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason),
           createdAt: requestRow.createdAt,
+          updatedAt: requestRow.updatedAt,
           receivedAt: requestRow.receivedAt,
           refundedAt: requestRow.refundedAt,
           orderNumber: requestRow.orderNumber,
@@ -1175,6 +1244,9 @@ function ImageViewer({ image, onClose }) {
 
 function CompletedReturnSummary({ requestItem }) {
   const [viewerImage, setViewerImage] = useState(null);
+  const [showAllStates, setShowAllStates] = useState(false);
+  const timelineEvents = useMemo(() => buildStatusTimeline(requestItem), [requestItem]);
+  const currentTimelineEvent = timelineEvents[0] || null;
   const normalizedStatus = String(requestItem.status || "").toLowerCase();
   const isFailedPickupAttempt =
     normalizedStatus === "intento_fallido_1" || normalizedStatus === "intento_fallido_2";
@@ -1221,6 +1293,35 @@ function CompletedReturnSummary({ requestItem }) {
           {requestItem.statusLabel}
         </strong>
       </p>
+      {currentTimelineEvent ? (
+        <div className={styles.statusTimelineCurrent}>
+          <p className={styles.statusTimelineTitle}>Estado actual</p>
+          <p className={styles.statusTimelineCurrentLine}>
+            <strong>{currentTimelineEvent.label}</strong>{" "}
+            <span>{new Date(currentTimelineEvent.at).toLocaleString("es-MX")}</span>
+          </p>
+        </div>
+      ) : null}
+      {timelineEvents.length > 1 ? (
+        <button
+          type="button"
+          className={styles.statusTimelineToggle}
+          onClick={() => setShowAllStates((prev) => !prev)}
+        >
+          {showAllStates ? "Ocultar estados" : "Ver todos los estados"}
+        </button>
+      ) : null}
+      {showAllStates ? (
+        <div className={styles.statusTimelineList}>
+          {timelineEvents.map((event) => (
+            <div key={event.id} className={styles.statusTimelineItem}>
+              <p className={styles.statusTimelineItemTitle}>{event.label}</p>
+              <p className={styles.statusTimelineItemAt}>{new Date(event.at).toLocaleString("es-MX")}</p>
+              {event.note ? <p className={styles.statusTimelineItemNote}>{event.note}</p> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
       {isReceived ? (
         <p className={`${styles.completedStatus} ${styles.receivedHintText}`}>
           Recibimos tu producto con exito, lo revisaremos. Una vez finalicemos realizaremos tu reembolso, regresa mas tarde para ver el estado de tu devolucion.
