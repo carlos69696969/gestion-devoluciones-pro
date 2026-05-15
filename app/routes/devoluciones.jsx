@@ -718,9 +718,10 @@ export const loader = async ({ request }) => {
           customerEmail: requestRow.customerEmail || order.customerEmail || "-",
           customerPhone: requestRow.customerPhone || order.customerPhone || "-",
           returnMethod: requestRow.returnMethod,
-          branchAddress: requestRow.branchAddress || settings.branchAddress || "-",
-          branchInstructions: requestRow.branchInstructions || settings.branchInstructions || "-",
-          branchHours: requestRow.branchHours || settings.branchHours || "-",
+          // Always reflect the latest admin configuration for branch pickup details.
+          branchAddress: settings.branchAddress || "-",
+          branchInstructions: settings.branchInstructions || "-",
+          branchHours: settings.branchHours || "-",
           pickupAddress: requestRow.pickupAddress || "-",
           pickupNeighborhood: requestRow.pickupNeighborhood || "-",
           pickupCity: requestRow.pickupCity || "-",
