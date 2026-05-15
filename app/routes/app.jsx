@@ -2,26 +2,80 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
+
+const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento_fallido_2"]);
+const MENU_COUNT_STATUSES = [
+  "en_revision",
+  "aprobada",
+  "intento_fallido_1",
+  "intento_fallido_2",
+  "recibida",
+  "por_devolver",
+];
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
+
+  const grouped = await prisma.returnRequest.groupBy({
+    by: ["status", "returnMethod"],
+    where: {
+      shop: session.shop,
+      status: { in: MENU_COUNT_STATUSES },
+    },
+    _count: { _all: true },
+  });
+
+  const navCounts = {
+    pickup: 0,
+    branch: 0,
+    review: 0,
+    refunds: 0,
+    toReturn: 0,
+  };
+
+  for (const row of grouped) {
+    const status = String(row.status || "").toLowerCase();
+    const count = Number(row?._count?._all || 0);
+    if (!count) continue;
+
+    if (status === "en_revision") navCounts.review += count;
+    if (status === "recibida") navCounts.refunds += count;
+    if (status === "por_devolver") navCounts.toReturn += count;
+
+    if (METHOD_QUEUE_STATUSES.has(status)) {
+      if (String(row.returnMethod || "").toLowerCase() === "pickup") navCounts.pickup += count;
+      else navCounts.branch += count;
+    }
+  }
 
   // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  return { apiKey: process.env.SHOPIFY_API_KEY || "", navCounts };
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData();
+  const { apiKey, navCounts } = useLoaderData();
+  const withCount = (label, count) => (count > 0 ? `${label} (${count})` : label);
 
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
         <s-link href="/app/devoluciones/admin">Administrador del panel</s-link>
-        <s-link href="/app/devoluciones/solicitudes?tipo=pickup">Recoleccion a domicilio</s-link>
-        <s-link href="/app/devoluciones/solicitudes?tipo=branch">Entrega en sucursal</s-link>
-        <s-link href="/app/devoluciones/solicitudes?tipo=review">Ordenes en revision</s-link>
-        <s-link href="/app/devoluciones/solicitudes?tipo=refunds">Procesar reembolsos</s-link>
-        <s-link href="/app/devoluciones/solicitudes?tipo=to_return">Devoluciones a devolver</s-link>
+        <s-link href="/app/devoluciones/solicitudes?tipo=pickup">
+          {withCount("Recoleccion a domicilio", navCounts?.pickup || 0)}
+        </s-link>
+        <s-link href="/app/devoluciones/solicitudes?tipo=branch">
+          {withCount("Entrega en sucursal", navCounts?.branch || 0)}
+        </s-link>
+        <s-link href="/app/devoluciones/solicitudes?tipo=review">
+          {withCount("Ordenes en revision", navCounts?.review || 0)}
+        </s-link>
+        <s-link href="/app/devoluciones/solicitudes?tipo=refunds">
+          {withCount("Procesar reembolsos", navCounts?.refunds || 0)}
+        </s-link>
+        <s-link href="/app/devoluciones/solicitudes?tipo=to_return">
+          {withCount("Devoluciones a devolver", navCounts?.toReturn || 0)}
+        </s-link>
         <s-link href="/app/devoluciones/solicitudes?tipo=history">Historial</s-link>
       </s-app-nav>
       <Outlet />
