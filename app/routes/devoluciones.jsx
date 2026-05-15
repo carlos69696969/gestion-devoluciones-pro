@@ -17,7 +17,7 @@ const ADMIN_API_VERSION = "2025-10";
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
 const NOT_RETURNED_KIND = "not_returned_after_30_days";
 const PICKUP_DEADLINE_DAYS = 30;
-const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito a tu domicilio.";
+const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito.";
 const ITEM_BLOCK_STATUSES = new Set([
   "en_revision",
   "aprobada",
