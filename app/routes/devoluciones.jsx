@@ -310,6 +310,27 @@ function parseEventMs(value) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+function normalizeAddress(value) {
+  return String(value || "").trim();
+}
+
+function buildMapsLink(address) {
+  const normalized = normalizeAddress(address);
+  if (!normalized || normalized === "-") return "";
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(normalized)}`;
+}
+
+function BranchAddressLink({ address }) {
+  const normalized = normalizeAddress(address);
+  const href = buildMapsLink(address);
+  if (!href) return <>{normalized || "-"}</>;
+  return (
+    <a href={href} target="_blank" rel="noreferrer">
+      {normalized}
+    </a>
+  );
+}
+
 function buildStatusTimeline(requestItem) {
   const events = [];
   const pushEvent = (label, at, note = "") => {
@@ -1390,7 +1411,7 @@ function CompletedReturnSummary({ requestItem }) {
       ) : null}
       {isPendingToReturn ? (
         <p className={`${styles.completedStatus} ${styles.returnedToCustomerHintText}`}>
-          Recoge tu paquete en nuestra sucursal: {requestItem.branchAddress || "-"}. Tienes 30 dias para recogerlo. Fecha limite: {pickupDeadlineLabel || "-"}.
+          Recoge tu paquete en nuestra sucursal: <BranchAddressLink address={requestItem.branchAddress} />. Tienes 30 dias para recogerlo. Fecha limite: {pickupDeadlineLabel || "-"}.
         </p>
       ) : null}
 
@@ -1423,7 +1444,7 @@ function CompletedReturnSummary({ requestItem }) {
           </>
         ) : (
           <>
-            <p><strong>Direccion de la sucursal:</strong> {requestItem.branchAddress || "-"}</p>
+            <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={requestItem.branchAddress} /></p>
             <p><strong>Instrucciones:</strong> {requestItem.branchInstructions || "-"}</p>
             <p><strong>Horarios de entrega:</strong> {requestItem.branchHours || "-"}</p>
           </>
@@ -1887,7 +1908,14 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                   <label htmlFor="return_method_branch" className={styles.radioContent}>
                     <div className={styles.radioTitle}>Entrega en sucursal (sin costo)</div>
                     <div className={styles.radioDesc}>
-                      Entrega el producto en nuestra sucursal{settings?.branchAddress ? `: ${settings.branchAddress}` : "."}
+                      Entrega el producto en nuestra sucursal
+                      {settings?.branchAddress ? (
+                        <>
+                          : <BranchAddressLink address={settings.branchAddress} />
+                        </>
+                      ) : (
+                        "."
+                      )}
                     </div>
                   </label>
                 </div>
@@ -1934,7 +1962,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                   <h3 className={styles.sectionTitle}>Entrega en sucursal</h3>
                   <p><strong>Cliente:</strong> {order.customerName || "Cliente"}</p>
                   {order.customerPhone ? <p><strong>Telefono:</strong> {order.customerPhone}</p> : null}
-                  <p><strong>Direccion de la sucursal:</strong> {settings.branchAddress}</p>
+                  <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={settings.branchAddress} /></p>
                   <p><strong>Instrucciones:</strong> {settings.branchInstructions}</p>
                   <p><strong>Horarios de entrega:</strong> {settings.branchHours}</p>
                 </div>
@@ -2044,7 +2072,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                 <p><strong>Monto estimado a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
                 {returnMethod === "branch" ? (
                   <>
-                    <p><strong>Direccion sucursal:</strong> {settings.branchAddress}</p>
+                    <p><strong>Direccion sucursal:</strong> <BranchAddressLink address={settings.branchAddress} /></p>
                     <p><strong>Instrucciones:</strong> {settings.branchInstructions}</p>
                     <p><strong>Horarios de entrega:</strong> {settings.branchHours}</p>
                   </>
