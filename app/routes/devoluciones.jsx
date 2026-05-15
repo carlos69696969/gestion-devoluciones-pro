@@ -775,27 +775,16 @@ export const loader = async ({ request }) => {
       const limitDate = limitBaseDate ? addDays(limitBaseDate, settings.returnWindowDays) : null;
       const now = new Date();
       const isExpired = limitDate ? now > limitDate : false;
-      const hasPendingReview = completedRequests.some(
-        (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
-      );
-      const hasFailedPickupAttempt = completedRequests.some((requestRow) =>
-        ["intento_fallido_1", "intento_fallido_2"].includes(String(requestRow.status || "").toLowerCase()),
-      );
-      const hasRejected = completedRequests.some(
-        (requestRow) => String(requestRow.status || "").toLowerCase() === "rechazada",
-      );
-      const hasDenied = completedRequests.some(
-        (requestRow) =>
-          ["denegada", "por_devolver", "reembolso_denegado", "no_devuelto"].includes(
-            String(requestRow.status || "").toLowerCase(),
-          ),
-      );
+      const latestRequest = completedRequests[0] || null;
+      const latestStatus = String(latestRequest?.status || "").toLowerCase();
+      const hasPendingReview = latestStatus === "en_revision";
+      const hasFailedPickupAttempt = ["intento_fallido_1", "intento_fallido_2"].includes(latestStatus);
+      const hasRejected = latestStatus === "rechazada";
+      const hasDenied = ["denegada", "por_devolver", "reembolso_denegado", "no_devuelto"].includes(latestStatus);
       const allDelivered =
         completedRequests.length > 0 &&
         completedRequests.every((requestRow) => DELIVERED_RETURN_STATUSES.has(requestRow.status));
-      const hasRefundProcessed = completedRequests.some((requestRow) =>
-        ["reembolsada", "completada"].includes(String(requestRow.status || "").toLowerCase()),
-      );
+      const hasRefundProcessed = ["reembolsada", "completada"].includes(latestStatus);
       const completionTitle = hasPendingReview
         ? "Solicitud de devolucion en revision."
         : hasFailedPickupAttempt
