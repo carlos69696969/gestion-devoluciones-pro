@@ -542,67 +542,124 @@ async function fetchOrderItemImageMaps(admin, orderIds) {
   const uniqueIds = Array.from(new Set(orderIds.filter(Boolean)));
   if (!uniqueIds.length) return {};
 
+  const chunkSize = 25;
+  const chunks = [];
+  for (let index = 0; index < uniqueIds.length; index += chunkSize) {
+    chunks.push(uniqueIds.slice(index, index + chunkSize));
+  }
+
+  const byOrder = {};
+
   try {
-    const response = await admin.graphql(
-      `#graphql
-      query OrdersForReturnImages($ids: [ID!]!) {
-        nodes(ids: $ids) {
-          ... on Order {
-            id
-            lineItems(first: 100) {
-              edges {
-                node {
-                  id
-                  title
-                  variant {
+    for (const idsChunk of chunks) {
+      const response = await admin.graphql(
+        `#graphql
+        query OrdersForReturnImages($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Order {
+              id
+              lineItems(first: 100) {
+                edges {
+                  node {
                     id
-                    image {
-                      url
-                      altText
+                    title
+                    variant {
+                      id
+                      image {
+                        url
+                        altText
+                      }
                     }
-                  }
-                  product {
-                    id
-                    featuredImage {
-                      url
-                      altText
+                    product {
+                      id
+                      featuredImage {
+                        url
+                        altText
+                      }
                     }
                   }
                 }
               }
             }
           }
+        }`,
+        { variables: { ids: idsChunk } },
+      );
+      const payload = await response.json();
+      const nodes = payload?.data?.nodes || [];
+
+      for (const order of nodes) {
+        if (!order?.id) continue;
+        const imageMap = {};
+        const lines = order?.lineItems?.edges || [];
+        for (const edge of lines) {
+          const line = edge?.node;
+          if (!line) continue;
+          const imageUrl = line?.variant?.image?.url || line?.product?.featuredImage?.url || "";
+          const imageAlt = line?.variant?.image?.altText || line?.product?.featuredImage?.altText || "";
+          if (!imageUrl) continue;
+
+          putImageCandidate(imageMap, itemKeyFromRecord({ lineItemId: line.id }), imageUrl, imageAlt);
+          putImageCandidate(imageMap, itemKeyFromRecord({ variantId: line?.variant?.id }), imageUrl, imageAlt);
+          putImageCandidate(imageMap, itemKeyFromRecord({ productId: line?.product?.id }), imageUrl, imageAlt);
+          putImageCandidate(imageMap, itemKeyFromRecord({ title: line.title }), imageUrl, imageAlt);
         }
-      }`,
-      { variables: { ids: uniqueIds } },
-    );
-    const payload = await response.json();
-    const nodes = payload?.data?.nodes || [];
-    const byOrder = {};
-
-    for (const order of nodes) {
-      if (!order?.id) continue;
-      const imageMap = {};
-      const lines = order?.lineItems?.edges || [];
-      for (const edge of lines) {
-        const line = edge?.node;
-        if (!line) continue;
-        const imageUrl = line?.variant?.image?.url || line?.product?.featuredImage?.url || "";
-        const imageAlt = line?.variant?.image?.altText || line?.product?.featuredImage?.altText || "";
-        if (!imageUrl) continue;
-
-        putImageCandidate(imageMap, itemKeyFromRecord({ lineItemId: line.id }), imageUrl, imageAlt);
-        putImageCandidate(imageMap, itemKeyFromRecord({ variantId: line?.variant?.id }), imageUrl, imageAlt);
-        putImageCandidate(imageMap, itemKeyFromRecord({ productId: line?.product?.id }), imageUrl, imageAlt);
-        putImageCandidate(imageMap, itemKeyFromRecord({ title: line.title }), imageUrl, imageAlt);
+        byOrder[order.id] = imageMap;
       }
-      byOrder[order.id] = imageMap;
     }
 
     return byOrder;
   } catch {
     return {};
   }
+}
+
+function buildViewWhere(shop, viewMode) {
+  if (viewMode === VIEW_MODE.PICKUP) {
+    return {
+      shop,
+      returnMethod: "pickup",
+      status: { in: Array.from(METHOD_QUEUE_STATUSES) },
+    };
+  }
+
+  if (viewMode === VIEW_MODE.BRANCH) {
+    return {
+      shop,
+      returnMethod: { not: "pickup" },
+      status: { in: Array.from(METHOD_QUEUE_STATUSES) },
+    };
+  }
+
+  if (viewMode === VIEW_MODE.REVIEW) {
+    return {
+      shop,
+      status: "en_revision",
+    };
+  }
+
+  if (viewMode === VIEW_MODE.REFUNDS) {
+    return {
+      shop,
+      status: { in: Array.from(REFUND_QUEUE_STATUSES) },
+    };
+  }
+
+  if (viewMode === VIEW_MODE.TO_RETURN) {
+    return {
+      shop,
+      status: { in: Array.from(RETURN_TO_CUSTOMER_STATUSES) },
+    };
+  }
+
+  if (viewMode === VIEW_MODE.HISTORY) {
+    return {
+      shop,
+      status: { in: Array.from(HISTORY_STATUSES) },
+    };
+  }
+
+  return { shop };
 }
 
 function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
@@ -657,8 +714,9 @@ export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
   const viewMode = normalizeViewMode(url.searchParams.get("tipo"));
+  const where = buildViewWhere(session.shop, viewMode);
   const rawRequests = await prisma.returnRequest.findMany({
-    where: { shop: session.shop },
+    where,
     include: { items: true },
     orderBy: { createdAt: "desc" },
   });
