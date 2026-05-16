@@ -71,6 +71,22 @@
   margin-top: 6px;
 }
 
+.maintenanceStats {
+  border: 1px solid #e1e3e5;
+  border-radius: 12px;
+  background: #fafbfb;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.statRow {
+  margin: 0;
+  font-size: 13px;
+  color: #202223;
+  font-weight: 700;
+}
+
 .btn {
   appearance: none;
   border: 1px solid #e1e3e5;
