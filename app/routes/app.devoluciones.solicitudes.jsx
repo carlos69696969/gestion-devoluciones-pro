@@ -747,8 +747,8 @@ function shouldIncludeEvidencePhotos(viewMode) {
   return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS;
 }
 
-function shouldLoadOrderCatalogImages(viewMode) {
-  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS;
+function shouldLoadOrderCatalogImages() {
+  return false;
 }
 
 function pageSizeForView(viewMode) {
@@ -840,7 +840,7 @@ export const loader = async ({ request }) => {
       take: pageSize,
     });
 
-    const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
+    const shouldLoadImages = shouldLoadOrderCatalogImages();
     const imagesByOrder = shouldLoadImages
       ? await fetchOrderItemImageMaps(
           admin,
@@ -900,6 +900,7 @@ export const loader = async ({ request }) => {
       loaderError: "",
     };
   } catch (error) {
+    if (error instanceof Response) throw error;
     const elapsed = Date.now() - loaderStartedAt;
     const message = error instanceof Error ? error.message : "Error desconocido";
     console.error(`[admin-returns-loader] FAILED view=${viewMode} page=${requestedPage} in ${elapsed}ms -> ${message}`);
