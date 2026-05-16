@@ -392,6 +392,22 @@ function timelineKindFromStatus(status) {
   return "";
 }
 
+function hasReachedApprovedPhase(status) {
+  const normalized = String(status || "").toLowerCase();
+  return [
+    "aprobada",
+    "intento_fallido_1",
+    "intento_fallido_2",
+    "recibida",
+    "por_devolver",
+    "no_devuelto",
+    "denegada",
+    "reembolso_denegado",
+    "reembolsada",
+    "completada",
+  ].includes(normalized);
+}
+
 function parseEventMs(value) {
   const text = String(value || "").trim();
   if (!text) return 0;
@@ -443,6 +459,16 @@ function buildStatusTimeline(requestItem) {
   }
   if (requestItem.requiresReview && !entryKinds.has(STATUS_REVIEW_KIND)) {
     pushEvent("Solicitud en revision", requestItem.createdAt, "Tu solicitud esta siendo revisada por nuestro equipo.", "review");
+  }
+  if (requestItem.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND) && hasReachedApprovedPhase(requestItem.status)) {
+    pushEvent(
+      "Devolucion aprobada",
+      requestItem.receivedAt || requestItem.updatedAt || requestItem.createdAt,
+      requestItem.returnMethod === "pickup"
+        ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
+        : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.",
+      "approved",
+    );
   }
   if (!requestItem.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND)) {
     pushEvent(
@@ -1510,7 +1536,7 @@ function CompletedReturnSummary({ requestItem }) {
             <span>{new Date(currentTimelineEvent.at).toLocaleString("es-MX")}</span>
           </p>
           {currentTimelineEvent.note ? (
-            <p className={`${styles.statusTimelineItemNote} ${timelineToneClassName(currentTimelineEvent.tone)}`}>
+            <p className={styles.statusTimelineItemNote}>
               {currentTimelineEvent.note}
             </p>
           ) : null}
@@ -1532,7 +1558,7 @@ function CompletedReturnSummary({ requestItem }) {
               <p className={`${styles.statusTimelineItemTitle} ${timelineToneClassName(event.tone)}`}>{event.label}</p>
               <p className={styles.statusTimelineItemAt}>{new Date(event.at).toLocaleString("es-MX")}</p>
               {event.note ? (
-                <p className={`${styles.statusTimelineItemNote} ${timelineToneClassName(event.tone)}`}>{event.note}</p>
+                <p className={styles.statusTimelineItemNote}>{event.note}</p>
               ) : null}
             </div>
           ))}
@@ -1562,7 +1588,7 @@ function CompletedReturnSummary({ requestItem }) {
       ) : null}
       {requestItem.rejectionReason && isRejectedOrDenied ? (
         <p className={styles.completedStatus}>
-          Motivo de denegacion: <strong className={styles.deniedText}>{requestItem.rejectionReason}</strong>
+          Motivo de denegacion: <strong>{requestItem.rejectionReason}</strong>
         </p>
       ) : null}
       {requestItem.wasReturnedToCustomer ? (

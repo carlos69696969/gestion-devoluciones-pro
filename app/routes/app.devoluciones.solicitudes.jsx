@@ -279,6 +279,22 @@ function timelineKindFromStatus(status) {
   return "";
 }
 
+function hasReachedApprovedPhase(status) {
+  const normalized = String(status || "").toLowerCase();
+  return [
+    "aprobada",
+    "intento_fallido_1",
+    "intento_fallido_2",
+    "recibida",
+    "por_devolver",
+    "no_devuelto",
+    "denegada",
+    "reembolso_denegado",
+    "reembolsada",
+    "completada",
+  ].includes(normalized);
+}
+
 function parseEventMs(value) {
   const text = String(value || "").trim();
   if (!text) return 0;
@@ -309,6 +325,16 @@ function buildStatusTimeline(requestRow) {
   }
   if (requestRow.requiresReview && !entryKinds.has(STATUS_REVIEW_KIND)) {
     pushEvent("Solicitud en revision", requestRow.createdAt, "La solicitud esta siendo revisada por el equipo.", "review");
+  }
+  if (requestRow.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND) && hasReachedApprovedPhase(requestRow.status)) {
+    pushEvent(
+      "Devolucion aprobada",
+      requestRow.receivedAt || requestRow.updatedAt || requestRow.createdAt,
+      requestRow.returnMethod === "pickup"
+        ? "La solicitud fue aprobada. Se recolectara el paquete en domicilio."
+        : "La solicitud fue aprobada. El cliente puede entregar el paquete en sucursal.",
+      "approved",
+    );
   }
   if (!requestRow.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND)) {
     pushEvent(
@@ -1437,7 +1463,7 @@ function RequestCard({
               <span>{new Date(currentTimelineEvent.at).toLocaleString("es-MX")}</span>
             </p>
             {currentTimelineEvent.note ? (
-              <p className={`${styles.statusTimelineItemNote} ${timelineToneClassName(currentTimelineEvent.tone)}`}>
+              <p className={styles.statusTimelineItemNote}>
                 {currentTimelineEvent.note}
               </p>
             ) : null}
@@ -1450,7 +1476,7 @@ function RequestCard({
                 <p className={`${styles.statusTimelineItemTitle} ${timelineToneClassName(event.tone)}`}>{event.label}</p>
                 <p className={styles.statusTimelineItemAt}>{new Date(event.at).toLocaleString("es-MX")}</p>
                 {event.note ? (
-                  <p className={`${styles.statusTimelineItemNote} ${timelineToneClassName(event.tone)}`}>{event.note}</p>
+                  <p className={styles.statusTimelineItemNote}>{event.note}</p>
                 ) : null}
               </div>
             ))}
