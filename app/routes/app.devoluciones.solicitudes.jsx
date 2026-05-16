@@ -477,6 +477,62 @@ async function fetchOrderItemImageMaps(admin, orderIds) {
   }
 }
 
+function buildViewWhere(shop, viewMode) {
+  if (viewMode === VIEW_MODE.PICKUP) {
+    return {
+      shop,
+      returnMethod: "pickup",
+      status: { in: Array.from(METHOD_QUEUE_STATUSES) },
+    };
+  }
+
+  if (viewMode === VIEW_MODE.BRANCH) {
+    return {
+      shop,
+      returnMethod: { not: "pickup" },
+      status: { in: Array.from(METHOD_QUEUE_STATUSES) },
+    };
+  }
+
+  if (viewMode === VIEW_MODE.REVIEW) {
+    return {
+      shop,
+      status: "en_revision",
+    };
+  }
+
+  if (viewMode === VIEW_MODE.REFUNDS) {
+    return {
+      shop,
+      status: { in: Array.from(REFUND_QUEUE_STATUSES) },
+    };
+  }
+
+  if (viewMode === VIEW_MODE.TO_RETURN) {
+    return {
+      shop,
+      status: { in: Array.from(RETURN_TO_CUSTOMER_STATUSES) },
+    };
+  }
+
+  if (viewMode === VIEW_MODE.HISTORY) {
+    return {
+      shop,
+      status: { in: Array.from(HISTORY_STATUSES) },
+    };
+  }
+
+  return { shop };
+}
+
+function shouldIncludeEvidencePhotos(viewMode) {
+  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS;
+}
+
+function shouldLoadOrderCatalogImages(viewMode) {
+  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS;
+}
+
 function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
   const usedLineIds = new Set();
   const refundableLines = [];
@@ -529,16 +585,33 @@ export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
   const viewMode = normalizeViewMode(url.searchParams.get("tipo"));
+  const where = buildViewWhere(session.shop, viewMode);
+  const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
+  const itemSelect = {
+    id: true,
+    lineItemId: true,
+    productId: true,
+    variantId: true,
+    title: true,
+    quantity: true,
+    reason: true,
+    details: true,
+    ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
+  };
+
   const rawRequests = await prisma.returnRequest.findMany({
-    where: { shop: session.shop },
-    include: { items: true },
+    where,
+    include: { items: { select: itemSelect } },
     orderBy: { createdAt: "desc" },
   });
 
-  const imagesByOrder = await fetchOrderItemImageMaps(
-    admin,
-    rawRequests.map((requestRow) => requestRow.shopifyOrderId),
-  );
+  const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
+  const imagesByOrder = shouldLoadImages
+    ? await fetchOrderItemImageMaps(
+        admin,
+        rawRequests.map((requestRow) => requestRow.shopifyOrderId),
+      )
+    : {};
 
   const requests = rawRequests.map((requestRow) => {
     const imageMap = imagesByOrder[requestRow.shopifyOrderId] || {};
@@ -1049,7 +1122,8 @@ export default function ReturnsRequests() {
 
 function RequestCard({ request, isSubmitting }) {
   const [viewerImage, setViewerImage] = useState(null);
-  const timelineEvents = buildStatusTimeline(request);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
   const currentTimelineEvent = timelineEvents[0] || null;
   const olderTimelineEvents = timelineEvents.slice(1);
   const status = String(request.status || "").toLowerCase();
@@ -1094,8 +1168,10 @@ function RequestCard({ request, isSubmitting }) {
         </span>
       </div>
 
-      <details className={styles.details}>
+      <details className={styles.details} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
         <summary className={styles.summary}>Ver orden</summary>
+        {detailsOpen ? (
+          <>
 
         <div className={styles.kv}>
           <div className={styles.kvRow}>
@@ -1230,6 +1306,8 @@ function RequestCard({ request, isSubmitting }) {
                         src={item.imageUrl}
                         alt={item.imageAlt || item.title}
                         className={styles.productThumb}
+                        loading="lazy"
+                        decoding="async"
                       />
                     </button>
                   ) : (
@@ -1261,6 +1339,8 @@ function RequestCard({ request, isSubmitting }) {
                           src={src}
                           alt={`Evidencia ${idx + 1}`}
                           className={styles.evidencePhoto}
+                          loading="lazy"
+                          decoding="async"
                         />
                         <span>Foto {idx + 1}</span>
                       </button>
@@ -1271,6 +1351,8 @@ function RequestCard({ request, isSubmitting }) {
             );
           })}
         </ul>
+          </>
+        ) : null}
       </details>
 
       {status === "por_devolver" && request.pickupDeadlineAt ? (
