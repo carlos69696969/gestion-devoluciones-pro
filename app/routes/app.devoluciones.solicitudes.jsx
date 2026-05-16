@@ -69,6 +69,19 @@ function normalizeViewMode(rawValue) {
   return VIEW_MODE.BRANCH;
 }
 
+function viewModeFromPathname(pathname) {
+  const path = String(pathname || "")
+    .toLowerCase()
+    .replace(/\/+$/, "");
+  if (path.endsWith("/pickup")) return VIEW_MODE.PICKUP;
+  if (path.endsWith("/branch")) return VIEW_MODE.BRANCH;
+  if (path.endsWith("/review")) return VIEW_MODE.REVIEW;
+  if (path.endsWith("/refunds")) return VIEW_MODE.REFUNDS;
+  if (path.endsWith("/to_return")) return VIEW_MODE.TO_RETURN;
+  if (path.endsWith("/history")) return VIEW_MODE.HISTORY;
+  return "";
+}
+
 function toMoney(value) {
   return Number(value || 0).toFixed(2);
 }
@@ -584,7 +597,9 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
-  const viewMode = normalizeViewMode(url.searchParams.get("tipo"));
+  const requestedViewMode = normalizeViewMode(url.searchParams.get("tipo"));
+  const pathViewMode = normalizeViewMode(viewModeFromPathname(url.pathname));
+  const viewMode = pathViewMode || requestedViewMode;
   const where = buildViewWhere(session.shop, viewMode);
   const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
   const itemSelect = {
