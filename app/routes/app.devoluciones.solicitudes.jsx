@@ -219,6 +219,29 @@ function timelineLabelFromReasonEntry(entry) {
   return "";
 }
 
+function timelineToneFromStatus(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "en_revision") return "review";
+  if (normalized === "aprobada") return "approved";
+  if (normalized === "intento_fallido_1" || normalized === "intento_fallido_2") return "attempt";
+  if (normalized === "rechazada") return "rejected";
+  if (normalized === "recibida") return "received";
+  if (normalized === "por_devolver") return "pending";
+  if (normalized === "denegada" || normalized === "reembolso_denegado" || normalized === "no_devuelto") return "denied";
+  if (normalized === "reembolsada" || normalized === "completada") return "refunded";
+  return "default";
+}
+
+function timelineToneFromReasonEntry(entry) {
+  const kind = String(entry?.kind || "").toLowerCase();
+  if (kind === "attempt_failed_1" || kind === "attempt_failed_2") return "attempt";
+  if (kind === "review_rejected" || kind === "rejected_after_attempts") return "rejected";
+  if (kind === "denied_after_received") return "denied";
+  if (kind === RETURNED_TO_CUSTOMER_KIND) return "pending";
+  if (kind === NOT_RETURNED_KIND) return "denied";
+  return "default";
+}
+
 function parseEventMs(value) {
   const text = String(value || "").trim();
   if (!text) return 0;
@@ -228,7 +251,7 @@ function parseEventMs(value) {
 
 function buildStatusTimeline(requestRow) {
   const events = [];
-  const pushEvent = (label, at, note = "") => {
+  const pushEvent = (label, at, note = "", tone = "default") => {
     const atMs = parseEventMs(at);
     if (!label || !atMs) return;
     events.push({
@@ -237,21 +260,27 @@ function buildStatusTimeline(requestRow) {
       at,
       atMs,
       note,
+      tone,
     });
   };
 
-  pushEvent("Solicitud de devolucion creada", requestRow.createdAt);
-  pushEvent("Recibimos tu producto", requestRow.receivedAt);
-  pushEvent("Reembolso procesado", requestRow.refundedAt);
-  pushEvent("Devolucion devuelta al cliente", requestRow.returnedToCustomerAt);
+  pushEvent("Solicitud de devolucion creada", requestRow.createdAt, "", "default");
+  pushEvent("Recibimos tu producto", requestRow.receivedAt, "", "received");
+  pushEvent("Reembolso procesado", requestRow.refundedAt, "", "refunded");
+  pushEvent("Devolucion devuelta al cliente", requestRow.returnedToCustomerAt, "", "pending");
 
   for (const entry of requestRow.timelineEntries || []) {
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
-    pushEvent(label, entry.at, entry.reason || "");
+    pushEvent(label, entry.at, entry.reason || "", timelineToneFromReasonEntry(entry));
   }
 
-  pushEvent(timelineLabelFromStatus(requestRow.status), requestRow.updatedAt);
+  pushEvent(
+    timelineLabelFromStatus(requestRow.status),
+    requestRow.updatedAt,
+    "",
+    timelineToneFromStatus(requestRow.status),
+  );
 
   const dedup = new Map();
   for (const event of events) {
@@ -488,6 +517,18 @@ async function fetchOrderItemImageMaps(admin, orderIds) {
   } catch {
     return {};
   }
+}
+
+function timelineToneClassName(tone) {
+  if (tone === "review") return styles.timelineToneReview;
+  if (tone === "approved") return styles.timelineToneApproved;
+  if (tone === "attempt") return styles.timelineToneAttempt;
+  if (tone === "rejected") return styles.timelineToneRejected;
+  if (tone === "received") return styles.timelineToneReceived;
+  if (tone === "pending") return styles.timelineTonePending;
+  if (tone === "denied") return styles.timelineToneDenied;
+  if (tone === "refunded") return styles.timelineToneRefunded;
+  return "";
 }
 
 function buildViewWhere(shop, viewMode) {
@@ -1125,7 +1166,7 @@ export default function ReturnsRequests() {
           ) : (
             <div className={`${styles.wrap} ${styles.reqGrid}`}>
               {historyRequests.map((request) => (
-                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} isHistoryView />
               ))}
             </div>
           )}
@@ -1135,7 +1176,7 @@ export default function ReturnsRequests() {
   );
 }
 
-function RequestCard({ request, isSubmitting }) {
+function RequestCard({ request, isSubmitting, isHistoryView = false }) {
   const [viewerImage, setViewerImage] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
@@ -1247,7 +1288,7 @@ function RequestCard({ request, isSubmitting }) {
           <div className={styles.statusTimelineCurrent}>
             <p className={styles.statusTimelineTitle}>Estado actual</p>
             <p className={styles.statusTimelineCurrentLine}>
-              <strong>{currentTimelineEvent.label}</strong>{" "}
+              <strong className={timelineToneClassName(currentTimelineEvent.tone)}>{currentTimelineEvent.label}</strong>{" "}
               <span>{new Date(currentTimelineEvent.at).toLocaleString("es-MX")}</span>
             </p>
           </div>
@@ -1256,7 +1297,7 @@ function RequestCard({ request, isSubmitting }) {
           <div className={styles.statusTimelineList}>
             {olderTimelineEvents.map((event) => (
               <div key={event.id} className={styles.statusTimelineItem}>
-                <p className={styles.statusTimelineItemTitle}>{event.label}</p>
+                <p className={`${styles.statusTimelineItemTitle} ${timelineToneClassName(event.tone)}`}>{event.label}</p>
                 <p className={styles.statusTimelineItemAt}>{new Date(event.at).toLocaleString("es-MX")}</p>
                 {event.note ? <p className={styles.statusTimelineItemNote}>{event.note}</p> : null}
               </div>
@@ -1279,7 +1320,7 @@ function RequestCard({ request, isSubmitting }) {
           </p>
         )}
 
-        {request.reasonEntries?.length ? (
+        {(!(isHistoryView && timelineEvents.length > 0) && request.reasonEntries?.length) ? (
           <div className={styles.reasonHistory}>
             <p className={styles.reasonHistoryTitle}>Historial de motivos enviados</p>
             <ul className={styles.reasonHistoryList}>
