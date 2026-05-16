@@ -186,6 +186,21 @@ function appendReasonEntry(rawValue, entry) {
   return JSON.stringify({ entries });
 }
 
+function appendTimelineMetaEntry(rawValue, entry) {
+  const kind = String(entry?.kind || "").trim().toLowerCase();
+  if (!kind) return rawValue || "";
+  const entries = parseReasonEntries(rawValue);
+  if (entries.some((item) => String(item?.kind || "").toLowerCase() === kind)) {
+    return JSON.stringify({ entries });
+  }
+  entries.push({
+    kind,
+    reason: String(entry?.reason || "").trim(),
+    at: new Date().toISOString(),
+  });
+  return JSON.stringify({ entries });
+}
+
 function latestReasonFromRaw(rawValue) {
   const entries = parseReasonEntries(rawValue);
   for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
@@ -224,6 +239,10 @@ function timelineLabelFromStatus(status) {
 
 function timelineLabelFromReasonEntry(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
+  if (kind === STATUS_REVIEW_KIND) return "Solicitud en revision";
+  if (kind === STATUS_APPROVED_KIND) return "Devolucion aprobada";
+  if (kind === STATUS_RECEIVED_KIND) return "Recibimos tu producto";
+  if (kind === STATUS_REFUNDED_KIND) return "Reembolso procesado";
   if (kind === "attempt_failed_1") return "Intento de devolucion fallido (1 de 2)";
   if (kind === "attempt_failed_2") return "Intento de devolucion fallido (2 de 2)";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "Devolucion rechazada";
@@ -248,12 +267,73 @@ function timelineToneFromStatus(status) {
 
 function timelineToneFromReasonEntry(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
+  if (kind === REQUEST_CREATED_KIND) return "default";
+  if (kind === STATUS_REVIEW_KIND) return "review";
+  if (kind === STATUS_APPROVED_KIND) return "approved";
+  if (kind === STATUS_RECEIVED_KIND) return "received";
+  if (kind === STATUS_REFUNDED_KIND) return "refunded";
   if (kind === "attempt_failed_1" || kind === "attempt_failed_2") return "attempt";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "rejected";
   if (kind === "denied_after_received") return "denied";
   if (kind === RETURNED_TO_CUSTOMER_KIND) return "pending";
   if (kind === NOT_RETURNED_KIND) return "denied";
   return "default";
+}
+
+function timelineStatusDescription(status, requestRow) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "en_revision") {
+    return "Tu solicitud esta siendo revisada por nuestro equipo.";
+  }
+  if (normalized === "aprobada") {
+    return requestRow.returnMethod === "pickup"
+      ? "Tu solicitud fue aprobada. Recogeremos tu producto en el domicilio y fecha indicados."
+      : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.";
+  }
+  if (normalized === "recibida") {
+    return "Recibimos tu producto. Estamos validando para finalizar el proceso.";
+  }
+  if (normalized === "reembolsada" || normalized === "completada") {
+    return "Tu reembolso ya fue procesado al metodo de pago original.";
+  }
+  if (normalized === "por_devolver") {
+    return "Tu paquete esta pendiente por recoger en sucursal.";
+  }
+  if (normalized === "reembolso_denegado" || normalized === "denegada") {
+    return "El reembolso fue denegado. Revisa el motivo de denegacion.";
+  }
+  if (normalized === "rechazada") {
+    return "Tu solicitud fue rechazada. Revisa el motivo para mas detalle.";
+  }
+  if (normalized === "no_devuelto") {
+    return "Se marco como no devuelto por no recoger dentro del plazo.";
+  }
+  return "";
+}
+
+function timelineKindFromStatus(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "en_revision") return STATUS_REVIEW_KIND;
+  if (normalized === "aprobada") return STATUS_APPROVED_KIND;
+  if (normalized === "recibida") return STATUS_RECEIVED_KIND;
+  if (normalized === "reembolsada" || normalized === "completada") return STATUS_REFUNDED_KIND;
+  return "";
+}
+
+function hasReachedApprovedPhase(status) {
+  const normalized = String(status || "").toLowerCase();
+  return [
+    "aprobada",
+    "intento_fallido_1",
+    "intento_fallido_2",
+    "recibida",
+    "por_devolver",
+    "no_devuelto",
+    "denegada",
+    "reembolso_denegado",
+    "reembolsada",
+    "completada",
+  ].includes(normalized);
 }
 
 function parseEventMs(value) {
@@ -265,6 +345,9 @@ function parseEventMs(value) {
 
 function buildStatusTimeline(requestRow) {
   const events = [];
+  const entryKinds = new Set(
+    (requestRow.timelineEntries || []).map((entry) => String(entry?.kind || "").toLowerCase()).filter(Boolean),
+  );
   const pushEvent = (label, at, note = "", tone = "default") => {
     const atMs = parseEventMs(at);
     if (!label || !atMs) return;
@@ -278,10 +361,48 @@ function buildStatusTimeline(requestRow) {
     });
   };
 
-  pushEvent("Solicitud de devolucion creada", requestRow.createdAt, "", "default");
-  pushEvent("Recibimos tu producto", requestRow.receivedAt, "", "received");
-  pushEvent("Reembolso procesado", requestRow.refundedAt, "", "refunded");
-  pushEvent("Devolucion devuelta al cliente", requestRow.returnedToCustomerAt, "", "pending");
+  if (requestRow.requiresReview && !entryKinds.has(STATUS_REVIEW_KIND)) {
+    pushEvent("Solicitud en revision", requestRow.createdAt, "Tu solicitud esta siendo revisada por nuestro equipo.", "review");
+  }
+  if (requestRow.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND) && hasReachedApprovedPhase(requestRow.status)) {
+    pushEvent(
+      "Devolucion aprobada",
+      requestRow.receivedAt || requestRow.updatedAt || requestRow.createdAt,
+      requestRow.returnMethod === "pickup"
+        ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
+        : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.",
+      "approved",
+    );
+  }
+  if (!requestRow.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND)) {
+    pushEvent(
+      "Devolucion aprobada",
+      requestRow.createdAt,
+      requestRow.returnMethod === "pickup"
+        ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
+        : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.",
+      "approved",
+    );
+  }
+  if (!entryKinds.has(STATUS_RECEIVED_KIND)) {
+    pushEvent(
+      "Recibimos tu producto",
+      requestRow.receivedAt,
+      "Recibimos tu producto. Estamos revisandolo para continuar el proceso.",
+      "received",
+    );
+  }
+  if (!entryKinds.has(STATUS_REFUNDED_KIND)) {
+    pushEvent(
+      "Reembolso procesado",
+      requestRow.refundedAt,
+      "Tu reembolso fue procesado al metodo de pago original.",
+      "refunded",
+    );
+  }
+  if (!entryKinds.has(RETURNED_TO_CUSTOMER_KIND)) {
+    pushEvent("Devolucion devuelta al cliente", requestRow.returnedToCustomerAt, RETURNED_TO_CUSTOMER_MESSAGE, "pending");
+  }
 
   for (const entry of requestRow.timelineEntries || []) {
     const label = timelineLabelFromReasonEntry(entry);
@@ -289,12 +410,15 @@ function buildStatusTimeline(requestRow) {
     pushEvent(label, entry.at, entry.reason || "", timelineToneFromReasonEntry(entry));
   }
 
-  pushEvent(
-    timelineLabelFromStatus(requestRow.status),
-    requestRow.updatedAt,
-    "",
-    timelineToneFromStatus(requestRow.status),
-  );
+  const currentStatusKind = timelineKindFromStatus(requestRow.status);
+  if (!currentStatusKind || !entryKinds.has(currentStatusKind)) {
+    pushEvent(
+      timelineLabelFromStatus(requestRow.status),
+      requestRow.updatedAt,
+      timelineStatusDescription(requestRow.status, requestRow),
+      timelineToneFromStatus(requestRow.status),
+    );
+  }
 
   const dedup = new Map();
   for (const event of events) {
@@ -737,11 +861,18 @@ export const action = async ({ request }) => {
   if (!requestRow) return { ok: false, error: "No se encontro la solicitud." };
 
   if (intent === "approve_request") {
+    const approvedMessage =
+      requestRow.returnMethod === "pickup"
+        ? "Tu solicitud fue aprobada. Recogeremos tu producto en el domicilio y fecha indicados."
+        : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.";
     await prisma.returnRequest.update({
       where: { id },
       data: {
         status: "aprobada",
-        rejectionReason: null,
+        rejectionReason: appendTimelineMetaEntry(requestRow.rejectionReason, {
+          kind: STATUS_APPROVED_KIND,
+          reason: approvedMessage,
+        }),
       },
     });
     return { ok: true, message: "Solicitud aprobada." };
@@ -780,6 +911,10 @@ export const action = async ({ request }) => {
       data: {
         status: "recibida",
         receivedAt: new Date(),
+        rejectionReason: appendTimelineMetaEntry(requestRow.rejectionReason, {
+          kind: STATUS_RECEIVED_KIND,
+          reason: "Recibimos tu producto. Estamos validando para finalizar el proceso.",
+        }),
       },
     });
     return { ok: true, message: "Solicitud marcada como recibida." };
@@ -986,6 +1121,10 @@ export const action = async ({ request }) => {
         data: {
           status: "reembolsada",
           refundedAt: new Date(),
+          rejectionReason: appendTimelineMetaEntry(requestRow.rejectionReason, {
+            kind: STATUS_REFUNDED_KIND,
+            reason: "Tu reembolso fue procesado al metodo de pago original.",
+          }),
           shopifyRefundId: refundId || null,
           refundedSubtotal: subtotal,
           finalRefund,
