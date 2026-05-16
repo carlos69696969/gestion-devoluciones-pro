@@ -79,6 +79,7 @@ function isPickupFailedAttemptStatus(status) {
 
 function normalizeViewMode(rawValue) {
   const value = String(rawValue || "").trim().toLowerCase();
+  if (value === VIEW_MODE.BRANCH) return VIEW_MODE.BRANCH;
   if (value === VIEW_MODE.PICKUP) return VIEW_MODE.PICKUP;
   if (value === VIEW_MODE.REVIEW) return VIEW_MODE.REVIEW;
   if (value === VIEW_MODE.REFUNDS) return VIEW_MODE.REFUNDS;
@@ -320,11 +321,23 @@ function viewTypeParamFromMode(viewMode) {
   return "branch";
 }
 
+function viewModeFromPathname(pathname) {
+  const path = String(pathname || "").toLowerCase();
+  if (path.endsWith("/pickup")) return VIEW_MODE.PICKUP;
+  if (path.endsWith("/branch")) return VIEW_MODE.BRANCH;
+  if (path.endsWith("/review")) return VIEW_MODE.REVIEW;
+  if (path.endsWith("/refunds")) return VIEW_MODE.REFUNDS;
+  if (path.endsWith("/to_return")) return VIEW_MODE.TO_RETURN;
+  if (path.endsWith("/history")) return VIEW_MODE.HISTORY;
+  return "";
+}
+
 function buildViewHref(viewMode, page) {
+  const basePath = `/app/devoluciones/solicitudes/${viewTypeParamFromMode(viewMode)}`;
   const params = new URLSearchParams();
-  params.set("tipo", viewTypeParamFromMode(viewMode));
   if (page > 1) params.set("page", String(page));
-  return `/app/devoluciones/solicitudes?${params.toString()}`;
+  const query = params.toString();
+  return query ? `${basePath}?${query}` : basePath;
 }
 
 function buildStatusTimeline(requestRow) {
@@ -775,7 +788,9 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
 export const loader = async ({ request }) => {
   const loaderStartedAt = Date.now();
   const url = new URL(request.url);
-  const viewMode = normalizeViewMode(url.searchParams.get("tipo"));
+  const requestedViewMode = normalizeViewMode(url.searchParams.get("tipo"));
+  const pathViewMode = normalizeViewMode(viewModeFromPathname(url.pathname));
+  const viewMode = pathViewMode || requestedViewMode;
   const requestedPage = normalizePage(url.searchParams.get("page"));
   try {
     const { admin, session } = await authenticate.admin(request);

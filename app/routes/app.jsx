@@ -61,22 +61,22 @@ export default function App() {
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
         <s-link href="/app/devoluciones/admin">Administrador del panel</s-link>
-        <s-link href="/app/devoluciones/solicitudes?tipo=pickup">
+        <s-link href="/app/devoluciones/solicitudes/pickup">
           {withCount("Recoleccion a domicilio", navCounts?.pickup || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes?tipo=branch">
+        <s-link href="/app/devoluciones/solicitudes/branch">
           {withCount("Entrega en sucursal", navCounts?.branch || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes?tipo=review">
+        <s-link href="/app/devoluciones/solicitudes/review">
           {withCount("Ordenes en revision", navCounts?.review || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes?tipo=refunds">
+        <s-link href="/app/devoluciones/solicitudes/refunds">
           {withCount("Procesar reembolsos", navCounts?.refunds || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes?tipo=to_return">
+        <s-link href="/app/devoluciones/solicitudes/to_return">
           {withCount("Devoluciones a devolver", navCounts?.toReturn || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes?tipo=history">Historial</s-link>
+        <s-link href="/app/devoluciones/solicitudes/history">Historial</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>
