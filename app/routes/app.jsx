@@ -60,23 +60,27 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
-        <s-link href="/app/devoluciones/admin">Administrador del panel</s-link>
-        <s-link href="/app/devoluciones/solicitudes/pickup">
+        <s-link href="/app/devoluciones/admin" target="_top">
+          Administrador del panel
+        </s-link>
+        <s-link href="/app/devoluciones/solicitudes/pickup" target="_top">
           {withCount("Recoleccion a domicilio", navCounts?.pickup || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes/branch">
+        <s-link href="/app/devoluciones/solicitudes/branch" target="_top">
           {withCount("Entrega en sucursal", navCounts?.branch || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes/review">
+        <s-link href="/app/devoluciones/solicitudes/review" target="_top">
           {withCount("Ordenes en revision", navCounts?.review || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes/refunds">
+        <s-link href="/app/devoluciones/solicitudes/refunds" target="_top">
           {withCount("Procesar reembolsos", navCounts?.refunds || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes/to_return">
+        <s-link href="/app/devoluciones/solicitudes/to_return" target="_top">
           {withCount("Devoluciones a devolver", navCounts?.toReturn || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes/history">Historial</s-link>
+        <s-link href="/app/devoluciones/solicitudes/history" target="_top">
+          Historial
+        </s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>
