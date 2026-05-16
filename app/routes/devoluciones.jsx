@@ -807,10 +807,9 @@ export const loader = async ({ request }) => {
         : allDelivered
           ? "Todos los productos de este pedido fueron devueltos con exito."
           : "Tu solicitud ya fue registrada. Aqui puedes ver todos los datos de tu devolucion.";
-      const completionRefundText =
-        allDelivered && hasRefundProcessed
-          ? "Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, puede reflejarse en un plazo de 5 a 10 dias habiles."
-          : "";
+      const completionRefundText = hasRefundProcessed
+        ? "Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, puede reflejarse en un plazo de 5 a 10 dias habiles."
+        : "";
       return maybeProbeResponse(isProbe, {
         reasons,
         evidenceReasons,
