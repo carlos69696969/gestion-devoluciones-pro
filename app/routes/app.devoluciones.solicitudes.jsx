@@ -662,6 +662,10 @@ function buildViewWhere(shop, viewMode) {
   return { shop };
 }
 
+function shouldIncludeEvidencePhotos(viewMode) {
+  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS || viewMode === VIEW_MODE.HISTORY;
+}
+
 function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
   const usedLineIds = new Set();
   const refundableLines = [];
@@ -715,9 +719,21 @@ export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const viewMode = normalizeViewMode(url.searchParams.get("tipo"));
   const where = buildViewWhere(session.shop, viewMode);
+  const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
+  const itemSelect = {
+    id: true,
+    lineItemId: true,
+    productId: true,
+    variantId: true,
+    title: true,
+    quantity: true,
+    reason: true,
+    details: true,
+    ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
+  };
   const rawRequests = await prisma.returnRequest.findMany({
     where,
-    include: { items: true },
+    include: { items: { select: itemSelect } },
     orderBy: { createdAt: "desc" },
   });
 
@@ -1395,7 +1411,8 @@ function RequestCard({
   onToggleSelection = () => {},
 }) {
   const [viewerImage, setViewerImage] = useState(null);
-  const timelineEvents = buildStatusTimeline(request);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
   const currentTimelineEvent = timelineEvents[0] || null;
   const olderTimelineEvents = timelineEvents.slice(1);
   const status = String(request.status || "").toLowerCase();
@@ -1451,8 +1468,13 @@ function RequestCard({
         </span>
       </div>
 
-      <details className={styles.details}>
+      <details
+        className={styles.details}
+        onToggle={(event) => setDetailsOpen(event.currentTarget.open)}
+      >
         <summary className={styles.summary}>Ver orden</summary>
+        {detailsOpen ? (
+          <>
 
         <div className={styles.kv}>
           <div className={styles.kvRow}>
@@ -1594,6 +1616,8 @@ function RequestCard({
                         src={item.imageUrl}
                         alt={item.imageAlt || item.title}
                         className={styles.productThumb}
+                        loading="lazy"
+                        decoding="async"
                       />
                     </button>
                   ) : (
@@ -1625,6 +1649,8 @@ function RequestCard({
                           src={src}
                           alt={`Evidencia ${idx + 1}`}
                           className={styles.evidencePhoto}
+                          loading="lazy"
+                          decoding="async"
                         />
                         <span>Foto {idx + 1}</span>
                       </button>
@@ -1635,6 +1661,8 @@ function RequestCard({
             );
           })}
         </ul>
+          </>
+        ) : null}
       </details>
 
       {status === "por_devolver" && request.pickupDeadlineAt ? (
