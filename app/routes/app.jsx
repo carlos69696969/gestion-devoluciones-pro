@@ -58,33 +58,46 @@ export default function App() {
   const location = useLocation();
   const withCount = (label, count) => (count > 0 ? `${label} (${count})` : label);
   const navParams = new URLSearchParams(location.search || "");
-  navParams.delete("page");
-  navParams.delete("tipo");
-  const navSearch = navParams.toString();
-  const withNavSearch = (pathname) => (navSearch ? `${pathname}?${navSearch}` : pathname);
+  const shop = String(navParams.get("shop") || "").trim();
+  const host = String(navParams.get("host") || "").trim();
+  const withEmbedParams = (pathname) => {
+    const params = new URLSearchParams();
+    if (shop) params.set("shop", shop);
+    if (host) params.set("host", host);
+    const query = params.toString();
+    return query ? `${pathname}?${query}` : pathname;
+  };
+  const withSolicitudesTipo = (tipo) => {
+    const params = new URLSearchParams();
+    if (shop) params.set("shop", shop);
+    if (host) params.set("host", host);
+    if (tipo) params.set("tipo", tipo);
+    const query = params.toString();
+    return query ? `/app/devoluciones/solicitudes?${query}` : "/app/devoluciones/solicitudes";
+  };
 
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
-        <s-link rel="home" href={withNavSearch("/app/devoluciones/admin")}>
+        <s-link rel="home" href={withEmbedParams("/app/devoluciones/admin")}>
           Administrador del panel
         </s-link>
-        <s-link href={withNavSearch("/app/devoluciones/solicitudes/pickup")}>
+        <s-link href={withSolicitudesTipo("pickup")}>
           {withCount("Recoleccion a domicilio", navCounts?.pickup || 0)}
         </s-link>
-        <s-link href={withNavSearch("/app/devoluciones/solicitudes/branch")}>
+        <s-link href={withSolicitudesTipo("branch")}>
           {withCount("Entrega en sucursal", navCounts?.branch || 0)}
         </s-link>
-        <s-link href={withNavSearch("/app/devoluciones/solicitudes/review")}>
+        <s-link href={withSolicitudesTipo("review")}>
           {withCount("Ordenes en revision", navCounts?.review || 0)}
         </s-link>
-        <s-link href={withNavSearch("/app/devoluciones/solicitudes/refunds")}>
+        <s-link href={withSolicitudesTipo("refunds")}>
           {withCount("Procesar reembolsos", navCounts?.refunds || 0)}
         </s-link>
-        <s-link href={withNavSearch("/app/devoluciones/solicitudes/to_return")}>
+        <s-link href={withSolicitudesTipo("to_return")}>
           {withCount("Devoluciones a devolver", navCounts?.toReturn || 0)}
         </s-link>
-        <s-link href={withNavSearch("/app/devoluciones/solicitudes/history")}>
+        <s-link href={withSolicitudesTipo("history")}>
           Historial
         </s-link>
       </s-app-nav>

@@ -344,7 +344,7 @@ function viewModeFromPathname(pathname) {
 }
 
 function buildViewHref(viewMode, page, currentSearch = "") {
-  const basePath = `/app/devoluciones/solicitudes/${viewTypeParamFromMode(viewMode)}`;
+  const basePath = "/app/devoluciones/solicitudes";
   const params = new URLSearchParams(currentSearch || "");
   params.delete("page");
   params.delete("tipo");
@@ -809,7 +809,7 @@ export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const requestedViewMode = normalizeViewMode(url.searchParams.get("tipo"));
   const pathViewMode = normalizeViewMode(viewModeFromPathname(url.pathname));
-  const viewMode = pathViewMode || requestedViewMode;
+  const viewMode = requestedViewMode || pathViewMode;
   const requestedPage = normalizePage(url.searchParams.get("page"));
   try {
     const { admin, session } = await authenticate.admin(request);
@@ -916,6 +916,12 @@ export const loader = async ({ request }) => {
       loaderError: "No se pudo cargar esta seccion. Recarga e intenta de nuevo.",
     };
   }
+};
+
+export const shouldRevalidate = ({ currentUrl, nextUrl, defaultShouldRevalidate }) => {
+  if (currentUrl.pathname !== nextUrl.pathname) return true;
+  if (currentUrl.search !== nextUrl.search) return true;
+  return defaultShouldRevalidate;
 };
 
 export const action = async ({ request }) => {
@@ -1312,6 +1318,11 @@ export default function ReturnsRequests() {
   const [historySelectionMode, setHistorySelectionMode] = useState(false);
   const [selectedHistoryIds, setSelectedHistoryIds] = useState([]);
   const currentPage = pageInfo?.currentPage || 1;
+  const currentUrlViewMode = useMemo(() => {
+    const fromSearch = normalizeViewMode(new URLSearchParams(location.search || "").get("tipo"));
+    const fromPath = normalizeViewMode(viewModeFromPathname(location.pathname));
+    return fromSearch || fromPath || viewMode;
+  }, [location.pathname, location.search, viewMode]);
 
   const reviewRequests = useMemo(
     () => requests.filter((requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision"),
@@ -1347,7 +1358,7 @@ export default function ReturnsRequests() {
         .sort((a, b) => historyTimestampMs(b) - historyTimestampMs(a)),
     [requests],
   );
-  const isHistoryView = viewMode === VIEW_MODE.HISTORY;
+  const isHistoryView = currentUrlViewMode === VIEW_MODE.HISTORY;
   const historyRequestIds = useMemo(() => historyRequests.map((requestRow) => requestRow.id), [historyRequests]);
   const allHistorySelected = useMemo(
     () => historyRequestIds.length > 0 && historyRequestIds.every((historyId) => selectedHistoryIds.includes(historyId)),
@@ -1394,20 +1405,20 @@ export default function ReturnsRequests() {
   const pickupGroups = useMemo(() => buildPickupGroups(pickupRequests), [pickupRequests]);
 
   const pageHeading =
-    viewMode === VIEW_MODE.PICKUP
+    currentUrlViewMode === VIEW_MODE.PICKUP
       ? "Recoleccion a domicilio"
-      : viewMode === VIEW_MODE.REVIEW
+      : currentUrlViewMode === VIEW_MODE.REVIEW
         ? "Ordenes en revision"
-      : viewMode === VIEW_MODE.REFUNDS
+      : currentUrlViewMode === VIEW_MODE.REFUNDS
           ? "Procesar reembolsos"
-        : viewMode === VIEW_MODE.TO_RETURN
+        : currentUrlViewMode === VIEW_MODE.TO_RETURN
           ? "Devoluciones a devolver"
-        : viewMode === VIEW_MODE.HISTORY
+        : currentUrlViewMode === VIEW_MODE.HISTORY
           ? "Historial"
         : "Entrega en sucursal";
   const hasPrevPage = currentPage > 1;
   const hasNextPage = currentPage < (pageInfo?.totalPages || 1);
-  const currentViewHref = buildViewHref(viewMode, currentPage, location.search);
+  const currentViewHref = buildViewHref(currentUrlViewMode, currentPage, location.search);
 
   return (
     <s-page heading={pageHeading}>
@@ -1417,7 +1428,7 @@ export default function ReturnsRequests() {
       {(pageInfo?.totalPages || 1) > 1 ? (
         <div className={styles.actionRow}>
           {hasPrevPage ? (
-            <Link className={styles.btn} to={buildViewHref(viewMode, currentPage - 1, location.search)}>
+            <Link className={styles.btn} to={buildViewHref(currentUrlViewMode, currentPage - 1, location.search)}>
               Anterior
             </Link>
           ) : null}
@@ -1425,14 +1436,14 @@ export default function ReturnsRequests() {
             Pagina {currentPage} de {pageInfo?.totalPages || 1} | Total: {pageInfo?.totalCount || 0}
           </span>
           {hasNextPage ? (
-            <Link className={styles.btn} to={buildViewHref(viewMode, currentPage + 1, location.search)}>
+            <Link className={styles.btn} to={buildViewHref(currentUrlViewMode, currentPage + 1, location.search)}>
               Siguiente
             </Link>
           ) : null}
         </div>
       ) : null}
 
-      {viewMode === VIEW_MODE.BRANCH ? (
+      {currentUrlViewMode === VIEW_MODE.BRANCH ? (
         <s-section heading="Entregas en sucursal">
           {branchRequests.length === 0 ? (
             <p>No hay solicitudes de entrega en sucursal.</p>
@@ -1446,7 +1457,7 @@ export default function ReturnsRequests() {
         </s-section>
       ) : null}
 
-      {viewMode === VIEW_MODE.PICKUP ? (
+      {currentUrlViewMode === VIEW_MODE.PICKUP ? (
         <s-section heading="Recolecciones a domicilio">
           {pickupGroups.length === 0 ? (
             <p>No hay solicitudes de recoleccion a domicilio.</p>
@@ -1470,7 +1481,7 @@ export default function ReturnsRequests() {
         </s-section>
       ) : null}
 
-      {viewMode === VIEW_MODE.REVIEW ? (
+      {currentUrlViewMode === VIEW_MODE.REVIEW ? (
         <s-section heading="Ordenes en revision">
           {reviewRequests.length === 0 ? (
             <p>No hay ordenes en revision.</p>
@@ -1484,7 +1495,7 @@ export default function ReturnsRequests() {
         </s-section>
       ) : null}
 
-      {viewMode === VIEW_MODE.REFUNDS ? (
+      {currentUrlViewMode === VIEW_MODE.REFUNDS ? (
         <s-section heading="Solicitudes listas para procesar reembolsos">
           {refundQueueRequests.length === 0 ? (
             <p>No hay solicitudes listas para procesar reembolsos.</p>
@@ -1498,7 +1509,7 @@ export default function ReturnsRequests() {
         </s-section>
       ) : null}
 
-      {viewMode === VIEW_MODE.TO_RETURN ? (
+      {currentUrlViewMode === VIEW_MODE.TO_RETURN ? (
         <s-section heading="Solicitudes pendientes por recoger en sucursal">
           {returnToCustomerQueueRequests.length === 0 ? (
             <p>No hay solicitudes pendientes por recoger.</p>
@@ -1512,7 +1523,7 @@ export default function ReturnsRequests() {
         </s-section>
       ) : null}
 
-      {viewMode === VIEW_MODE.HISTORY ? (
+      {currentUrlViewMode === VIEW_MODE.HISTORY ? (
         <s-section heading="Historial de devoluciones">
           {historyRequests.length === 0 ? (
             <p>No hay ordenes en historial.</p>
