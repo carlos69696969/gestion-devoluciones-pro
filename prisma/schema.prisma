@@ -73,6 +73,10 @@ model ReturnRequest {
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
   items             ReturnItem[]
+
+  @@index([shop, status, createdAt])
+  @@index([shop, returnMethod, status, createdAt])
+  @@index([shop, orderNumber])
 }
 
 model ReturnItem {

@@ -45,6 +45,9 @@ const STATUS_RECEIVED_KIND = "status_received";
 const STATUS_REFUNDED_KIND = "status_refunded";
 const NOT_RETURNED_REASON = "El cliente no recogio su paquete en sucursal dentro de 30 dias.";
 const PICKUP_DEADLINE_DAYS = 30;
+const ADMIN_PAGE_SIZE = 20;
+const ORDER_IMAGE_CACHE_TTL_MS = 10 * 60 * 1000;
+const MAX_ORDER_IMAGE_CACHE_ENTRIES = 500;
 const TIMELINE_META_KINDS = new Set([
   REQUEST_CREATED_KIND,
   STATUS_REVIEW_KIND,
@@ -54,6 +57,7 @@ const TIMELINE_META_KINDS = new Set([
   RETURNED_TO_CUSTOMER_KIND,
   NOT_RETURNED_KIND,
 ]);
+const orderImageCache = new Map();
 
 function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
@@ -301,6 +305,28 @@ function parseEventMs(value) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+function normalizePage(rawValue) {
+  const parsed = Number.parseInt(String(rawValue || "1"), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return parsed;
+}
+
+function viewTypeParamFromMode(viewMode) {
+  if (viewMode === VIEW_MODE.PICKUP) return "pickup";
+  if (viewMode === VIEW_MODE.REVIEW) return "review";
+  if (viewMode === VIEW_MODE.REFUNDS) return "refunds";
+  if (viewMode === VIEW_MODE.TO_RETURN) return "to_return";
+  if (viewMode === VIEW_MODE.HISTORY) return "history";
+  return "branch";
+}
+
+function buildViewHref(viewMode, page) {
+  const params = new URLSearchParams();
+  params.set("tipo", viewTypeParamFromMode(viewMode));
+  if (page > 1) params.set("page", String(page));
+  return `/app/devoluciones/solicitudes?${params.toString()}`;
+}
+
 function buildStatusTimeline(requestRow) {
   const events = [];
   const entryKinds = new Set(
@@ -542,13 +568,37 @@ async function fetchOrderItemImageMaps(admin, orderIds) {
   const uniqueIds = Array.from(new Set(orderIds.filter(Boolean)));
   if (!uniqueIds.length) return {};
 
-  const chunkSize = 25;
-  const chunks = [];
-  for (let index = 0; index < uniqueIds.length; index += chunkSize) {
-    chunks.push(uniqueIds.slice(index, index + chunkSize));
+  const now = Date.now();
+  for (const [cachedOrderId, cachedEntry] of orderImageCache.entries()) {
+    if (!cachedEntry || cachedEntry.expiresAt <= now) orderImageCache.delete(cachedOrderId);
+  }
+  if (orderImageCache.size > MAX_ORDER_IMAGE_CACHE_ENTRIES) {
+    const overflow = orderImageCache.size - MAX_ORDER_IMAGE_CACHE_ENTRIES;
+    let removed = 0;
+    for (const cachedOrderId of orderImageCache.keys()) {
+      orderImageCache.delete(cachedOrderId);
+      removed += 1;
+      if (removed >= overflow) break;
+    }
   }
 
   const byOrder = {};
+  const missingIds = [];
+  for (const orderId of uniqueIds) {
+    const cachedEntry = orderImageCache.get(orderId);
+    if (cachedEntry && cachedEntry.expiresAt > now) {
+      byOrder[orderId] = cachedEntry.value;
+    } else {
+      missingIds.push(orderId);
+    }
+  }
+  if (!missingIds.length) return byOrder;
+
+  const chunkSize = 25;
+  const chunks = [];
+  for (let index = 0; index < missingIds.length; index += chunkSize) {
+    chunks.push(missingIds.slice(index, index + chunkSize));
+  }
 
   try {
     for (const idsChunk of chunks) {
@@ -605,6 +655,10 @@ async function fetchOrderItemImageMaps(admin, orderIds) {
           putImageCandidate(imageMap, itemKeyFromRecord({ title: line.title }), imageUrl, imageAlt);
         }
         byOrder[order.id] = imageMap;
+        orderImageCache.set(order.id, {
+          value: imageMap,
+          expiresAt: Date.now() + ORDER_IMAGE_CACHE_TTL_MS,
+        });
       }
     }
 
@@ -718,6 +772,7 @@ export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
   const viewMode = normalizeViewMode(url.searchParams.get("tipo"));
+  const requestedPage = normalizePage(url.searchParams.get("page"));
   const where = buildViewWhere(session.shop, viewMode);
   const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
   const itemSelect = {
@@ -731,10 +786,17 @@ export const loader = async ({ request }) => {
     details: true,
     ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
   };
+  const totalCount = await prisma.returnRequest.count({ where });
+  const totalPages = Math.max(1, Math.ceil(totalCount / ADMIN_PAGE_SIZE));
+  const currentPage = Math.min(requestedPage, totalPages);
+  const skip = (currentPage - 1) * ADMIN_PAGE_SIZE;
+
   const rawRequests = await prisma.returnRequest.findMany({
     where,
     include: { items: { select: itemSelect } },
     orderBy: { createdAt: "desc" },
+    skip,
+    take: ADMIN_PAGE_SIZE,
   });
 
   const imagesByOrder = await fetchOrderItemImageMaps(
@@ -779,7 +841,16 @@ export const loader = async ({ request }) => {
     };
   });
 
-  return { requests, viewMode };
+  return {
+    requests,
+    viewMode,
+    pageInfo: {
+      currentPage,
+      totalPages,
+      totalCount,
+      pageSize: ADMIN_PAGE_SIZE,
+    },
+  };
 };
 
 export const action = async ({ request }) => {
@@ -1168,7 +1239,7 @@ function historyTimestampMs(request) {
 }
 
 export default function ReturnsRequests() {
-  const { requests, viewMode } = useLoaderData();
+  const { requests, viewMode, pageInfo } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -1243,11 +1314,30 @@ export default function ReturnsRequests() {
         : viewMode === VIEW_MODE.HISTORY
           ? "Historial"
         : "Entrega en sucursal";
+  const hasPrevPage = (pageInfo?.currentPage || 1) > 1;
+  const hasNextPage = (pageInfo?.currentPage || 1) < (pageInfo?.totalPages || 1);
 
   return (
     <s-page heading={pageHeading}>
       {actionData?.error ? <p className={styles.errorMsg}>{actionData.error}</p> : null}
       {actionData?.message ? <p className={styles.successMsg}>{actionData.message}</p> : null}
+      {(pageInfo?.totalPages || 1) > 1 ? (
+        <div className={styles.actionRow}>
+          {hasPrevPage ? (
+            <a className={styles.btn} href={buildViewHref(viewMode, (pageInfo?.currentPage || 1) - 1)}>
+              Anterior
+            </a>
+          ) : null}
+          <span className={styles.meta}>
+            Pagina {pageInfo?.currentPage || 1} de {pageInfo?.totalPages || 1} | Total: {pageInfo?.totalCount || 0}
+          </span>
+          {hasNextPage ? (
+            <a className={styles.btn} href={buildViewHref(viewMode, (pageInfo?.currentPage || 1) + 1)}>
+              Siguiente
+            </a>
+          ) : null}
+        </div>
+      ) : null}
 
       {viewMode === VIEW_MODE.BRANCH ? (
         <s-section heading="Entregas en sucursal">
