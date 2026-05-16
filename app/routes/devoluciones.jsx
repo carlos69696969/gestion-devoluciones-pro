@@ -22,6 +22,10 @@ const STATUS_APPROVED_KIND = "status_approved";
 const STATUS_RECEIVED_KIND = "status_received";
 const STATUS_REFUNDED_KIND = "status_refunded";
 const PICKUP_DEADLINE_DAYS = 30;
+const EVIDENCE_IMAGE_MAX_EDGE = 1280;
+const EVIDENCE_IMAGE_MAX_BYTES = 450 * 1024;
+const EVIDENCE_IMAGE_QUALITY_START = 0.82;
+const EVIDENCE_IMAGE_QUALITY_MIN = 0.58;
 const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito.";
 const TIMELINE_META_KINDS = new Set([
   REQUEST_CREATED_KIND,
@@ -244,6 +248,68 @@ function parsePhotoDataUrls(rawValue) {
   } catch {
     const single = String(rawValue || "").trim();
     return single ? [single] : [];
+  }
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("No se pudo leer la imagen."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImageElement(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("No se pudo procesar la imagen."));
+    image.src = dataUrl;
+  });
+}
+
+function dataUrlSizeBytes(dataUrl) {
+  const marker = "base64,";
+  const idx = String(dataUrl || "").indexOf(marker);
+  if (idx < 0) return 0;
+  const base64 = dataUrl.slice(idx + marker.length);
+  return Math.floor((base64.length * 3) / 4);
+}
+
+async function optimizeEvidencePhoto(file) {
+  const rawDataUrl = await readFileAsDataUrl(file);
+  if (!String(file?.type || "").toLowerCase().startsWith("image/")) return rawDataUrl;
+
+  try {
+    const image = await loadImageElement(rawDataUrl);
+    const sourceWidth = Number(image.naturalWidth || image.width || 0);
+    const sourceHeight = Number(image.naturalHeight || image.height || 0);
+    if (!sourceWidth || !sourceHeight) return rawDataUrl;
+
+    const scale = Math.min(1, EVIDENCE_IMAGE_MAX_EDGE / Math.max(sourceWidth, sourceHeight));
+    const width = Math.max(1, Math.round(sourceWidth * scale));
+    const height = Math.max(1, Math.round(sourceHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return rawDataUrl;
+    ctx.drawImage(image, 0, 0, width, height);
+
+    let quality = EVIDENCE_IMAGE_QUALITY_START;
+    let optimizedDataUrl = canvas.toDataURL("image/jpeg", quality);
+    while (dataUrlSizeBytes(optimizedDataUrl) > EVIDENCE_IMAGE_MAX_BYTES && quality > EVIDENCE_IMAGE_QUALITY_MIN) {
+      quality -= 0.08;
+      optimizedDataUrl = canvas.toDataURL("image/jpeg", quality);
+    }
+
+    if (dataUrlSizeBytes(optimizedDataUrl) >= dataUrlSizeBytes(rawDataUrl)) {
+      return rawDataUrl;
+    }
+    return optimizedDataUrl;
+  } catch {
+    return rawDataUrl;
   }
 }
 
@@ -1738,6 +1804,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
   );
   const [detailsByItem, setDetailsByItem] = useState({});
   const [photoByItem, setPhotoByItem] = useState({});
+  const [photoProcessingByItem, setPhotoProcessingByItem] = useState({});
   const [viewerImage, setViewerImage] = useState(null);
   const [returnMethod, setReturnMethod] = useState("branch");
   const customerName = order.customerName || "";
@@ -1893,7 +1960,8 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     }
   }, [actionData?.saved, actionData?.error]);
 
-  const isSubmitBusy = isSubmitting || submitLocked || Boolean(actionData?.saved);
+  const hasPhotoProcessing = Object.values(photoProcessingByItem).some(Boolean);
+  const isSubmitBusy = isSubmitting || submitLocked || Boolean(actionData?.saved) || hasPhotoProcessing;
 
   const handleSubmit = (event) => {
     if (step !== 4) return;
@@ -2036,9 +2104,9 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                               };
 
                               const readFile = (file, index) => {
-                                const reader = new FileReader();
-                                reader.onload = () => setPhotoAt(index, String(reader.result || ""));
-                                reader.readAsDataURL(file);
+                                return optimizeEvidencePhoto(file).then((optimizedDataUrl) => {
+                                  setPhotoAt(index, optimizedDataUrl);
+                                });
                               };
 
                               return (
@@ -2056,12 +2124,22 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                                           onChange={(event) => {
                                             const file = event.target.files?.[0];
                                             if (!file) return;
-                                            readFile(file, slotIndex);
-                                            // allow selecting the same file again later
+                                            const photoKey = `${item.id}_${slotIndex}`;
+                                            setPhotoProcessingByItem((prev) => ({ ...prev, [photoKey]: true }));
+                                            readFile(file, slotIndex)
+                                              .catch(() => {
+                                                setClientError("No se pudo procesar la imagen. Intenta con otra foto.");
+                                              })
+                                              .finally(() => {
+                                                setPhotoProcessingByItem((prev) => ({ ...prev, [photoKey]: false }));
+                                              });
+                                            // Allow selecting the same file again later.
                                             event.target.value = "";
                                           }}
                                         />
-                                        {preview ? (
+                                        {photoProcessingByItem[`${item.id}_${slotIndex}`] ? (
+                                          <span className={styles.photoSlotText}>Procesando...</span>
+                                        ) : preview ? (
                                           <img className={styles.photoPreview} alt="Foto del problema" src={preview} />
                                         ) : (
                                           <span className={styles.photoSlotText}>Seleccionar foto</span>
@@ -2312,6 +2390,11 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
 
               {actionData?.error ? <p style={{ color: "#b42318" }}>{actionData.error}</p> : null}
               {actionData?.saved ? <p style={{ color: "#027a48" }}>{actionData.message}</p> : null}
+              {isSubmitBusy && !actionData?.saved ? (
+                <p className={`${styles.notice} ${styles.noticeMuted}`}>
+                  {hasPhotoProcessing ? "Procesando fotos, espera un momento..." : "Enviando devolucion, espera unos segundos..."}
+                </p>
+              ) : null}
 
               {!actionData?.saved ? (
                 <div className={styles.btnRow}>
@@ -2319,7 +2402,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                     Atras
                   </button>
                   <button className={`${styles.btn} ${styles.btnPrimary}`} disabled={isSubmitBusy} type="submit">
-                    Confirmar devolucion
+                    {isSubmitBusy ? "Enviando..." : "Confirmar devolucion"}
                   </button>
                 </div>
               ) : null}
