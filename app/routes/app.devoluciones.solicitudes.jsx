@@ -720,6 +720,10 @@ function shouldIncludeEvidencePhotos(viewMode) {
   return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS || viewMode === VIEW_MODE.HISTORY;
 }
 
+function shouldLoadOrderCatalogImages(viewMode) {
+  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS || viewMode === VIEW_MODE.HISTORY;
+}
+
 function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
   const usedLineIds = new Set();
   const refundableLines = [];
@@ -769,88 +773,113 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
 }
 
 export const loader = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
+  const loaderStartedAt = Date.now();
   const url = new URL(request.url);
   const viewMode = normalizeViewMode(url.searchParams.get("tipo"));
   const requestedPage = normalizePage(url.searchParams.get("page"));
-  const where = buildViewWhere(session.shop, viewMode);
-  const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
-  const itemSelect = {
-    id: true,
-    lineItemId: true,
-    productId: true,
-    variantId: true,
-    title: true,
-    quantity: true,
-    reason: true,
-    details: true,
-    ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
-  };
-  const totalCount = await prisma.returnRequest.count({ where });
-  const totalPages = Math.max(1, Math.ceil(totalCount / ADMIN_PAGE_SIZE));
-  const currentPage = Math.min(requestedPage, totalPages);
-  const skip = (currentPage - 1) * ADMIN_PAGE_SIZE;
-
-  const rawRequests = await prisma.returnRequest.findMany({
-    where,
-    include: { items: { select: itemSelect } },
-    orderBy: { createdAt: "desc" },
-    skip,
-    take: ADMIN_PAGE_SIZE,
-  });
-
-  const imagesByOrder = await fetchOrderItemImageMaps(
-    admin,
-    rawRequests.map((requestRow) => requestRow.shopifyOrderId),
-  );
-
-  const requests = rawRequests.map((requestRow) => {
-    const imageMap = imagesByOrder[requestRow.shopifyOrderId] || {};
-    const status = String(requestRow.status || "").toLowerCase();
-    const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
-    const visibleReasonEntries = reasonEntries.filter((entry) => !isSystemProgressEntry(entry));
-    const wasReturnedToCustomer = reasonEntries.some((entry) => isReturnedToCustomerEntry(entry));
-    const returnedToCustomerAt = latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason);
-    const requiresPickupDeadline = ["por_devolver", "no_devuelto", "reembolso_denegado", "denegada"].includes(status);
-    const pendingPickupSinceAt = requiresPickupDeadline
-      ? latestEntryAtFromKinds(requestRow.rejectionReason, ["denied_after_received"]) ||
-        requestRow.updatedAt?.toISOString?.() ||
-        ""
-      : "";
-    const pickupDeadlineDate = requiresPickupDeadline ? addDays(pendingPickupSinceAt, PICKUP_DEADLINE_DAYS) : null;
-    const pickupDeadlineAt = pickupDeadlineDate ? pickupDeadlineDate.toISOString() : "";
-    const isPickupDeadlineExpired =
-      Boolean(pickupDeadlineDate) && new Date().getTime() > pickupDeadlineDate.getTime();
-    return {
-      ...requestRow,
-      rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
-      timelineEntries: reasonEntries,
-      reasonEntries: visibleReasonEntries,
-      wasReturnedToCustomer,
-      returnedToCustomerAt,
-      pickupDeadlineAt,
-      isPickupDeadlineExpired,
-      items: requestRow.items.map((item) => {
-        const image = imageMap[itemKeyFromRecord(item)] || null;
-        return {
-          ...item,
-          imageUrl: image?.imageUrl || "",
-          imageAlt: image?.imageAlt || "",
-        };
-      }),
+  try {
+    const { admin, session } = await authenticate.admin(request);
+    const where = buildViewWhere(session.shop, viewMode);
+    const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
+    const itemSelect = {
+      id: true,
+      lineItemId: true,
+      productId: true,
+      variantId: true,
+      title: true,
+      quantity: true,
+      reason: true,
+      details: true,
+      ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
     };
-  });
+    const totalCount = await prisma.returnRequest.count({ where });
+    const totalPages = Math.max(1, Math.ceil(totalCount / ADMIN_PAGE_SIZE));
+    const currentPage = Math.min(requestedPage, totalPages);
+    const skip = (currentPage - 1) * ADMIN_PAGE_SIZE;
 
-  return {
-    requests,
-    viewMode,
-    pageInfo: {
-      currentPage,
-      totalPages,
-      totalCount,
-      pageSize: ADMIN_PAGE_SIZE,
-    },
-  };
+    const rawRequests = await prisma.returnRequest.findMany({
+      where,
+      include: { items: { select: itemSelect } },
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: ADMIN_PAGE_SIZE,
+    });
+
+    const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
+    const imagesByOrder = shouldLoadImages
+      ? await fetchOrderItemImageMaps(
+          admin,
+          rawRequests.map((requestRow) => requestRow.shopifyOrderId),
+        )
+      : {};
+
+    const requests = rawRequests.map((requestRow) => {
+      const imageMap = imagesByOrder[requestRow.shopifyOrderId] || {};
+      const status = String(requestRow.status || "").toLowerCase();
+      const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
+      const visibleReasonEntries = reasonEntries.filter((entry) => !isSystemProgressEntry(entry));
+      const wasReturnedToCustomer = reasonEntries.some((entry) => isReturnedToCustomerEntry(entry));
+      const returnedToCustomerAt = latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason);
+      const requiresPickupDeadline = ["por_devolver", "no_devuelto", "reembolso_denegado", "denegada"].includes(status);
+      const pendingPickupSinceAt = requiresPickupDeadline
+        ? latestEntryAtFromKinds(requestRow.rejectionReason, ["denied_after_received"]) ||
+          requestRow.updatedAt?.toISOString?.() ||
+          ""
+        : "";
+      const pickupDeadlineDate = requiresPickupDeadline ? addDays(pendingPickupSinceAt, PICKUP_DEADLINE_DAYS) : null;
+      const pickupDeadlineAt = pickupDeadlineDate ? pickupDeadlineDate.toISOString() : "";
+      const isPickupDeadlineExpired =
+        Boolean(pickupDeadlineDate) && new Date().getTime() > pickupDeadlineDate.getTime();
+      return {
+        ...requestRow,
+        rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
+        timelineEntries: reasonEntries,
+        reasonEntries: visibleReasonEntries,
+        wasReturnedToCustomer,
+        returnedToCustomerAt,
+        pickupDeadlineAt,
+        isPickupDeadlineExpired,
+        items: requestRow.items.map((item) => {
+          const image = imageMap[itemKeyFromRecord(item)] || null;
+          return {
+            ...item,
+            imageUrl: image?.imageUrl || "",
+            imageAlt: image?.imageAlt || "",
+          };
+        }),
+      };
+    });
+
+    const elapsed = Date.now() - loaderStartedAt;
+    console.log(`[admin-returns-loader] view=${viewMode} page=${currentPage} count=${requests.length}/${totalCount} in ${elapsed}ms`);
+
+    return {
+      requests,
+      viewMode,
+      pageInfo: {
+        currentPage,
+        totalPages,
+        totalCount,
+        pageSize: ADMIN_PAGE_SIZE,
+      },
+      loaderError: "",
+    };
+  } catch (error) {
+    const elapsed = Date.now() - loaderStartedAt;
+    const message = error instanceof Error ? error.message : "Error desconocido";
+    console.error(`[admin-returns-loader] FAILED view=${viewMode} page=${requestedPage} in ${elapsed}ms -> ${message}`);
+    return {
+      requests: [],
+      viewMode,
+      pageInfo: {
+        currentPage: 1,
+        totalPages: 1,
+        totalCount: 0,
+        pageSize: ADMIN_PAGE_SIZE,
+      },
+      loaderError: "No se pudo cargar esta seccion. Recarga e intenta de nuevo.",
+    };
+  }
 };
 
 export const action = async ({ request }) => {
@@ -1239,7 +1268,7 @@ function historyTimestampMs(request) {
 }
 
 export default function ReturnsRequests() {
-  const { requests, viewMode, pageInfo } = useLoaderData();
+  const { requests, viewMode, pageInfo, loaderError } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -1321,6 +1350,7 @@ export default function ReturnsRequests() {
     <s-page heading={pageHeading}>
       {actionData?.error ? <p className={styles.errorMsg}>{actionData.error}</p> : null}
       {actionData?.message ? <p className={styles.successMsg}>{actionData.message}</p> : null}
+      {loaderError ? <p className={styles.errorMsg}>{loaderError}</p> : null}
       {(pageInfo?.totalPages || 1) > 1 ? (
         <div className={styles.actionRow}>
           {hasPrevPage ? (
