@@ -323,7 +323,6 @@ function timelineToneFromStatus(status) {
 
 function timelineLabelFromReasonEntry(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
-  if (kind === REQUEST_CREATED_KIND) return "Solicitud de devolucion creada";
   if (kind === STATUS_REVIEW_KIND) return "Solicitud en revision";
   if (kind === STATUS_APPROVED_KIND) return "Devolucion aprobada";
   if (kind === STATUS_RECEIVED_KIND) return "Recibimos tu producto";
@@ -454,9 +453,6 @@ function buildStatusTimeline(requestItem) {
     });
   };
 
-  if (!entryKinds.has(REQUEST_CREATED_KIND)) {
-    pushEvent("Solicitud de devolucion creada", requestItem.createdAt, "Tu solicitud fue registrada correctamente.");
-  }
   if (requestItem.requiresReview && !entryKinds.has(STATUS_REVIEW_KIND)) {
     pushEvent("Solicitud en revision", requestItem.createdAt, "Tu solicitud esta siendo revisada por nuestro equipo.", "review");
   }
