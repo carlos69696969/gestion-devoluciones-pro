@@ -575,6 +575,46 @@
   color: #202223;
 }
 
+.timelineToneReview {
+  color: #ff2df1;
+  font-weight: 800;
+}
+
+.timelineToneApproved {
+  color: #0047ab;
+  font-weight: 800;
+}
+
+.timelineToneAttempt {
+  color: #ff8c00;
+  font-weight: 800;
+}
+
+.timelineToneRejected {
+  color: #b42318;
+  font-weight: 800;
+}
+
+.timelineToneReceived {
+  color: #a97900;
+  font-weight: 800;
+}
+
+.timelineTonePending {
+  color: #b42318;
+  font-weight: 800;
+}
+
+.timelineToneDenied {
+  color: #b42318;
+  font-weight: 800;
+}
+
+.timelineToneRefunded {
+  color: #008060;
+  font-weight: 800;
+}
+
 .successMsg {
   margin: 8px 0;
   color: #027a48;
