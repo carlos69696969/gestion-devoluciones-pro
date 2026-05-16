@@ -482,6 +482,67 @@
   color: #b42318;
 }
 
+.statusTimelineCurrent {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #e1e3e5;
+  border-radius: 10px;
+  background: #fafbfb;
+}
+
+.statusTimelineTitle {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: #6d7175;
+  font-weight: 700;
+}
+
+.statusTimelineCurrentLine {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 14px;
+  color: #202223;
+}
+
+.statusTimelineList {
+  margin-top: 8px;
+  border: 1px solid #e1e3e5;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.statusTimelineItem {
+  padding: 10px;
+  border-bottom: 1px solid #e1e3e5;
+  background: #fff;
+}
+
+.statusTimelineItem:last-child {
+  border-bottom: 0;
+}
+
+.statusTimelineItemTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: #202223;
+}
+
+.statusTimelineItemAt {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #6d7175;
+}
+
+.statusTimelineItemNote {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #202223;
+}
+
 .successMsg {
   margin: 8px 0;
   color: #027a48;

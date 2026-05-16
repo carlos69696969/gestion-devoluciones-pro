@@ -180,6 +180,75 @@ function reasonEntryLabel(entry) {
   return "Motivo";
 }
 
+function timelineLabelFromStatus(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "en_revision") return "Solicitud en revision";
+  if (normalized === "aprobada") return "Devolucion aprobada";
+  if (normalized === "intento_fallido_1") return "Intento de devolucion fallido (1 de 2)";
+  if (normalized === "intento_fallido_2") return "Intento de devolucion fallido (2 de 2)";
+  if (normalized === "rechazada") return "Devolucion rechazada";
+  if (normalized === "recibida") return "Recibimos tu producto";
+  if (normalized === "por_devolver") return "Pendiente por recoger";
+  if (normalized === "no_devuelto") return "No devuelto";
+  if (normalized === "denegada" || normalized === "reembolso_denegado") return "Reembolso denegado";
+  if (normalized === "reembolsada" || normalized === "completada") return "Reembolso procesado";
+  return "Estado actualizado";
+}
+
+function timelineLabelFromReasonEntry(entry) {
+  const kind = String(entry?.kind || "").toLowerCase();
+  if (kind === "attempt_failed_1") return "Intento de devolucion fallido (1 de 2)";
+  if (kind === "attempt_failed_2") return "Intento de devolucion fallido (2 de 2)";
+  if (kind === "review_rejected" || kind === "rejected_after_attempts") return "Devolucion rechazada";
+  if (kind === "denied_after_received") return "Reembolso denegado";
+  if (kind === NOT_RETURNED_KIND) return "No devuelto";
+  if (kind === RETURNED_TO_CUSTOMER_KIND) return "Devolucion devuelta al cliente";
+  return "";
+}
+
+function parseEventMs(value) {
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  const ms = new Date(text).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function buildStatusTimeline(requestRow) {
+  const events = [];
+  const pushEvent = (label, at, note = "") => {
+    const atMs = parseEventMs(at);
+    if (!label || !atMs) return;
+    events.push({
+      id: `${label}-${atMs}-${events.length}`,
+      label,
+      at,
+      atMs,
+      note,
+    });
+  };
+
+  pushEvent("Solicitud de devolucion creada", requestRow.createdAt);
+  pushEvent("Recibimos tu producto", requestRow.receivedAt);
+  pushEvent("Reembolso procesado", requestRow.refundedAt);
+  pushEvent("Devolucion devuelta al cliente", requestRow.returnedToCustomerAt);
+
+  for (const entry of requestRow.timelineEntries || []) {
+    const label = timelineLabelFromReasonEntry(entry);
+    if (!label) continue;
+    pushEvent(label, entry.at, entry.reason || "");
+  }
+
+  pushEvent(timelineLabelFromStatus(requestRow.status), requestRow.updatedAt);
+
+  const dedup = new Map();
+  for (const event of events) {
+    const key = `${event.label}|${event.atMs}`;
+    if (!dedup.has(key)) dedup.set(key, event);
+  }
+
+  return Array.from(dedup.values()).sort((a, b) => b.atMs - a.atMs);
+}
+
 function pickParentTransaction(transactions) {
   const success = transactions.filter((tx) => String(tx.status || "").toUpperCase() === "SUCCESS");
   return (
@@ -491,6 +560,7 @@ export const loader = async ({ request }) => {
     return {
       ...requestRow,
       rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
+      timelineEntries: reasonEntries,
       reasonEntries: visibleReasonEntries,
       wasReturnedToCustomer,
       returnedToCustomerAt,
@@ -979,6 +1049,9 @@ export default function ReturnsRequests() {
 
 function RequestCard({ request, isSubmitting }) {
   const [viewerImage, setViewerImage] = useState(null);
+  const timelineEvents = buildStatusTimeline(request);
+  const currentTimelineEvent = timelineEvents[0] || null;
+  const olderTimelineEvents = timelineEvents.slice(1);
   const status = String(request.status || "").toLowerCase();
   const isPickupMethod = request.returnMethod === "pickup";
   const isPickupFailedAttempt = isPickupFailedAttemptStatus(status);
@@ -1078,6 +1151,27 @@ function RequestCard({ request, isSubmitting }) {
             </div>
           ) : null}
         </div>
+
+        {currentTimelineEvent ? (
+          <div className={styles.statusTimelineCurrent}>
+            <p className={styles.statusTimelineTitle}>Estado actual</p>
+            <p className={styles.statusTimelineCurrentLine}>
+              <strong>{currentTimelineEvent.label}</strong>{" "}
+              <span>{new Date(currentTimelineEvent.at).toLocaleString("es-MX")}</span>
+            </p>
+          </div>
+        ) : null}
+        {olderTimelineEvents.length ? (
+          <div className={styles.statusTimelineList}>
+            {olderTimelineEvents.map((event) => (
+              <div key={event.id} className={styles.statusTimelineItem}>
+                <p className={styles.statusTimelineItemTitle}>{event.label}</p>
+                <p className={styles.statusTimelineItemAt}>{new Date(event.at).toLocaleString("es-MX")}</p>
+                {event.note ? <p className={styles.statusTimelineItemNote}>{event.note}</p> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         {request.returnMethod === "pickup" ? (
           <p className={styles.meta}>
