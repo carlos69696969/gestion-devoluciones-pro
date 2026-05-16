@@ -1019,7 +1019,7 @@ export const loader = async ({ request }) => {
             ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
             : hasEligibleItems
               ? ""
-              : completionTitle,
+              : "",
       });
     } catch (err) {
       lastError = err;
