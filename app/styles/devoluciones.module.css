@@ -54,6 +54,7 @@
 .noticeMuted { color: var(--muted); }
 .noteWord { color: var(--danger); }
 .noteMsg { font-weight: 800; letter-spacing: -0.01em; }
+.importantLabel { color: var(--danger); margin-right: 6px; }
 
 .card {
   background: var(--card);
