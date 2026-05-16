@@ -395,15 +395,25 @@
 
 .statusTimelineToggle {
   appearance: none;
-  border: 1px solid var(--border);
-  background: #fff;
-  color: var(--text);
+  border: 1px solid transparent;
+  background: var(--primary);
+  color: #fff;
   border-radius: 999px;
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   margin-top: 8px;
+  box-shadow: var(--shadow);
+}
+
+.statusTimelineToggle:hover {
+  background: var(--primary-hover);
+}
+
+.statusTimelineToggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 91, 211, 0.24);
 }
 
 .statusTimelineList {
