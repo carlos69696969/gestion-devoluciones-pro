@@ -1,4 +1,4 @@
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+import { Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
@@ -55,30 +55,36 @@ export const loader = async ({ request }) => {
 
 export default function App() {
   const { apiKey, navCounts } = useLoaderData();
+  const location = useLocation();
   const withCount = (label, count) => (count > 0 ? `${label} (${count})` : label);
+  const navParams = new URLSearchParams(location.search || "");
+  navParams.delete("page");
+  navParams.delete("tipo");
+  const navSearch = navParams.toString();
+  const withNavSearch = (pathname) => (navSearch ? `${pathname}?${navSearch}` : pathname);
 
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
-        <s-link href="/app/devoluciones/admin">
+        <s-link rel="home" href={withNavSearch("/app/devoluciones/admin")}>
           Administrador del panel
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes/pickup">
+        <s-link href={withNavSearch("/app/devoluciones/solicitudes/pickup")}>
           {withCount("Recoleccion a domicilio", navCounts?.pickup || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes/branch">
+        <s-link href={withNavSearch("/app/devoluciones/solicitudes/branch")}>
           {withCount("Entrega en sucursal", navCounts?.branch || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes/review">
+        <s-link href={withNavSearch("/app/devoluciones/solicitudes/review")}>
           {withCount("Ordenes en revision", navCounts?.review || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes/refunds">
+        <s-link href={withNavSearch("/app/devoluciones/solicitudes/refunds")}>
           {withCount("Procesar reembolsos", navCounts?.refunds || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes/to_return">
+        <s-link href={withNavSearch("/app/devoluciones/solicitudes/to_return")}>
           {withCount("Devoluciones a devolver", navCounts?.toReturn || 0)}
         </s-link>
-        <s-link href="/app/devoluciones/solicitudes/history">
+        <s-link href={withNavSearch("/app/devoluciones/solicitudes/history")}>
           Historial
         </s-link>
       </s-app-nav>

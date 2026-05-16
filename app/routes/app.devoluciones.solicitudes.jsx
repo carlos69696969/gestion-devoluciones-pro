@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
-import { useEffect, useState } from "react";
-import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { Form, Link, useActionData, useLoaderData, useLocation, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -312,6 +312,15 @@ function normalizePage(rawValue) {
   return parsed;
 }
 
+function sameNumberArray(left, right) {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let idx = 0; idx < left.length; idx += 1) {
+    if (left[idx] !== right[idx]) return false;
+  }
+  return true;
+}
+
 function viewTypeParamFromMode(viewMode) {
   if (viewMode === VIEW_MODE.PICKUP) return "pickup";
   if (viewMode === VIEW_MODE.REVIEW) return "review";
@@ -322,7 +331,9 @@ function viewTypeParamFromMode(viewMode) {
 }
 
 function viewModeFromPathname(pathname) {
-  const path = String(pathname || "").toLowerCase();
+  const path = String(pathname || "")
+    .toLowerCase()
+    .replace(/\/+$/, "");
   if (path.endsWith("/pickup")) return VIEW_MODE.PICKUP;
   if (path.endsWith("/branch")) return VIEW_MODE.BRANCH;
   if (path.endsWith("/review")) return VIEW_MODE.REVIEW;
@@ -332,9 +343,12 @@ function viewModeFromPathname(pathname) {
   return "";
 }
 
-function buildViewHref(viewMode, page) {
+function buildViewHref(viewMode, page, currentSearch = "") {
   const basePath = `/app/devoluciones/solicitudes/${viewTypeParamFromMode(viewMode)}`;
-  const params = new URLSearchParams();
+  const params = new URLSearchParams(currentSearch || "");
+  params.delete("page");
+  params.delete("tipo");
+  params.set("tipo", viewTypeParamFromMode(viewMode));
   if (page > 1) params.set("page", String(page));
   const query = params.toString();
   return query ? `${basePath}?${query}` : basePath;
@@ -1291,53 +1305,76 @@ function historyTimestampMs(request) {
 export default function ReturnsRequests() {
   const { requests, viewMode, pageInfo, loaderError } = useLoaderData();
   const actionData = useActionData();
+  const location = useLocation();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const [historySelectionMode, setHistorySelectionMode] = useState(false);
   const [selectedHistoryIds, setSelectedHistoryIds] = useState([]);
+  const currentPage = pageInfo?.currentPage || 1;
 
-  const reviewRequests = requests.filter(
-    (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
+  const reviewRequests = useMemo(
+    () => requests.filter((requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision"),
+    [requests],
   );
-  const activeRequests = requests.filter((requestRow) =>
-    METHOD_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
+  const activeRequests = useMemo(
+    () =>
+      requests.filter((requestRow) => METHOD_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase())),
+    [requests],
   );
-  const refundQueueRequests = requests.filter((requestRow) =>
-    REFUND_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
+  const refundQueueRequests = useMemo(
+    () =>
+      requests.filter((requestRow) => REFUND_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase())),
+    [requests],
   );
-  const returnToCustomerQueueRequests = requests.filter((requestRow) =>
-    RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase()),
+  const returnToCustomerQueueRequests = useMemo(
+    () =>
+      requests.filter((requestRow) => RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase())),
+    [requests],
   );
-  const pickupRequests = activeRequests.filter((request) => request.returnMethod === "pickup");
-  const branchRequests = activeRequests.filter((request) => request.returnMethod !== "pickup");
-  const historyRequests = requests
-    .filter((requestRow) => HISTORY_STATUSES.has(String(requestRow.status || "").toLowerCase()))
-    .sort((a, b) => historyTimestampMs(b) - historyTimestampMs(a));
+  const pickupRequests = useMemo(
+    () => activeRequests.filter((request) => request.returnMethod === "pickup"),
+    [activeRequests],
+  );
+  const branchRequests = useMemo(
+    () => activeRequests.filter((request) => request.returnMethod !== "pickup"),
+    [activeRequests],
+  );
+  const historyRequests = useMemo(
+    () =>
+      requests
+        .filter((requestRow) => HISTORY_STATUSES.has(String(requestRow.status || "").toLowerCase()))
+        .sort((a, b) => historyTimestampMs(b) - historyTimestampMs(a)),
+    [requests],
+  );
   const isHistoryView = viewMode === VIEW_MODE.HISTORY;
-  const historyRequestIds = historyRequests.map((requestRow) => requestRow.id);
-  const allHistorySelected =
-    historyRequestIds.length > 0 &&
-    historyRequestIds.every((historyId) => selectedHistoryIds.includes(historyId));
+  const historyRequestIds = useMemo(() => historyRequests.map((requestRow) => requestRow.id), [historyRequests]);
+  const allHistorySelected = useMemo(
+    () => historyRequestIds.length > 0 && historyRequestIds.every((historyId) => selectedHistoryIds.includes(historyId)),
+    [historyRequestIds, selectedHistoryIds],
+  );
 
   useEffect(() => {
     if (!isHistoryView) {
-      setHistorySelectionMode(false);
-      setSelectedHistoryIds([]);
+      setHistorySelectionMode((prev) => (prev ? false : prev));
+      setSelectedHistoryIds((prev) => (prev.length ? [] : prev));
     }
   }, [isHistoryView]);
 
   useEffect(() => {
     if (!historySelectionMode) {
-      setSelectedHistoryIds([]);
+      setSelectedHistoryIds((prev) => (prev.length ? [] : prev));
     }
   }, [historySelectionMode]);
 
   useEffect(() => {
     const validIdSet = new Set(historyRequestIds);
-    setSelectedHistoryIds((prev) => prev.filter((id) => validIdSet.has(id)));
+    setSelectedHistoryIds((prev) => {
+      const next = prev.filter((id) => validIdSet.has(id));
+      return sameNumberArray(prev, next) ? prev : next;
+    });
   }, [historyRequestIds]);
 
-  const toggleHistorySelection = (historyId, checked) => {
+  const toggleHistorySelection = useCallback((historyId, checked) => {
     setSelectedHistoryIds((prev) => {
       if (checked) {
         if (prev.includes(historyId)) return prev;
@@ -1345,12 +1382,15 @@ export default function ReturnsRequests() {
       }
       return prev.filter((id) => id !== historyId);
     });
-  };
+  }, []);
 
-  const toggleSelectAllHistory = (checked) => {
-    setSelectedHistoryIds(checked ? historyRequestIds.slice() : []);
-  };
-  const pickupGroups = buildPickupGroups(pickupRequests);
+  const toggleSelectAllHistory = useCallback((checked) => {
+    setSelectedHistoryIds((prev) => {
+      const next = checked ? historyRequestIds.slice() : [];
+      return sameNumberArray(prev, next) ? prev : next;
+    });
+  }, [historyRequestIds]);
+  const pickupGroups = useMemo(() => buildPickupGroups(pickupRequests), [pickupRequests]);
 
   const pageHeading =
     viewMode === VIEW_MODE.PICKUP
@@ -1364,8 +1404,9 @@ export default function ReturnsRequests() {
         : viewMode === VIEW_MODE.HISTORY
           ? "Historial"
         : "Entrega en sucursal";
-  const hasPrevPage = (pageInfo?.currentPage || 1) > 1;
-  const hasNextPage = (pageInfo?.currentPage || 1) < (pageInfo?.totalPages || 1);
+  const hasPrevPage = currentPage > 1;
+  const hasNextPage = currentPage < (pageInfo?.totalPages || 1);
+  const currentViewHref = buildViewHref(viewMode, currentPage, location.search);
 
   return (
     <s-page heading={pageHeading}>
@@ -1375,17 +1416,17 @@ export default function ReturnsRequests() {
       {(pageInfo?.totalPages || 1) > 1 ? (
         <div className={styles.actionRow}>
           {hasPrevPage ? (
-            <a className={styles.btn} href={buildViewHref(viewMode, (pageInfo?.currentPage || 1) - 1)}>
+            <Link className={styles.btn} to={buildViewHref(viewMode, currentPage - 1, location.search)}>
               Anterior
-            </a>
+            </Link>
           ) : null}
           <span className={styles.meta}>
-            Pagina {pageInfo?.currentPage || 1} de {pageInfo?.totalPages || 1} | Total: {pageInfo?.totalCount || 0}
+            Pagina {currentPage} de {pageInfo?.totalPages || 1} | Total: {pageInfo?.totalCount || 0}
           </span>
           {hasNextPage ? (
-            <a className={styles.btn} href={buildViewHref(viewMode, (pageInfo?.currentPage || 1) + 1)}>
+            <Link className={styles.btn} to={buildViewHref(viewMode, currentPage + 1, location.search)}>
               Siguiente
-            </a>
+            </Link>
           ) : null}
         </div>
       ) : null}
@@ -1496,7 +1537,7 @@ export default function ReturnsRequests() {
                       />
                       <span>Seleccionar todo</span>
                     </label>
-                    <Form method="post">
+                    <Form method="post" action={currentViewHref}>
                       <input type="hidden" name="intent" value="delete_history_selected" />
                       <input type="hidden" name="selectedIds" value={JSON.stringify(selectedHistoryIds)} />
                       <button
@@ -1543,7 +1584,7 @@ function timelineToneClassName(tone) {
   return "";
 }
 
-function RequestCard({
+const RequestCard = memo(function RequestCard({
   request,
   isSubmitting,
   isHistoryView = false,
@@ -1933,6 +1974,6 @@ function RequestCard({
       <ImageViewer image={viewerImage} onClose={() => setViewerImage(null)} />
     </article>
   );
-}
+});
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
