@@ -1,4 +1,4 @@
-import { Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
+import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
@@ -55,51 +55,28 @@ export const loader = async ({ request }) => {
 
 export default function App() {
   const { apiKey, navCounts } = useLoaderData();
-  const location = useLocation();
   const withCount = (label, count) => (count > 0 ? `${label} (${count})` : label);
-  const navParams = new URLSearchParams(location.search || "");
-  const shop = String(navParams.get("shop") || "").trim();
-  const host = String(navParams.get("host") || "").trim();
-  const withEmbedParams = (pathname) => {
-    const params = new URLSearchParams();
-    if (shop) params.set("shop", shop);
-    if (host) params.set("host", host);
-    const query = params.toString();
-    return query ? `${pathname}?${query}` : pathname;
-  };
-  const withSolicitudesTipo = (tipo) => {
-    const params = new URLSearchParams();
-    if (shop) params.set("shop", shop);
-    if (host) params.set("host", host);
-    if (tipo) params.set("tipo", tipo);
-    const query = params.toString();
-    return query ? `/app/devoluciones/solicitudes?${query}` : "/app/devoluciones/solicitudes";
-  };
 
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
-        <s-link rel="home" href={withEmbedParams("/app/devoluciones/admin")}>
-          Administrador del panel
-        </s-link>
-        <s-link href={withSolicitudesTipo("pickup")}>
+        <s-link href="/app/devoluciones/admin">Administrador del panel</s-link>
+        <s-link href="/app/devoluciones/solicitudes?tipo=pickup">
           {withCount("Recoleccion a domicilio", navCounts?.pickup || 0)}
         </s-link>
-        <s-link href={withSolicitudesTipo("branch")}>
+        <s-link href="/app/devoluciones/solicitudes?tipo=branch">
           {withCount("Entrega en sucursal", navCounts?.branch || 0)}
         </s-link>
-        <s-link href={withSolicitudesTipo("review")}>
+        <s-link href="/app/devoluciones/solicitudes?tipo=review">
           {withCount("Ordenes en revision", navCounts?.review || 0)}
         </s-link>
-        <s-link href={withSolicitudesTipo("refunds")}>
+        <s-link href="/app/devoluciones/solicitudes?tipo=refunds">
           {withCount("Procesar reembolsos", navCounts?.refunds || 0)}
         </s-link>
-        <s-link href={withSolicitudesTipo("to_return")}>
+        <s-link href="/app/devoluciones/solicitudes?tipo=to_return">
           {withCount("Devoluciones a devolver", navCounts?.toReturn || 0)}
         </s-link>
-        <s-link href={withSolicitudesTipo("history")}>
-          Historial
-        </s-link>
+        <s-link href="/app/devoluciones/solicitudes?tipo=history">Historial</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>

@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { Form, Link, useActionData, useLoaderData, useLocation, useNavigation } from "react-router";
+import { useEffect, useState } from "react";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -38,26 +38,8 @@ const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada", "reemb
 const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito.";
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
 const NOT_RETURNED_KIND = "not_returned_after_30_days";
-const REQUEST_CREATED_KIND = "request_created";
-const STATUS_REVIEW_KIND = "status_review";
-const STATUS_APPROVED_KIND = "status_approved";
-const STATUS_RECEIVED_KIND = "status_received";
-const STATUS_REFUNDED_KIND = "status_refunded";
 const NOT_RETURNED_REASON = "El cliente no recogio su paquete en sucursal dentro de 30 dias.";
 const PICKUP_DEADLINE_DAYS = 30;
-const ADMIN_PAGE_SIZE = 20;
-const ORDER_IMAGE_CACHE_TTL_MS = 10 * 60 * 1000;
-const MAX_ORDER_IMAGE_CACHE_ENTRIES = 500;
-const TIMELINE_META_KINDS = new Set([
-  REQUEST_CREATED_KIND,
-  STATUS_REVIEW_KIND,
-  STATUS_APPROVED_KIND,
-  STATUS_RECEIVED_KIND,
-  STATUS_REFUNDED_KIND,
-  RETURNED_TO_CUSTOMER_KIND,
-  NOT_RETURNED_KIND,
-]);
-const orderImageCache = new Map();
 
 function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
@@ -79,7 +61,6 @@ function isPickupFailedAttemptStatus(status) {
 
 function normalizeViewMode(rawValue) {
   const value = String(rawValue || "").trim().toLowerCase();
-  if (value === VIEW_MODE.BRANCH) return VIEW_MODE.BRANCH;
   if (value === VIEW_MODE.PICKUP) return VIEW_MODE.PICKUP;
   if (value === VIEW_MODE.REVIEW) return VIEW_MODE.REVIEW;
   if (value === VIEW_MODE.REFUNDS) return VIEW_MODE.REFUNDS;
@@ -136,7 +117,7 @@ function isReturnedToCustomerEntry(entry) {
 
 function isSystemProgressEntry(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
-  return TIMELINE_META_KINDS.has(kind);
+  return kind === RETURNED_TO_CUSTOMER_KIND || kind === NOT_RETURNED_KIND;
 }
 
 function latestReturnedToCustomerAtFromRaw(rawValue) {
@@ -216,10 +197,6 @@ function timelineLabelFromStatus(status) {
 
 function timelineLabelFromReasonEntry(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
-  if (kind === STATUS_REVIEW_KIND) return "Solicitud en revision";
-  if (kind === STATUS_APPROVED_KIND) return "Devolucion aprobada";
-  if (kind === STATUS_RECEIVED_KIND) return "Recibimos tu producto";
-  if (kind === STATUS_REFUNDED_KIND) return "Reembolso procesado";
   if (kind === "attempt_failed_1") return "Intento de devolucion fallido (1 de 2)";
   if (kind === "attempt_failed_2") return "Intento de devolucion fallido (2 de 2)";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "Devolucion rechazada";
@@ -229,76 +206,6 @@ function timelineLabelFromReasonEntry(entry) {
   return "";
 }
 
-function timelineToneFromStatus(status) {
-  const normalized = String(status || "").toLowerCase();
-  if (normalized === "en_revision") return "review";
-  if (normalized === "aprobada") return "approved";
-  if (normalized === "intento_fallido_1" || normalized === "intento_fallido_2") return "attempt";
-  if (normalized === "rechazada") return "rejected";
-  if (normalized === "recibida") return "received";
-  if (normalized === "por_devolver") return "pending";
-  if (normalized === "denegada" || normalized === "reembolso_denegado" || normalized === "no_devuelto") return "denied";
-  if (normalized === "reembolsada" || normalized === "completada") return "refunded";
-  return "default";
-}
-
-function timelineToneFromReasonEntry(entry) {
-  const kind = String(entry?.kind || "").toLowerCase();
-  if (kind === REQUEST_CREATED_KIND) return "default";
-  if (kind === STATUS_REVIEW_KIND) return "review";
-  if (kind === STATUS_APPROVED_KIND) return "approved";
-  if (kind === STATUS_RECEIVED_KIND) return "received";
-  if (kind === STATUS_REFUNDED_KIND) return "refunded";
-  if (kind === "attempt_failed_1" || kind === "attempt_failed_2") return "attempt";
-  if (kind === "review_rejected" || kind === "rejected_after_attempts") return "rejected";
-  if (kind === "denied_after_received") return "denied";
-  if (kind === RETURNED_TO_CUSTOMER_KIND) return "pending";
-  if (kind === NOT_RETURNED_KIND) return "denied";
-  return "default";
-}
-
-function statusDescriptionMessage(status, returnMethod) {
-  const normalized = String(status || "").toLowerCase();
-  if (normalized === "en_revision") return "La solicitud esta siendo revisada por el equipo.";
-  if (normalized === "aprobada") {
-    return returnMethod === "pickup"
-      ? "La solicitud fue aprobada. Se recolectara el paquete en domicilio."
-      : "La solicitud fue aprobada. El cliente puede entregar el paquete en sucursal.";
-  }
-  if (normalized === "recibida") return "Recibimos el producto. Ya esta lista para procesar reembolso.";
-  if (normalized === "reembolsada" || normalized === "completada") return "El reembolso fue procesado.";
-  if (normalized === "por_devolver") return "Pendiente por recoger en sucursal.";
-  if (normalized === "denegada" || normalized === "reembolso_denegado") return "Reembolso denegado.";
-  if (normalized === "rechazada") return "Solicitud rechazada.";
-  if (normalized === "no_devuelto") return "No devuelto dentro del plazo de 30 dias.";
-  return "";
-}
-
-function timelineKindFromStatus(status) {
-  const normalized = String(status || "").toLowerCase();
-  if (normalized === "en_revision") return STATUS_REVIEW_KIND;
-  if (normalized === "aprobada") return STATUS_APPROVED_KIND;
-  if (normalized === "recibida") return STATUS_RECEIVED_KIND;
-  if (normalized === "reembolsada" || normalized === "completada") return STATUS_REFUNDED_KIND;
-  return "";
-}
-
-function hasReachedApprovedPhase(status) {
-  const normalized = String(status || "").toLowerCase();
-  return [
-    "aprobada",
-    "intento_fallido_1",
-    "intento_fallido_2",
-    "recibida",
-    "por_devolver",
-    "no_devuelto",
-    "denegada",
-    "reembolso_denegado",
-    "reembolsada",
-    "completada",
-  ].includes(normalized);
-}
-
 function parseEventMs(value) {
   const text = String(value || "").trim();
   if (!text) return 0;
@@ -306,60 +213,9 @@ function parseEventMs(value) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-function normalizePage(rawValue) {
-  const parsed = Number.parseInt(String(rawValue || "1"), 10);
-  if (!Number.isFinite(parsed) || parsed < 1) return 1;
-  return parsed;
-}
-
-function sameNumberArray(left, right) {
-  if (left === right) return true;
-  if (left.length !== right.length) return false;
-  for (let idx = 0; idx < left.length; idx += 1) {
-    if (left[idx] !== right[idx]) return false;
-  }
-  return true;
-}
-
-function viewTypeParamFromMode(viewMode) {
-  if (viewMode === VIEW_MODE.PICKUP) return "pickup";
-  if (viewMode === VIEW_MODE.REVIEW) return "review";
-  if (viewMode === VIEW_MODE.REFUNDS) return "refunds";
-  if (viewMode === VIEW_MODE.TO_RETURN) return "to_return";
-  if (viewMode === VIEW_MODE.HISTORY) return "history";
-  return "branch";
-}
-
-function viewModeFromPathname(pathname) {
-  const path = String(pathname || "")
-    .toLowerCase()
-    .replace(/\/+$/, "");
-  if (path.endsWith("/pickup")) return VIEW_MODE.PICKUP;
-  if (path.endsWith("/branch")) return VIEW_MODE.BRANCH;
-  if (path.endsWith("/review")) return VIEW_MODE.REVIEW;
-  if (path.endsWith("/refunds")) return VIEW_MODE.REFUNDS;
-  if (path.endsWith("/to_return")) return VIEW_MODE.TO_RETURN;
-  if (path.endsWith("/history")) return VIEW_MODE.HISTORY;
-  return "";
-}
-
-function buildViewHref(viewMode, page, currentSearch = "") {
-  const basePath = "/app/devoluciones/solicitudes";
-  const params = new URLSearchParams(currentSearch || "");
-  params.delete("page");
-  params.delete("tipo");
-  params.set("tipo", viewTypeParamFromMode(viewMode));
-  if (page > 1) params.set("page", String(page));
-  const query = params.toString();
-  return query ? `${basePath}?${query}` : basePath;
-}
-
 function buildStatusTimeline(requestRow) {
   const events = [];
-  const entryKinds = new Set(
-    (requestRow.timelineEntries || []).map((entry) => String(entry?.kind || "").toLowerCase()).filter(Boolean),
-  );
-  const pushEvent = (label, at, note = "", tone = "default") => {
+  const pushEvent = (label, at, note = "") => {
     const atMs = parseEventMs(at);
     if (!label || !atMs) return;
     events.push({
@@ -368,58 +224,21 @@ function buildStatusTimeline(requestRow) {
       at,
       atMs,
       note,
-      tone,
     });
   };
 
-  if (requestRow.requiresReview && !entryKinds.has(STATUS_REVIEW_KIND)) {
-    pushEvent("Solicitud en revision", requestRow.createdAt, "La solicitud esta siendo revisada por el equipo.", "review");
-  }
-  if (requestRow.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND) && hasReachedApprovedPhase(requestRow.status)) {
-    pushEvent(
-      "Devolucion aprobada",
-      requestRow.receivedAt || requestRow.updatedAt || requestRow.createdAt,
-      requestRow.returnMethod === "pickup"
-        ? "La solicitud fue aprobada. Se recolectara el paquete en domicilio."
-        : "La solicitud fue aprobada. El cliente puede entregar el paquete en sucursal.",
-      "approved",
-    );
-  }
-  if (!requestRow.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND)) {
-    pushEvent(
-      "Devolucion aprobada",
-      requestRow.createdAt,
-      requestRow.returnMethod === "pickup"
-        ? "La solicitud fue aprobada. Se recolectara el paquete en domicilio."
-        : "La solicitud fue aprobada. El cliente puede entregar el paquete en sucursal.",
-      "approved",
-    );
-  }
-  if (!entryKinds.has(STATUS_RECEIVED_KIND)) {
-    pushEvent("Recibimos tu producto", requestRow.receivedAt, "Producto recibido para revision.", "received");
-  }
-  if (!entryKinds.has(STATUS_REFUNDED_KIND)) {
-    pushEvent("Reembolso procesado", requestRow.refundedAt, "Reembolso procesado al metodo original.", "refunded");
-  }
-  if (!entryKinds.has(RETURNED_TO_CUSTOMER_KIND)) {
-    pushEvent("Devolucion devuelta al cliente", requestRow.returnedToCustomerAt, RETURNED_TO_CUSTOMER_MESSAGE, "pending");
-  }
+  pushEvent("Solicitud de devolucion creada", requestRow.createdAt);
+  pushEvent("Recibimos tu producto", requestRow.receivedAt);
+  pushEvent("Reembolso procesado", requestRow.refundedAt);
+  pushEvent("Devolucion devuelta al cliente", requestRow.returnedToCustomerAt);
 
   for (const entry of requestRow.timelineEntries || []) {
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
-    pushEvent(label, entry.at, entry.reason || "", timelineToneFromReasonEntry(entry));
+    pushEvent(label, entry.at, entry.reason || "");
   }
 
-  const currentStatusKind = timelineKindFromStatus(requestRow.status);
-  if (!currentStatusKind || !entryKinds.has(currentStatusKind)) {
-    pushEvent(
-      timelineLabelFromStatus(requestRow.status),
-      requestRow.updatedAt,
-      statusDescriptionMessage(requestRow.status, requestRow.returnMethod),
-      timelineToneFromStatus(requestRow.status),
-    );
-  }
+  pushEvent(timelineLabelFromStatus(requestRow.status), requestRow.updatedAt);
 
   const dedup = new Map();
   for (const event of events) {
@@ -595,165 +414,67 @@ async function fetchOrderItemImageMaps(admin, orderIds) {
   const uniqueIds = Array.from(new Set(orderIds.filter(Boolean)));
   if (!uniqueIds.length) return {};
 
-  const now = Date.now();
-  for (const [cachedOrderId, cachedEntry] of orderImageCache.entries()) {
-    if (!cachedEntry || cachedEntry.expiresAt <= now) orderImageCache.delete(cachedOrderId);
-  }
-  if (orderImageCache.size > MAX_ORDER_IMAGE_CACHE_ENTRIES) {
-    const overflow = orderImageCache.size - MAX_ORDER_IMAGE_CACHE_ENTRIES;
-    let removed = 0;
-    for (const cachedOrderId of orderImageCache.keys()) {
-      orderImageCache.delete(cachedOrderId);
-      removed += 1;
-      if (removed >= overflow) break;
-    }
-  }
-
-  const byOrder = {};
-  const missingIds = [];
-  for (const orderId of uniqueIds) {
-    const cachedEntry = orderImageCache.get(orderId);
-    if (cachedEntry && cachedEntry.expiresAt > now) {
-      byOrder[orderId] = cachedEntry.value;
-    } else {
-      missingIds.push(orderId);
-    }
-  }
-  if (!missingIds.length) return byOrder;
-
-  const chunkSize = 25;
-  const chunks = [];
-  for (let index = 0; index < missingIds.length; index += chunkSize) {
-    chunks.push(missingIds.slice(index, index + chunkSize));
-  }
-
   try {
-    for (const idsChunk of chunks) {
-      const response = await admin.graphql(
-        `#graphql
-        query OrdersForReturnImages($ids: [ID!]!) {
-          nodes(ids: $ids) {
-            ... on Order {
-              id
-              lineItems(first: 100) {
-                edges {
-                  node {
+    const response = await admin.graphql(
+      `#graphql
+      query OrdersForReturnImages($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on Order {
+            id
+            lineItems(first: 100) {
+              edges {
+                node {
+                  id
+                  title
+                  variant {
                     id
-                    title
-                    variant {
-                      id
-                      image {
-                        url
-                        altText
-                      }
+                    image {
+                      url
+                      altText
                     }
-                    product {
-                      id
-                      featuredImage {
-                        url
-                        altText
-                      }
+                  }
+                  product {
+                    id
+                    featuredImage {
+                      url
+                      altText
                     }
                   }
                 }
               }
             }
           }
-        }`,
-        { variables: { ids: idsChunk } },
-      );
-      const payload = await response.json();
-      const nodes = payload?.data?.nodes || [];
-
-      for (const order of nodes) {
-        if (!order?.id) continue;
-        const imageMap = {};
-        const lines = order?.lineItems?.edges || [];
-        for (const edge of lines) {
-          const line = edge?.node;
-          if (!line) continue;
-          const imageUrl = line?.variant?.image?.url || line?.product?.featuredImage?.url || "";
-          const imageAlt = line?.variant?.image?.altText || line?.product?.featuredImage?.altText || "";
-          if (!imageUrl) continue;
-
-          putImageCandidate(imageMap, itemKeyFromRecord({ lineItemId: line.id }), imageUrl, imageAlt);
-          putImageCandidate(imageMap, itemKeyFromRecord({ variantId: line?.variant?.id }), imageUrl, imageAlt);
-          putImageCandidate(imageMap, itemKeyFromRecord({ productId: line?.product?.id }), imageUrl, imageAlt);
-          putImageCandidate(imageMap, itemKeyFromRecord({ title: line.title }), imageUrl, imageAlt);
         }
-        byOrder[order.id] = imageMap;
-        orderImageCache.set(order.id, {
-          value: imageMap,
-          expiresAt: Date.now() + ORDER_IMAGE_CACHE_TTL_MS,
-        });
+      }`,
+      { variables: { ids: uniqueIds } },
+    );
+    const payload = await response.json();
+    const nodes = payload?.data?.nodes || [];
+    const byOrder = {};
+
+    for (const order of nodes) {
+      if (!order?.id) continue;
+      const imageMap = {};
+      const lines = order?.lineItems?.edges || [];
+      for (const edge of lines) {
+        const line = edge?.node;
+        if (!line) continue;
+        const imageUrl = line?.variant?.image?.url || line?.product?.featuredImage?.url || "";
+        const imageAlt = line?.variant?.image?.altText || line?.product?.featuredImage?.altText || "";
+        if (!imageUrl) continue;
+
+        putImageCandidate(imageMap, itemKeyFromRecord({ lineItemId: line.id }), imageUrl, imageAlt);
+        putImageCandidate(imageMap, itemKeyFromRecord({ variantId: line?.variant?.id }), imageUrl, imageAlt);
+        putImageCandidate(imageMap, itemKeyFromRecord({ productId: line?.product?.id }), imageUrl, imageAlt);
+        putImageCandidate(imageMap, itemKeyFromRecord({ title: line.title }), imageUrl, imageAlt);
       }
+      byOrder[order.id] = imageMap;
     }
 
     return byOrder;
   } catch {
     return {};
   }
-}
-
-function buildViewWhere(shop, viewMode) {
-  if (viewMode === VIEW_MODE.PICKUP) {
-    return {
-      shop,
-      returnMethod: "pickup",
-      status: { in: Array.from(METHOD_QUEUE_STATUSES) },
-    };
-  }
-
-  if (viewMode === VIEW_MODE.BRANCH) {
-    return {
-      shop,
-      returnMethod: { not: "pickup" },
-      status: { in: Array.from(METHOD_QUEUE_STATUSES) },
-    };
-  }
-
-  if (viewMode === VIEW_MODE.REVIEW) {
-    return {
-      shop,
-      status: "en_revision",
-    };
-  }
-
-  if (viewMode === VIEW_MODE.REFUNDS) {
-    return {
-      shop,
-      status: { in: Array.from(REFUND_QUEUE_STATUSES) },
-    };
-  }
-
-  if (viewMode === VIEW_MODE.TO_RETURN) {
-    return {
-      shop,
-      status: { in: Array.from(RETURN_TO_CUSTOMER_STATUSES) },
-    };
-  }
-
-  if (viewMode === VIEW_MODE.HISTORY) {
-    return {
-      shop,
-      status: { in: Array.from(HISTORY_STATUSES) },
-    };
-  }
-
-  return { shop };
-}
-
-function shouldIncludeEvidencePhotos(viewMode) {
-  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS;
-}
-
-function shouldLoadOrderCatalogImages() {
-  return false;
-}
-
-function pageSizeForView(viewMode) {
-  if (viewMode === VIEW_MODE.HISTORY) return 8;
-  return ADMIN_PAGE_SIZE;
 }
 
 function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
@@ -805,173 +526,64 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
 }
 
 export const loader = async ({ request }) => {
-  const loaderStartedAt = Date.now();
+  const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
-  const requestedViewMode = normalizeViewMode(url.searchParams.get("tipo"));
-  const pathViewMode = normalizeViewMode(viewModeFromPathname(url.pathname));
-  const viewMode = requestedViewMode || pathViewMode;
-  const requestedPage = normalizePage(url.searchParams.get("page"));
-  try {
-    const { admin, session } = await authenticate.admin(request);
-    const where = buildViewWhere(session.shop, viewMode);
-    const pageSize = pageSizeForView(viewMode);
-    const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
-    const itemSelect = {
-      id: true,
-      lineItemId: true,
-      productId: true,
-      variantId: true,
-      title: true,
-      quantity: true,
-      reason: true,
-      details: true,
-      ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
-    };
-    const totalCount = await prisma.returnRequest.count({ where });
-    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-    const currentPage = Math.min(requestedPage, totalPages);
-    const skip = (currentPage - 1) * pageSize;
+  const viewMode = normalizeViewMode(url.searchParams.get("tipo"));
+  const rawRequests = await prisma.returnRequest.findMany({
+    where: { shop: session.shop },
+    include: { items: true },
+    orderBy: { createdAt: "desc" },
+  });
 
-    const rawRequests = await prisma.returnRequest.findMany({
-      where,
-      include: { items: { select: itemSelect } },
-      orderBy: { createdAt: "desc" },
-      skip,
-      take: pageSize,
-    });
+  const imagesByOrder = await fetchOrderItemImageMaps(
+    admin,
+    rawRequests.map((requestRow) => requestRow.shopifyOrderId),
+  );
 
-    const shouldLoadImages = shouldLoadOrderCatalogImages();
-    const imagesByOrder = shouldLoadImages
-      ? await fetchOrderItemImageMaps(
-          admin,
-          rawRequests.map((requestRow) => requestRow.shopifyOrderId),
-        )
-      : {};
-
-    const requests = rawRequests.map((requestRow) => {
-      const imageMap = imagesByOrder[requestRow.shopifyOrderId] || {};
-      const status = String(requestRow.status || "").toLowerCase();
-      const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
-      const visibleReasonEntries = reasonEntries.filter((entry) => !isSystemProgressEntry(entry));
-      const wasReturnedToCustomer = reasonEntries.some((entry) => isReturnedToCustomerEntry(entry));
-      const returnedToCustomerAt = latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason);
-      const requiresPickupDeadline = ["por_devolver", "no_devuelto", "reembolso_denegado", "denegada"].includes(status);
-      const pendingPickupSinceAt = requiresPickupDeadline
-        ? latestEntryAtFromKinds(requestRow.rejectionReason, ["denied_after_received"]) ||
-          requestRow.updatedAt?.toISOString?.() ||
-          ""
-        : "";
-      const pickupDeadlineDate = requiresPickupDeadline ? addDays(pendingPickupSinceAt, PICKUP_DEADLINE_DAYS) : null;
-      const pickupDeadlineAt = pickupDeadlineDate ? pickupDeadlineDate.toISOString() : "";
-      const isPickupDeadlineExpired =
-        Boolean(pickupDeadlineDate) && new Date().getTime() > pickupDeadlineDate.getTime();
-      return {
-        ...requestRow,
-        rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
-        timelineEntries: reasonEntries,
-        reasonEntries: visibleReasonEntries,
-        wasReturnedToCustomer,
-        returnedToCustomerAt,
-        pickupDeadlineAt,
-        isPickupDeadlineExpired,
-        items: requestRow.items.map((item) => {
-          const image = imageMap[itemKeyFromRecord(item)] || null;
-          return {
-            ...item,
-            imageUrl: image?.imageUrl || "",
-            imageAlt: image?.imageAlt || "",
-          };
-        }),
-      };
-    });
-
-    const elapsed = Date.now() - loaderStartedAt;
-    console.log(`[admin-returns-loader] view=${viewMode} page=${currentPage} count=${requests.length}/${totalCount} in ${elapsed}ms`);
-
+  const requests = rawRequests.map((requestRow) => {
+    const imageMap = imagesByOrder[requestRow.shopifyOrderId] || {};
+    const status = String(requestRow.status || "").toLowerCase();
+    const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
+    const visibleReasonEntries = reasonEntries.filter((entry) => !isReturnedToCustomerEntry(entry));
+    const wasReturnedToCustomer = reasonEntries.some((entry) => isReturnedToCustomerEntry(entry));
+    const returnedToCustomerAt = latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason);
+    const requiresPickupDeadline = ["por_devolver", "no_devuelto", "reembolso_denegado", "denegada"].includes(status);
+    const pendingPickupSinceAt = requiresPickupDeadline
+      ? latestEntryAtFromKinds(requestRow.rejectionReason, ["denied_after_received"]) ||
+        requestRow.updatedAt?.toISOString?.() ||
+        ""
+      : "";
+    const pickupDeadlineDate = requiresPickupDeadline ? addDays(pendingPickupSinceAt, PICKUP_DEADLINE_DAYS) : null;
+    const pickupDeadlineAt = pickupDeadlineDate ? pickupDeadlineDate.toISOString() : "";
+    const isPickupDeadlineExpired =
+      Boolean(pickupDeadlineDate) && new Date().getTime() > pickupDeadlineDate.getTime();
     return {
-      requests,
-      viewMode,
-      pageInfo: {
-        currentPage,
-        totalPages,
-        totalCount,
-        pageSize,
-      },
-      loaderError: "",
+      ...requestRow,
+      rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
+      timelineEntries: reasonEntries,
+      reasonEntries: visibleReasonEntries,
+      wasReturnedToCustomer,
+      returnedToCustomerAt,
+      pickupDeadlineAt,
+      isPickupDeadlineExpired,
+      items: requestRow.items.map((item) => {
+        const image = imageMap[itemKeyFromRecord(item)] || null;
+        return {
+          ...item,
+          imageUrl: image?.imageUrl || "",
+          imageAlt: image?.imageAlt || "",
+        };
+      }),
     };
-  } catch (error) {
-    if (error instanceof Response) throw error;
-    const elapsed = Date.now() - loaderStartedAt;
-    const message = error instanceof Error ? error.message : "Error desconocido";
-    console.error(`[admin-returns-loader] FAILED view=${viewMode} page=${requestedPage} in ${elapsed}ms -> ${message}`);
-    return {
-      requests: [],
-      viewMode,
-      pageInfo: {
-        currentPage: 1,
-        totalPages: 1,
-        totalCount: 0,
-        pageSize: pageSizeForView(viewMode),
-      },
-      loaderError: "No se pudo cargar esta seccion. Recarga e intenta de nuevo.",
-    };
-  }
-};
+  });
 
-export const shouldRevalidate = ({ currentUrl, nextUrl, defaultShouldRevalidate }) => {
-  if (currentUrl.pathname !== nextUrl.pathname) return true;
-  if (currentUrl.search !== nextUrl.search) return true;
-  return defaultShouldRevalidate;
+  return { requests, viewMode };
 };
 
 export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
-  if (intent === "delete_history_selected") {
-    let selectedIds = [];
-    try {
-      const raw = String(formData.get("selectedIds") || "[]");
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        selectedIds = parsed
-          .map((value) => Number(value))
-          .filter((value) => Number.isInteger(value) && value > 0);
-      }
-    } catch {
-      selectedIds = [];
-    }
-
-    if (!selectedIds.length) {
-      return { ok: false, error: "Selecciona al menos una orden del historial para borrar." };
-    }
-
-    const historyStatusList = Array.from(HISTORY_STATUSES);
-    const existingRows = await prisma.returnRequest.findMany({
-      where: {
-        id: { in: selectedIds },
-        shop: session.shop,
-        status: { in: historyStatusList },
-      },
-      select: { id: true },
-    });
-    const allowedIds = existingRows.map((row) => row.id);
-    if (!allowedIds.length) {
-      return { ok: false, error: "No se encontraron ordenes validas para borrar en historial." };
-    }
-
-    const deleted = await prisma.returnRequest.deleteMany({
-      where: {
-        id: { in: allowedIds },
-        shop: session.shop,
-      },
-    });
-    return {
-      ok: true,
-      message: `${deleted.count} orden(es) eliminada(s) permanentemente del historial.`,
-    };
-  }
-
   const id = Number(formData.get("id") || 0);
   if (!id) return { ok: false, error: "Solicitud invalida." };
 
@@ -986,13 +598,7 @@ export const action = async ({ request }) => {
       where: { id },
       data: {
         status: "aprobada",
-        rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
-          kind: STATUS_APPROVED_KIND,
-          reason:
-            requestRow.returnMethod === "pickup"
-              ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
-              : "Tu solicitud fue aprobada. Entrega tu producto en sucursal.",
-        }),
+        rejectionReason: null,
       },
     });
     return { ok: true, message: "Solicitud aprobada." };
@@ -1031,10 +637,6 @@ export const action = async ({ request }) => {
       data: {
         status: "recibida",
         receivedAt: new Date(),
-        rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
-          kind: STATUS_RECEIVED_KIND,
-          reason: "Recibimos tu producto y ya se puede procesar el reembolso.",
-        }),
       },
     });
     return { ok: true, message: "Solicitud marcada como recibida." };
@@ -1245,10 +847,6 @@ export const action = async ({ request }) => {
           refundedSubtotal: subtotal,
           finalRefund,
           refundError: null,
-          rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
-            kind: STATUS_REFUNDED_KIND,
-            reason: "Tu reembolso fue procesado correctamente.",
-          }),
         },
       });
       return { ok: true, message: "Reembolso procesado al metodo de pago original." };
@@ -1310,140 +908,49 @@ function historyTimestampMs(request) {
 }
 
 export default function ReturnsRequests() {
-  const { requests, viewMode, pageInfo, loaderError } = useLoaderData();
+  const { requests, viewMode } = useLoaderData();
   const actionData = useActionData();
-  const location = useLocation();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
-  const [historySelectionMode, setHistorySelectionMode] = useState(false);
-  const [selectedHistoryIds, setSelectedHistoryIds] = useState([]);
-  const currentPage = pageInfo?.currentPage || 1;
-  const currentUrlViewMode = useMemo(() => {
-    const fromSearch = normalizeViewMode(new URLSearchParams(location.search || "").get("tipo"));
-    const fromPath = normalizeViewMode(viewModeFromPathname(location.pathname));
-    return fromSearch || fromPath || viewMode;
-  }, [location.pathname, location.search, viewMode]);
 
-  const reviewRequests = useMemo(
-    () => requests.filter((requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision"),
-    [requests],
+  const reviewRequests = requests.filter(
+    (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
   );
-  const activeRequests = useMemo(
-    () =>
-      requests.filter((requestRow) => METHOD_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase())),
-    [requests],
+  const activeRequests = requests.filter((requestRow) =>
+    METHOD_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
   );
-  const refundQueueRequests = useMemo(
-    () =>
-      requests.filter((requestRow) => REFUND_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase())),
-    [requests],
+  const refundQueueRequests = requests.filter((requestRow) =>
+    REFUND_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
   );
-  const returnToCustomerQueueRequests = useMemo(
-    () =>
-      requests.filter((requestRow) => RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase())),
-    [requests],
+  const returnToCustomerQueueRequests = requests.filter((requestRow) =>
+    RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase()),
   );
-  const pickupRequests = useMemo(
-    () => activeRequests.filter((request) => request.returnMethod === "pickup"),
-    [activeRequests],
-  );
-  const branchRequests = useMemo(
-    () => activeRequests.filter((request) => request.returnMethod !== "pickup"),
-    [activeRequests],
-  );
-  const historyRequests = useMemo(
-    () =>
-      requests
-        .filter((requestRow) => HISTORY_STATUSES.has(String(requestRow.status || "").toLowerCase()))
-        .sort((a, b) => historyTimestampMs(b) - historyTimestampMs(a)),
-    [requests],
-  );
-  const isHistoryView = currentUrlViewMode === VIEW_MODE.HISTORY;
-  const historyRequestIds = useMemo(() => historyRequests.map((requestRow) => requestRow.id), [historyRequests]);
-  const allHistorySelected = useMemo(
-    () => historyRequestIds.length > 0 && historyRequestIds.every((historyId) => selectedHistoryIds.includes(historyId)),
-    [historyRequestIds, selectedHistoryIds],
-  );
-
-  useEffect(() => {
-    if (!isHistoryView) {
-      setHistorySelectionMode((prev) => (prev ? false : prev));
-      setSelectedHistoryIds((prev) => (prev.length ? [] : prev));
-    }
-  }, [isHistoryView]);
-
-  useEffect(() => {
-    if (!historySelectionMode) {
-      setSelectedHistoryIds((prev) => (prev.length ? [] : prev));
-    }
-  }, [historySelectionMode]);
-
-  useEffect(() => {
-    const validIdSet = new Set(historyRequestIds);
-    setSelectedHistoryIds((prev) => {
-      const next = prev.filter((id) => validIdSet.has(id));
-      return sameNumberArray(prev, next) ? prev : next;
-    });
-  }, [historyRequestIds]);
-
-  const toggleHistorySelection = useCallback((historyId, checked) => {
-    setSelectedHistoryIds((prev) => {
-      if (checked) {
-        if (prev.includes(historyId)) return prev;
-        return [...prev, historyId];
-      }
-      return prev.filter((id) => id !== historyId);
-    });
-  }, []);
-
-  const toggleSelectAllHistory = useCallback((checked) => {
-    setSelectedHistoryIds((prev) => {
-      const next = checked ? historyRequestIds.slice() : [];
-      return sameNumberArray(prev, next) ? prev : next;
-    });
-  }, [historyRequestIds]);
-  const pickupGroups = useMemo(() => buildPickupGroups(pickupRequests), [pickupRequests]);
+  const pickupRequests = activeRequests.filter((request) => request.returnMethod === "pickup");
+  const branchRequests = activeRequests.filter((request) => request.returnMethod !== "pickup");
+  const historyRequests = requests
+    .filter((requestRow) => HISTORY_STATUSES.has(String(requestRow.status || "").toLowerCase()))
+    .sort((a, b) => historyTimestampMs(b) - historyTimestampMs(a));
+  const pickupGroups = buildPickupGroups(pickupRequests);
 
   const pageHeading =
-    currentUrlViewMode === VIEW_MODE.PICKUP
+    viewMode === VIEW_MODE.PICKUP
       ? "Recoleccion a domicilio"
-      : currentUrlViewMode === VIEW_MODE.REVIEW
+      : viewMode === VIEW_MODE.REVIEW
         ? "Ordenes en revision"
-      : currentUrlViewMode === VIEW_MODE.REFUNDS
+      : viewMode === VIEW_MODE.REFUNDS
           ? "Procesar reembolsos"
-        : currentUrlViewMode === VIEW_MODE.TO_RETURN
+        : viewMode === VIEW_MODE.TO_RETURN
           ? "Devoluciones a devolver"
-        : currentUrlViewMode === VIEW_MODE.HISTORY
+        : viewMode === VIEW_MODE.HISTORY
           ? "Historial"
         : "Entrega en sucursal";
-  const hasPrevPage = currentPage > 1;
-  const hasNextPage = currentPage < (pageInfo?.totalPages || 1);
-  const currentViewHref = buildViewHref(currentUrlViewMode, currentPage, location.search);
 
   return (
     <s-page heading={pageHeading}>
       {actionData?.error ? <p className={styles.errorMsg}>{actionData.error}</p> : null}
       {actionData?.message ? <p className={styles.successMsg}>{actionData.message}</p> : null}
-      {loaderError ? <p className={styles.errorMsg}>{loaderError}</p> : null}
-      {(pageInfo?.totalPages || 1) > 1 ? (
-        <div className={styles.actionRow}>
-          {hasPrevPage ? (
-            <Link className={styles.btn} to={buildViewHref(currentUrlViewMode, currentPage - 1, location.search)}>
-              Anterior
-            </Link>
-          ) : null}
-          <span className={styles.meta}>
-            Pagina {currentPage} de {pageInfo?.totalPages || 1} | Total: {pageInfo?.totalCount || 0}
-          </span>
-          {hasNextPage ? (
-            <Link className={styles.btn} to={buildViewHref(currentUrlViewMode, currentPage + 1, location.search)}>
-              Siguiente
-            </Link>
-          ) : null}
-        </div>
-      ) : null}
 
-      {currentUrlViewMode === VIEW_MODE.BRANCH ? (
+      {viewMode === VIEW_MODE.BRANCH ? (
         <s-section heading="Entregas en sucursal">
           {branchRequests.length === 0 ? (
             <p>No hay solicitudes de entrega en sucursal.</p>
@@ -1457,7 +964,7 @@ export default function ReturnsRequests() {
         </s-section>
       ) : null}
 
-      {currentUrlViewMode === VIEW_MODE.PICKUP ? (
+      {viewMode === VIEW_MODE.PICKUP ? (
         <s-section heading="Recolecciones a domicilio">
           {pickupGroups.length === 0 ? (
             <p>No hay solicitudes de recoleccion a domicilio.</p>
@@ -1481,7 +988,7 @@ export default function ReturnsRequests() {
         </s-section>
       ) : null}
 
-      {currentUrlViewMode === VIEW_MODE.REVIEW ? (
+      {viewMode === VIEW_MODE.REVIEW ? (
         <s-section heading="Ordenes en revision">
           {reviewRequests.length === 0 ? (
             <p>No hay ordenes en revision.</p>
@@ -1495,7 +1002,7 @@ export default function ReturnsRequests() {
         </s-section>
       ) : null}
 
-      {currentUrlViewMode === VIEW_MODE.REFUNDS ? (
+      {viewMode === VIEW_MODE.REFUNDS ? (
         <s-section heading="Solicitudes listas para procesar reembolsos">
           {refundQueueRequests.length === 0 ? (
             <p>No hay solicitudes listas para procesar reembolsos.</p>
@@ -1509,7 +1016,7 @@ export default function ReturnsRequests() {
         </s-section>
       ) : null}
 
-      {currentUrlViewMode === VIEW_MODE.TO_RETURN ? (
+      {viewMode === VIEW_MODE.TO_RETURN ? (
         <s-section heading="Solicitudes pendientes por recoger en sucursal">
           {returnToCustomerQueueRequests.length === 0 ? (
             <p>No hay solicitudes pendientes por recoger.</p>
@@ -1523,60 +1030,16 @@ export default function ReturnsRequests() {
         </s-section>
       ) : null}
 
-      {currentUrlViewMode === VIEW_MODE.HISTORY ? (
+      {viewMode === VIEW_MODE.HISTORY ? (
         <s-section heading="Historial de devoluciones">
           {historyRequests.length === 0 ? (
             <p>No hay ordenes en historial.</p>
           ) : (
-            <>
-              <div className={styles.historyActions}>
-                <button
-                  type="button"
-                  className={styles.btn}
-                  onClick={() => setHistorySelectionMode((prev) => !prev)}
-                  disabled={isSubmitting}
-                >
-                  {historySelectionMode ? "Cancelar seleccion" : "Seleccionar"}
-                </button>
-                {historySelectionMode ? (
-                  <>
-                    <label className={styles.historySelectAllLabel}>
-                      <input
-                        type="checkbox"
-                        checked={allHistorySelected}
-                        onChange={(event) => toggleSelectAllHistory(event.target.checked)}
-                        disabled={isSubmitting}
-                      />
-                      <span>Seleccionar todo</span>
-                    </label>
-                    <Form method="post" action={currentViewHref}>
-                      <input type="hidden" name="intent" value="delete_history_selected" />
-                      <input type="hidden" name="selectedIds" value={JSON.stringify(selectedHistoryIds)} />
-                      <button
-                        className={`${styles.btn} ${styles.btnDanger}`}
-                        type="submit"
-                        disabled={isSubmitting || selectedHistoryIds.length === 0}
-                      >
-                        Borrar
-                      </button>
-                    </Form>
-                  </>
-                ) : null}
-              </div>
-              <div className={`${styles.wrap} ${styles.reqGrid}`}>
-                {historyRequests.map((request) => (
-                  <RequestCard
-                    key={request.id}
-                    request={request}
-                    isSubmitting={isSubmitting}
-                    isHistoryView={isHistoryView}
-                    selectionMode={historySelectionMode}
-                    isSelected={selectedHistoryIds.includes(request.id)}
-                    onToggleSelection={toggleHistorySelection}
-                  />
-                ))}
-              </div>
-            </>
+            <div className={`${styles.wrap} ${styles.reqGrid}`}>
+              {historyRequests.map((request) => (
+                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+              ))}
+            </div>
           )}
         </s-section>
       ) : null}
@@ -1584,29 +1047,9 @@ export default function ReturnsRequests() {
   );
 }
 
-function timelineToneClassName(tone) {
-  if (tone === "review") return styles.timelineToneReview;
-  if (tone === "approved") return styles.timelineToneApproved;
-  if (tone === "attempt") return styles.timelineToneAttempt;
-  if (tone === "rejected") return styles.timelineToneRejected;
-  if (tone === "received") return styles.timelineToneReceived;
-  if (tone === "pending") return styles.timelineTonePending;
-  if (tone === "denied") return styles.timelineToneDenied;
-  if (tone === "refunded") return styles.timelineToneRefunded;
-  return "";
-}
-
-const RequestCard = memo(function RequestCard({
-  request,
-  isSubmitting,
-  isHistoryView = false,
-  selectionMode = false,
-  isSelected = false,
-  onToggleSelection = () => {},
-}) {
+function RequestCard({ request, isSubmitting }) {
   const [viewerImage, setViewerImage] = useState(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
+  const timelineEvents = buildStatusTimeline(request);
   const currentTimelineEvent = timelineEvents[0] || null;
   const olderTimelineEvents = timelineEvents.slice(1);
   const status = String(request.status || "").toLowerCase();
@@ -1629,18 +1072,7 @@ const RequestCard = memo(function RequestCard({
   const closedAt =
     status === "reembolsada" && request.refundedAt ? request.refundedAt : request.updatedAt || null;
   return (
-    <article className={`${styles.card} ${isSelected ? styles.historyCardSelected : ""}`}>
-      {isHistoryView && selectionMode ? (
-        <label className={styles.historySelectRow}>
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={(event) => onToggleSelection(request.id, event.target.checked)}
-            disabled={isSubmitting}
-          />
-          <span>Seleccionar orden</span>
-        </label>
-      ) : null}
+    <article className={styles.card}>
       <div className={styles.reqHeader}>
         <div>
           <h3 className={styles.reqTitle}>Pedido #{request.orderNumber}</h3>
@@ -1662,13 +1094,8 @@ const RequestCard = memo(function RequestCard({
         </span>
       </div>
 
-      <details
-        className={styles.details}
-        onToggle={(event) => setDetailsOpen(event.currentTarget.open)}
-      >
+      <details className={styles.details}>
         <summary className={styles.summary}>Ver orden</summary>
-        {detailsOpen ? (
-          <>
 
         <div className={styles.kv}>
           <div className={styles.kvRow}>
@@ -1729,25 +1156,18 @@ const RequestCard = memo(function RequestCard({
           <div className={styles.statusTimelineCurrent}>
             <p className={styles.statusTimelineTitle}>Estado actual</p>
             <p className={styles.statusTimelineCurrentLine}>
-              <strong className={timelineToneClassName(currentTimelineEvent.tone)}>{currentTimelineEvent.label}</strong>{" "}
+              <strong>{currentTimelineEvent.label}</strong>{" "}
               <span>{new Date(currentTimelineEvent.at).toLocaleString("es-MX")}</span>
             </p>
-            {currentTimelineEvent.note ? (
-              <p className={styles.statusTimelineItemNote}>
-                {currentTimelineEvent.note}
-              </p>
-            ) : null}
           </div>
         ) : null}
         {olderTimelineEvents.length ? (
           <div className={styles.statusTimelineList}>
             {olderTimelineEvents.map((event) => (
               <div key={event.id} className={styles.statusTimelineItem}>
-                <p className={`${styles.statusTimelineItemTitle} ${timelineToneClassName(event.tone)}`}>{event.label}</p>
+                <p className={styles.statusTimelineItemTitle}>{event.label}</p>
                 <p className={styles.statusTimelineItemAt}>{new Date(event.at).toLocaleString("es-MX")}</p>
-                {event.note ? (
-                  <p className={styles.statusTimelineItemNote}>{event.note}</p>
-                ) : null}
+                {event.note ? <p className={styles.statusTimelineItemNote}>{event.note}</p> : null}
               </div>
             ))}
           </div>
@@ -1768,7 +1188,7 @@ const RequestCard = memo(function RequestCard({
           </p>
         )}
 
-        {(!(isHistoryView && timelineEvents.length > 0) && request.reasonEntries?.length) ? (
+        {request.reasonEntries?.length ? (
           <div className={styles.reasonHistory}>
             <p className={styles.reasonHistoryTitle}>Historial de motivos enviados</p>
             <ul className={styles.reasonHistoryList}>
@@ -1810,8 +1230,6 @@ const RequestCard = memo(function RequestCard({
                         src={item.imageUrl}
                         alt={item.imageAlt || item.title}
                         className={styles.productThumb}
-                        loading="lazy"
-                        decoding="async"
                       />
                     </button>
                   ) : (
@@ -1843,8 +1261,6 @@ const RequestCard = memo(function RequestCard({
                           src={src}
                           alt={`Evidencia ${idx + 1}`}
                           className={styles.evidencePhoto}
-                          loading="lazy"
-                          decoding="async"
                         />
                         <span>Foto {idx + 1}</span>
                       </button>
@@ -1855,8 +1271,6 @@ const RequestCard = memo(function RequestCard({
             );
           })}
         </ul>
-          </>
-        ) : null}
       </details>
 
       {status === "por_devolver" && request.pickupDeadlineAt ? (
@@ -1986,6 +1400,6 @@ const RequestCard = memo(function RequestCard({
       <ImageViewer image={viewerImage} onClose={() => setViewerImage(null)} />
     </article>
   );
-});
+}
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
