@@ -741,11 +741,11 @@ function buildViewWhere(shop, viewMode) {
 }
 
 function shouldIncludeEvidencePhotos(viewMode) {
-  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS;
+  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS || viewMode === VIEW_MODE.TO_RETURN;
 }
 
 function shouldLoadOrderCatalogImages(viewMode) {
-  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS;
+  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS || viewMode === VIEW_MODE.TO_RETURN;
 }
 
 function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
