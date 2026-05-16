@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
 import { useEffect, useState } from "react";
-import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Form, useActionData, useFetcher, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -852,6 +852,42 @@ export const action = async ({ request }) => {
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
   const id = Number(formData.get("id") || 0);
+
+  if (intent === "load_request_media") {
+    if (!id) return { ok: false, intent, error: "Solicitud invalida." };
+    const mediaRequestRow = await prisma.returnRequest.findFirst({
+      where: { id, shop: session.shop },
+      select: {
+        id: true,
+        shopifyOrderId: true,
+        items: {
+          select: {
+            id: true,
+            lineItemId: true,
+            productId: true,
+            variantId: true,
+            title: true,
+            photoDataUrl: true,
+          },
+        },
+      },
+    });
+    if (!mediaRequestRow) return { ok: false, intent, error: "No se encontro la solicitud." };
+
+    const imagesByOrder = await fetchOrderItemImageMaps(admin, [mediaRequestRow.shopifyOrderId]);
+    const imageMap = imagesByOrder[mediaRequestRow.shopifyOrderId] || {};
+    const mediaItems = mediaRequestRow.items.map((item) => {
+      const image = imageMap[itemKeyFromRecord(item)] || null;
+      return {
+        id: item.id,
+        imageUrl: image?.imageUrl || "",
+        imageAlt: image?.imageAlt || "",
+        photoDataUrl: item.photoDataUrl || "",
+      };
+    });
+    return { ok: true, intent, mediaItems };
+  }
+
   if (!id) return { ok: false, error: "Solicitud invalida." };
 
   const requestRow = await prisma.returnRequest.findFirst({
@@ -1319,7 +1355,7 @@ export default function ReturnsRequests() {
           ) : (
             <div className={`${styles.wrap} ${styles.reqGrid}`}>
               {historyRequests.map((request) => (
-                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} enableLazyMedia />
               ))}
             </div>
           )}
@@ -1329,9 +1365,12 @@ export default function ReturnsRequests() {
   );
 }
 
-function RequestCard({ request, isSubmitting }) {
+function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
   const [viewerImage, setViewerImage] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [mediaRequested, setMediaRequested] = useState(false);
+  const [lazyMediaByItemId, setLazyMediaByItemId] = useState({});
+  const mediaFetcher = useFetcher();
   const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
   const currentTimelineEvent = timelineEvents[0] || null;
   const olderTimelineEvents = timelineEvents.slice(1);
@@ -1354,6 +1393,41 @@ function RequestCard({ request, isSubmitting }) {
   const isHistoryStatus = HISTORY_STATUSES.has(status);
   const closedAt =
     status === "reembolsada" && request.refundedAt ? request.refundedAt : request.updatedAt || null;
+  const renderedItems = request.items.map((item) => {
+    const lazyMedia = lazyMediaByItemId[item.id] || {};
+    return {
+      ...item,
+      imageUrl: lazyMedia.imageUrl || item.imageUrl || "",
+      imageAlt: lazyMedia.imageAlt || item.imageAlt || "",
+      photoDataUrl: lazyMedia.photoDataUrl || item.photoDataUrl || "",
+    };
+  });
+
+  useEffect(() => {
+    if (!enableLazyMedia || !detailsOpen || mediaRequested) return;
+    const hasMissingMedia = request.items.some((item) => !item.imageUrl || !item.photoDataUrl);
+    if (!hasMissingMedia) return;
+    const payload = new FormData();
+    payload.set("intent", "load_request_media");
+    payload.set("id", String(request.id));
+    mediaFetcher.submit(payload, { method: "post" });
+    setMediaRequested(true);
+  }, [detailsOpen, enableLazyMedia, mediaFetcher, mediaRequested, request.id, request.items]);
+
+  useEffect(() => {
+    if (!mediaFetcher.data?.ok || mediaFetcher.data?.intent !== "load_request_media") return;
+    const items = Array.isArray(mediaFetcher.data.mediaItems) ? mediaFetcher.data.mediaItems : [];
+    const nextMediaById = {};
+    for (const item of items) {
+      nextMediaById[item.id] = {
+        imageUrl: item.imageUrl || "",
+        imageAlt: item.imageAlt || "",
+        photoDataUrl: item.photoDataUrl || "",
+      };
+    }
+    setLazyMediaByItemId(nextMediaById);
+  }, [mediaFetcher.data]);
+
   return (
     <article className={styles.card}>
       <div className={styles.reqHeader}>
@@ -1493,9 +1567,13 @@ function RequestCard({ request, isSubmitting }) {
           <p className={styles.successMsg}>Refund ID: {request.shopifyRefundId}</p>
         ) : null}
 
+        {detailsOpen && enableLazyMedia && mediaFetcher.state !== "idle" ? (
+          <p className={styles.meta}>Cargando imagenes...</p>
+        ) : null}
+
         <h4 className={styles.orderDetailTitle}>Productos, motivos, fotos y descripcion</h4>
         <ul className={styles.productList}>
-          {request.items.map((item) => {
+          {renderedItems.map((item) => {
             const photos = parsePhotoUrls(item.photoDataUrl);
             return (
               <li key={item.id} className={styles.productItem}>
