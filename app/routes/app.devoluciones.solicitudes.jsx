@@ -584,6 +584,50 @@ export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
+  if (intent === "delete_history_selected") {
+    let selectedIds = [];
+    try {
+      const raw = String(formData.get("selectedIds") || "[]");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        selectedIds = parsed
+          .map((value) => Number(value))
+          .filter((value) => Number.isInteger(value) && value > 0);
+      }
+    } catch {
+      selectedIds = [];
+    }
+
+    if (!selectedIds.length) {
+      return { ok: false, error: "Selecciona al menos una orden del historial para borrar." };
+    }
+
+    const historyStatusList = Array.from(HISTORY_STATUSES);
+    const existingRows = await prisma.returnRequest.findMany({
+      where: {
+        id: { in: selectedIds },
+        shop: session.shop,
+        status: { in: historyStatusList },
+      },
+      select: { id: true },
+    });
+    const allowedIds = existingRows.map((row) => row.id);
+    if (!allowedIds.length) {
+      return { ok: false, error: "No se encontraron ordenes validas para borrar en historial." };
+    }
+
+    const deleted = await prisma.returnRequest.deleteMany({
+      where: {
+        id: { in: allowedIds },
+        shop: session.shop,
+      },
+    });
+    return {
+      ok: true,
+      message: `${deleted.count} orden(es) eliminada(s) permanentemente del historial.`,
+    };
+  }
+
   const id = Number(formData.get("id") || 0);
   if (!id) return { ok: false, error: "Solicitud invalida." };
 
@@ -912,6 +956,8 @@ export default function ReturnsRequests() {
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
+  const [historySelectionMode, setHistorySelectionMode] = useState(false);
+  const [selectedHistoryIds, setSelectedHistoryIds] = useState([]);
 
   const reviewRequests = requests.filter(
     (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
@@ -930,6 +976,43 @@ export default function ReturnsRequests() {
   const historyRequests = requests
     .filter((requestRow) => HISTORY_STATUSES.has(String(requestRow.status || "").toLowerCase()))
     .sort((a, b) => historyTimestampMs(b) - historyTimestampMs(a));
+  const isHistoryView = viewMode === VIEW_MODE.HISTORY;
+  const historyRequestIds = historyRequests.map((requestRow) => requestRow.id);
+  const allHistorySelected =
+    historyRequestIds.length > 0 &&
+    historyRequestIds.every((historyId) => selectedHistoryIds.includes(historyId));
+
+  useEffect(() => {
+    if (!isHistoryView) {
+      setHistorySelectionMode(false);
+      setSelectedHistoryIds([]);
+    }
+  }, [isHistoryView]);
+
+  useEffect(() => {
+    if (!historySelectionMode) {
+      setSelectedHistoryIds([]);
+    }
+  }, [historySelectionMode]);
+
+  useEffect(() => {
+    const validIdSet = new Set(historyRequestIds);
+    setSelectedHistoryIds((prev) => prev.filter((id) => validIdSet.has(id)));
+  }, [requests]);
+
+  const toggleHistorySelection = (historyId, checked) => {
+    setSelectedHistoryIds((prev) => {
+      if (checked) {
+        if (prev.includes(historyId)) return prev;
+        return [...prev, historyId];
+      }
+      return prev.filter((id) => id !== historyId);
+    });
+  };
+
+  const toggleSelectAllHistory = (checked) => {
+    setSelectedHistoryIds(checked ? historyRequestIds.slice() : []);
+  };
   const pickupGroups = buildPickupGroups(pickupRequests);
 
   const pageHeading =
@@ -1035,11 +1118,55 @@ export default function ReturnsRequests() {
           {historyRequests.length === 0 ? (
             <p>No hay ordenes en historial.</p>
           ) : (
-            <div className={`${styles.wrap} ${styles.reqGrid}`}>
-              {historyRequests.map((request) => (
-                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
-              ))}
-            </div>
+            <>
+              <div className={styles.historyActions}>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={() => setHistorySelectionMode((prev) => !prev)}
+                  disabled={isSubmitting}
+                >
+                  {historySelectionMode ? "Cancelar seleccion" : "Seleccionar"}
+                </button>
+                {historySelectionMode ? (
+                  <>
+                    <label className={styles.historySelectAllLabel}>
+                      <input
+                        type="checkbox"
+                        checked={allHistorySelected}
+                        onChange={(event) => toggleSelectAllHistory(event.target.checked)}
+                        disabled={isSubmitting}
+                      />
+                      <span>Seleccionar todo</span>
+                    </label>
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="delete_history_selected" />
+                      <input type="hidden" name="selectedIds" value={JSON.stringify(selectedHistoryIds)} />
+                      <button
+                        className={`${styles.btn} ${styles.btnDanger}`}
+                        type="submit"
+                        disabled={isSubmitting || selectedHistoryIds.length === 0}
+                      >
+                        Borrar
+                      </button>
+                    </Form>
+                  </>
+                ) : null}
+              </div>
+              <div className={`${styles.wrap} ${styles.reqGrid}`}>
+                {historyRequests.map((request) => (
+                  <RequestCard
+                    key={request.id}
+                    request={request}
+                    isSubmitting={isSubmitting}
+                    isHistoryView={isHistoryView}
+                    selectionMode={historySelectionMode}
+                    isSelected={selectedHistoryIds.includes(request.id)}
+                    onToggleSelection={toggleHistorySelection}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </s-section>
       ) : null}
@@ -1047,7 +1174,14 @@ export default function ReturnsRequests() {
   );
 }
 
-function RequestCard({ request, isSubmitting }) {
+function RequestCard({
+  request,
+  isSubmitting,
+  isHistoryView = false,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelection = () => {},
+}) {
   const [viewerImage, setViewerImage] = useState(null);
   const timelineEvents = buildStatusTimeline(request);
   const currentTimelineEvent = timelineEvents[0] || null;
@@ -1072,7 +1206,18 @@ function RequestCard({ request, isSubmitting }) {
   const closedAt =
     status === "reembolsada" && request.refundedAt ? request.refundedAt : request.updatedAt || null;
   return (
-    <article className={styles.card}>
+    <article className={`${styles.card} ${isSelected ? styles.historyCardSelected : ""}`}>
+      {isHistoryView && selectionMode ? (
+        <label className={styles.historySelectRow}>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={(event) => onToggleSelection(request.id, event.target.checked)}
+            disabled={isSubmitting}
+          />
+          <span>Seleccionar orden</span>
+        </label>
+      ) : null}
       <div className={styles.reqHeader}>
         <div>
           <h3 className={styles.reqTitle}>Pedido #{request.orderNumber}</h3>
@@ -1188,7 +1333,7 @@ function RequestCard({ request, isSubmitting }) {
           </p>
         )}
 
-        {request.reasonEntries?.length ? (
+        {(!(isHistoryView && timelineEvents.length > 0) && request.reasonEntries?.length) ? (
           <div className={styles.reasonHistory}>
             <p className={styles.reasonHistoryTitle}>Historial de motivos enviados</p>
             <ul className={styles.reasonHistoryList}>

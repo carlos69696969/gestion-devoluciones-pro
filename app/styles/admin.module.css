@@ -426,6 +426,38 @@
   margin-top: 12px;
 }
 
+.historyActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.historySelectAllLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #202223;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.historySelectRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: #202223;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.historyCardSelected {
+  border-color: rgba(0, 91, 211, 0.55);
+  box-shadow: 0 0 0 2px rgba(0, 91, 211, 0.16);
+}
+
 .rejectForm {
   display: flex;
   gap: 10px;
