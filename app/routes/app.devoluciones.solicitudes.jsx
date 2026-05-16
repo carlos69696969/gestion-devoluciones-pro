@@ -730,11 +730,16 @@ function buildViewWhere(shop, viewMode) {
 }
 
 function shouldIncludeEvidencePhotos(viewMode) {
-  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS || viewMode === VIEW_MODE.HISTORY;
+  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS;
 }
 
 function shouldLoadOrderCatalogImages(viewMode) {
-  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS || viewMode === VIEW_MODE.HISTORY;
+  return viewMode === VIEW_MODE.REVIEW || viewMode === VIEW_MODE.REFUNDS;
+}
+
+function pageSizeForView(viewMode) {
+  if (viewMode === VIEW_MODE.HISTORY) return 8;
+  return ADMIN_PAGE_SIZE;
 }
 
 function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
@@ -795,6 +800,7 @@ export const loader = async ({ request }) => {
   try {
     const { admin, session } = await authenticate.admin(request);
     const where = buildViewWhere(session.shop, viewMode);
+    const pageSize = pageSizeForView(viewMode);
     const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
     const itemSelect = {
       id: true,
@@ -808,16 +814,16 @@ export const loader = async ({ request }) => {
       ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
     };
     const totalCount = await prisma.returnRequest.count({ where });
-    const totalPages = Math.max(1, Math.ceil(totalCount / ADMIN_PAGE_SIZE));
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
     const currentPage = Math.min(requestedPage, totalPages);
-    const skip = (currentPage - 1) * ADMIN_PAGE_SIZE;
+    const skip = (currentPage - 1) * pageSize;
 
     const rawRequests = await prisma.returnRequest.findMany({
       where,
       include: { items: { select: itemSelect } },
       orderBy: { createdAt: "desc" },
       skip,
-      take: ADMIN_PAGE_SIZE,
+      take: pageSize,
     });
 
     const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
@@ -875,7 +881,7 @@ export const loader = async ({ request }) => {
         currentPage,
         totalPages,
         totalCount,
-        pageSize: ADMIN_PAGE_SIZE,
+        pageSize,
       },
       loaderError: "",
     };
@@ -890,7 +896,7 @@ export const loader = async ({ request }) => {
         currentPage: 1,
         totalPages: 1,
         totalCount: 0,
-        pageSize: ADMIN_PAGE_SIZE,
+        pageSize: pageSizeForView(viewMode),
       },
       loaderError: "No se pudo cargar esta seccion. Recarga e intenta de nuevo.",
     };
