@@ -430,7 +430,7 @@ function timelineToneFromReasonEntry(entry) {
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "rejected";
   if (kind === "denied_after_received") return "denied";
   if (kind === NOT_RETURNED_KIND) return "denied";
-  if (kind === RETURNED_TO_CUSTOMER_KIND) return "pending";
+  if (kind === RETURNED_TO_CUSTOMER_KIND) return "refunded";
   return "default";
 }
 
@@ -576,7 +576,7 @@ function buildStatusTimeline(requestItem) {
     );
   }
   if (!entryKinds.has(RETURNED_TO_CUSTOMER_KIND)) {
-    pushEvent("Devolucion devuelta al cliente", requestItem.returnedToCustomerAt, RETURNED_TO_CUSTOMER_MESSAGE, "pending");
+    pushEvent("Devolucion devuelta al cliente", requestItem.returnedToCustomerAt, RETURNED_TO_CUSTOMER_MESSAGE, "refunded");
   }
 
   for (const entry of requestItem.reasonEntries || []) {
@@ -1029,6 +1029,7 @@ export const loader = async ({ request }) => {
       const hasFailedPickupAttempt = ["intento_fallido_1", "intento_fallido_2"].includes(latestStatus);
       const hasRejected = latestStatus === "rechazada";
       const hasDenied = ["denegada", "por_devolver", "reembolso_denegado", "no_devuelto"].includes(latestStatus);
+      const wasReturnedToCustomer = Boolean(latestRequest?.wasReturnedToCustomer);
       const allDelivered =
         completedRequests.length > 0 &&
         completedRequests.every((requestRow) => DELIVERED_RETURN_STATUSES.has(requestRow.status));
@@ -1039,6 +1040,8 @@ export const loader = async ({ request }) => {
           ? "Intento de devolucion fallido."
         : hasRejected
           ? "Solicitud de devolucion rechazada."
+        : wasReturnedToCustomer
+          ? "Devolucion devuelta al cliente."
         : hasDenied
           ? "Reembolso denegado."
         : allDelivered
@@ -1050,6 +1053,8 @@ export const loader = async ({ request }) => {
           ? "Tuvimos un intento de recoleccion fallido. Revisa el motivo en el detalle y espera el siguiente intento."
         : hasRejected
           ? "Tu solicitud fue rechazada. Puedes revisar el motivo y volver a solicitar tu devolucion."
+        : wasReturnedToCustomer
+          ? RETURNED_TO_CUSTOMER_MESSAGE
         : hasDenied
           ? "Tu reembolso fue denegado. Revisa el motivo de denegacion en el detalle."
         : allDelivered
@@ -1675,7 +1680,7 @@ function CompletedReturnSummary({ requestItem }) {
           Tu solicitud esta siendo revisada por nuestro equipo, regresa mas tarde para revisar el estado de tu solicitud.
         </p>
       ) : null}
-      {requestItem.rejectionReason && isRejectedOrDenied ? (
+      {requestItem.rejectionReason && isRejectedOrDenied && !requestItem.wasReturnedToCustomer ? (
         <p className={styles.completedStatus}>
           Motivo de denegacion: <strong>{requestItem.rejectionReason}</strong>
         </p>
