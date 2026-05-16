@@ -38,6 +38,20 @@ const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada", "reemb
 const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito.";
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
 const NOT_RETURNED_KIND = "not_returned_after_30_days";
+const REQUEST_CREATED_KIND = "request_created";
+const STATUS_REVIEW_KIND = "status_review";
+const STATUS_APPROVED_KIND = "status_approved";
+const STATUS_RECEIVED_KIND = "status_received";
+const STATUS_REFUNDED_KIND = "status_refunded";
+const TIMELINE_META_KINDS = new Set([
+  REQUEST_CREATED_KIND,
+  STATUS_REVIEW_KIND,
+  STATUS_APPROVED_KIND,
+  STATUS_RECEIVED_KIND,
+  STATUS_REFUNDED_KIND,
+  RETURNED_TO_CUSTOMER_KIND,
+  NOT_RETURNED_KIND,
+]);
 const NOT_RETURNED_REASON = "El cliente no recogio su paquete en sucursal dentro de 30 dias.";
 const PICKUP_DEADLINE_DAYS = 30;
 
@@ -130,7 +144,7 @@ function isReturnedToCustomerEntry(entry) {
 
 function isSystemProgressEntry(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
-  return kind === RETURNED_TO_CUSTOMER_KIND || kind === NOT_RETURNED_KIND;
+  return TIMELINE_META_KINDS.has(kind);
 }
 
 function latestReturnedToCustomerAtFromRaw(rawValue) {
@@ -673,7 +687,7 @@ export const loader = async ({ request }) => {
     const imageMap = imagesByOrder[requestRow.shopifyOrderId] || {};
     const status = String(requestRow.status || "").toLowerCase();
     const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
-    const visibleReasonEntries = reasonEntries.filter((entry) => !isReturnedToCustomerEntry(entry));
+    const visibleReasonEntries = reasonEntries.filter((entry) => !isSystemProgressEntry(entry));
     const wasReturnedToCustomer = reasonEntries.some((entry) => isReturnedToCustomerEntry(entry));
     const returnedToCustomerAt = latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason);
     const requiresPickupDeadline = ["por_devolver", "no_devuelto", "reembolso_denegado", "denegada"].includes(status);
@@ -1166,7 +1180,7 @@ export default function ReturnsRequests() {
           ) : (
             <div className={`${styles.wrap} ${styles.reqGrid}`}>
               {historyRequests.map((request) => (
-                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} isHistoryView />
+                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
               ))}
             </div>
           )}
@@ -1176,7 +1190,7 @@ export default function ReturnsRequests() {
   );
 }
 
-function RequestCard({ request, isSubmitting, isHistoryView = false }) {
+function RequestCard({ request, isSubmitting }) {
   const [viewerImage, setViewerImage] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
@@ -1320,7 +1334,7 @@ function RequestCard({ request, isSubmitting, isHistoryView = false }) {
           </p>
         )}
 
-        {(!(isHistoryView && timelineEvents.length > 0) && request.reasonEntries?.length) ? (
+        {(!timelineEvents.length && request.reasonEntries?.length) ? (
           <div className={styles.reasonHistory}>
             <p className={styles.reasonHistoryTitle}>Historial de motivos enviados</p>
             <ul className={styles.reasonHistoryList}>
