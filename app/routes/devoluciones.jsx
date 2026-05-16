@@ -1018,7 +1018,7 @@ export const loader = async ({ request }) => {
           : isExpired
             ? `Tu periodo de devolucion vencio el ${limitDate.toLocaleDateString("es-MX")}.`
             : hasEligibleItems
-              ? `Estas dentro del periodo de devolucion (${settings.returnWindowDays} dias). Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`
+              ? ""
               : completionTitle,
       });
     } catch (err) {
