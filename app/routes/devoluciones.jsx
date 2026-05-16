@@ -198,11 +198,28 @@ function normalizeOrder(orderNode) {
       variantId: node.variant?.id || "",
       imageUrl: node.variant?.image?.url || node.product?.featuredImage?.url || "",
       imageAlt: node.variant?.image?.altText || node.product?.featuredImage?.altText || "",
+      variantSummary: formatVariantSummary(node.variant),
       title: node.title,
       quantity: node.quantity,
       unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
     })),
   };
+}
+
+function formatVariantSummary(variantNode) {
+  const options = Array.isArray(variantNode?.selectedOptions) ? variantNode.selectedOptions : [];
+  const labels = options
+    .map((option) => {
+      const name = String(option?.name || "").trim();
+      const value = String(option?.value || "").trim();
+      if (!name || !value) return "";
+      return `${name}: ${value}`;
+    })
+    .filter(Boolean);
+  if (labels.length) return labels.join(" | ");
+  const fallback = String(variantNode?.title || "").trim();
+  if (!fallback || fallback.toLowerCase() === "default title") return "";
+  return fallback;
 }
 
 function addDays(date, days) {
@@ -524,7 +541,11 @@ function buildStatusTimeline(requestItem) {
 function buildOrderImageMap(items) {
   const imageMap = new Map();
   for (const item of items || []) {
-    const value = { imageUrl: item.imageUrl || "", imageAlt: item.imageAlt || item.title || "" };
+    const value = {
+      imageUrl: item.imageUrl || "",
+      imageAlt: item.imageAlt || item.title || "",
+      variantSummary: item.variantSummary || "",
+    };
     const keys = [
       itemKeyFromRecord({ lineItemId: item.id }),
       itemKeyFromRecord({ variantId: item.variantId }),
@@ -611,7 +632,12 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                       title
                       quantity
                       product { id featuredImage { url altText } }
-                      variant { id image { url altText } }
+                      variant {
+                        id
+                        title
+                        selectedOptions { name value }
+                        image { url altText }
+                      }
                       originalUnitPriceSet { shopMoney { amount } }
                     }
                   }
@@ -900,6 +926,7 @@ export const loader = async ({ request }) => {
             return {
               id: item.id,
               title: item.title,
+              variantSummary: image.variantSummary || "",
               quantity: Number(item.quantity || 1),
               reason: item.reason || "-",
               details: item.details || "",
@@ -1657,6 +1684,7 @@ function CompletedReturnSummary({ requestItem }) {
               )}
               <div className={styles.productCopy}>
                 <p className={styles.productLineTitle}>{item.title} x{item.quantity}</p>
+                {item.variantSummary ? <p className={styles.productLineMeta}>Variante: {item.variantSummary}</p> : null}
                 <p className={styles.productLineMeta}>Motivo: {item.reason || "-"}</p>
               </div>
             </div>
@@ -1946,6 +1974,9 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                       )}
                       <div>
                         <div className={styles.productTitle}>{item.title}</div>
+                        {item.variantSummary ? (
+                          <div className={styles.productMeta}>{item.variantSummary}</div>
+                        ) : null}
                         <div className={styles.productMeta}>
                           x{item.quantity} - ${toMXN(item.unitPrice)} c/u
                         </div>
@@ -2242,6 +2273,9 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                         )}
                         <div>
                           <div className={styles.productTitle}>{item.title}</div>
+                          {item.variantSummary ? (
+                            <div className={styles.productMeta}>{item.variantSummary}</div>
+                          ) : null}
                           <div className={styles.productMeta}>
                             x{item.quantity} · Motivo: {item.reason || "-"}
                           </div>

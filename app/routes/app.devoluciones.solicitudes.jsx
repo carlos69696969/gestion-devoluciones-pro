@@ -110,6 +110,22 @@ function itemKeyFromRecord(item) {
   return `title:${String(item?.title || "").trim().toLowerCase()}`;
 }
 
+function formatVariantSummary(variantNode) {
+  const options = Array.isArray(variantNode?.selectedOptions) ? variantNode.selectedOptions : [];
+  const labels = options
+    .map((option) => {
+      const name = String(option?.name || "").trim();
+      const value = String(option?.value || "").trim();
+      if (!name || !value) return "";
+      return `${name}: ${value}`;
+    })
+    .filter(Boolean);
+  if (labels.length) return labels.join(" | ");
+  const fallback = String(variantNode?.title || "").trim();
+  if (!fallback || fallback.toLowerCase() === "default title") return "";
+  return fallback;
+}
+
 function parsePhotoUrls(rawValue) {
   if (!rawValue) return [];
   try {
@@ -494,9 +510,14 @@ async function fetchOrderSnapshot(admin, orderId) {
   };
 }
 
-function putImageCandidate(map, key, imageUrl, imageAlt) {
-  if (!key || !imageUrl || map[key]) return;
-  map[key] = { imageUrl, imageAlt: imageAlt || "" };
+function putImageCandidate(map, key, imageUrl, imageAlt, variantSummary = "") {
+  if (!key) return;
+  const current = map[key] || {};
+  map[key] = {
+    imageUrl: current.imageUrl || imageUrl || "",
+    imageAlt: current.imageAlt || imageAlt || "",
+    variantSummary: current.variantSummary || variantSummary || "",
+  };
 }
 
 function ImageViewer({ image, onClose }) {
@@ -608,6 +629,8 @@ async function fetchOrderItemImageMaps(admin, orderIds) {
                   title
                   variant {
                     id
+                    title
+                    selectedOptions { name value }
                     image {
                       url
                       altText
@@ -641,12 +664,12 @@ async function fetchOrderItemImageMaps(admin, orderIds) {
         if (!line) continue;
         const imageUrl = line?.variant?.image?.url || line?.product?.featuredImage?.url || "";
         const imageAlt = line?.variant?.image?.altText || line?.product?.featuredImage?.altText || "";
-        if (!imageUrl) continue;
+        const variantSummary = formatVariantSummary(line?.variant);
 
-        putImageCandidate(imageMap, itemKeyFromRecord({ lineItemId: line.id }), imageUrl, imageAlt);
-        putImageCandidate(imageMap, itemKeyFromRecord({ variantId: line?.variant?.id }), imageUrl, imageAlt);
-        putImageCandidate(imageMap, itemKeyFromRecord({ productId: line?.product?.id }), imageUrl, imageAlt);
-        putImageCandidate(imageMap, itemKeyFromRecord({ title: line.title }), imageUrl, imageAlt);
+        putImageCandidate(imageMap, itemKeyFromRecord({ lineItemId: line.id }), imageUrl, imageAlt, variantSummary);
+        putImageCandidate(imageMap, itemKeyFromRecord({ variantId: line?.variant?.id }), imageUrl, imageAlt, variantSummary);
+        putImageCandidate(imageMap, itemKeyFromRecord({ productId: line?.product?.id }), imageUrl, imageAlt, variantSummary);
+        putImageCandidate(imageMap, itemKeyFromRecord({ title: line.title }), imageUrl, imageAlt, variantSummary);
       }
       byOrder[order.id] = imageMap;
     }
@@ -839,6 +862,7 @@ export const loader = async ({ request }) => {
           ...item,
           imageUrl: image?.imageUrl || "",
           imageAlt: image?.imageAlt || "",
+          variantSummary: image?.variantSummary || "",
         };
       }),
     };
@@ -882,6 +906,7 @@ export const action = async ({ request }) => {
         id: item.id,
         imageUrl: image?.imageUrl || "",
         imageAlt: image?.imageAlt || "",
+        variantSummary: image?.variantSummary || "",
         photoDataUrl: item.photoDataUrl || "",
       };
     });
@@ -1399,6 +1424,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
       ...item,
       imageUrl: lazyMedia.imageUrl || item.imageUrl || "",
       imageAlt: lazyMedia.imageAlt || item.imageAlt || "",
+      variantSummary: lazyMedia.variantSummary || item.variantSummary || "",
       photoDataUrl: lazyMedia.photoDataUrl || item.photoDataUrl || "",
     };
   });
@@ -1422,6 +1448,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
       nextMediaById[item.id] = {
         imageUrl: item.imageUrl || "",
         imageAlt: item.imageAlt || "",
+        variantSummary: item.variantSummary || "",
         photoDataUrl: item.photoDataUrl || "",
       };
     }
@@ -1604,6 +1631,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
                     <p className={styles.productLineTitle}>
                       {item.title} x{item.quantity}
                     </p>
+                    {item.variantSummary ? <p className={styles.productLineMeta}>Variante: {item.variantSummary}</p> : null}
                     <p className={styles.productLineMeta}>Motivo: {item.reason}</p>
                   </div>
                 </div>
