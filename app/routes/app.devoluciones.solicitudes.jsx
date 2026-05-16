@@ -1695,7 +1695,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
                 placeholder="Motivo de rechazo (obligatorio)"
                 defaultValue=""
               />
-              <button className={styles.btn} type="submit" disabled={isSubmitting}>
+              <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
                 Rechazar
               </button>
             </Form>
