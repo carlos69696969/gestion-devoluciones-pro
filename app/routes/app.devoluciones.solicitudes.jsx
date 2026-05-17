@@ -743,7 +743,6 @@ function buildViewWhere(shop, viewMode) {
 
 function shouldIncludeEvidencePhotos(viewMode) {
   return (
-    viewMode === VIEW_MODE.PICKUP ||
     viewMode === VIEW_MODE.REVIEW ||
     viewMode === VIEW_MODE.REFUNDS ||
     viewMode === VIEW_MODE.TO_RETURN
@@ -752,7 +751,6 @@ function shouldIncludeEvidencePhotos(viewMode) {
 
 function shouldLoadOrderCatalogImages(viewMode) {
   return (
-    viewMode === VIEW_MODE.PICKUP ||
     viewMode === VIEW_MODE.REVIEW ||
     viewMode === VIEW_MODE.REFUNDS ||
     viewMode === VIEW_MODE.TO_RETURN
@@ -1322,7 +1320,12 @@ export default function ReturnsRequests() {
           ) : (
             <div className={`${styles.wrap} ${styles.reqGrid}`}>
               {branchRequests.map((request) => (
-                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+                <RequestCard
+                  key={request.id}
+                  request={request}
+                  isSubmitting={isSubmitting}
+                  enableLazyMedia
+                />
               ))}
             </div>
           )}
@@ -1343,7 +1346,12 @@ export default function ReturnsRequests() {
                   <div className={styles.divider} />
                   <div className={styles.reqGrid}>
                     {group.requests.map((request) => (
-                      <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+                      <RequestCard
+                        key={request.id}
+                        request={request}
+                        isSubmitting={isSubmitting}
+                        enableLazyMedia
+                      />
                     ))}
                   </div>
                 </div>
