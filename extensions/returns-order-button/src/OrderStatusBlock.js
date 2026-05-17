@@ -177,13 +177,6 @@ export default function extension() {
     const hasConfirmedReturns = Boolean(eligibility?.hasConfirmedReturns);
     const hasEligibleItems =
       eligibility?.hasEligibleItems === undefined ? true : Boolean(eligibility?.hasEligibleItems);
-    const isDelivered = Boolean(eligibility?.isDelivered);
-
-    if (!isDelivered) {
-      unmountWrapper();
-      return;
-    }
-
     mountWrapper();
 
     while (actions.firstChild) {
@@ -193,7 +186,7 @@ export default function extension() {
     if (hasConfirmedReturns) {
       actions.appendChild(viewButton);
     }
-    if (hasEligibleItems && isDelivered) {
+    if (hasEligibleItems) {
       actions.appendChild(requestButton);
     }
 
