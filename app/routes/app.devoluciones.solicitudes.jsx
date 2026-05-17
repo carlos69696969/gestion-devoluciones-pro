@@ -1576,6 +1576,9 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
               <strong className={timelineToneClassName(currentTimelineEvent.tone)}>{currentTimelineEvent.label}</strong>{" "}
               <span>{new Date(currentTimelineEvent.at).toLocaleString("es-MX")}</span>
             </p>
+            {currentTimelineEvent.note ? (
+              <p className={styles.statusTimelineItemNote}>{currentTimelineEvent.note}</p>
+            ) : null}
           </div>
         ) : null}
         {olderTimelineEvents.length ? (
