@@ -113,6 +113,33 @@ function itemKeyFromRecord(item) {
   return `title:${String(item?.title || "").trim().toLowerCase()}`;
 }
 
+function expandOrderItemsByUnit(items, blockedCountByKey = new Map(), rejectedReasonsByItemKey = new Map()) {
+  const expanded = [];
+  for (const item of items || []) {
+    const totalQuantity = Math.max(1, Number(item.quantity || 1));
+    const key = itemKeyFromRecord({
+      lineItemId: item.lineItemId || item.id,
+      variantId: item.variantId,
+      productId: item.productId,
+      title: item.title,
+    });
+    const blockedCount = Math.max(0, Math.min(totalQuantity, Number(blockedCountByKey.get(key) || 0)));
+    for (let unitIndex = 0; unitIndex < totalQuantity; unitIndex += 1) {
+      expanded.push({
+        ...item,
+        id: `${item.id}::unit${unitIndex + 1}`,
+        lineItemId: item.lineItemId || item.id,
+        quantity: 1,
+        unitIndex: unitIndex + 1,
+        unitCount: totalQuantity,
+        isAlreadyReturned: unitIndex < blockedCount,
+        lastRejectedReason: rejectedReasonsByItemKey.get(key) || "",
+      });
+    }
+  }
+  return expanded;
+}
+
 function getReasonConfig(settings) {
   const reasons = parseLines(settings?.returnReasons);
   const baseReasons = reasons.length ? reasons : DEFAULT_REASONS.slice();
@@ -198,6 +225,7 @@ function normalizeOrder(orderNode) {
     createdAt: orderNode.createdAt,
     items: orderNode.lineItems.edges.map(({ node }) => ({
       id: node.id,
+      lineItemId: node.id,
       productId: node.product?.id || "",
       variantId: node.variant?.id || "",
       imageUrl: node.variant?.image?.url || node.product?.featuredImage?.url || "",
@@ -613,7 +641,7 @@ function buildOrderImageMap(items) {
       variantSummary: item.variantSummary || "",
     };
     const keys = [
-      itemKeyFromRecord({ lineItemId: item.id }),
+      itemKeyFromRecord({ lineItemId: item.lineItemId || item.id }),
       itemKeyFromRecord({ variantId: item.variantId }),
       itemKeyFromRecord({ productId: item.productId }),
       itemKeyFromRecord({ title: item.title }),
@@ -897,19 +925,20 @@ export const loader = async ({ request }) => {
         include: { items: true },
         orderBy: { createdAt: "desc" },
       });
-      const blockedItemKeys = new Set();
+      const blockedItemCountByKey = new Map();
       const rejectedReasonsByItemKey = new Map();
       for (const requestRow of previousRequests) {
         for (const item of requestRow.items) {
           const key = itemKeyFromRecord(item);
+          const itemQuantity = Math.max(1, Number(item?.quantity || 1));
           if (ITEM_BLOCK_STATUSES.has(String(requestRow.status || "").toLowerCase())) {
-            blockedItemKeys.add(key);
+            blockedItemCountByKey.set(key, Number(blockedItemCountByKey.get(key) || 0) + itemQuantity);
           } else if (
             String(requestRow.status || "").toLowerCase() === "rechazada" &&
             isRefundDeniedAfterReceivedFromRaw(requestRow.rejectionReason)
           ) {
             // Backward compatibility: old denied returns were stored as "rechazada".
-            blockedItemKeys.add(key);
+            blockedItemCountByKey.set(key, Number(blockedItemCountByKey.get(key) || 0) + itemQuantity);
           }
           if (
             ["rechazada", "denegada", "por_devolver", "reembolso_denegado", "no_devuelto"].includes(String(requestRow.status || "").toLowerCase()) &&
@@ -920,19 +949,11 @@ export const loader = async ({ request }) => {
           }
         }
       }
-      const itemsWithEligibility = order.items.map((item) => {
-        const key = itemKeyFromRecord({
-          lineItemId: item.id,
-          variantId: item.variantId,
-          productId: item.productId,
-          title: item.title,
-        });
-        return {
-          ...item,
-          isAlreadyReturned: blockedItemKeys.has(key),
-          lastRejectedReason: rejectedReasonsByItemKey.get(key) || "",
-        };
-      });
+      const itemsWithEligibility = expandOrderItemsByUnit(
+        order.items,
+        blockedItemCountByKey,
+        rejectedReasonsByItemKey,
+      );
       const orderImageMap = buildOrderImageMap(order.items);
       const completedRequests = previousRequests
         .filter((requestRow) => ACTIVE_RETURN_STATUSES.has(String(requestRow.status || "").toLowerCase()))
@@ -1160,26 +1181,58 @@ export const action = async ({ request }) => {
     },
     include: { items: true },
   });
-  const blockedItemKeys = new Set();
+  const blockedItemCountByKey = new Map();
   for (const requestRow of previousRequests) {
     for (const item of requestRow.items) {
-      blockedItemKeys.add(itemKeyFromRecord(item));
+      const key = itemKeyFromRecord(item);
+      const qty = Math.max(1, Number(item?.quantity || 1));
+      blockedItemCountByKey.set(key, Number(blockedItemCountByKey.get(key) || 0) + qty);
     }
   }
-  const duplicatedItem = payload.items.find((item) =>
-    blockedItemKeys.has(
-      itemKeyFromRecord({
-        lineItemId: item.id,
+
+  const orderedItemCountByKey = new Map();
+  for (const item of payload?.order?.items || []) {
+    const key = itemKeyFromRecord({
+      lineItemId: item.lineItemId || item.id,
+      variantId: item.variantId,
+      productId: item.productId,
+      title: item.title,
+    });
+    const qty = Math.max(1, Number(item?.quantity || 1));
+    orderedItemCountByKey.set(key, Number(orderedItemCountByKey.get(key) || 0) + qty);
+  }
+
+  const selectedItemCountByKey = new Map();
+  for (const item of payload.items) {
+    const key = itemKeyFromRecord({
+      lineItemId: item.lineItemId || item.id,
+      variantId: item.variantId,
+      productId: item.productId,
+      title: item.title,
+    });
+    const qty = Math.max(1, Number(item?.quantity || 1));
+    selectedItemCountByKey.set(key, Number(selectedItemCountByKey.get(key) || 0) + qty);
+  }
+
+  const exceededEntry = Array.from(selectedItemCountByKey.entries()).find(([key, selectedQty]) => {
+    const blockedQty = Number(blockedItemCountByKey.get(key) || 0);
+    const orderedQty = Number(orderedItemCountByKey.get(key) || 0);
+    return blockedQty + selectedQty > orderedQty;
+  });
+  if (exceededEntry) {
+    const [conflictKey] = exceededEntry;
+    const conflictItem = payload.items.find((item) => {
+      const key = itemKeyFromRecord({
+        lineItemId: item.lineItemId || item.id,
         variantId: item.variantId,
         productId: item.productId,
         title: item.title,
-      }),
-    ),
-  );
-  if (duplicatedItem) {
+      });
+      return key === conflictKey;
+    });
     return {
       ok: false,
-      error: `El producto "${duplicatedItem.title}" ya tiene una devolucion activa, ya fue devuelto o fue denegado.`,
+      error: `El producto "${conflictItem?.title || "seleccionado"}" ya no tiene piezas disponibles para devolucion.`,
     };
   }
 
@@ -1320,7 +1373,7 @@ export const action = async ({ request }) => {
       pickupReferences: payload.pickupReferences || null,
       items: {
         create: payload.items.map((item) => ({
-          lineItemId: item.id || null,
+          lineItemId: item.lineItemId || item.id || null,
           productId: item.productId || "",
           variantId: item.variantId || null,
           title: item.title,
@@ -2051,7 +2104,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                           <div className={styles.productMeta}>{item.variantSummary}</div>
                         ) : null}
                         <div className={styles.productMeta}>
-                          x{item.quantity} - ${toMXN(item.unitPrice)} c/u
+                          {item.unitCount > 1 ? `Pieza ${item.unitIndex} de ${item.unitCount} · ` : ""}x{item.quantity} - ${toMXN(item.unitPrice)} c/u
                         </div>
                         {isAlreadyReturned ? (
                           <div className={`${styles.notice} ${styles.noticeMuted}`} style={{ marginTop: 4 }}>
@@ -2360,7 +2413,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                             <div className={styles.productMeta}>{item.variantSummary}</div>
                           ) : null}
                           <div className={styles.productMeta}>
-                            x{item.quantity} · Motivo: {item.reason || "-"}
+                            {item.unitCount > 1 ? `Pieza ${item.unitIndex} de ${item.unitCount} · ` : ""}x{item.quantity} · Motivo: {item.reason || "-"}
                           </div>
                         </div>
                       </div>

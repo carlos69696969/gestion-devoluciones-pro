@@ -749,9 +749,7 @@ function shouldLoadOrderCatalogImages(viewMode) {
 }
 
 function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
-  const usedLineIds = new Set();
-  const refundableLines = [];
-  let subtotal = 0;
+  const requestedQtyByLineId = new Map();
 
   const byLine = new Map(orderLineItems.map((line) => [line.id, line]));
   const byVariant = new Map(orderLineItems.map((line) => [line.variantId, line]).filter(([k]) => k));
@@ -775,20 +773,33 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
       const title = String(item.title || "").trim().toLowerCase();
       line =
         orderLineItems.find(
-          (candidate) => !usedLineIds.has(candidate.id) && String(candidate.title || "").trim().toLowerCase() === title,
+          (candidate) => String(candidate.title || "").trim().toLowerCase() === title,
         ) || null;
     }
 
-    if (!line || usedLineIds.has(line.id)) {
+    if (!line) {
       throw new Error(`No se pudo mapear el producto "${item.title}" a una linea de la orden.`);
     }
-    usedLineIds.add(line.id);
 
-    const quantity = Math.max(1, Math.min(Number(item.quantity || 1), Number(line.quantity || 1)));
-    subtotal += Number(line.unitPrice || 0) * quantity;
+    const itemQuantity = Math.max(1, Number(item.quantity || 1));
+    const prevRequested = Number(requestedQtyByLineId.get(line.id) || 0);
+    const nextRequested = prevRequested + itemQuantity;
+    const maxLineQuantity = Math.max(1, Number(line.quantity || 1));
+    if (nextRequested > maxLineQuantity) {
+      throw new Error(`La cantidad a devolver para "${item.title}" excede la cantidad comprada.`);
+    }
+    requestedQtyByLineId.set(line.id, nextRequested);
+  }
+
+  const refundableLines = [];
+  let subtotal = 0;
+  for (const [lineId, quantity] of requestedQtyByLineId.entries()) {
+    const line = byLine.get(lineId);
+    if (!line) continue;
+    subtotal += Number(line.unitPrice || 0) * Number(quantity || 0);
     refundableLines.push({
-      lineItemId: line.id,
-      quantity,
+      lineItemId: lineId,
+      quantity: Number(quantity || 0),
       restockType: "NO_RESTOCK",
     });
   }
