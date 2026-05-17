@@ -27,13 +27,17 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
     const primary = await fetchProbe({ shopDomain, orderNumber, customerEmail });
     if (!primary) return null;
 
+    let effective = primary;
     let hasConfirmedReturnsFromProbe =
       typeof primary?.hasExistingReturns === "boolean"
         ? primary.hasExistingReturns
         : Array.isArray(primary?.completedRequests) && primary.completedRequests.length > 0;
 
     // Silent fallback: retry using only the order number in case shop/email aliases differ.
-    if (!hasConfirmedReturnsFromProbe && orderNumber) {
+    if (
+      orderNumber &&
+      (!hasConfirmedReturnsFromProbe || !primary?.isDelivered || primary?.hasEligibleItems === undefined)
+    ) {
       const fallback = await fetchProbe({
         shopDomain,
         orderNumber,
@@ -41,21 +45,31 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
         includeShop: false,
         includeEmail: false,
       });
-      hasConfirmedReturnsFromProbe =
-        typeof fallback?.hasExistingReturns === "boolean"
-          ? fallback.hasExistingReturns
-          : Array.isArray(fallback?.completedRequests) && fallback.completedRequests.length > 0;
-      if (!primary?.limitDate && fallback?.limitDate) {
-        primary.limitDate = fallback.limitDate;
+      if (fallback) {
+        effective = {
+          ...primary,
+          ...fallback,
+          limitDate: fallback?.limitDate || primary?.limitDate || "",
+          isDelivered: Boolean(fallback?.isDelivered || primary?.isDelivered),
+          hasEligibleItems:
+            typeof fallback?.hasEligibleItems === "boolean"
+              ? fallback.hasEligibleItems
+              : primary?.hasEligibleItems,
+        };
+        const fallbackHasConfirmed =
+          typeof fallback?.hasExistingReturns === "boolean"
+            ? fallback.hasExistingReturns
+            : Array.isArray(fallback?.completedRequests) && fallback.completedRequests.length > 0;
+        hasConfirmedReturnsFromProbe = hasConfirmedReturnsFromProbe || fallbackHasConfirmed;
       }
     }
 
     return {
       hasEligibleItems:
-        typeof primary?.hasEligibleItems === "boolean" ? primary.hasEligibleItems : undefined,
+        typeof effective?.hasEligibleItems === "boolean" ? effective.hasEligibleItems : undefined,
       hasConfirmedReturns: hasConfirmedReturnsFromProbe,
-      limitDate: primary?.limitDate || "",
-      isDelivered: Boolean(primary?.isDelivered),
+      limitDate: effective?.limitDate || "",
+      isDelivered: Boolean(effective?.isDelivered),
     };
   } catch {
     return null;
