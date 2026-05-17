@@ -316,7 +316,8 @@ function timelineStatusDescription(status, requestRow) {
     return "Tu paquete esta pendiente por recoger en sucursal.";
   }
   if (normalized === "reembolso_denegado" || normalized === "denegada") {
-    return "El reembolso fue denegado. Revisa el motivo de denegacion.";
+    const denialReason = String(requestRow?.rejectionReason || "").trim();
+    return denialReason || "El reembolso fue denegado. Revisa el motivo de denegacion.";
   }
   if (normalized === "rechazada") {
     const rejectionReason = String(requestRow?.rejectionReason || "").trim();

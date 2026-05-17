@@ -1757,7 +1757,7 @@ function CompletedReturnSummary({ requestItem }) {
       ) : null}
       {isPendingToReturn ? (
         <p className={`${styles.completedStatus} ${styles.returnedToCustomerHintText}`}>
-          Recoge tu paquete en nuestra sucursal: <BranchAddressLink address={requestItem.branchAddress} />. Horario: {requestItem.branchHours || "-"}. Tienes 30 dias para recogerlo. Fecha limite: {pickupDeadlineLabel || "-"}.
+          Recoge tu paquete en nuestra sucursal con tu nombre y numero de pedido: <BranchAddressLink address={requestItem.branchAddress} />. Horario: {requestItem.branchHours || "-"}. Tienes 30 dias para recogerlo. Fecha limite: {pickupDeadlineLabel || "-"}.
         </p>
       ) : null}
 
