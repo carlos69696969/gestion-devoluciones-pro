@@ -13,6 +13,7 @@ const ACTIVE_RETURN_STATUSES = [
 ];
 
 const ADMIN_API_VERSION = "2025-10";
+const DELIVERED_FULFILLMENT_STATUSES = new Set(["FULFILLED", "PARTIALLY_FULFILLED"]);
 
 function jsonWithCors(data) {
   return Response.json(data, {
@@ -51,6 +52,13 @@ function latestDeliveredAtFromOrderNode(orderNode) {
 
   if (!latestMs) return "";
   return new Date(latestMs).toISOString();
+}
+
+function deliveredByFulfillmentStatus(orderNode) {
+  const status = String(orderNode?.displayFulfillmentStatus || "")
+    .trim()
+    .toUpperCase();
+  return DELIVERED_FULFILLMENT_STATUSES.has(status);
 }
 
 async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
@@ -161,7 +169,10 @@ async function resolveDeliveryStatus({ prisma, requestedShop, orderNumber, custo
     const settings =
       (await prisma.returnSettings.findUnique({ where: { shop: shopCandidate } })) ||
       (await prisma.returnSettings.create({ data: { shop: shopCandidate } }));
-    const deliveredAt = latestDeliveredAtFromOrderNode(match);
+    const deliveredAtFromEvents = latestDeliveredAtFromOrderNode(match);
+    const deliveredAt =
+      deliveredAtFromEvents ||
+      (deliveredByFulfillmentStatus(match) ? String(match?.createdAt || "") : "");
     const deliveredMs = deliveredAt ? new Date(deliveredAt).getTime() : NaN;
     const limitDate = Number.isFinite(deliveredMs)
       ? new Date(deliveredMs + Number(settings.returnWindowDays || 0) * 24 * 60 * 60 * 1000)

@@ -14,6 +14,7 @@ const DEFAULT_REASONS = [
 
 const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
 const ADMIN_API_VERSION = "2025-10";
+const DELIVERED_FULFILLMENT_STATUSES = new Set(["FULFILLED", "PARTIALLY_FULFILLED"]);
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
 const NOT_RETURNED_KIND = "not_returned_after_30_days";
 const REQUEST_CREATED_KIND = "request_created";
@@ -211,12 +212,17 @@ function normalizeOrder(orderNode) {
       if (Number.isFinite(eventMs) && eventMs > latestDeliveredMs) latestDeliveredMs = eventMs;
     }
   }
-  const deliveredAtISO = latestDeliveredMs ? new Date(latestDeliveredMs).toISOString() : "";
+  const displayFulfillmentStatus = String(orderNode.displayFulfillmentStatus || "").toUpperCase();
+  const deliveredAtISO = latestDeliveredMs
+    ? new Date(latestDeliveredMs).toISOString()
+    : DELIVERED_FULFILLMENT_STATUSES.has(displayFulfillmentStatus)
+      ? String(orderNode.createdAt || "")
+      : "";
   return {
     id: orderNode.id,
     orderNumber: orderNode.name?.replace("#", "") || "",
     name: orderNode.name || "",
-    displayFulfillmentStatus: String(orderNode.displayFulfillmentStatus || "").toUpperCase(),
+    displayFulfillmentStatus,
     deliveredAt: deliveredAtISO,
     customerName: fallbackName,
     customerEmail: orderNode.email || "",
