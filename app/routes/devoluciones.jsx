@@ -820,10 +820,20 @@ export const loader = async ({ request }) => {
   const preferredHasSession = preferredShops.some((s) =>
     allSessions.some((sess) => String(sess.shop || "").trim().toLowerCase() === s),
   );
+  if (preferredShops.length && !preferredHasSession) {
+    return maybeProbeResponse(isProbe, {
+      reasons: baseReasonConfig.reasons,
+      evidenceReasons: baseReasonConfig.evidenceReasons,
+      settings: baseSettings,
+      autoOrder: null,
+      shop,
+      requestedMode,
+      error:
+        "La app no esta conectada con esta tienda en este momento. Entra al admin de Shopify, abre la app Portal Devoluciones y vuelve a intentar.",
+    });
+  }
   const candidateShops = preferredShops.length
-    ? (preferredHasSession
-        ? preferredShops
-        : Array.from(new Set([...preferredShops, ...offlineShops, ...sessionShops])))
+    ? preferredShops
     : Array.from(new Set([...offlineShops, ...sessionShops]));
 
   if (!candidateShops.length) {
@@ -1418,7 +1428,6 @@ export default function PublicReturnsPortal() {
     isExpired,
     limitDate,
     message,
-    diagnostic,
     completedRequests = [],
     completedTitle = "Solicitud de devolucion completada.",
     completedText = "",
@@ -1451,9 +1460,6 @@ export default function PublicReturnsPortal() {
           <div>
             <h1 className={styles.h1}>Portal de devoluciones</h1>
             {info ? <p className={`${styles.notice} ${styles.noticeMuted}`}>{info}</p> : null}
-            {typeof diagnostic === "string" ? (
-              <p className={`${styles.notice} ${styles.noticeMuted}`}>{diagnostic}</p>
-            ) : null}
             {error ? <p className={`${styles.notice} ${styles.noticeError}`}>{error}</p> : null}
             {message ? (
               <p

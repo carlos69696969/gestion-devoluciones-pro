@@ -116,8 +116,11 @@ async function resolveDeliveryStatus({ prisma, requestedShop, orderNumber, custo
   const preferredHasSession = preferredShops.some((candidate) =>
     allSessions.some((session) => String(session.shop || "").trim().toLowerCase() === candidate),
   );
+  if (preferredShops.length && !preferredHasSession) {
+    return { isDelivered: false, limitDate: "" };
+  }
   const candidateShops = preferredShops.length
-    ? (preferredHasSession ? preferredShops : Array.from(new Set([...preferredShops, ...sessionShops])))
+    ? preferredShops
     : Array.from(new Set(sessionShops));
 
   for (const shopCandidate of candidateShops) {
