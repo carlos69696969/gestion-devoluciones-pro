@@ -319,7 +319,8 @@ function timelineStatusDescription(status, requestRow) {
     return "El reembolso fue denegado. Revisa el motivo de denegacion.";
   }
   if (normalized === "rechazada") {
-    return "Tu solicitud fue rechazada. Revisa el motivo para mas detalle.";
+    const rejectionReason = String(requestRow?.rejectionReason || "").trim();
+    return rejectionReason || "Tu solicitud fue rechazada. Revisa el motivo para mas detalle.";
   }
   if (normalized === "no_devuelto") {
     return "Se marco como no devuelto por no recoger dentro del plazo.";
