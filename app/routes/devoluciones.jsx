@@ -87,6 +87,10 @@ function normalizePortalMode(value) {
   return "";
 }
 
+function isMyShopifyDomain(value) {
+  return String(value || "").trim().toLowerCase().endsWith(".myshopify.com");
+}
+
 function parseLines(value) {
   return String(value || "")
     .split(/\r?\n/)
@@ -765,11 +769,28 @@ export const loader = async ({ request }) => {
   const env = process.env || {};
   const incomingShop = (url.searchParams.get("shop") || "").trim().toLowerCase();
   const configuredShop = String(env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
-  const shop = incomingShop || configuredShop;
   const orderNumber = (url.searchParams.get("order") || "").trim();
   const email = (url.searchParams.get("email") || "").trim().toLowerCase();
   const requestedMode = normalizePortalMode(url.searchParams.get("mode"));
   const isProbe = url.searchParams.get("probe") === "1";
+
+  const allSessions = await prisma.session.findMany({
+    select: { id: true, shop: true, isOnline: true, accessToken: true },
+  });
+  const offlineSessions = allSessions.filter((session) => session.isOnline === false);
+  const offlineShops = offlineSessions
+    .map((session) => String(session.shop || "").trim().toLowerCase())
+    .filter(Boolean);
+  const sessionShops = allSessions
+    .map((session) => String(session.shop || "").trim().toLowerCase())
+    .filter(Boolean);
+  const preferredMyShopifyShops = [incomingShop, configuredShop].filter(isMyShopifyDomain);
+  const shop =
+    preferredMyShopifyShops[0] ||
+    offlineShops[0] ||
+    sessionShops[0] ||
+    incomingShop ||
+    configuredShop;
 
   if (!shop) {
     return maybeProbeResponse(isProbe, {
@@ -799,42 +820,9 @@ export const loader = async ({ request }) => {
   }
 
   const rawCandidates = Array.from(new Set([incomingShop, configuredShop].filter(Boolean)));
-  const allSessions = await prisma.session.findMany({
-    select: { id: true, shop: true, isOnline: true, accessToken: true },
-  });
-  const offlineSessions = allSessions.filter((session) => session.isOnline === false);
-  const offlineShops = offlineSessions
-    .map((session) => String(session.shop || "").trim().toLowerCase())
-    .filter(Boolean);
-  const sessionShops = offlineSessions
-    .map((session) => String(session.shop || "").trim().toLowerCase())
-    .filter(Boolean);
-  // Prefer the explicit shop from URL, then configured shop. If we don't have any sessions
-  // for that shop (common when the store has multiple myshopify.com domains), fall back to
-  // whatever sessions we do have so we can still fetch orders.
-  const preferredShops = incomingShop
-    ? [incomingShop]
-    : configuredShop
-      ? [configuredShop]
-      : [];
-  const preferredHasSession = preferredShops.some((s) =>
-    allSessions.some((sess) => String(sess.shop || "").trim().toLowerCase() === s),
+  const candidateShops = Array.from(
+    new Set([...preferredMyShopifyShops, ...offlineShops, ...sessionShops].filter(Boolean)),
   );
-  if (preferredShops.length && !preferredHasSession) {
-    return maybeProbeResponse(isProbe, {
-      reasons: baseReasonConfig.reasons,
-      evidenceReasons: baseReasonConfig.evidenceReasons,
-      settings: baseSettings,
-      autoOrder: null,
-      shop,
-      requestedMode,
-      error:
-        "La app no esta conectada con esta tienda en este momento. Entra al admin de Shopify, abre la app Portal Devoluciones y vuelve a intentar.",
-    });
-  }
-  const candidateShops = preferredShops.length
-    ? preferredShops
-    : Array.from(new Set([...offlineShops, ...sessionShops]));
 
   if (!candidateShops.length) {
     return maybeProbeResponse(isProbe, {
