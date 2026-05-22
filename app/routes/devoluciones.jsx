@@ -65,6 +65,70 @@ const ACTIVE_RETURN_STATUSES = new Set([
   "denegada",
 ]);
 const DELIVERED_RETURN_STATUSES = new Set(["recibida", "reembolsada", "completada"]);
+const NOTIFICATIONS_API_BASE_URL = String(
+  process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
+).replace(/\/+$/, "");
+const NOTIFICATIONS_API_KEY = String(
+  process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "",
+).trim();
+
+async function emitReturnNotificationEvent({ shopDomain, requestRow, requiresReview }) {
+  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL || !NOTIFICATIONS_API_KEY) {
+    return;
+  }
+
+  const mappedStatus = requiresReview ? "return_requested" : "return_approved";
+
+  const eventPayload = {
+    status: mappedStatus,
+    event: mappedStatus,
+    action: "confirm_request",
+    return_reference: requestRow.orderNumber || `DEV-${requestRow.id}`,
+    return_id: requestRow.id,
+    order_number: requestRow.orderNumber || null,
+    email: requestRow.customerEmail || null,
+    customer_email: requestRow.customerEmail || null,
+    customer: {
+      email: requestRow.customerEmail || null,
+      name: requestRow.customerName || null,
+      phone: requestRow.customerPhone || null,
+    },
+    note: requiresReview
+      ? "Tu solicitud esta siendo revisada por nuestro equipo."
+      : "Tu solicitud fue aprobada automaticamente.",
+    source: "portal_devoluciones_public",
+    return_method: requestRow.returnMethod || null,
+  };
+
+  try {
+    const response = await fetch(`${NOTIFICATIONS_API_BASE_URL}/api/returns/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": NOTIFICATIONS_API_KEY,
+        "x-shop-domain": shopDomain,
+      },
+      body: JSON.stringify({
+        shopDomain,
+        event: eventPayload,
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      console.error("Failed to emit return notification event from public portal", {
+        shopDomain,
+        status: response.status,
+        detail: String(detail || "").slice(0, 300),
+      });
+    }
+  } catch (error) {
+    console.error("Failed to emit return notification event from public portal", {
+      shopDomain,
+      error: String(error?.message || error || "unknown"),
+    });
+  }
+}
 
 function jsonWithCors(data) {
   return Response.json(data, {
@@ -1343,7 +1407,7 @@ export const action = async ({ request }) => {
     },
   ];
 
-  await prisma.returnRequest.create({
+  const createdRequest = await prisma.returnRequest.create({
     data: {
       shop,
       shopifyOrderId: payload.order.id,
@@ -1391,6 +1455,12 @@ export const action = async ({ request }) => {
         })),
       },
     },
+  });
+
+  await emitReturnNotificationEvent({
+    shopDomain: shop,
+    requestRow: createdRequest,
+    requiresReview,
   });
 
   return {
