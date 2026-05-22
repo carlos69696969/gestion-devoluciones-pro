@@ -54,6 +54,96 @@ const TIMELINE_META_KINDS = new Set([
 ]);
 const NOT_RETURNED_REASON = "El cliente no recogio su paquete en sucursal dentro de 30 dias.";
 const PICKUP_DEADLINE_DAYS = 30;
+const NOTIFICATIONS_API_BASE_URL = String(
+  process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
+).replace(/\/+$/, "");
+const NOTIFICATIONS_API_KEY = String(
+  process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "",
+).trim();
+
+const RETURN_EVENT_BY_INTENT = {
+  approve_request: "return_approved",
+  reject_request: "return_rejected",
+  mark_received: "return_picked_up",
+  pickup_attempt_failed: "return_pickup_scheduled",
+  reject_after_failed_pickups: "return_rejected",
+  deny_received: "return_rejected",
+  mark_returned_to_customer: "return_rejected",
+  mark_not_returned: "return_rejected",
+  process_refund: "refund_completed",
+};
+
+function buildReturnReference(requestRow) {
+  if (!requestRow) return "";
+  const orderNumber = String(requestRow.orderNumber || "").trim();
+  if (orderNumber) return orderNumber;
+  const id = Number(requestRow.id || 0);
+  return id ? `DEV-${id}` : "";
+}
+
+function buildReturnEventPayload({ requestRow, intent, note }) {
+  const mappedStatus = RETURN_EVENT_BY_INTENT[intent];
+  if (!mappedStatus || !requestRow) return null;
+
+  const returnReference = buildReturnReference(requestRow);
+  return {
+    status: mappedStatus,
+    event: mappedStatus,
+    action: intent,
+    return_reference: returnReference,
+    return_id: requestRow.id || null,
+    order_number: requestRow.orderNumber || null,
+    email: requestRow.customerEmail || null,
+    customer_email: requestRow.customerEmail || null,
+    customer: {
+      email: requestRow.customerEmail || null,
+      name: requestRow.customerName || null,
+      phone: requestRow.customerPhone || null,
+    },
+    note: note || "",
+    source: "portal_devoluciones",
+    return_method: requestRow.returnMethod || null,
+  };
+}
+
+async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, note = "" }) {
+  if (!shopDomain || !NOTIFICATIONS_API_BASE_URL || !NOTIFICATIONS_API_KEY) {
+    return;
+  }
+  const eventPayload = buildReturnEventPayload({ requestRow, intent, note });
+  if (!eventPayload) return;
+
+  try {
+    const response = await fetch(`${NOTIFICATIONS_API_BASE_URL}/api/returns/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": NOTIFICATIONS_API_KEY,
+        "x-shop-domain": shopDomain,
+      },
+      body: JSON.stringify({
+        shopDomain,
+        event: eventPayload,
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      console.error("Failed to emit return notification event", {
+        shopDomain,
+        intent,
+        status: response.status,
+        detail: String(detail || "").slice(0, 300),
+      });
+    }
+  } catch (error) {
+    console.error("Failed to emit return notification event", {
+      shopDomain,
+      intent,
+      error: String(error?.message || error || "unknown"),
+    });
+  }
+}
 
 function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
@@ -957,6 +1047,12 @@ export const action = async ({ request }) => {
         }),
       },
     });
+    await emitReturnNotificationEvent({
+      shopDomain: session.shop,
+      requestRow,
+      intent,
+      note: approvedMessage,
+    });
     return { ok: true, message: "Solicitud aprobada." };
   }
 
@@ -974,6 +1070,12 @@ export const action = async ({ request }) => {
           reason: rejectionReason,
         }),
       },
+    });
+    await emitReturnNotificationEvent({
+      shopDomain: session.shop,
+      requestRow,
+      intent,
+      note: rejectionReason,
     });
     return { ok: true, message: "Solicitud rechazada." };
   }
@@ -998,6 +1100,12 @@ export const action = async ({ request }) => {
           reason: "Recibimos tu producto. Estamos validando para finalizar el proceso.",
         }),
       },
+    });
+    await emitReturnNotificationEvent({
+      shopDomain: session.shop,
+      requestRow,
+      intent,
+      note: "Recibimos tu producto para validar la devolucion.",
     });
     return { ok: true, message: "Solicitud marcada como recibida." };
   }
@@ -1024,6 +1132,12 @@ export const action = async ({ request }) => {
           reason: rejectionReason,
         }),
       },
+    });
+    await emitReturnNotificationEvent({
+      shopDomain: session.shop,
+      requestRow,
+      intent,
+      note: rejectionReason,
     });
     return {
       ok: true,
@@ -1053,6 +1167,12 @@ export const action = async ({ request }) => {
         refundError: null,
       },
     });
+    await emitReturnNotificationEvent({
+      shopDomain: session.shop,
+      requestRow,
+      intent,
+      note: rejectionReason,
+    });
     return { ok: true, message: "Solicitud rechazada por intentos de recoleccion fallidos." };
   }
 
@@ -1075,6 +1195,12 @@ export const action = async ({ request }) => {
         refundError: null,
       },
     });
+    await emitReturnNotificationEvent({
+      shopDomain: session.shop,
+      requestRow,
+      intent,
+      note: rejectionReason,
+    });
     return { ok: true, message: "Reembolso denegado y enviado a devoluciones pendientes por recoger." };
   }
 
@@ -1091,6 +1217,12 @@ export const action = async ({ request }) => {
           reason: RETURNED_TO_CUSTOMER_MESSAGE,
         }),
       },
+    });
+    await emitReturnNotificationEvent({
+      shopDomain: session.shop,
+      requestRow,
+      intent,
+      note: RETURNED_TO_CUSTOMER_MESSAGE,
     });
     return { ok: true, message: "Devolucion marcada como devuelta al cliente y enviada al historial." };
   }
@@ -1119,6 +1251,12 @@ export const action = async ({ request }) => {
           reason: NOT_RETURNED_REASON,
         }),
       },
+    });
+    await emitReturnNotificationEvent({
+      shopDomain: session.shop,
+      requestRow,
+      intent,
+      note: NOT_RETURNED_REASON,
     });
     return { ok: true, message: "Solicitud marcada como no devuelta y enviada al historial." };
   }
@@ -1212,6 +1350,12 @@ export const action = async ({ request }) => {
           finalRefund,
           refundError: null,
         },
+      });
+      await emitReturnNotificationEvent({
+        shopDomain: session.shop,
+        requestRow,
+        intent,
+        note: "Tu reembolso fue procesado al metodo de pago original.",
       });
       return { ok: true, message: "Reembolso procesado al metodo de pago original." };
     } catch (error) {
