@@ -107,20 +107,27 @@ function buildReturnEventPayload({ requestRow, intent, note }) {
 }
 
 async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, note = "" }) {
-  if (!shopDomain || !NOTIFICATIONS_API_BASE_URL || !NOTIFICATIONS_API_KEY) {
+  if (!shopDomain || !NOTIFICATIONS_API_BASE_URL) {
     return;
   }
   const eventPayload = buildReturnEventPayload({ requestRow, intent, note });
   if (!eventPayload) return;
 
+  const endpoint = NOTIFICATIONS_API_KEY
+    ? `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`
+    : `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`;
+  const headers = {
+    "Content-Type": "application/json",
+    "x-shop-domain": shopDomain,
+  };
+  if (NOTIFICATIONS_API_KEY) {
+    headers["x-api-key"] = NOTIFICATIONS_API_KEY;
+  }
+
   try {
-    const response = await fetch(`${NOTIFICATIONS_API_BASE_URL}/api/returns/events`, {
+    const response = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": NOTIFICATIONS_API_KEY,
-        "x-shop-domain": shopDomain,
-      },
+      headers,
       body: JSON.stringify({
         shopDomain,
         event: eventPayload,
@@ -132,6 +139,7 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, not
       console.error("Failed to emit return notification event", {
         shopDomain,
         intent,
+        endpoint,
         status: response.status,
         detail: String(detail || "").slice(0, 300),
       });
@@ -140,6 +148,7 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, not
     console.error("Failed to emit return notification event", {
       shopDomain,
       intent,
+      endpoint,
       error: String(error?.message || error || "unknown"),
     });
   }

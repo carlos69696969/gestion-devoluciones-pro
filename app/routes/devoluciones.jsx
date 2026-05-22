@@ -73,11 +73,21 @@ const NOTIFICATIONS_API_KEY = String(
 ).trim();
 
 async function emitReturnNotificationEvent({ shopDomain, requestRow, requiresReview }) {
-  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL || !NOTIFICATIONS_API_KEY) {
+  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
     return;
   }
 
   const mappedStatus = requiresReview ? "return_requested" : "return_approved";
+  const endpoint = NOTIFICATIONS_API_KEY
+    ? `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`
+    : `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`;
+  const headers = {
+    "Content-Type": "application/json",
+    "x-shop-domain": shopDomain,
+  };
+  if (NOTIFICATIONS_API_KEY) {
+    headers["x-api-key"] = NOTIFICATIONS_API_KEY;
+  }
 
   const eventPayload = {
     status: mappedStatus,
@@ -101,13 +111,9 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, requiresRev
   };
 
   try {
-    const response = await fetch(`${NOTIFICATIONS_API_BASE_URL}/api/returns/events`, {
+    const response = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": NOTIFICATIONS_API_KEY,
-        "x-shop-domain": shopDomain,
-      },
+      headers,
       body: JSON.stringify({
         shopDomain,
         event: eventPayload,
@@ -118,6 +124,7 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, requiresRev
       const detail = await response.text().catch(() => "");
       console.error("Failed to emit return notification event from public portal", {
         shopDomain,
+        endpoint,
         status: response.status,
         detail: String(detail || "").slice(0, 300),
       });
@@ -125,6 +132,7 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, requiresRev
   } catch (error) {
     console.error("Failed to emit return notification event from public portal", {
       shopDomain,
+      endpoint,
       error: String(error?.message || error || "unknown"),
     });
   }
