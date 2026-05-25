@@ -1,4 +1,4 @@
-/* eslint-disable react/prop-types */
+﻿/* eslint-disable react/prop-types */
 import { useEffect, useState } from "react";
 import { Form, useActionData, useFetcher, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -35,7 +35,7 @@ const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento
 const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
 const RETURN_TO_CUSTOMER_STATUSES = new Set(["por_devolver"]);
 const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"]);
-const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito.";
+const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devoluciÃ³n fue regresada con Ã©xito.";
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
 const NOT_RETURNED_KIND = "not_returned_after_30_days";
 const REQUEST_CREATED_KIND = "request_created";
@@ -153,6 +153,11 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, not
     });
   }
 }
+
+const PICKUP_FAILED_REASON_OPTIONS = [
+  "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta. Nuestro equipo volverá a intentarlo mañana. 📦✨",
+  "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
+];
 
 function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
@@ -1579,6 +1584,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [mediaRequested, setMediaRequested] = useState(false);
   const [lazyMediaByItemId, setLazyMediaByItemId] = useState({});
+  const [pickupAttemptReason, setPickupAttemptReason] = useState("");
   const mediaFetcher = useFetcher();
   const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
   const currentTimelineEvent = timelineEvents[0] || null;
@@ -1907,11 +1913,30 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
           >
             <input type="hidden" name="intent" value="pickup_attempt_failed" />
             <input type="hidden" name="id" value={request.id} />
+            <div className={styles.quickReasonActions}>
+              <button
+                className={`${styles.btn} ${styles.quickReasonBtn}`}
+                type="button"
+                onClick={() => setPickupAttemptReason(PICKUP_FAILED_REASON_OPTIONS[0])}
+                disabled={isSubmitting}
+              >
+                Usar mensaje automatico 1
+              </button>
+              <button
+                className={`${styles.btn} ${styles.quickReasonBtn}`}
+                type="button"
+                onClick={() => setPickupAttemptReason(PICKUP_FAILED_REASON_OPTIONS[1])}
+                disabled={isSubmitting}
+              >
+                Usar mensaje automatico 2
+              </button>
+            </div>
             <input
               className={styles.input}
               name="rejectionReason"
               placeholder="Descripcion del intento fallido (obligatoria)"
-              defaultValue=""
+              value={pickupAttemptReason}
+              onChange={(event) => setPickupAttemptReason(event.target.value)}
             />
             <button className={`${styles.btn} ${styles.btnWarning}`} type="submit" disabled={isSubmitting}>
               {failedAttemptButtonLabel}
@@ -1987,3 +2012,5 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
+
+
