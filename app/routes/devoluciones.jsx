@@ -1,4 +1,4 @@
-/* eslint-disable react/prop-types */
+﻿/* eslint-disable react/prop-types */
 import { useEffect, useMemo, useState } from "react";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import styles from "../styles/devoluciones.module.css";
@@ -27,7 +27,7 @@ const EVIDENCE_IMAGE_MAX_EDGE = 1280;
 const EVIDENCE_IMAGE_MAX_BYTES = 450 * 1024;
 const EVIDENCE_IMAGE_QUALITY_START = 0.82;
 const EVIDENCE_IMAGE_QUALITY_MIN = 0.58;
-const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolución fue regresada con éxito.";
+const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devoluciÃ³n fue regresada con Ã©xito.";
 const TIMELINE_META_KINDS = new Set([
   REQUEST_CREATED_KIND,
   STATUS_REVIEW_KIND,
@@ -174,7 +174,7 @@ function reasonKey(value) {
   return String(value || "")
     .trim()
     .toLowerCase()
-    // Make comparisons accent-insensitive (e.g. "dañado" vs "danado").
+    // Make comparisons accent-insensitive (e.g. "daÃ±ado" vs "danado").
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
@@ -1065,6 +1065,7 @@ export const loader = async ({ request }) => {
           branchAddress: settings.branchAddress || "-",
           branchInstructions: settings.branchInstructions || "-",
           branchHours: settings.branchHours || "-",
+          pickupHours: settings.pickupHours || "-",
           pickupAddress: requestRow.pickupAddress || "-",
           pickupNeighborhood: requestRow.pickupNeighborhood || "-",
           pickupCity: requestRow.pickupCity || "-",
@@ -1852,6 +1853,7 @@ function CompletedReturnSummary({ requestItem }) {
                 .join(", ") || "-"}
             </p>
             <p><strong>Dia de recoleccion:</strong> {requestItem.pickupDate || "-"}</p>
+            <p><strong>Horario de recoleccion:</strong> {requestItem.pickupHours || "-"}</p>
             {requestItem.pickupNotes ? <p><strong>Instrucciones del cliente:</strong> {requestItem.pickupNotes}</p> : null}
           </>
         ) : (
@@ -2182,7 +2184,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                           <div className={styles.productMeta}>{item.variantSummary}</div>
                         ) : null}
                         <div className={styles.productMeta}>
-                          {item.unitCount > 1 ? `Pieza ${item.unitIndex} de ${item.unitCount} · ` : ""}x{item.quantity} - ${toMXN(item.unitPrice)} c/u
+                          {item.unitCount > 1 ? `Pieza ${item.unitIndex} de ${item.unitCount} Â· ` : ""}x{item.quantity} - ${toMXN(item.unitPrice)} c/u
                         </div>
                         {isAlreadyReturned ? (
                           <div className={`${styles.notice} ${styles.noticeMuted}`} style={{ marginTop: 4 }}>
@@ -2359,8 +2361,8 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                   <label htmlFor="return_method_pickup" className={styles.radioContent}>
                     <div className={styles.radioTitle}>
                       {requiresReview
-                        ? "Recoleccion a domicilio (sin costo) 🚚"
-                        : `Recoleccion a domicilio ($${toMXN(pickupCost)} MXN) 🚚`}
+                        ? "Recoleccion a domicilio (sin costo) ðŸšš"
+                        : `Recoleccion a domicilio ($${toMXN(pickupCost)} MXN) ðŸšš`}
                     </div>
                     <div className={styles.radioDesc}>
                       Nosotros recogemos el paquete a tu domicilio.
@@ -2491,7 +2493,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                             <div className={styles.productMeta}>{item.variantSummary}</div>
                           ) : null}
                           <div className={styles.productMeta}>
-                            {item.unitCount > 1 ? `Pieza ${item.unitIndex} de ${item.unitCount} · ` : ""}x{item.quantity} · Motivo: {item.reason || "-"}
+                            {item.unitCount > 1 ? `Pieza ${item.unitIndex} de ${item.unitCount} Â· ` : ""}x{item.quantity} Â· Motivo: {item.reason || "-"}
                           </div>
                         </div>
                       </div>
@@ -2550,3 +2552,5 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     </section>
   );
 }
+
+
