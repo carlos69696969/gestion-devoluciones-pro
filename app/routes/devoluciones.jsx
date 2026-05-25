@@ -753,6 +753,19 @@ function statusLabelForCustomer(status) {
   return normalized || "-";
 }
 
+function pickupHoursOnlyLabel(rawHours) {
+  const text = String(rawHours || "").trim();
+  if (!text || text === "-") return "-";
+
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const rangeMatch = normalized.match(/(?:de\s*)?(\d{1,2}(?:[:.]\d{2})?)\s*(?:a|-|hasta)\s*(\d{1,2}(?:[:.]\d{2})?)/i);
+  if (rangeMatch) {
+    return `de ${rangeMatch[1]} a ${rangeMatch[2]}`;
+  }
+
+  return normalized;
+}
+
 async function getOrCreateSettings(shop) {
   const { default: prisma } = await import("../db.server");
   const existing = await prisma.returnSettings.findUnique({ where: { shop } });
@@ -1853,7 +1866,7 @@ function CompletedReturnSummary({ requestItem }) {
                 .join(", ") || "-"}
             </p>
             <p><strong>Dia de recoleccion:</strong> {requestItem.pickupDate || "-"}</p>
-            <p><strong>Horario de recoleccion:</strong> {requestItem.pickupHours || "-"}</p>
+            <p><strong>Horario de recoleccion:</strong> {pickupHoursOnlyLabel(requestItem.pickupHours)}</p>
             {requestItem.pickupNotes ? <p><strong>Instrucciones del cliente:</strong> {requestItem.pickupNotes}</p> : null}
           </>
         ) : (
@@ -2400,7 +2413,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                 <div className={styles.summary} style={{ marginTop: 12 }}>
                   <h3 className={styles.sectionTitle}>Recoleccion a domicilio</h3>
                   <p><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
-                  <p><strong>Horario de recoleccion:</strong> {settings.pickupHours}</p>
+                  <p><strong>Horario de recoleccion:</strong> {pickupHoursOnlyLabel(settings.pickupHours)}</p>
                   <div className={styles.summary} style={{ marginTop: 12, background: "#fff" }}>
                     <h3 className={styles.sectionTitle} style={{ marginTop: 0 }}>
                       Direccion de recoleccion
@@ -2552,5 +2565,6 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     </section>
   );
 }
+
 
 
