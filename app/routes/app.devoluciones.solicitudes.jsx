@@ -979,6 +979,15 @@ export const loader = async ({ request }) => {
     const pickupDeadlineAt = pickupDeadlineDate ? pickupDeadlineDate.toISOString() : "";
     const isPickupDeadlineExpired =
       Boolean(pickupDeadlineDate) && new Date().getTime() > pickupDeadlineDate.getTime();
+    const branchDeliveryDeadlineDate =
+      requestRow.returnMethod !== "pickup" && requestRow.limitDate ? new Date(requestRow.limitDate) : null;
+    const hasValidBranchDeliveryDeadline =
+      Boolean(branchDeliveryDeadlineDate) && Number.isFinite(branchDeliveryDeadlineDate.getTime());
+    const branchDeliveryDeadlineAt = hasValidBranchDeliveryDeadline
+      ? branchDeliveryDeadlineDate.toISOString()
+      : "";
+    const isBranchDeliveryDeadlineExpired =
+      hasValidBranchDeliveryDeadline && new Date().getTime() > branchDeliveryDeadlineDate.getTime();
     return {
       ...requestRow,
       rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
@@ -988,6 +997,8 @@ export const loader = async ({ request }) => {
       returnedToCustomerAt,
       pickupDeadlineAt,
       isPickupDeadlineExpired,
+      branchDeliveryDeadlineAt,
+      isBranchDeliveryDeadlineExpired,
       items: requestRow.items.map((item) => {
         const image = imageMap[itemKeyFromRecord(item)] || null;
         return {
@@ -1137,6 +1148,14 @@ export const action = async ({ request }) => {
     }
     if (String(requestRow.status || "").toLowerCase() !== "aprobada") {
       return { ok: false, error: "Solo puedes marcar como nunca llego una solicitud aprobada." };
+    }
+    const branchDeliveryDeadlineDate = requestRow.limitDate ? new Date(requestRow.limitDate) : null;
+    const isBranchDeliveryDeadlineExpired =
+      Boolean(branchDeliveryDeadlineDate) &&
+      Number.isFinite(branchDeliveryDeadlineDate.getTime()) &&
+      new Date().getTime() > branchDeliveryDeadlineDate.getTime();
+    if (!isBranchDeliveryDeadlineExpired) {
+      return { ok: false, error: "Aun no vence la fecha limite de entrega para marcar esta solicitud como nunca llego." };
     }
     await prisma.returnRequest.update({
       where: { id },
@@ -1630,7 +1649,8 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
   const isPickupMethod = request.returnMethod === "pickup";
   const isPickupFailedAttempt = isPickupFailedAttemptStatus(status);
   const canMarkReceived = status === "aprobada" || isPickupFailedAttempt;
-  const canMarkNeverArrived = !isPickupMethod && status === "aprobada";
+  const canMarkNeverArrived =
+    !isPickupMethod && status === "aprobada" && Boolean(request.isBranchDeliveryDeadlineExpired);
   const canRegisterPickupFailedAttempt =
     isPickupMethod && (status === "aprobada" || status === "intento_fallido_1");
   const canRejectAfterFailedPickups = isPickupMethod && status === "intento_fallido_2";
@@ -1734,6 +1754,12 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
             <span className={styles.kvKey}>Fecha solicitud</span>
             <span className={styles.kvVal}>{new Date(request.createdAt).toLocaleString("es-MX")}</span>
           </div>
+          {!isPickupMethod && request.branchDeliveryDeadlineAt ? (
+            <div className={styles.kvRow}>
+              <span className={styles.kvKey}>Fecha limite de entrega</span>
+              <span className={styles.kvVal}>{new Date(request.branchDeliveryDeadlineAt).toLocaleDateString("es-MX")}</span>
+            </div>
+          ) : null}
           {isHistoryStatus && closedAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Fecha de cierre</span>
@@ -2130,9 +2156,4 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
-
-
-
-
-
 
