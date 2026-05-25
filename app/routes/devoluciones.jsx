@@ -1048,6 +1048,11 @@ export const loader = async ({ request }) => {
         .filter((requestRow) => ACTIVE_RETURN_STATUSES.has(String(requestRow.status || "").toLowerCase()))
         .map((requestRow) => {
           const status = String(requestRow.status || "").toLowerCase();
+          const deliveredAtDate = order.deliveredAt ? new Date(order.deliveredAt) : null;
+          const branchDeliveryDeadlineDate =
+            requestRow.returnMethod !== "pickup" && deliveredAtDate && Number.isFinite(deliveredAtDate.getTime())
+              ? addDays(deliveredAtDate, settings.returnWindowDays)
+              : null;
           const pendingPickupSinceAt =
             latestEntryAtFromKinds(requestRow.rejectionReason, ["denied_after_received"]) ||
             requestRow.updatedAt?.toISOString?.() ||
@@ -1078,6 +1083,7 @@ export const loader = async ({ request }) => {
           branchAddress: settings.branchAddress || "-",
           branchInstructions: settings.branchInstructions || "-",
           branchHours: settings.branchHours || "-",
+          branchDeliveryDeadlineAt: branchDeliveryDeadlineDate ? branchDeliveryDeadlineDate.toISOString() : "",
           pickupHours: settings.pickupHours || "-",
           pickupAddress: requestRow.pickupAddress || "-",
           pickupNeighborhood: requestRow.pickupNeighborhood || "-",
@@ -1873,6 +1879,9 @@ function CompletedReturnSummary({ requestItem }) {
           <>
             <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={requestItem.branchAddress} /></p>
             <p><strong>Instrucciones:</strong> {requestItem.branchInstructions || "-"}</p>
+            {requestItem.branchDeliveryDeadlineAt ? (
+              <p><strong>Fecha limite de entrega:</strong> {new Date(requestItem.branchDeliveryDeadlineAt).toLocaleDateString("es-MX")}</p>
+            ) : null}
             <p><strong>Horarios de entrega:</strong> {requestItem.branchHours || "-"}</p>
           </>
         )}
