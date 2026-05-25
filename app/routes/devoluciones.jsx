@@ -2374,8 +2374,8 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                   <label htmlFor="return_method_pickup" className={styles.radioContent}>
                     <div className={styles.radioTitle}>
                       {requiresReview
-                        ? "Recoleccion a domicilio (sin costo) ðŸšš"
-                        : `Recoleccion a domicilio ($${toMXN(pickupCost)} MXN) ðŸšš`}
+                        ? "Recoleccion a domicilio (sin costo) 🚚"
+                        : `Recoleccion a domicilio ($${toMXN(pickupCost)} MXN) 🚚`}
                     </div>
                     <div className={styles.radioDesc}>
                       Nosotros recogemos el paquete a tu domicilio.
@@ -2565,6 +2565,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     </section>
   );
 }
+
 
 
 
