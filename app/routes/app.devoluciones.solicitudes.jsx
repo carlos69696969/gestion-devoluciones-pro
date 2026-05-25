@@ -1585,6 +1585,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
   const [mediaRequested, setMediaRequested] = useState(false);
   const [lazyMediaByItemId, setLazyMediaByItemId] = useState({});
   const [pickupAttemptReason, setPickupAttemptReason] = useState("");
+  const [isPickupReasonModalOpen, setIsPickupReasonModalOpen] = useState(false);
   const mediaFetcher = useFetcher();
   const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
   const currentTimelineEvent = timelineEvents[0] || null;
@@ -1906,42 +1907,68 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
         ) : null}
 
         {canRegisterPickupFailedAttempt ? (
-          <Form
-            key={`pickup-attempt-${request.id}-${new Date(request.updatedAt).toISOString()}`}
-            method="post"
-            className={styles.rejectForm}
-          >
-            <input type="hidden" name="intent" value="pickup_attempt_failed" />
-            <input type="hidden" name="id" value={request.id} />
-            <div className={styles.quickReasonActions}>
-              <button
-                className={`${styles.btn} ${styles.quickReasonBtn}`}
-                type="button"
-                onClick={() => setPickupAttemptReason(PICKUP_FAILED_REASON_OPTIONS[0])}
-                disabled={isSubmitting}
-              >
-                Usar mensaje automatico 1
+          <>
+            <Form
+              key={`pickup-attempt-${request.id}-${new Date(request.updatedAt).toISOString()}`}
+              method="post"
+              className={styles.rejectForm}
+            >
+              <input type="hidden" name="intent" value="pickup_attempt_failed" />
+              <input type="hidden" name="id" value={request.id} />
+              <div className={styles.quickReasonActions}>
+                <button
+                  className={`${styles.btn} ${styles.quickReasonBtn} ${styles.quickReasonOpenBtn}`}
+                  type="button"
+                  onClick={() => setIsPickupReasonModalOpen(true)}
+                  disabled={isSubmitting}
+                >
+                  Elegir mensaje
+                </button>
+              </div>
+              <textarea
+                className={styles.textarea}
+                name="rejectionReason"
+                placeholder="Descripcion del intento fallido (obligatoria)"
+                value={pickupAttemptReason}
+                onChange={(event) => setPickupAttemptReason(event.target.value)}
+              />
+              <button className={`${styles.btn} ${styles.btnWarning}`} type="submit" disabled={isSubmitting}>
+                {failedAttemptButtonLabel}
               </button>
-              <button
-                className={`${styles.btn} ${styles.quickReasonBtn}`}
-                type="button"
-                onClick={() => setPickupAttemptReason(PICKUP_FAILED_REASON_OPTIONS[1])}
-                disabled={isSubmitting}
-              >
-                Usar mensaje automatico 2
-              </button>
-            </div>
-            <input
-              className={styles.input}
-              name="rejectionReason"
-              placeholder="Descripcion del intento fallido (obligatoria)"
-              value={pickupAttemptReason}
-              onChange={(event) => setPickupAttemptReason(event.target.value)}
-            />
-            <button className={`${styles.btn} ${styles.btnWarning}`} type="submit" disabled={isSubmitting}>
-              {failedAttemptButtonLabel}
-            </button>
-          </Form>
+            </Form>
+
+            {isPickupReasonModalOpen ? (
+              <div className={styles.reasonModalOverlay} role="dialog" aria-modal="true" aria-label="Seleccion de mensaje">
+                <div className={styles.reasonModal}>
+                  <p className={styles.reasonModalTitle}>Selecciona un mensaje completo</p>
+                  {PICKUP_FAILED_REASON_OPTIONS.map((option, index) => (
+                    <button
+                      key={`pickup_reason_${index}`}
+                      type="button"
+                      className={styles.reasonOptionCard}
+                      onClick={() => {
+                        setPickupAttemptReason(option);
+                        setIsPickupReasonModalOpen(false);
+                      }}
+                      disabled={isSubmitting}
+                    >
+                      <span className={styles.reasonOptionLabel}>Mensaje automatico {index + 1}</span>
+                      <span className={styles.reasonOptionText}>{option}</span>
+                    </button>
+                  ))}
+                  <div className={styles.reasonModalActions}>
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.quickReasonBtn}`}
+                      onClick={() => setIsPickupReasonModalOpen(false)}
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
         ) : null}
 
         {canRejectAfterFailedPickups ? (

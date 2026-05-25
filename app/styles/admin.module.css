@@ -499,6 +499,81 @@
 }
 
 
+.quickReasonOpenBtn {
+  background: #f3f4f6;
+}
+
+.rejectForm .textarea {
+  width: min(760px, 100%);
+  min-height: 100px;
+}
+
+.reasonModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.reasonModal {
+  width: min(760px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+  display: grid;
+  gap: 10px;
+}
+
+.reasonModalTitle {
+  margin: 0;
+  color: #111827;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.reasonOptionCard {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e1e3e5;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.reasonOptionCard:hover {
+  border-color: rgba(0, 91, 211, 0.45);
+  box-shadow: 0 0 0 3px rgba(0, 91, 211, 0.1);
+}
+
+.reasonOptionLabel {
+  color: #202223;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.reasonOptionText {
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.reasonModalActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .errorMsg {
   margin: 8px 0;
   color: #b42318;
