@@ -442,6 +442,11 @@
   margin-top: 12px;
 }
 
+.actionRight {
+  margin-left: auto;
+}
+
+
 .historyActions {
   display: flex;
   align-items: center;

@@ -1,6 +1,6 @@
 ﻿/* eslint-disable react/prop-types */
 import { useEffect, useState } from "react";
-import { Form, useActionData, useFetcher, useLoaderData, useNavigation } from "react-router";
+import { Form, useActionData, useFetcher, useLoaderData, useLocation, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -163,6 +163,7 @@ const REJECT_AFTER_FAILED_AUTO_REASON =
 const REJECT_AFTER_FAILED_REASON_OPTIONS = [
   REJECT_AFTER_FAILED_AUTO_REASON,
 ];
+const NEVER_ARRIVED_BRANCH_REASON = "Nunca llego a la sucursal para completar la devolucion.";
 
 
 function getStatusClassName(status) {
@@ -1130,6 +1131,31 @@ export const action = async ({ request }) => {
     return { ok: true, message: "Solicitud marcada como recibida." };
   }
 
+  if (intent === "mark_never_arrived") {
+    if (String(requestRow.returnMethod || "").toLowerCase() === "pickup") {
+      return { ok: false, error: "Solo aplica a solicitudes de entrega en sucursal." };
+    }
+    if (String(requestRow.status || "").toLowerCase() !== "aprobada") {
+      return { ok: false, error: "Solo puedes marcar como nunca llego una solicitud aprobada." };
+    }
+    await prisma.returnRequest.update({
+      where: { id },
+      data: {
+        status: "no_devuelto",
+        rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+          kind: "never_arrived_branch",
+          reason: NEVER_ARRIVED_BRANCH_REASON,
+        }),
+      },
+    });
+    await emitReturnNotificationEvent({
+      shopDomain: session.shop,
+      requestRow,
+      intent,
+      note: NEVER_ARRIVED_BRANCH_REASON,
+    });
+    return { ok: true, message: "Solicitud marcada como nunca llego y enviada al historial." };
+  }
   if (intent === "pickup_attempt_failed") {
     const currentStatus = String(requestRow.status || "").toLowerCase();
     if (requestRow.returnMethod !== "pickup") {
@@ -1595,6 +1621,8 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
   const [rejectAfterFailedReason, setRejectAfterFailedReason] = useState("");
   const [isRejectAfterFailedReasonModalOpen, setIsRejectAfterFailedReasonModalOpen] = useState(false);
   const mediaFetcher = useFetcher();
+  const location = useLocation();
+  const currentFormAction = `${location.pathname}${location.search}`;
   const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
   const currentTimelineEvent = timelineEvents[0] || null;
   const olderTimelineEvents = timelineEvents.slice(1);
@@ -1602,6 +1630,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
   const isPickupMethod = request.returnMethod === "pickup";
   const isPickupFailedAttempt = isPickupFailedAttemptStatus(status);
   const canMarkReceived = status === "aprobada" || isPickupFailedAttempt;
+  const canMarkNeverArrived = !isPickupMethod && status === "aprobada";
   const canRegisterPickupFailedAttempt =
     isPickupMethod && (status === "aprobada" || status === "intento_fallido_1");
   const canRejectAfterFailedPickups = isPickupMethod && status === "intento_fallido_2";
@@ -1881,14 +1910,14 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
       <div className={styles.actionRow}>
         {status === "en_revision" ? (
           <>
-            <Form method="post">
+            <Form method="post" action={currentFormAction}>
               <input type="hidden" name="intent" value="approve_request" />
               <input type="hidden" name="id" value={request.id} />
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
                 Aprobar
               </button>
             </Form>
-            <Form method="post" className={styles.rejectForm}>
+            <Form method="post" action={currentFormAction} className={styles.rejectForm}>
               <input type="hidden" name="intent" value="reject_request" />
               <input type="hidden" name="id" value={request.id} />
               <input
@@ -1905,7 +1934,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
         ) : null}
 
         {canMarkReceived ? (
-          <Form method="post">
+          <Form method="post" action={currentFormAction}>
             <input type="hidden" name="intent" value="mark_received" />
             <input type="hidden" name="id" value={request.id} />
             <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
@@ -1914,11 +1943,20 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
           </Form>
         ) : null}
 
+        {canMarkNeverArrived ? (
+          <Form method="post" action={currentFormAction} className={styles.actionRight}>
+            <input type="hidden" name="intent" value="mark_never_arrived" />
+            <input type="hidden" name="id" value={request.id} />
+            <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
+              Nunca llego
+            </button>
+          </Form>
+        ) : null}
         {canRegisterPickupFailedAttempt ? (
           <>
             <Form
               key={`pickup-attempt-${request.id}-${new Date(request.updatedAt).toISOString()}`}
-              method="post"
+              method="post" action={currentFormAction}
               className={styles.rejectForm}
             >
               <input type="hidden" name="intent" value="pickup_attempt_failed" />
@@ -1981,7 +2019,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
 
         {canRejectAfterFailedPickups ? (
           <>
-            <Form method="post" className={styles.rejectForm}>
+            <Form method="post" action={currentFormAction} className={styles.rejectForm}>
               <input type="hidden" name="intent" value="reject_after_failed_pickups" />
               <input type="hidden" name="id" value={request.id} />
               <div className={styles.quickReasonActions}>
@@ -2042,14 +2080,14 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
 
         {status === "recibida" ? (
           <>
-            <Form method="post">
+            <Form method="post" action={currentFormAction}>
               <input type="hidden" name="intent" value="process_refund" />
               <input type="hidden" name="id" value={request.id} />
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
                 Procesar reembolso
               </button>
             </Form>
-            <Form method="post" className={styles.rejectForm}>
+            <Form method="post" action={currentFormAction} className={styles.rejectForm}>
               <input type="hidden" name="intent" value="deny_received" />
               <input type="hidden" name="id" value={request.id} />
               <input
@@ -2066,7 +2104,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
         ) : null}
 
         {canMarkReturnedToCustomer ? (
-          <Form method="post">
+          <Form method="post" action={currentFormAction}>
             <input type="hidden" name="intent" value="mark_returned_to_customer" />
             <input type="hidden" name="id" value={request.id} />
             <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
@@ -2076,7 +2114,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
         ) : null}
 
         {canMarkNotReturned ? (
-          <Form method="post">
+          <Form method="post" action={currentFormAction}>
             <input type="hidden" name="intent" value="mark_not_returned" />
             <input type="hidden" name="id" value={request.id} />
             <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
@@ -2092,6 +2130,8 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
+
+
 
 
 
