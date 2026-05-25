@@ -158,6 +158,8 @@ const PICKUP_FAILED_REASON_OPTIONS = [
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta. Nuestro equipo volverá a intentarlo mañana. 📦✨",
   "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
 ];
+const REJECT_AFTER_FAILED_AUTO_REASON =
+  "❌🚚 Después de 3 intentos de recolección en el domicilio registrado, no fue posible recibir el producto. Por esta razón, la solicitud de devolución fue rechazada automáticamente.";
 
 function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
@@ -1586,6 +1588,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
   const [lazyMediaByItemId, setLazyMediaByItemId] = useState({});
   const [pickupAttemptReason, setPickupAttemptReason] = useState("");
   const [isPickupReasonModalOpen, setIsPickupReasonModalOpen] = useState(false);
+  const [rejectAfterFailedReason, setRejectAfterFailedReason] = useState("");
   const mediaFetcher = useFetcher();
   const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
   const currentTimelineEvent = timelineEvents[0] || null;
@@ -1971,15 +1974,26 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
           </>
         ) : null}
 
-        {canRejectAfterFailedPickups ? (
+                {canRejectAfterFailedPickups ? (
           <Form method="post" className={styles.rejectForm}>
             <input type="hidden" name="intent" value="reject_after_failed_pickups" />
             <input type="hidden" name="id" value={request.id} />
-            <input
-              className={styles.input}
+            <div className={styles.quickReasonActions}>
+              <button
+                className={`${styles.btn} ${styles.quickReasonBtn}`}
+                type="button"
+                onClick={() => setRejectAfterFailedReason(REJECT_AFTER_FAILED_AUTO_REASON)}
+                disabled={isSubmitting}
+              >
+                Usar mensaje automatico
+              </button>
+            </div>
+            <textarea
+              className={styles.textarea}
               name="rejectionReason"
               placeholder="Motivo de rechazo (obligatorio)"
-              defaultValue=""
+              value={rejectAfterFailedReason}
+              onChange={(event) => setRejectAfterFailedReason(event.target.value)}
             />
             <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
               Rechazar devolucion
@@ -2039,5 +2053,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
+
+
 
 
