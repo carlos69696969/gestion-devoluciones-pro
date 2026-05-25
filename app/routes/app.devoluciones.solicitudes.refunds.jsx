@@ -1,1 +1,1 @@
-export { default } from "./app.devoluciones.solicitudes";
+﻿export { default, loader, action, headers } from "./app.devoluciones.solicitudes";
