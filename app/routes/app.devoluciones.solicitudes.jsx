@@ -536,7 +536,9 @@ function buildStatusTimeline(requestRow) {
   for (const entry of requestRow.timelineEntries || []) {
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
-    pushEvent(label, entry.at, entry.reason || "", timelineToneFromReasonEntry(entry));
+    const kind = String(entry?.kind || "").toLowerCase();
+    const note = kind === RETURNED_TO_CUSTOMER_KIND ? RETURNED_TO_CUSTOMER_MESSAGE : entry.reason || "";
+    pushEvent(label, entry.at, note, timelineToneFromReasonEntry(entry));
   }
 
   const currentStatusKind = timelineKindFromStatus(requestRow.status);
