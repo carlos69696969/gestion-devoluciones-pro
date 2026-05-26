@@ -27,7 +27,8 @@ const EVIDENCE_IMAGE_MAX_EDGE = 1280;
 const EVIDENCE_IMAGE_MAX_BYTES = 450 * 1024;
 const EVIDENCE_IMAGE_QUALITY_START = 0.82;
 const EVIDENCE_IMAGE_QUALITY_MIN = 0.58;
-const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devoluciÃ³n fue regresada con Ã©xito.";
+const RETURNED_TO_CUSTOMER_MESSAGE =
+  "📦 Tu devolución ya fue recogida en nuestra sucursal de devoluciones. Gracias por recoger tu devolución.";
 const TIMELINE_META_KINDS = new Set([
   REQUEST_CREATED_KIND,
   STATUS_REVIEW_KIND,
