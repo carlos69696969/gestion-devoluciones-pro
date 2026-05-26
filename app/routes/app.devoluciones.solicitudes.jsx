@@ -1703,6 +1703,13 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
     setLazyMediaByItemId(nextMediaById);
   }, [mediaFetcher.data]);
 
+  useEffect(() => {
+    // After submitting a failed-pickup attempt, request status/updatedAt changes.
+    // Reset the field so the next attempt starts with a clean message.
+    setPickupAttemptReason("");
+    setIsPickupReasonModalOpen(false);
+  }, [request.status, request.updatedAt, request.id]);
+
   return (
     <article className={styles.card}>
       <div className={styles.reqHeader}>
