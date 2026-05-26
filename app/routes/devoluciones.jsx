@@ -1084,6 +1084,7 @@ export const loader = async ({ request }) => {
           branchInstructions: settings.branchInstructions || "-",
           branchHours: settings.branchHours || "-",
           branchDeliveryDeadlineAt: branchDeliveryDeadlineDate ? branchDeliveryDeadlineDate.toISOString() : "",
+          pickupInstructions: settings.pickupInstructions || "-",
           pickupHours: settings.pickupHours || "-",
           pickupAddress: requestRow.pickupAddress || "-",
           pickupNeighborhood: requestRow.pickupNeighborhood || "-",
