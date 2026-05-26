@@ -1722,7 +1722,6 @@ function timelineToneClassName(tone) {
 function CompletedReturnSummary({ requestItem }) {
   const [viewerImage, setViewerImage] = useState(null);
   const [showAllStates, setShowAllStates] = useState(false);
-  const [showDeliveryInstructions, setShowDeliveryInstructions] = useState(false);
   const timelineEvents = useMemo(() => buildStatusTimeline(requestItem), [requestItem]);
   const currentTimelineEvent = timelineEvents[0] || null;
   const normalizedStatus = String(requestItem.status || "").toLowerCase();
@@ -1741,8 +1740,6 @@ function CompletedReturnSummary({ requestItem }) {
   const isApproved = normalizedStatus === "aprobada";
   const isReceived = normalizedStatus === "recibida";
   const isRefunded = normalizedStatus === "reembolsada";
-  const isPickupMethod = requestItem.returnMethod === "pickup";
-  const deliveryInstructionsId = `delivery_instructions_${requestItem.id || requestItem.orderNumber}`;
   const pickupDeadlineLabel = requestItem.pickupDeadlineAt
     ? new Date(requestItem.pickupDeadlineAt).toLocaleDateString("es-MX")
     : "";
@@ -1866,48 +1863,29 @@ function CompletedReturnSummary({ requestItem }) {
           <p><strong>Fecha reembolsada:</strong> {new Date(requestItem.refundedAt).toLocaleString("es-MX")}</p>
         ) : null}
 
-        <button
-          type="button"
-          className={styles.instructionsToggle}
-          onClick={() => setShowDeliveryInstructions((prev) => !prev)}
-          aria-expanded={showDeliveryInstructions}
-          aria-controls={deliveryInstructionsId}
-        >
-          <span>{isPickupMethod ? "Instrucciones de recoleccion" : "Instrucciones de entrega"}</span>
-          <span className={styles.instructionsToggleIcon}>{showDeliveryInstructions ? "-" : "+"}</span>
-        </button>
-        {showDeliveryInstructions ? (
-          <div id={deliveryInstructionsId} className={styles.instructionsPanel}>
-            {isPickupMethod ? (
-              <>
-                <p className={styles.instructionsIntro}>
-                  Te recogeremos en la direccion y horario que seleccionaste.
-                </p>
-                <p>
-                  <strong>Direccion de recoleccion:</strong>{" "}
-                  {[requestItem.pickupAddress, requestItem.pickupNeighborhood, requestItem.pickupCity, requestItem.pickupState, requestItem.pickupPostalCode]
-                    .filter((value) => value && value !== "-")
-                    .join(", ") || "-"}
-                </p>
-                <p><strong>Dia de recoleccion:</strong> {requestItem.pickupDate || "-"}</p>
-                <p><strong>Horario de recoleccion:</strong> {pickupHoursOnlyLabel(requestItem.pickupHours)}</p>
-                {requestItem.pickupNotes ? <p><strong>Instrucciones del cliente:</strong> {requestItem.pickupNotes}</p> : null}
-              </>
-            ) : (
-              <>
-                <p className={styles.instructionsIntro}>
-                  Entrega tu paquete en sucursal siguiendo estas indicaciones.
-                </p>
-                <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={requestItem.branchAddress} /></p>
-                <p><strong>Instrucciones:</strong> {requestItem.branchInstructions || "-"}</p>
-                {requestItem.branchDeliveryDeadlineAt ? (
-                  <p><strong>Fecha limite de entrega:</strong> {new Date(requestItem.branchDeliveryDeadlineAt).toLocaleDateString("es-MX")}</p>
-                ) : null}
-                <p><strong>Horarios de entrega:</strong> {requestItem.branchHours || "-"}</p>
-              </>
-            )}
-          </div>
-        ) : null}
+        {requestItem.returnMethod === "pickup" ? (
+          <>
+            <p><strong>Instrucciones de entrega:</strong> {requestItem.pickupInstructions || "-"}</p>
+            <p>
+              <strong>Direccion de recoleccion:</strong>{" "}
+              {[requestItem.pickupAddress, requestItem.pickupNeighborhood, requestItem.pickupCity, requestItem.pickupState, requestItem.pickupPostalCode]
+                .filter((value) => value && value !== "-")
+                .join(", ") || "-"}
+            </p>
+            <p><strong>Dia de recoleccion:</strong> {requestItem.pickupDate || "-"}</p>
+            <p><strong>Horario de recoleccion:</strong> {pickupHoursOnlyLabel(requestItem.pickupHours)}</p>
+            {requestItem.pickupNotes ? <p><strong>Instrucciones del cliente:</strong> {requestItem.pickupNotes}</p> : null}
+          </>
+        ) : (
+          <>
+            <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={requestItem.branchAddress} /></p>
+            <p><strong>Instrucciones de entrega:</strong> {requestItem.branchInstructions || "-"}</p>
+            {requestItem.branchDeliveryDeadlineAt ? (
+              <p><strong>Fecha limite de entrega:</strong> {new Date(requestItem.branchDeliveryDeadlineAt).toLocaleDateString("es-MX")}</p>
+            ) : null}
+            <p><strong>Horarios de entrega:</strong> {requestItem.branchHours || "-"}</p>
+          </>
+        )}
       </div>
 
       <h4 className={styles.orderDetailTitle}>Productos devueltos</h4>

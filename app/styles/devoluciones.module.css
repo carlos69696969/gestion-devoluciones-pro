@@ -331,55 +331,6 @@
   line-height: 1.45;
 }
 
-.instructionsToggle {
-  width: 100%;
-  margin-top: 8px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #f8fafc;
-  color: var(--text);
-  padding: 10px 12px;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.3;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  cursor: pointer;
-}
-
-.instructionsToggleIcon {
-  display: inline-flex;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  background: #fff;
-  font-weight: 800;
-}
-
-.instructionsPanel {
-  margin-top: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #fcfdff;
-}
-
-.instructionsPanel p {
-  margin: 6px 0;
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.instructionsIntro {
-  color: var(--muted);
-  font-weight: 600;
-}
-
 .completedGrid {
   display: grid;
   gap: 12px;
