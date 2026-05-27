@@ -319,6 +319,11 @@ export const action = async ({ request }) => {
           createdAt: "desc",
         },
       });
+
+      if (!requests.length) {
+        return { ok: false, error: "No hay pedidos con ese numero de orden" };
+      }
+
       const imageMapsByOrder = await fetchOrderItemImageMaps(
         admin,
         requests.map((requestRow) => requestRow.shopifyOrderId),
