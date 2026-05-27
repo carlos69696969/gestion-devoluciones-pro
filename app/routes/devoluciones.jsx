@@ -2231,7 +2231,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                           <div className={styles.productMeta}>{item.variantSummary}</div>
                         ) : null}
                         <div className={styles.productMeta}>
-                          {item.unitCount > 1 ? `Pieza ${item.unitIndex} de ${item.unitCount} Â· ` : ""}x{item.quantity} - ${toMXN(item.unitPrice)} c/u
+                          {item.unitCount > 1 ? `Pieza ${item.unitIndex} de ${item.unitCount} - ` : ""}${toMXN(item.unitPrice)} c/u
                         </div>
                         {isAlreadyReturned ? (
                           <div className={`${styles.notice} ${styles.noticeMuted}`} style={{ marginTop: 4 }}>
