@@ -73,6 +73,24 @@ const NOTIFICATIONS_API_KEY = String(
   process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "",
 ).trim();
 
+function normalizeDisplayedReasonText(rawValue) {
+  const text = String(rawValue || "").trim();
+  if (!text) return "";
+  const compact = text.replace(/\s+/g, " ").trim();
+  const lowered = compact.toLowerCase();
+  if (
+    lowered.includes("devolucion fue regresada con ecxito") ||
+    lowered.includes("devolucion fue regresada con éxito") ||
+    lowered.includes("devoluciã³n fue regresada con ã©xito")
+  ) {
+    return "Tu devolucion fue regresada con éxito.";
+  }
+  return compact
+    .replace(/ecxito/gi, "éxito")
+    .replace(/devoluciã³n/gi, "devolución")
+    .replace(/ã©xito/gi, "éxito");
+}
+
 async function emitReturnNotificationEvent({ shopDomain, requestRow, requiresReview }) {
   if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
     return;
@@ -433,12 +451,12 @@ function parseReasonEntries(rawValue) {
     return entries
       .map((entry) => ({
         kind: String(entry?.kind || "").trim() || "legacy",
-        reason: String(entry?.reason || "").trim(),
+        reason: normalizeDisplayedReasonText(entry?.reason),
         at: entry?.at ? String(entry.at) : "",
       }))
       .filter((entry) => entry.reason);
   } catch {
-    return [{ kind: "legacy", reason: text, at: "" }];
+    return [{ kind: "legacy", reason: normalizeDisplayedReasonText(text), at: "" }];
   }
 }
 
@@ -694,7 +712,9 @@ function buildStatusTimeline(requestItem) {
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
     const kind = String(entry?.kind || "").toLowerCase();
-    const note = kind === RETURNED_TO_CUSTOMER_KIND ? RETURNED_TO_CUSTOMER_MESSAGE : entry.reason || "";
+    const note = kind === RETURNED_TO_CUSTOMER_KIND
+      ? RETURNED_TO_CUSTOMER_MESSAGE
+      : normalizeDisplayedReasonText(entry.reason);
     pushEvent(label, entry.at, note, timelineToneFromReasonEntry(entry));
   }
 

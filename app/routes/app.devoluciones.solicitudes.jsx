@@ -35,7 +35,7 @@ const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento
 const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
 const RETURN_TO_CUSTOMER_STATUSES = new Set(["por_devolver"]);
 const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"]);
-const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolucion fue regresada con éxito";
+const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolucion fue regresada con éxito.";
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
 const NOT_RETURNED_KIND = "not_returned_after_30_days";
 const REQUEST_CREATED_KIND = "request_created";
@@ -247,6 +247,24 @@ function parsePhotoUrls(rawValue) {
   }
 }
 
+function normalizeDisplayedReasonText(rawValue) {
+  const text = String(rawValue || "").trim();
+  if (!text) return "";
+  const compact = text.replace(/\s+/g, " ").trim();
+  const lowered = compact.toLowerCase();
+  if (
+    lowered.includes("devolucion fue regresada con ecxito") ||
+    lowered.includes("devolucion fue regresada con éxito") ||
+    lowered.includes("devoluciã³n fue regresada con ã©xito")
+  ) {
+    return RETURNED_TO_CUSTOMER_MESSAGE;
+  }
+  return compact
+    .replace(/ecxito/gi, "éxito")
+    .replace(/devoluciã³n/gi, "devolución")
+    .replace(/ã©xito/gi, "éxito");
+}
+
 function parseReasonEntries(rawValue) {
   const text = String(rawValue || "").trim();
   if (!text) return [];
@@ -256,12 +274,12 @@ function parseReasonEntries(rawValue) {
     return entries
       .map((entry) => ({
         kind: String(entry?.kind || "").trim() || "legacy",
-        reason: String(entry?.reason || "").trim(),
+        reason: normalizeDisplayedReasonText(entry?.reason),
         at: entry?.at ? String(entry.at) : "",
       }))
       .filter((entry) => entry.reason);
   } catch {
-    return [{ kind: "legacy", reason: text, at: "" }];
+    return [{ kind: "legacy", reason: normalizeDisplayedReasonText(text), at: "" }];
   }
 }
 
@@ -537,7 +555,9 @@ function buildStatusTimeline(requestRow) {
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
     const kind = String(entry?.kind || "").toLowerCase();
-    const note = kind === RETURNED_TO_CUSTOMER_KIND ? RETURNED_TO_CUSTOMER_MESSAGE : entry.reason || "";
+    const note = kind === RETURNED_TO_CUSTOMER_KIND
+      ? RETURNED_TO_CUSTOMER_MESSAGE
+      : normalizeDisplayedReasonText(entry.reason);
     pushEvent(label, entry.at, note, timelineToneFromReasonEntry(entry));
   }
 
