@@ -1598,7 +1598,7 @@ export default function PublicReturnsPortal() {
         {hasNoEligibleItems ? (
           <section className={styles.card}>
             <h2 className={styles.cardTitle}>No hay productos disponibles</h2>
-            <p className={styles.cardMeta}>Este pedido ya no tiene productos para devolver.</p>
+            <p className={styles.cardMeta}>Este pedido ya fue devuelto o ya cuenta con una orden de devolución.</p>
           </section>
         ) : null}
 
