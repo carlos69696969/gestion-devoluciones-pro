@@ -2540,7 +2540,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                             <div className={styles.productMeta}>{item.variantSummary}</div>
                           ) : null}
                           <div className={styles.productMeta}>
-                            {item.unitCount > 1 ? `Pieza ${item.unitIndex} de ${item.unitCount} Â· ` : ""}x{item.quantity} Â· Motivo: {item.reason || "-"}
+                            {item.unitCount > 1 ? `Pieza ${item.unitIndex} de ${item.unitCount} - ` : ""}Motivo: {item.reason || "-"}
                           </div>
                         </div>
                       </div>
