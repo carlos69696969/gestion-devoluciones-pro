@@ -799,6 +799,33 @@ async function getOrCreateSettings(shop) {
   });
 }
 
+const ORDER_FETCH_RETRY_DELAYS_MS = [400, 1000];
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function isRetryableOrderFetchError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  if (!message) return false;
+
+  return (
+    message.includes("(429)") ||
+    message.includes("(500)") ||
+    message.includes("(502)") ||
+    message.includes("(503)") ||
+    message.includes("(504)") ||
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("fetch failed") ||
+    message.includes("econnreset") ||
+    message.includes("etimedout") ||
+    message.includes("socket hang up")
+  );
+}
+
 async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
   const response = await fetch(`https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
     method: "POST",
@@ -868,6 +895,26 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
     );
   }
   return data?.data?.orders?.edges?.map((edge) => edge.node) || [];
+}
+
+async function fetchOrderCandidatesWithRetry({ shop, accessToken, orderNumber }) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= ORDER_FETCH_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await fetchOrderCandidatesByToken({ shop, accessToken, orderNumber });
+    } catch (error) {
+      lastError = error;
+      const canRetry =
+        attempt < ORDER_FETCH_RETRY_DELAYS_MS.length && isRetryableOrderFetchError(error);
+      if (!canRetry) {
+        break;
+      }
+      await sleep(ORDER_FETCH_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+
+  throw lastError || new Error("No se pudo consultar Shopify Admin API.");
 }
 
 export const loader = async ({ request }) => {
@@ -974,7 +1021,7 @@ export const loader = async ({ request }) => {
         try {
           const accessToken = sessionCandidate.accessToken;
           if (!accessToken) continue;
-          candidates = await fetchOrderCandidatesByToken({
+          candidates = await fetchOrderCandidatesWithRetry({
             shop: shopCandidate,
             accessToken,
             orderNumber,
