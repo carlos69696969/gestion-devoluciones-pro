@@ -992,11 +992,15 @@ export const loader = async ({ request }) => {
       candidates = candidates.filter(
         (orderNode) => normalizeOrderNumber(orderNode?.name) === normalizeOrderNumber(orderNumber),
       );
-
       let match = null;
       if (email) {
         match = candidates.find((o) => (o.email || "").toLowerCase() === email) || null;
-        if (!match && candidates.length) {
+        if (!match && candidates.length === 1) {
+          // Fallback: if there is only one exact order-number candidate, prefer opening it
+          // even when email differs (customers may change email after purchase).
+          match = candidates[0];
+        }
+        if (!match && candidates.length > 1) {
           const emails = candidates
             .map((o) => String(o.email || "").trim().toLowerCase())
             .filter(Boolean);
@@ -1005,17 +1009,14 @@ export const loader = async ({ request }) => {
           );
         }
       } else {
-        // The order status page button may not expose the email. If Shopify returns a single
-        // candidate for this order number, use it; otherwise require email for disambiguation.
-        if (candidates.length === 1) {
-          match = candidates[0];
-        } else if (candidates.length > 1) {
-          const emails = candidates
-            .map((o) => String(o.email || "").trim().toLowerCase())
-            .filter(Boolean);
-          lastError = new Error(
-            `Hay ${candidates.length} pedidos que coinciden con #${orderNumber} en ${shopCandidate}. Incluye el parametro email para elegir el correcto. Correos encontrados: ${emails.join(", ") || "-"}`,
-          );
+        if (candidates.length >= 1) {
+          // When email is missing from the URL, pick the most recent exact match.
+          const ordered = [...candidates].sort((a, b) => {
+            const aMs = new Date(a?.createdAt || 0).getTime();
+            const bMs = new Date(b?.createdAt || 0).getTime();
+            return bMs - aMs;
+          });
+          match = ordered[0] || null;
         }
       }
 
