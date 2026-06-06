@@ -732,6 +732,81 @@
   font-weight: 700;
 }
 
+.noticeMuted {
+  margin: 0 0 12px;
+  color: #6d7175;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.courierGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.courierCard {
+  border: 1px solid #e1e3e5;
+  border-radius: 14px;
+  background: #fff;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+}
+
+.courierHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.courierTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #202223;
+}
+
+.courierMeta {
+  margin: 4px 0 0;
+  color: #6d7175;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.courierBadgeDelivery,
+.courierBadgeReturn {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.courierBadgeDelivery {
+  background: #e8f1ff;
+  color: #0047ab;
+}
+
+.courierBadgeReturn {
+  background: #eaf7ef;
+  color: #008060;
+}
+
+.courierDetails {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  color: #202223;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 @media (max-width: 720px) {
   .grid2 { grid-template-columns: 1fr; }
   .statusForm .select { width: 100%; }
