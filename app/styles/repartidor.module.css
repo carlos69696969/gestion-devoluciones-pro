@@ -72,11 +72,35 @@
   letter-spacing: -0.01em;
 }
 
-.cardMeta {
-  margin: 0 0 14px;
-  color: #6d7175;
-  font-size: 15px;
-  line-height: 1.45;
+.tabRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 6px 0 14px;
+}
+
+.tabButton {
+  appearance: none;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #fff;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.tabButton:hover {
+  border-color: #9ca3af;
+  background: #f9fafb;
+}
+
+.tabButtonActive {
+  border-color: #005bd3;
+  background: #eef4ff;
+  color: #005bd3;
 }
 
 .empty {
@@ -102,4 +126,3 @@
     font-size: 28px;
   }
 }
-

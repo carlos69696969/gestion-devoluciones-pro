@@ -84,9 +84,13 @@ export default function RepartidorPublicPortal() {
 
         <section className={styles.card}>
           <h2 className={styles.cardTitle}>Ordenes repartidor</h2>
-          <p className={styles.cardMeta}>
-            Aqui se muestran juntas las ordenes de <strong>entrega</strong> y las de <strong>devolucion</strong>.
-          </p>
+          <div className={styles.tabRow} role="tablist" aria-label="Secciones de repartidor">
+            <button type="button" className={`${styles.tabButton} ${styles.tabButtonActive}`}>
+              Pedidos
+            </button>
+            <button type="button" className={styles.tabButton}>En ruta</button>
+            <button type="button" className={styles.tabButton}>Historial</button>
+          </div>
 
           {!hasOrders ? (
             <p className={styles.empty}>No hay ordenes pendientes por entregar.</p>
