@@ -7,7 +7,7 @@ import {
   formatCourierScheduledDate,
 } from "../utils/courier.shared";
 import {
-  fetchCourierOrdersByToken,
+  fetchCourierOrdersForShop,
   fetchPickupCourierOrders,
   resolveCourierPortalShop,
 } from "../utils/courier.server";
@@ -18,9 +18,9 @@ export const headers = () => ({
 });
 
 export const loader = async ({ request }) => {
-  const { shop, accessToken } = await resolveCourierPortalShop(request);
+  const { shop, sessionCandidates } = await resolveCourierPortalShop(request);
 
-  if (!shop || !accessToken) {
+  if (!shop || !sessionCandidates?.length) {
     return {
       shop: shop || "",
       courierOrders: [],
@@ -30,7 +30,7 @@ export const loader = async ({ request }) => {
   }
 
   const [deliveryResult, pickupResult] = await Promise.allSettled([
-    fetchCourierOrdersByToken({ shop, accessToken }),
+    fetchCourierOrdersForShop({ shop, sessionCandidates }),
     fetchPickupCourierOrders(shop),
   ]);
 

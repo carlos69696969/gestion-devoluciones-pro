@@ -3,6 +3,10 @@ import prisma from "../db.server";
 const ADMIN_API_VERSION = "2025-10";
 export const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento_fallido_2"]);
 
+function normalizeShop(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function getCourierCustomAttribute(orderNode, keys) {
   const attributes = Array.isArray(orderNode?.customAttributes) ? orderNode.customAttributes : [];
   const normalizedKeys = keys.map((key) => String(key || "").trim().toLowerCase());
@@ -41,8 +45,8 @@ export async function resolveCourierPortalShop(request) {
   const url = new URL(request.url);
   // eslint-disable-next-line no-undef
   const env = process.env || {};
-  const incomingShop = String(url.searchParams.get("shop") || "").trim().toLowerCase();
-  const configuredShop = String(env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
+  const incomingShop = normalizeShop(url.searchParams.get("shop") || "");
+  const configuredShop = normalizeShop(env.SHOPIFY_SHOP_DOMAIN || "");
 
   const sessions = await prisma.session.findMany({
     select: { id: true, shop: true, isOnline: true, accessToken: true },
@@ -60,18 +64,28 @@ export async function resolveCourierPortalShop(request) {
   const preferredShop = [incomingShop, configuredShop].find((shop) =>
     sessionCandidates.some((session) => session.shop === shop),
   );
-  const offlineSession = sessionCandidates.find((session) => session.isOnline === false);
-  const fallbackSession = sessionCandidates[0] || null;
-  const selectedSession =
-    sessionCandidates.find((session) => session.shop === preferredShop) || offlineSession || fallbackSession;
+  const selectedShop =
+    preferredShop ||
+    sessionCandidates.find((session) => session.isOnline === false)?.shop ||
+    sessionCandidates[0]?.shop ||
+    "";
 
-  if (!selectedSession) {
-    return { shop: "", accessToken: "" };
+  const selectedSessions = sessionCandidates
+    .filter((session) => session.shop === selectedShop)
+    .sort((a, b) => {
+      const aOffline = a.isOnline === false ? 0 : 1;
+      const bOffline = b.isOnline === false ? 0 : 1;
+      if (aOffline !== bOffline) return aOffline - bOffline;
+      return String(a.id || "").localeCompare(String(b.id || ""));
+    });
+
+  if (!selectedShop || !selectedSessions.length) {
+    return { shop: "", sessionCandidates: [] };
   }
 
   return {
-    shop: selectedSession.shop,
-    accessToken: selectedSession.accessToken,
+    shop: selectedShop,
+    sessionCandidates: selectedSessions,
   };
 }
 
@@ -158,6 +172,24 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
         courierLabel: "Entrega",
       };
     });
+}
+
+export async function fetchCourierOrdersForShop({ shop, sessionCandidates }) {
+  const candidates = Array.isArray(sessionCandidates) ? sessionCandidates : [];
+  let lastError = null;
+
+  for (const sessionCandidate of candidates) {
+    try {
+      const accessToken = String(sessionCandidate?.accessToken || "").trim();
+      if (!accessToken) continue;
+      return await fetchCourierOrdersByToken({ shop, accessToken });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) throw lastError;
+  return [];
 }
 
 export async function fetchPickupCourierOrders(shop) {
