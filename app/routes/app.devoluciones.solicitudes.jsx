@@ -113,45 +113,56 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, not
   const eventPayload = buildReturnEventPayload({ requestRow, intent, note });
   if (!eventPayload) return;
 
-  const endpoint = NOTIFICATIONS_API_KEY
-    ? `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`
-    : `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`;
-  const headers = {
-    "Content-Type": "application/json",
-    "x-shop-domain": shopDomain,
-  };
-  if (NOTIFICATIONS_API_KEY) {
-    headers["x-api-key"] = NOTIFICATIONS_API_KEY;
-  }
+  const endpoints = NOTIFICATIONS_API_KEY
+    ? [
+        `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`,
+        `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`,
+      ]
+    : [`${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`];
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        shopDomain,
-        event: eventPayload,
-      }),
-    });
+  let lastFailure = null;
+  for (const endpoint of endpoints) {
+    const headers = {
+      "Content-Type": "application/json",
+      "x-shop-domain": shopDomain,
+    };
+    if (NOTIFICATIONS_API_KEY) {
+      headers["x-api-key"] = NOTIFICATIONS_API_KEY;
+    }
 
-    if (!response.ok) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          shopDomain,
+          event: eventPayload,
+        }),
+      });
+
+      if (response.ok) {
+        return;
+      }
+
       const detail = await response.text().catch(() => "");
-      console.error("Failed to emit return notification event", {
-        shopDomain,
-        intent,
+      lastFailure = {
         endpoint,
         status: response.status,
         detail: String(detail || "").slice(0, 300),
-      });
+      };
+    } catch (error) {
+      lastFailure = {
+        endpoint,
+        error: String(error?.message || error || "unknown"),
+      };
     }
-  } catch (error) {
-    console.error("Failed to emit return notification event", {
-      shopDomain,
-      intent,
-      endpoint,
-      error: String(error?.message || error || "unknown"),
-    });
   }
+
+  console.error("Failed to emit return notification event", {
+    shopDomain,
+    intent,
+    ...lastFailure,
+  });
 }
 
 const PICKUP_FAILED_REASON_OPTIONS = [
