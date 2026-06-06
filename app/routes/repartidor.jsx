@@ -40,23 +40,25 @@ export const loader = async ({ request }) => {
     (a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
   );
 
-  const fetchErrors = [];
-  if (deliveryResult.status === "rejected") {
-    fetchErrors.push("No se pudieron cargar las ordenes de entrega.");
-  }
-  if (pickupResult.status === "rejected") {
-    fetchErrors.push("No se pudieron cargar las ordenes de devolucion.");
-  }
+  const deliveryError =
+    deliveryResult.status === "rejected"
+      ? String(deliveryResult.reason?.message || deliveryResult.reason || "Error desconocido")
+      : "";
+  const pickupError =
+    pickupResult.status === "rejected"
+      ? String(pickupResult.reason?.message || pickupResult.reason || "Error desconocido")
+      : "";
 
   return {
     shop,
     courierOrders,
-    error: fetchErrors.join(" "),
+    deliveryError,
+    pickupError,
   };
 };
 
 export default function RepartidorPublicPortal() {
-  const { shop, courierOrders, error } = useLoaderData();
+  const { shop, courierOrders, deliveryError, pickupError } = useLoaderData();
   const hasOrders = courierOrders.length > 0;
 
   return (
@@ -73,7 +75,12 @@ export default function RepartidorPublicPortal() {
           <div className={styles.shopBadge}>{shop ? `Tienda: ${shop}` : "Sin tienda detectada"}</div>
         </header>
 
-        {error ? <p className={styles.error}>{error}</p> : null}
+        {deliveryError ? (
+          <p className={styles.error}>No se pudieron cargar las ordenes de entrega: {deliveryError}</p>
+        ) : null}
+        {pickupError ? (
+          <p className={styles.error}>No se pudieron cargar las ordenes de devolucion: {pickupError}</p>
+        ) : null}
 
         <section className={styles.card}>
           <h2 className={styles.cardTitle}>Ordenes repartidor</h2>
