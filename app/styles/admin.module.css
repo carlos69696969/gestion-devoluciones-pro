@@ -756,7 +756,7 @@
 }
 
 .courierCardDelivery {
-  border-left-color: #6b7280;
+  border-left-color: #047857;
 }
 
 .courierCardReturn {
@@ -824,8 +824,8 @@
 }
 
 .courierAddress {
-  color: #1d4ed8;
-  font-weight: 500;
+  color: #111827;
+  font-weight: 400;
 }
 
 @media (max-width: 720px) {
