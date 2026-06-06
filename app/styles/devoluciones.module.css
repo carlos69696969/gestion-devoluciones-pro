@@ -78,6 +78,79 @@
   line-height: 1.4;
 }
 
+.courierGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.courierCard {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  padding: 14px;
+}
+
+.courierHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.courierTitle {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.courierMeta {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.courierDetails {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.courierDetails p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.courierBadgeDelivery,
+.courierBadgeReturn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.courierBadgeDelivery {
+  background: #e3f1df;
+  color: #0c5132;
+  border: 1px solid #aad5b3;
+}
+
+.courierBadgeReturn {
+  background: #e8f1ff;
+  color: #005bd3;
+  border: 1px solid #b3d4ff;
+}
+
 .divider {
   height: 1px;
   background: var(--border);

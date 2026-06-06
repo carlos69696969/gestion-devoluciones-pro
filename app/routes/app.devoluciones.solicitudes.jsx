@@ -987,6 +987,26 @@ export const loader = async ({ request }) => {
     orderBy: { createdAt: "desc" },
   });
 
+  const courierOrdersRaw =
+    viewMode === VIEW_MODE.HISTORY
+      ? await prisma.returnRequest.findMany({
+          where: { shop: session.shop },
+          select: {
+            id: true,
+            orderNumber: true,
+            customerName: true,
+            customerEmail: true,
+            customerPhone: true,
+            returnMethod: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+          take: 200,
+        })
+      : [];
+
   const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
   const imagesByOrder = shouldLoadImages
     ? await fetchOrderItemImageMaps(
@@ -1044,7 +1064,14 @@ export const loader = async ({ request }) => {
     };
   });
 
-  return { requests, viewMode };
+  const courierOrders = courierOrdersRaw
+    .map((requestRow) => ({
+      ...requestRow,
+      courierLabel: courierLabelFromReturnMethod(requestRow.returnMethod),
+    }))
+    .sort((a, b) => courierOrderTimestampMs(b) - courierOrderTimestampMs(a));
+
+  return { requests, courierOrders, viewMode };
 };
 
 export const action = async ({ request }) => {
@@ -1505,6 +1532,31 @@ function buildPickupGroups(requests) {
   }));
 }
 
+function courierLabelFromReturnMethod(returnMethod) {
+  return String(returnMethod || "").toLowerCase() === "pickup" ? "devolucion" : "entrega";
+}
+
+function courierStatusLabel(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "en_revision") return "en revision";
+  if (normalized === "aprobada") return "aprobada";
+  if (normalized === "intento_fallido_1") return "intento fallido 1";
+  if (normalized === "intento_fallido_2") return "intento fallido 2";
+  if (normalized === "por_devolver") return "pendiente por recoger";
+  if (normalized === "recibida") return "recibida";
+  if (normalized === "rechazada") return "rechazada";
+  if (normalized === "denegada" || normalized === "reembolso_denegado") return "reembolso denegado";
+  if (normalized === "reembolsada") return "reembolsada";
+  if (normalized === "completada") return "completada";
+  return normalized || "pendiente";
+}
+
+function courierOrderTimestampMs(request) {
+  const value = request?.updatedAt || request?.createdAt;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 function historyTimestampMs(request) {
   const status = String(request?.status || "").toLowerCase();
   const sourceDate =
@@ -1514,7 +1566,7 @@ function historyTimestampMs(request) {
 }
 
 export default function ReturnsRequests() {
-  const { requests, viewMode } = useLoaderData();
+  const { requests, courierOrders, viewMode } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -1647,17 +1699,67 @@ export default function ReturnsRequests() {
       ) : null}
 
       {viewMode === VIEW_MODE.HISTORY ? (
-        <s-section heading="Historial de devoluciones">
-          {historyRequests.length === 0 ? (
-            <p>No hay ordenes en historial.</p>
-          ) : (
-            <div className={`${styles.wrap} ${styles.reqGrid}`}>
-              {historyRequests.map((request) => (
-                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} enableLazyMedia />
-              ))}
-            </div>
-          )}
-        </s-section>
+        <>
+          <s-section heading="Historial de devoluciones">
+            {historyRequests.length === 0 ? (
+              <p>No hay ordenes en historial.</p>
+            ) : (
+              <div className={`${styles.wrap} ${styles.reqGrid}`}>
+                {historyRequests.map((request) => (
+                  <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} enableLazyMedia />
+                ))}
+              </div>
+            )}
+          </s-section>
+
+          <s-section heading="Ordenes repartidor">
+            <p className={styles.noticeMuted}>
+              Aqui se muestran juntas las ordenes de <strong>entrega</strong> y las de <strong>devolucion</strong>.
+            </p>
+            {courierOrders.length === 0 ? (
+              <p>No hay ordenes repartidor registradas.</p>
+            ) : (
+              <div className={styles.courierGrid}>
+                {courierOrders.map((request) => (
+                  <article key={request.id} className={styles.courierCard}>
+                    <div className={styles.courierHeader}>
+                      <div>
+                        <h3 className={styles.courierTitle}>Pedido #{request.orderNumber}</h3>
+                        <p className={styles.courierMeta}>
+                          {request.customerName} | {request.customerEmail} | {request.customerPhone || "-"}
+                        </p>
+                      </div>
+                      <span
+                        className={
+                          request.courierLabel === "devolucion"
+                            ? styles.courierBadgeReturn
+                            : styles.courierBadgeDelivery
+                        }
+                      >
+                        {request.courierLabel}
+                      </span>
+                    </div>
+                    <div className={styles.courierDetails}>
+                      <p>
+                        <strong>Metodo:</strong>{" "}
+                        {request.courierLabel === "devolucion"
+                          ? "Recoleccion a domicilio"
+                          : "Entrega en sucursal"}
+                      </p>
+                      <p>
+                        <strong>Estado:</strong> {courierStatusLabel(request.status)}
+                      </p>
+                      <p>
+                        <strong>Actualizado:</strong>{" "}
+                        {new Date(request.updatedAt || request.createdAt).toLocaleString("es-MX")}
+                      </p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </s-section>
+        </>
       ) : null}
     </s-page>
   );
