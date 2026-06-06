@@ -50,10 +50,31 @@ export const loader = async ({ request }) => {
 export default function RepartidorPublicPortal() {
   const { shop, courierOrders } = useLoaderData();
   const [activeTab, setActiveTab] = useState("pedidos");
-  const visibleOrders = activeTab === "en_ruta" ? courierOrders.slice(0, 1) : courierOrders;
+  const routeOrder = courierOrders[0] || null;
+  const visibleOrders =
+    activeTab === "en_ruta"
+      ? routeOrder
+        ? [routeOrder]
+        : []
+      : activeTab === "historial"
+        ? []
+        : courierOrders;
   const hasOrders = visibleOrders.length > 0;
+  const isHistoryTab = activeTab === "historial";
   const emptyMessage =
     activeTab === "en_ruta" ? "No hay pedidos en ruta." : "No hay ordenes pendientes por entregar.";
+
+  const buildMapsUrl = (request) => {
+    const address = formatCourierAddress(request);
+    const query = encodeURIComponent(address);
+    return `https://www.google.com/maps/search/?api=1&query=${query}`;
+  };
+
+  const buildPhoneUrl = (request) => {
+    const phone = String(request?.customerPhone || "").trim();
+    const safePhone = phone.replace(/[^\d+]/g, "");
+    return safePhone ? `tel:${safePhone}` : "";
+  };
 
   return (
     <main className={styles.page}>
@@ -95,7 +116,7 @@ export default function RepartidorPublicPortal() {
             </button>
           </div>
 
-          {!hasOrders ? (
+          {isHistoryTab ? null : !hasOrders ? (
             <p className={styles.empty}>{emptyMessage}</p>
           ) : (
             <div className={adminStyles.courierGrid}>
@@ -127,6 +148,39 @@ export default function RepartidorPublicPortal() {
                   </p>
                   <p className={adminStyles.courierAddress}>{formatCourierAddress(request)}</p>
                   <p className={adminStyles.courierField}>{request.customerPhone || "-"}</p>
+                  {activeTab === "en_ruta" ? (
+                    <div className={styles.actionRow}>
+                      <a
+                        className={`${styles.actionButton} ${styles.actionButtonPrimary}`}
+                        href={buildMapsUrl(request)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Mapa
+                      </a>
+                      {buildPhoneUrl(request) ? (
+                        <a
+                          className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
+                          href={buildPhoneUrl(request)}
+                        >
+                          Telefono
+                        </a>
+                      ) : (
+                        <button type="button" className={`${styles.actionButton} ${styles.actionButtonSecondary}`} disabled>
+                          Telefono
+                        </button>
+                      )}
+                      <button type="button" className={styles.actionButton}>
+                        En ruta
+                      </button>
+                      <button type="button" className={styles.actionButton}>
+                        Entregado
+                      </button>
+                      <button type="button" className={styles.actionButton}>
+                        No entregado
+                      </button>
+                    </div>
+                  ) : null}
                 </article>
               ))}
             </div>
