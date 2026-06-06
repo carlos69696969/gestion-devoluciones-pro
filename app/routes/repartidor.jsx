@@ -1,4 +1,5 @@
 import { useLoaderData } from "react-router";
+import { useState } from "react";
 import adminStyles from "../styles/admin.module.css";
 import styles from "../styles/repartidor.module.css";
 import {
@@ -48,7 +49,11 @@ export const loader = async ({ request }) => {
 
 export default function RepartidorPublicPortal() {
   const { shop, courierOrders } = useLoaderData();
-  const hasOrders = courierOrders.length > 0;
+  const [activeTab, setActiveTab] = useState("pedidos");
+  const visibleOrders = activeTab === "en_ruta" ? courierOrders.slice(0, 1) : courierOrders;
+  const hasOrders = visibleOrders.length > 0;
+  const emptyMessage =
+    activeTab === "en_ruta" ? "No hay pedidos en ruta." : "No hay ordenes pendientes por entregar.";
 
   return (
     <main className={styles.page}>
@@ -67,18 +72,34 @@ export default function RepartidorPublicPortal() {
         <section className={styles.card}>
           <h2 className={styles.cardTitle}>Ordenes repartidor</h2>
           <div className={styles.tabRow} role="tablist" aria-label="Secciones de repartidor">
-            <button type="button" className={`${styles.tabButton} ${styles.tabButtonActive}`}>
+            <button
+              type="button"
+              className={`${styles.tabButton} ${activeTab === "pedidos" ? styles.tabButtonActive : ""}`}
+              onClick={() => setActiveTab("pedidos")}
+            >
               Pedidos
             </button>
-            <button type="button" className={styles.tabButton}>En ruta</button>
-            <button type="button" className={styles.tabButton}>Historial</button>
+            <button
+              type="button"
+              className={`${styles.tabButton} ${activeTab === "en_ruta" ? styles.tabButtonActive : ""}`}
+              onClick={() => setActiveTab("en_ruta")}
+            >
+              En ruta
+            </button>
+            <button
+              type="button"
+              className={`${styles.tabButton} ${activeTab === "historial" ? styles.tabButtonActive : ""}`}
+              onClick={() => setActiveTab("historial")}
+            >
+              Historial
+            </button>
           </div>
 
           {!hasOrders ? (
-            <p className={styles.empty}>No hay ordenes pendientes por entregar.</p>
+            <p className={styles.empty}>{emptyMessage}</p>
           ) : (
             <div className={adminStyles.courierGrid}>
-              {courierOrders.map((request) => (
+              {visibleOrders.map((request) => (
                 <article
                   key={request.id}
                   className={`${adminStyles.courierCard} ${
