@@ -88,6 +88,7 @@ export default function App() {
           {withCount("Devoluciones a devolver", navCounts?.toReturn || 0)}
         </s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/history")}>Historial</s-link>
+        <s-link href={withEmbedParams("/app/devoluciones/solicitudes/repartidor")}>Ordenes repartidor</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>

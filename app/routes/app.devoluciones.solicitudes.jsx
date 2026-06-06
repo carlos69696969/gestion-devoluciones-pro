@@ -29,6 +29,7 @@ const VIEW_MODE = {
   REFUNDS: "refunds",
   TO_RETURN: "to_return",
   HISTORY: "history",
+  COURIER: "courier",
 };
 
 const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento_fallido_2"]);
@@ -202,6 +203,7 @@ function normalizeViewMode(rawValue) {
   if (value === VIEW_MODE.REFUNDS) return VIEW_MODE.REFUNDS;
   if (value === VIEW_MODE.TO_RETURN) return VIEW_MODE.TO_RETURN;
   if (value === VIEW_MODE.HISTORY) return VIEW_MODE.HISTORY;
+  if (value === VIEW_MODE.COURIER) return VIEW_MODE.COURIER;
   return VIEW_MODE.BRANCH;
 }
 
@@ -215,6 +217,7 @@ function viewModeFromPathname(pathname) {
   if (path.endsWith("/refunds")) return VIEW_MODE.REFUNDS;
   if (path.endsWith("/to_return")) return VIEW_MODE.TO_RETURN;
   if (path.endsWith("/history")) return VIEW_MODE.HISTORY;
+  if (path.endsWith("/repartidor")) return VIEW_MODE.COURIER;
   return "";
 }
 
@@ -981,14 +984,17 @@ export const loader = async ({ request }) => {
     ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
   };
 
-  const rawRequests = await prisma.returnRequest.findMany({
-    where,
-    include: { items: { select: itemSelect } },
-    orderBy: { createdAt: "desc" },
-  });
+  const rawRequests =
+    viewMode === VIEW_MODE.COURIER
+      ? []
+      : await prisma.returnRequest.findMany({
+          where,
+          include: { items: { select: itemSelect } },
+          orderBy: { createdAt: "desc" },
+        });
 
   const courierOrdersRaw =
-    viewMode === VIEW_MODE.HISTORY
+    viewMode === VIEW_MODE.HISTORY || viewMode === VIEW_MODE.COURIER
       ? await prisma.returnRequest.findMany({
           where: { shop: session.shop },
           select: {
@@ -1601,6 +1607,8 @@ export default function ReturnsRequests() {
           ? "Devoluciones a devolver"
         : viewMode === VIEW_MODE.HISTORY
           ? "Historial"
+        : viewMode === VIEW_MODE.COURIER
+          ? "Ordenes repartidor"
         : "Entrega en sucursal";
 
   return (
@@ -1760,6 +1768,56 @@ export default function ReturnsRequests() {
             )}
           </s-section>
         </>
+      ) : null}
+
+      {viewMode === VIEW_MODE.COURIER ? (
+        <s-section heading="Ordenes repartidor">
+          <p className={styles.noticeMuted}>
+            Aqui se muestran juntas las ordenes de <strong>entrega</strong> y las de <strong>devolucion</strong>.
+          </p>
+          {courierOrders.length === 0 ? (
+            <p>No hay ordenes repartidor registradas.</p>
+          ) : (
+            <div className={styles.courierGrid}>
+              {courierOrders.map((request) => (
+                <article key={request.id} className={styles.courierCard}>
+                  <div className={styles.courierHeader}>
+                    <div>
+                      <h3 className={styles.courierTitle}>Pedido #{request.orderNumber}</h3>
+                      <p className={styles.courierMeta}>
+                        {request.customerName} | {request.customerEmail} | {request.customerPhone || "-"}
+                      </p>
+                    </div>
+                    <span
+                      className={
+                        request.courierLabel === "devolucion"
+                          ? styles.courierBadgeReturn
+                          : styles.courierBadgeDelivery
+                      }
+                    >
+                      {request.courierLabel}
+                    </span>
+                  </div>
+                  <div className={styles.courierDetails}>
+                    <p>
+                      <strong>Metodo:</strong>{" "}
+                      {request.courierLabel === "devolucion"
+                        ? "Recoleccion a domicilio"
+                        : "Entrega en sucursal"}
+                    </p>
+                    <p>
+                      <strong>Estado:</strong> {courierStatusLabel(request.status)}
+                    </p>
+                    <p>
+                      <strong>Actualizado:</strong>{" "}
+                      {new Date(request.updatedAt || request.createdAt).toLocaleString("es-MX")}
+                    </p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </s-section>
       ) : null}
     </s-page>
   );
