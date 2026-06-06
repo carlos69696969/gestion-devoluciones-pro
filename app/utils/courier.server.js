@@ -3,13 +3,6 @@ import prisma from "../db.server";
 const ADMIN_API_VERSION = "2025-10";
 export const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento_fallido_2"]);
 
-function parseCourierDate(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return null;
-  const date = raw.includes("T") ? new Date(raw) : new Date(`${raw}T00:00:00`);
-  return Number.isFinite(date.getTime()) ? date : null;
-}
-
 function getCourierCustomAttribute(orderNode, keys) {
   const attributes = Array.isArray(orderNode?.customAttributes) ? orderNode.customAttributes : [];
   const normalizedKeys = keys.map((key) => String(key || "").trim().toLowerCase());
@@ -43,46 +36,6 @@ export function isCourierLocalDeliveryOrder(orderNode) {
   });
 }
 
-export function courierOrderTimestampMs(request) {
-  const date =
-    parseCourierDate(request?.pickupDate) ||
-    parseCourierDate(request?.updatedAt) ||
-    parseCourierDate(request?.createdAt);
-  return date ? date.getTime() : 0;
-}
-
-export function formatCourierScheduledDate(pickupDate) {
-  const date = parseCourierDate(pickupDate);
-  if (!date) return "-";
-
-  const parts = new Intl.DateTimeFormat("es-MX", {
-    weekday: "short",
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  }).formatToParts(date);
-
-  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  const weekday = String(lookup.weekday || "").replace(/\./g, "").toLowerCase();
-  const day = String(lookup.day || "").trim();
-  const month = String(lookup.month || "").toLowerCase();
-  const year = String(lookup.year || "").trim();
-  return [weekday, day, month, year].filter(Boolean).join(" ");
-}
-
-export function formatCourierAddress(request) {
-  const parts = [
-    request?.pickupAddress,
-    request?.pickupNeighborhood,
-    request?.pickupCity,
-    request?.pickupState,
-    request?.pickupPostalCode,
-    request?.pickupCountry || "Mexico",
-  ]
-    .map((part) => String(part || "").trim())
-    .filter(Boolean);
-  return parts.length ? parts.join(", ") : "-";
-}
 
 export async function resolveCourierPortalShop(request) {
   const url = new URL(request.url);
