@@ -63,6 +63,7 @@ export default function RepartidorPublicPortal() {
   const isHistoryTab = activeTab === "historial";
   const emptyMessage =
     activeTab === "en_ruta" ? "No hay pedidos en ruta." : "No hay ordenes pendientes por entregar.";
+  const isReturnOrder = (request) => String(request?.courierLabel || "") === "Devolucion";
 
   const buildMapsUrl = (request) => {
     const address = formatCourierAddress(request);
@@ -150,35 +151,52 @@ export default function RepartidorPublicPortal() {
                   <p className={adminStyles.courierField}>{request.customerPhone || "-"}</p>
                   {activeTab === "en_ruta" ? (
                     <div className={styles.actionRow}>
-                      <a
-                        className={`${styles.actionButton} ${styles.actionButtonPrimary}`}
-                        href={buildMapsUrl(request)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Mapa
-                      </a>
-                      {buildPhoneUrl(request) ? (
-                        <a
-                          className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
-                          href={buildPhoneUrl(request)}
-                        >
-                          Telefono
-                        </a>
+                      {isReturnOrder(request) ? (
+                        <>
+                          <button type="button" className={styles.actionButton}>
+                            Recibido
+                          </button>
+                          <button type="button" className={styles.actionButton}>
+                            No recibido
+                          </button>
+                        </>
                       ) : (
-                        <button type="button" className={`${styles.actionButton} ${styles.actionButtonSecondary}`} disabled>
-                          Telefono
-                        </button>
+                        <>
+                          <a
+                            className={`${styles.actionButton} ${styles.actionButtonPrimary}`}
+                            href={buildMapsUrl(request)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Mapa
+                          </a>
+                          {buildPhoneUrl(request) ? (
+                            <a
+                              className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
+                              href={buildPhoneUrl(request)}
+                            >
+                              Telefono
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
+                              disabled
+                            >
+                              Telefono
+                            </button>
+                          )}
+                          <button type="button" className={styles.actionButton}>
+                            En ruta
+                          </button>
+                          <button type="button" className={styles.actionButton}>
+                            Entregado
+                          </button>
+                          <button type="button" className={styles.actionButton}>
+                            No entregado
+                          </button>
+                        </>
                       )}
-                      <button type="button" className={styles.actionButton}>
-                        En ruta
-                      </button>
-                      <button type="button" className={styles.actionButton}>
-                        Entregado
-                      </button>
-                      <button type="button" className={styles.actionButton}>
-                        No entregado
-                      </button>
                     </div>
                   ) : null}
                 </article>
