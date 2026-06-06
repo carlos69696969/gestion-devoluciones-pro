@@ -790,11 +790,15 @@
 .courierBadgeStatus {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-height: 26px;
   border-radius: 999px;
   padding: 5px 12px;
   font-size: 13px;
   font-weight: 800;
   line-height: 1;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
 .courierBadgeDelivery {
@@ -804,9 +808,20 @@
 }
 
 .courierBadgeReturn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
   background: #eff6ff;
   border: 1px solid #bfdbfe;
   color: #1d4ed8;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
 .courierBadgeStatus {
