@@ -995,37 +995,7 @@ export const loader = async ({ request }) => {
 
   const courierOrdersRaw =
     viewMode === VIEW_MODE.COURIER
-      ? await prisma.returnRequest.findMany({
-          where:
-            viewMode === VIEW_MODE.COURIER
-              ? {
-                  shop: session.shop,
-                  status: "pendiente",
-                  returnMethod: "pickup",
-                }
-              : { shop: session.shop },
-          select: {
-            id: true,
-            orderNumber: true,
-            customerName: true,
-            customerPhone: true,
-            pickupDate: true,
-            pickupAddress: true,
-            pickupNeighborhood: true,
-            pickupCity: true,
-            pickupState: true,
-            pickupPostalCode: true,
-            returnMethod: true,
-            status: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-          orderBy:
-            viewMode === VIEW_MODE.COURIER
-              ? [{ pickupDate: "asc" }, { createdAt: "asc" }, { id: "asc" }]
-              : [{ updatedAt: "desc" }, { id: "desc" }],
-          take: 200,
-        })
+      ? await fetchCourierOrders(admin)
       : [];
 
   const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
@@ -1553,17 +1523,138 @@ function buildPickupGroups(requests) {
   }));
 }
 
+function normalizeCourierAttrKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+function getCourierCustomAttribute(orderNode, candidateKeys) {
+  const attributes = Array.isArray(orderNode?.customAttributes) ? orderNode.customAttributes : [];
+  const normalizedKeys = new Set((candidateKeys || []).map((key) => normalizeCourierAttrKey(key)));
+  const match = attributes.find((attribute) => normalizedKeys.has(normalizeCourierAttrKey(attribute?.key)));
+  return String(match?.value || "").trim();
+}
+
+function getCourierScheduledDate(orderNode) {
+  const candidate = getCourierCustomAttribute(orderNode, [
+    "programado",
+    "pickupDate",
+    "pickup_date",
+    "delivery_date",
+    "deliveryDate",
+    "scheduled_date",
+    "scheduledDate",
+    "preferred_delivery_date",
+  ]);
+  return candidate;
+}
+
+function parseCourierDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const date = raw.includes("T") ? new Date(raw) : new Date(`${raw}T00:00:00`);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function isCourierLocalDeliveryOrder(orderNode) {
+  const shippingLines = Array.isArray(orderNode?.shippingLines?.nodes) ? orderNode.shippingLines.nodes : [];
+  return shippingLines.some((line) => {
+    const title = String(line?.title || "").toLowerCase();
+    const code = String(line?.code || "").toLowerCase();
+    const category = String(line?.deliveryCategory || "").toLowerCase();
+    return title.includes("local") || code.includes("local") || category.includes("local");
+  });
+}
+
+async function fetchCourierOrders(admin) {
+  const response = await admin.graphql(
+    `#graphql
+    query CourierOrders {
+      orders(first: 250, query: "fulfillment_status:unfulfilled", sortKey: UPDATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            name
+            createdAt
+            displayFulfillmentStatus
+            shippingAddress {
+              name
+              phone
+              address1
+              address2
+              city
+              province
+              zip
+              country
+            }
+            billingAddress {
+              name
+              phone
+            }
+            customAttributes {
+              key
+              value
+            }
+            shippingLines(first: 5) {
+              nodes {
+                title
+                code
+                deliveryCategory
+              }
+            }
+          }
+        }
+      }
+    }`,
+  );
+  const payload = await response.json();
+  const errors = payload?.errors || [];
+  if (errors.length) {
+    throw new Error(errors[0]?.message || "No se pudieron cargar las ordenes repartidor.");
+  }
+
+  const nodes = payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || [];
+  return nodes
+    .filter((orderNode) => {
+      const status = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
+      return isCourierLocalDeliveryOrder(orderNode) && !["FULFILLED", "RESTOCKED"].includes(status);
+    })
+    .map((orderNode) => {
+      const shipping = orderNode.shippingAddress || null;
+      const billing = orderNode.billingAddress || null;
+      return {
+        id: orderNode.id,
+        orderNumber: String(orderNode.name || "").replace("#", ""),
+        customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
+        customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
+        pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
+        pickupAddress: String(shipping?.address1 || "").trim(),
+        pickupNeighborhood: String(shipping?.address2 || "").trim(),
+        pickupCity: String(shipping?.city || "").trim(),
+        pickupState: String(shipping?.province || "").trim(),
+        pickupPostalCode: String(shipping?.zip || "").trim(),
+        pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
+        createdAt: orderNode.createdAt,
+        updatedAt: orderNode.createdAt,
+        status: "pendiente",
+      };
+    })
+    .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
+}
+
 function courierOrderTimestampMs(request) {
-  const value = request?.pickupDate ? `${request.pickupDate}T00:00:00` : request?.updatedAt || request?.createdAt;
-  const ms = new Date(value).getTime();
-  return Number.isFinite(ms) ? ms : 0;
+  const date =
+    parseCourierDate(request?.pickupDate) ||
+    parseCourierDate(request?.updatedAt) ||
+    parseCourierDate(request?.createdAt);
+  return date ? date.getTime() : 0;
 }
 
 function formatCourierScheduledDate(pickupDate) {
-  const raw = String(pickupDate || "").trim();
-  if (!raw) return "-";
-  const date = new Date(`${raw}T00:00:00`);
-  if (!Number.isFinite(date.getTime())) return raw;
+  const date = parseCourierDate(pickupDate);
+  if (!date) return "-";
 
   const parts = new Intl.DateTimeFormat("es-MX", {
     weekday: "short",
@@ -1586,7 +1677,7 @@ function formatCourierAddress(request) {
     request?.pickupCity,
     request?.pickupState,
     request?.pickupPostalCode,
-    "Mexico",
+    request?.pickupCountry || "Mexico",
   ]
     .map((part) => String(part || "").trim())
     .filter(Boolean);
@@ -1755,7 +1846,7 @@ export default function ReturnsRequests() {
       {viewMode === VIEW_MODE.COURIER ? (
         <s-section heading="Ordenes repartidor">
           {courierOrders.length === 0 ? (
-            <p>No hay ordenes repartidor registradas.</p>
+            <p>No hay ordenes pendientes por entregar.</p>
           ) : (
             <div className={styles.courierGrid}>
               {courierOrders.map((request) => (
