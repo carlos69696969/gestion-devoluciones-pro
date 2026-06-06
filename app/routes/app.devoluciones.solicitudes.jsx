@@ -994,21 +994,36 @@ export const loader = async ({ request }) => {
         });
 
   const courierOrdersRaw =
-    viewMode === VIEW_MODE.HISTORY || viewMode === VIEW_MODE.COURIER
+    viewMode === VIEW_MODE.COURIER
       ? await prisma.returnRequest.findMany({
-          where: { shop: session.shop },
+          where:
+            viewMode === VIEW_MODE.COURIER
+              ? {
+                  shop: session.shop,
+                  status: "pendiente",
+                  returnMethod: "pickup",
+                }
+              : { shop: session.shop },
           select: {
             id: true,
             orderNumber: true,
             customerName: true,
-            customerEmail: true,
             customerPhone: true,
+            pickupDate: true,
+            pickupAddress: true,
+            pickupNeighborhood: true,
+            pickupCity: true,
+            pickupState: true,
+            pickupPostalCode: true,
             returnMethod: true,
             status: true,
             createdAt: true,
             updatedAt: true,
           },
-          orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+          orderBy:
+            viewMode === VIEW_MODE.COURIER
+              ? [{ pickupDate: "asc" }, { createdAt: "asc" }, { id: "asc" }]
+              : [{ updatedAt: "desc" }, { id: "desc" }],
           take: 200,
         })
       : [];
@@ -1073,9 +1088,9 @@ export const loader = async ({ request }) => {
   const courierOrders = courierOrdersRaw
     .map((requestRow) => ({
       ...requestRow,
-      courierLabel: courierLabelFromReturnMethod(requestRow.returnMethod),
+      courierLabel: "Entrega",
     }))
-    .sort((a, b) => courierOrderTimestampMs(b) - courierOrderTimestampMs(a));
+    .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
 
   return { requests, courierOrders, viewMode };
 };
@@ -1538,29 +1553,44 @@ function buildPickupGroups(requests) {
   }));
 }
 
-function courierLabelFromReturnMethod(returnMethod) {
-  return String(returnMethod || "").toLowerCase() === "pickup" ? "devolucion" : "entrega";
-}
-
-function courierStatusLabel(status) {
-  const normalized = String(status || "").toLowerCase();
-  if (normalized === "en_revision") return "en revision";
-  if (normalized === "aprobada") return "aprobada";
-  if (normalized === "intento_fallido_1") return "intento fallido 1";
-  if (normalized === "intento_fallido_2") return "intento fallido 2";
-  if (normalized === "por_devolver") return "pendiente por recoger";
-  if (normalized === "recibida") return "recibida";
-  if (normalized === "rechazada") return "rechazada";
-  if (normalized === "denegada" || normalized === "reembolso_denegado") return "reembolso denegado";
-  if (normalized === "reembolsada") return "reembolsada";
-  if (normalized === "completada") return "completada";
-  return normalized || "pendiente";
-}
-
 function courierOrderTimestampMs(request) {
-  const value = request?.updatedAt || request?.createdAt;
+  const value = request?.pickupDate ? `${request.pickupDate}T00:00:00` : request?.updatedAt || request?.createdAt;
   const ms = new Date(value).getTime();
   return Number.isFinite(ms) ? ms : 0;
+}
+
+function formatCourierScheduledDate(pickupDate) {
+  const raw = String(pickupDate || "").trim();
+  if (!raw) return "-";
+  const date = new Date(`${raw}T00:00:00`);
+  if (!Number.isFinite(date.getTime())) return raw;
+
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    weekday: "short",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const weekday = String(lookup.weekday || "").replace(/\./g, "").toLowerCase();
+  const day = String(lookup.day || "").trim();
+  const month = String(lookup.month || "").toLowerCase();
+  const year = String(lookup.year || "").trim();
+  return [weekday, day, month, year].filter(Boolean).join(" ");
+}
+
+function formatCourierAddress(request) {
+  const parts = [
+    request?.pickupAddress,
+    request?.pickupNeighborhood,
+    request?.pickupCity,
+    request?.pickupState,
+    request?.pickupPostalCode,
+    "Mexico",
+  ]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean);
+  return parts.length ? parts.join(", ") : "-";
 }
 
 function historyTimestampMs(request) {
@@ -1719,62 +1749,11 @@ export default function ReturnsRequests() {
               </div>
             )}
           </s-section>
-
-          <s-section heading="Ordenes repartidor">
-            <p className={styles.noticeMuted}>
-              Aqui se muestran juntas las ordenes de <strong>entrega</strong> y las de <strong>devolucion</strong>.
-            </p>
-            {courierOrders.length === 0 ? (
-              <p>No hay ordenes repartidor registradas.</p>
-            ) : (
-              <div className={styles.courierGrid}>
-                {courierOrders.map((request) => (
-                  <article key={request.id} className={styles.courierCard}>
-                    <div className={styles.courierHeader}>
-                      <div>
-                        <h3 className={styles.courierTitle}>Pedido #{request.orderNumber}</h3>
-                        <p className={styles.courierMeta}>
-                          {request.customerName} | {request.customerEmail} | {request.customerPhone || "-"}
-                        </p>
-                      </div>
-                      <span
-                        className={
-                          request.courierLabel === "devolucion"
-                            ? styles.courierBadgeReturn
-                            : styles.courierBadgeDelivery
-                        }
-                      >
-                        {request.courierLabel}
-                      </span>
-                    </div>
-                    <div className={styles.courierDetails}>
-                      <p>
-                        <strong>Metodo:</strong>{" "}
-                        {request.courierLabel === "devolucion"
-                          ? "Recoleccion a domicilio"
-                          : "Entrega en sucursal"}
-                      </p>
-                      <p>
-                        <strong>Estado:</strong> {courierStatusLabel(request.status)}
-                      </p>
-                      <p>
-                        <strong>Actualizado:</strong>{" "}
-                        {new Date(request.updatedAt || request.createdAt).toLocaleString("es-MX")}
-                      </p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </s-section>
         </>
       ) : null}
 
       {viewMode === VIEW_MODE.COURIER ? (
         <s-section heading="Ordenes repartidor">
-          <p className={styles.noticeMuted}>
-            Aqui se muestran juntas las ordenes de <strong>entrega</strong> y las de <strong>devolucion</strong>.
-          </p>
           {courierOrders.length === 0 ? (
             <p>No hay ordenes repartidor registradas.</p>
           ) : (
@@ -1782,37 +1761,16 @@ export default function ReturnsRequests() {
               {courierOrders.map((request) => (
                 <article key={request.id} className={styles.courierCard}>
                   <div className={styles.courierHeader}>
-                    <div>
-                      <h3 className={styles.courierTitle}>Pedido #{request.orderNumber}</h3>
-                      <p className={styles.courierMeta}>
-                        {request.customerName} | {request.customerEmail} | {request.customerPhone || "-"}
-                      </p>
-                    </div>
-                    <span
-                      className={
-                        request.courierLabel === "devolucion"
-                          ? styles.courierBadgeReturn
-                          : styles.courierBadgeDelivery
-                      }
-                    >
-                      {request.courierLabel}
-                    </span>
+                    <span className={styles.courierBadgeDelivery}>{request.courierLabel}</span>
+                    <span className={styles.courierBadgeStatus}>{request.status}</span>
                   </div>
-                  <div className={styles.courierDetails}>
-                    <p>
-                      <strong>Metodo:</strong>{" "}
-                      {request.courierLabel === "devolucion"
-                        ? "Recoleccion a domicilio"
-                        : "Entrega en sucursal"}
-                    </p>
-                    <p>
-                      <strong>Estado:</strong> {courierStatusLabel(request.status)}
-                    </p>
-                    <p>
-                      <strong>Actualizado:</strong>{" "}
-                      {new Date(request.updatedAt || request.createdAt).toLocaleString("es-MX")}
-                    </p>
-                  </div>
+                  <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
+                  <p className={styles.courierCustomerName}>{request.customerName}</p>
+                  <p className={styles.courierField}>
+                    <strong>Programado:</strong> {formatCourierScheduledDate(request.pickupDate)}
+                  </p>
+                  <p className={styles.courierAddress}>{formatCourierAddress(request)}</p>
+                  <p className={styles.courierField}>{request.customerPhone || "-"}</p>
                 </article>
               ))}
             </div>
