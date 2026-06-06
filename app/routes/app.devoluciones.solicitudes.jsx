@@ -995,7 +995,16 @@ export const loader = async ({ request }) => {
 
   const courierOrdersRaw =
     viewMode === VIEW_MODE.COURIER
-      ? await fetchCourierOrders(admin)
+      ? [
+          ...(await fetchCourierOrders(admin)).map((requestRow) => ({
+            ...requestRow,
+            courierLabel: "Entrega",
+          })),
+          ...(await fetchPickupCourierOrders(session.shop)).map((requestRow) => ({
+            ...requestRow,
+            courierLabel: "Devolución",
+          })),
+        ]
       : [];
 
   const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
@@ -1055,12 +1064,7 @@ export const loader = async ({ request }) => {
     };
   });
 
-  const courierOrders = courierOrdersRaw
-    .map((requestRow) => ({
-      ...requestRow,
-      courierLabel: "Entrega",
-    }))
-    .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
+  const courierOrders = courierOrdersRaw.sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
 
   return { requests, courierOrders, viewMode };
 };
@@ -1644,6 +1648,50 @@ async function fetchCourierOrders(admin) {
     .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
 }
 
+async function fetchPickupCourierOrders(shop) {
+  const pickupOrders = await prisma.returnRequest.findMany({
+    where: {
+      shop,
+      returnMethod: "pickup",
+      status: { in: Array.from(METHOD_QUEUE_STATUSES) },
+    },
+    select: {
+      id: true,
+      orderNumber: true,
+      customerName: true,
+      customerPhone: true,
+      pickupDate: true,
+      pickupAddress: true,
+      pickupNeighborhood: true,
+      pickupCity: true,
+      pickupState: true,
+      pickupPostalCode: true,
+      createdAt: true,
+      updatedAt: true,
+      status: true,
+    },
+    orderBy: [{ pickupDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    take: 250,
+  });
+
+  return pickupOrders.map((requestRow) => ({
+    id: `pickup-${requestRow.id}`,
+    orderNumber: String(requestRow.orderNumber || "").replace("#", ""),
+    customerName: String(requestRow.customerName || "Cliente").trim(),
+    customerPhone: String(requestRow.customerPhone || "-").trim() || "-",
+    pickupDate: String(requestRow.pickupDate || requestRow.createdAt || "").trim(),
+    pickupAddress: String(requestRow.pickupAddress || "").trim(),
+    pickupNeighborhood: String(requestRow.pickupNeighborhood || "").trim(),
+    pickupCity: String(requestRow.pickupCity || "").trim(),
+    pickupState: String(requestRow.pickupState || "").trim(),
+    pickupPostalCode: String(requestRow.pickupPostalCode || "").trim(),
+    pickupCountry: "Mexico",
+    createdAt: requestRow.createdAt,
+    updatedAt: requestRow.updatedAt,
+    status: "pendiente",
+  }));
+}
+
 function courierOrderTimestampMs(request) {
   const date =
     parseCourierDate(request?.pickupDate) ||
@@ -1850,9 +1898,22 @@ export default function ReturnsRequests() {
           ) : (
             <div className={styles.courierGrid}>
               {courierOrders.map((request) => (
-                <article key={request.id} className={styles.courierCard}>
+                <article
+                  key={request.id}
+                  className={`${styles.courierCard} ${
+                    request.courierLabel === "Devolución" ? styles.courierCardReturn : styles.courierCardDelivery
+                  }`}
+                >
                   <div className={styles.courierHeader}>
-                    <span className={styles.courierBadgeDelivery}>{request.courierLabel}</span>
+                    <span
+                      className={
+                        request.courierLabel === "Devolución"
+                          ? styles.courierBadgeReturn
+                          : styles.courierBadgeDelivery
+                      }
+                    >
+                      {request.courierLabel}
+                    </span>
                     <span className={styles.courierBadgeStatus}>{request.status}</span>
                   </div>
                   <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>

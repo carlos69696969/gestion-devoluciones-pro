@@ -755,6 +755,14 @@
   box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
 }
 
+.courierCardDelivery {
+  border-left-color: #6b7280;
+}
+
+.courierCardReturn {
+  border-left-color: #2563eb;
+}
+
 .courierHeader {
   display: flex;
   justify-content: space-between;
@@ -793,6 +801,12 @@
   background: #ecfdf3;
   border: 1px solid #a7f3d0;
   color: #047857;
+}
+
+.courierBadgeReturn {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
 }
 
 .courierBadgeStatus {
