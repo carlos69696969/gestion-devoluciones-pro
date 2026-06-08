@@ -56,3 +56,26 @@ export function isCourierRouteStatus(status) {
 export function getCourierRouteStatusLabel(status) {
   return isCourierRouteStatus(status) ? "en ruta" : String(status || "pendiente").replace(/_/g, " ");
 }
+
+export function dedupeCourierRequestsByOrderNumber(requests) {
+  const byOrderNumber = new Map();
+
+  for (const request of Array.isArray(requests) ? requests : []) {
+    const orderNumber = String(request?.orderNumber || "").trim();
+    if (!orderNumber) continue;
+
+    const current = byOrderNumber.get(orderNumber);
+    if (!current) {
+      byOrderNumber.set(orderNumber, request);
+      continue;
+    }
+
+    const currentTimestamp = courierOrderTimestampMs(current);
+    const nextTimestamp = courierOrderTimestampMs(request);
+    if (nextTimestamp >= currentTimestamp) {
+      byOrderNumber.set(orderNumber, request);
+    }
+  }
+
+  return Array.from(byOrderNumber.values());
+}

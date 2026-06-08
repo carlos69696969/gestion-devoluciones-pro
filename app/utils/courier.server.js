@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { dedupeCourierRequestsByOrderNumber, courierOrderTimestampMs } from "./courier.shared";
 
 const ADMIN_API_VERSION = "2025-10";
 export const METHOD_QUEUE_STATUSES = new Set([
@@ -179,6 +180,19 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
 
   if (String(requestRow.returnMethod || "") !== "pickup") {
     return { ok: false, error: "Solo se puede marcar en ruta una devolucion de recoleccion." };
+  }
+
+  const normalizedStatus = String(requestRow.status || "").trim().toLowerCase();
+  const blockedStatuses = new Set([
+    "rechazada",
+    "denegada",
+    "reembolso_denegado",
+    "no_devuelto",
+    "reembolsada",
+    "completada",
+  ]);
+  if (blockedStatuses.has(normalizedStatus)) {
+    return { ok: false, error: "Esta solicitud ya esta cerrada y no se puede volver a poner en ruta." };
   }
 
   const currentStep = getCourierRouteStep(requestRow.status);
@@ -400,7 +414,7 @@ export async function fetchPickupCourierOrders(shop) {
     take: 250,
   });
 
-  return pickupOrders.map((requestRow) => ({
+  const courierOrders = pickupOrders.map((requestRow) => ({
     id: `pickup-${requestRow.id}`,
     orderNumber: String(requestRow.orderNumber || "").replace("#", ""),
     customerName: String(requestRow.customerName || "Cliente").trim(),
@@ -417,4 +431,8 @@ export async function fetchPickupCourierOrders(shop) {
     status: String(requestRow.status || "pendiente").trim() || "pendiente",
     courierLabel: "Devolucion",
   }));
+
+  return dedupeCourierRequestsByOrderNumber(courierOrders).sort(
+    (a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
+  );
 }

@@ -4,6 +4,7 @@ import { Form, useActionData, useFetcher, useLoaderData, useLocation, useNavigat
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { dedupeCourierRequestsByOrderNumber } from "../utils/courier.shared";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -1687,7 +1688,7 @@ async function fetchPickupCourierOrders(shop) {
     take: 250,
   });
 
-  return pickupOrders.map((requestRow) => ({
+  const courierOrders = pickupOrders.map((requestRow) => ({
     id: `pickup-${requestRow.id}`,
     orderNumber: String(requestRow.orderNumber || "").replace("#", ""),
     customerName: String(requestRow.customerName || "Cliente").trim(),
@@ -1703,6 +1704,10 @@ async function fetchPickupCourierOrders(shop) {
     updatedAt: requestRow.updatedAt,
     status: String(requestRow.status || "pendiente").trim() || "pendiente",
   }));
+
+  return dedupeCourierRequestsByOrderNumber(courierOrders).sort(
+    (a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
+  );
 }
 
 function courierOrderTimestampMs(request) {
