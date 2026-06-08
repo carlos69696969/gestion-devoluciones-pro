@@ -1,5 +1,6 @@
 import prisma from "../db.server";
 import { dedupeCourierRequestsByOrderNumber, courierOrderTimestampMs } from "./courier.shared";
+import { getCourierRouteStatusFromTags } from "./courier.shared";
 
 const ADMIN_API_VERSION = "2025-10";
 export const METHOD_QUEUE_STATUSES = new Set([
@@ -220,6 +221,131 @@ async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
   }
 }
 
+async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
+  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) return;
+
+  const title = "\u{1F69A} Tu pedido ya va en ruta";
+  const message = `Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya va en camino. \u{1F4E6} Mantente atento para recibirlo.`;
+  const eventPayload = {
+    status: "order_in_transit",
+    event: "order_in_transit",
+    action: "courier_mark_en_route",
+    title,
+    message,
+    note: message,
+    source: "portal_repartidor",
+    order_number: requestRow.orderNumber || null,
+    customer: {
+      email: requestRow.customerEmail || null,
+      name: requestRow.customerName || null,
+      phone: requestRow.customerPhone || null,
+    },
+    courier_label: "Entrega",
+    route_step: routeStep,
+  };
+
+  const endpoints = NOTIFICATIONS_API_KEY
+    ? [
+        `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`,
+        `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`,
+      ]
+    : [`${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`];
+
+  let lastFailure = null;
+  for (const endpoint of endpoints) {
+    const headers = {
+      "Content-Type": "application/json",
+      "x-shop-domain": shopDomain,
+    };
+    if (NOTIFICATIONS_API_KEY) {
+      headers["x-api-key"] = NOTIFICATIONS_API_KEY;
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          shopDomain,
+          event: eventPayload,
+        }),
+      });
+
+      if (response.ok) return;
+
+      const detail = await response.text().catch(() => "");
+      lastFailure = {
+        endpoint,
+        status: response.status,
+        detail: String(detail || "").slice(0, 300),
+      };
+    } catch (error) {
+      lastFailure = {
+        endpoint,
+        error: String(error?.message || error || "unknown"),
+      };
+    }
+  }
+
+  console.error("Failed to emit courier delivery notification", {
+    shopDomain,
+    ...lastFailure,
+  });
+}
+
+export async function markCourierOrderAsEnRoute({
+  shopDomain,
+  requestId,
+  courierLabel,
+  orderNumber,
+  customerName,
+  customerEmail,
+  customerPhone,
+}) {
+  const id = Number(requestId || 0);
+  const isPickupRequest = String(requestId || "").startsWith("pickup-");
+
+  if (isPickupRequest) {
+    return markCourierReturnAsEnRoute({ requestId });
+  }
+
+  const orderGid = String(requestId || "").trim();
+  if (!shopDomain || !orderGid) {
+    return { ok: false, error: "Accion no valida." };
+  }
+
+  const currentStep = 0;
+  const nextStep = currentStep ? currentStep + 1 : 1;
+  if (nextStep > 3) {
+    return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
+  }
+
+  const nextStatus = getCourierNextRouteStatus(`en_ruta_${currentStep || 0}`);
+  const nextTag = nextStep === 1 ? "en ruta" : `en ruta ${nextStep}`;
+
+  await addShopifyOrderTag({
+    shopDomain,
+    shopifyOrderId: orderGid,
+    tag: nextTag,
+  });
+
+  const requestRow = {
+    shop: shopDomain,
+    orderNumber: String(orderNumber || "").trim() || orderGid.replace(/^gid:\/\/shopify\/Order\//, ""),
+    customerName: String(customerName || "Cliente").trim(),
+    customerEmail: String(customerEmail || "").trim(),
+    customerPhone: String(customerPhone || "-").trim() || "-",
+  };
+
+  await emitCourierDeliveryRouteNotification({
+    shopDomain,
+    requestRow,
+    routeStep: nextStep,
+  });
+
+  return { ok: true, requestRow, nextStatus, routeStep: nextStep };
+}
+
 export async function markCourierReturnAsEnRoute({ requestId }) {
   const id = Number(requestId || 0);
   if (!Number.isFinite(id) || id <= 0) {
@@ -278,7 +404,7 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
     await addShopifyOrderTag({
       shopDomain: requestRow.shop,
       shopifyOrderId: requestRow.shopifyOrderId,
-      tag: "en ruta",
+      tag: nextStep === 1 ? "en ruta" : `en ruta ${nextStep}`,
     });
   } catch (error) {
     console.error("Failed to sync Shopify route tag", {
@@ -382,6 +508,7 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
                   key
                   value
                 }
+                tags
                 shippingLines(first: 5) {
                   nodes {
                     title
@@ -433,7 +560,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
           pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
           createdAt: orderNode.createdAt,
           updatedAt: orderNode.createdAt,
-          status: "pendiente",
+          status: getCourierRouteStatusFromTags(orderNode.tags),
           courierLabel: "Entrega",
         };
       });

@@ -57,6 +57,23 @@ export function getCourierRouteStatusLabel(status) {
   return isCourierRouteStatus(status) ? "en ruta" : String(status || "pendiente").replace(/_/g, " ");
 }
 
+function normalizeCourierTag(value) {
+  return String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+}
+
+export function getCourierRouteStepFromTags(tags) {
+  const normalizedTags = new Set((Array.isArray(tags) ? tags : []).map(normalizeCourierTag));
+  if (normalizedTags.has("en ruta 3")) return 3;
+  if (normalizedTags.has("en ruta 2")) return 2;
+  if (normalizedTags.has("en ruta")) return 1;
+  return 0;
+}
+
+export function getCourierRouteStatusFromTags(tags) {
+  const step = getCourierRouteStepFromTags(tags);
+  return step ? `en_ruta_${step}` : "pendiente";
+}
+
 export function dedupeCourierRequestsByOrderNumber(requests) {
   const byOrderNumber = new Map();
 

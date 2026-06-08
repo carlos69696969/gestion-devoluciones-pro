@@ -1,5 +1,5 @@
-import { Form, useLoaderData } from "react-router";
 import { useState } from "react";
+import { Form, useLoaderData } from "react-router";
 import adminStyles from "../styles/admin.module.css";
 import styles from "../styles/repartidor.module.css";
 import {
@@ -12,7 +12,7 @@ import {
 import {
   fetchCourierOrdersForShop,
   fetchPickupCourierOrders,
-  markCourierReturnAsEnRoute,
+  markCourierOrderAsEnRoute,
   resolveCourierPortalShop,
 } from "../utils/courier.server";
 
@@ -28,14 +28,25 @@ function getCourierStatusLabel(status) {
 }
 
 export const action = async ({ request }) => {
+  const { shop } = await resolveCourierPortalShop(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "").trim();
-  const requestId = Number(formData.get("requestId") || 0);
+  const requestId = String(formData.get("requestId") || "").trim();
+  const requestType = String(formData.get("requestType") || "").trim();
 
-  if (intent !== "courier_mark_en_route" || !Number.isFinite(requestId) || requestId <= 0) {
+  if (intent !== "courier_mark_en_route" || !requestId) {
     return { ok: false, error: "Accion no valida." };
   }
-  const result = await markCourierReturnAsEnRoute({ requestId });
+
+  const result = await markCourierOrderAsEnRoute({
+    shopDomain: shop,
+    requestId,
+    courierLabel: requestType,
+    orderNumber: String(formData.get("orderNumber") || "").trim(),
+    customerName: String(formData.get("customerName") || "").trim(),
+    customerEmail: String(formData.get("customerEmail") || "").trim(),
+    customerPhone: String(formData.get("customerPhone") || "").trim(),
+  });
   if (!result.ok) {
     return result;
   }
@@ -122,7 +133,7 @@ export default function RepartidorPublicPortal() {
   const emptyMessage =
     activeTab === "en_ruta" ? "No hay pedidos en ruta." : "No hay ordenes pendientes por entregar.";
   const isReturnOrder = (request) => String(request?.courierLabel || "") === "Devolucion";
-  const isRouteActionVisible = (request) => isReturnOrder(request) && !isCourierRouteStatus(request?.status);
+  const isRouteActionVisible = (request) => !isCourierRouteStatus(request?.status);
 
   const buildMapsUrl = (request) => {
     const address = formatCourierAddress(request);
@@ -143,6 +154,29 @@ export default function RepartidorPublicPortal() {
       `¿Seguro que quieres marcar el pedido #${orderNumber} como en ruta?\n\nCliente: ${customerName}\n\nEsta acción enviará una notificación al cliente y ya no podrás presionarlo accidentalmente.`,
     );
   };
+
+  const renderRouteForm = (request, buttonLabel) => (
+    <Form
+      method="post"
+      className={styles.inlineActionForm}
+      onSubmit={(event) => {
+        if (!confirmRouteAction(request)) {
+          event.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="intent" value="courier_mark_en_route" />
+      <input type="hidden" name="requestId" value={String(request.id || "")} />
+      <input type="hidden" name="requestType" value={String(request.courierLabel || "")} />
+      <input type="hidden" name="orderNumber" value={String(request.orderNumber || "")} />
+      <input type="hidden" name="customerName" value={String(request.customerName || "")} />
+      <input type="hidden" name="customerEmail" value={String(request.customerEmail || "")} />
+      <input type="hidden" name="customerPhone" value={String(request.customerPhone || "")} />
+      <button type="submit" className={styles.actionButton}>
+        {buttonLabel}
+      </button>
+    </Form>
+  );
 
   return (
     <main className={styles.page}>
@@ -245,25 +279,7 @@ export default function RepartidorPublicPortal() {
                             </button>
                           )}
                           {isRouteActionVisible(request) ? (
-                            <Form
-                              method="post"
-                              className={styles.inlineActionForm}
-                              onSubmit={(event) => {
-                                if (!confirmRouteAction(request)) {
-                                  event.preventDefault();
-                                }
-                              }}
-                            >
-                              <input type="hidden" name="intent" value="courier_mark_en_route" />
-                              <input
-                                type="hidden"
-                                name="requestId"
-                                value={String(request.id || "").replace(/^pickup-/, "")}
-                              />
-                              <button type="submit" className={styles.actionButton}>
-                                En ruta
-                              </button>
-                            </Form>
+                            renderRouteForm(request, "En ruta")
                           ) : null}
                           <button type="button" className={styles.actionButton}>
                             Recibido
@@ -298,9 +314,7 @@ export default function RepartidorPublicPortal() {
                               Telefono
                             </button>
                           )}
-                          <button type="button" className={styles.actionButton}>
-                            En ruta
-                          </button>
+                          {isRouteActionVisible(request) ? renderRouteForm(request, "En ruta") : null}
                           <button type="button" className={styles.actionButton}>
                             Entregado
                           </button>
