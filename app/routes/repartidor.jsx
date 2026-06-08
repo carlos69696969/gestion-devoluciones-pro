@@ -19,7 +19,7 @@ export const headers = () => ({
 });
 
 export const loader = async ({ request }) => {
-  const { shop, sessionCandidates } = await resolveCourierPortalShop(request);
+  const { shop, sessionCandidates, allSessionCandidates } = await resolveCourierPortalShop(request);
 
   if (!shop || !sessionCandidates?.length) {
     return {
@@ -30,19 +30,52 @@ export const loader = async ({ request }) => {
     };
   }
 
-  const [deliveryResult, pickupResult] = await Promise.allSettled([
-    fetchCourierOrdersForShop({ shop, sessionCandidates }),
-    fetchPickupCourierOrders(shop),
-  ]);
+  const sessionCandidatesByShop = new Map();
+  for (const sessionCandidate of allSessionCandidates || sessionCandidates || []) {
+    const candidateShop = String(sessionCandidate?.shop || "").trim().toLowerCase();
+    if (!candidateShop) continue;
+    const current = sessionCandidatesByShop.get(candidateShop) || [];
+    current.push(sessionCandidate);
+    sessionCandidatesByShop.set(candidateShop, current);
+  }
 
-  const deliveryOrders = deliveryResult.status === "fulfilled" ? deliveryResult.value : [];
-  const pickupOrders = pickupResult.status === "fulfilled" ? pickupResult.value : [];
-  const courierOrders = [...deliveryOrders, ...pickupOrders].sort(
-    (a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
-  );
+  const shopCandidates = [
+    shop,
+    ...Array.from(sessionCandidatesByShop.keys()).filter((candidate) => candidate !== shop),
+  ].filter(Boolean);
+
+  let courierOrders = [];
+  let resolvedShop = shop;
+
+  for (const shopCandidate of shopCandidates) {
+    const candidateSessions = sessionCandidatesByShop.get(shopCandidate) || [];
+    if (!candidateSessions.length) continue;
+
+    const [deliveryResult, pickupResult] = await Promise.allSettled([
+      fetchCourierOrdersForShop({ shop: shopCandidate, sessionCandidates: candidateSessions }),
+      fetchPickupCourierOrders(shopCandidate),
+    ]);
+
+    const deliveryOrders = deliveryResult.status === "fulfilled" ? deliveryResult.value : [];
+    const pickupOrders = pickupResult.status === "fulfilled" ? pickupResult.value : [];
+    const nextCourierOrders = [...deliveryOrders, ...pickupOrders].sort(
+      (a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
+    );
+
+    if (deliveryOrders.length > 0) {
+      courierOrders = nextCourierOrders;
+      resolvedShop = shopCandidate;
+      break;
+    }
+
+    if (!courierOrders.length && nextCourierOrders.length > 0) {
+      courierOrders = nextCourierOrders;
+      resolvedShop = shopCandidate;
+    }
+  }
 
   return {
-    shop,
+    shop: resolvedShop,
     courierOrders,
   };
 };

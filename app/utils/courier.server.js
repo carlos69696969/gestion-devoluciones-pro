@@ -80,12 +80,13 @@ export async function resolveCourierPortalShop(request) {
     });
 
   if (!selectedShop || !selectedSessions.length) {
-    return { shop: "", sessionCandidates: [] };
+    return { shop: "", sessionCandidates: [], allSessionCandidates: sessionCandidates };
   }
 
   return {
     shop: selectedShop,
     sessionCandidates: selectedSessions,
+    allSessionCandidates: sessionCandidates,
   };
 }
 
