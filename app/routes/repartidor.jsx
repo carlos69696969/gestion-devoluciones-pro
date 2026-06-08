@@ -153,6 +153,33 @@ export default function RepartidorPublicPortal() {
                     <div className={styles.actionRow}>
                       {isReturnOrder(request) ? (
                         <>
+                          <a
+                            className={`${styles.actionButton} ${styles.actionButtonPrimary}`}
+                            href={buildMapsUrl(request)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Mapa
+                          </a>
+                          {buildPhoneUrl(request) ? (
+                            <a
+                              className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
+                              href={buildPhoneUrl(request)}
+                            >
+                              Telefono
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
+                              disabled
+                            >
+                              Telefono
+                            </button>
+                          )}
+                          <button type="button" className={styles.actionButton}>
+                            En ruta
+                          </button>
                           <button type="button" className={styles.actionButton}>
                             Recibido
                           </button>
