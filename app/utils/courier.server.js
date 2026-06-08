@@ -496,9 +496,6 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
                 name
                 createdAt
                 displayFulfillmentStatus
-                customer {
-                  email
-                }
                 shippingAddress {
                   name
                   phone
@@ -559,7 +556,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
           id: orderNode.id,
           orderNumber: String(orderNode.name || "").replace("#", ""),
           customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
-          customerEmail: String(orderNode?.customer?.email || "").trim(),
+          customerEmail: "",
           customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
           pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
           pickupAddress: String(shipping?.address1 || "").trim(),
