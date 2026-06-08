@@ -90,9 +90,7 @@ export async function resolveCourierPortalShop(request) {
   };
 }
 
-export async function fetchCourierOrdersByToken({ shop, accessToken }) {
-  if (!shop || !accessToken) return [];
-
+async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
   const response = await fetch(`https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
     method: "POST",
     headers: {
@@ -102,7 +100,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
     body: JSON.stringify({
       query: `#graphql
         query CourierOrders {
-          orders(first: 250, query: "fulfillment_status:unfulfilled", sortKey: UPDATED_AT, reverse: true) {
+          orders(first: 250, query: "${queryString}", sortKey: UPDATED_AT, reverse: true) {
             edges {
               node {
                 id
@@ -146,33 +144,49 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
     throw new Error(payload?.errors?.[0]?.message || `Error consultando Shopify Admin API (${response.status}).`);
   }
 
-  const nodes = payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || [];
-  return nodes
-    .filter((orderNode) => {
-      const status = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
-      return isCourierLocalDeliveryOrder(orderNode) && !["FULFILLED", "RESTOCKED"].includes(status);
-    })
-    .map((orderNode) => {
-      const shipping = orderNode.shippingAddress || null;
-      const billing = orderNode.billingAddress || null;
-      return {
-        id: orderNode.id,
-        orderNumber: String(orderNode.name || "").replace("#", ""),
-        customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
-        customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
-        pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
-        pickupAddress: String(shipping?.address1 || "").trim(),
-        pickupNeighborhood: String(shipping?.address2 || "").trim(),
-        pickupCity: String(shipping?.city || "").trim(),
-        pickupState: String(shipping?.province || "").trim(),
-        pickupPostalCode: String(shipping?.zip || "").trim(),
-        pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
-        createdAt: orderNode.createdAt,
-        updatedAt: orderNode.createdAt,
-        status: "pendiente",
-        courierLabel: "Entrega",
-      };
-    });
+  return payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || [];
+}
+
+export async function fetchCourierOrdersByToken({ shop, accessToken }) {
+  if (!shop || !accessToken) return [];
+
+  const queryCandidates = ["fulfillment_status:unfulfilled", "status:open", "status:any"];
+
+  for (const queryString of queryCandidates) {
+    const nodes = await fetchCourierOrdersByQuery({ shop, accessToken, queryString });
+    const courierOrders = nodes
+      .filter((orderNode) => {
+        const status = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
+        return isCourierLocalDeliveryOrder(orderNode) && !["FULFILLED", "RESTOCKED"].includes(status);
+      })
+      .map((orderNode) => {
+        const shipping = orderNode.shippingAddress || null;
+        const billing = orderNode.billingAddress || null;
+        return {
+          id: orderNode.id,
+          orderNumber: String(orderNode.name || "").replace("#", ""),
+          customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
+          customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
+          pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
+          pickupAddress: String(shipping?.address1 || "").trim(),
+          pickupNeighborhood: String(shipping?.address2 || "").trim(),
+          pickupCity: String(shipping?.city || "").trim(),
+          pickupState: String(shipping?.province || "").trim(),
+          pickupPostalCode: String(shipping?.zip || "").trim(),
+          pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
+          createdAt: orderNode.createdAt,
+          updatedAt: orderNode.createdAt,
+          status: "pendiente",
+          courierLabel: "Entrega",
+        };
+      });
+
+    if (courierOrders.length > 0) {
+      return courierOrders;
+    }
+  }
+
+  return [];
 }
 
 export async function fetchCourierOrdersForShop({ shop, sessionCandidates }) {
@@ -183,7 +197,10 @@ export async function fetchCourierOrdersForShop({ shop, sessionCandidates }) {
     try {
       const accessToken = String(sessionCandidate?.accessToken || "").trim();
       if (!accessToken) continue;
-      return await fetchCourierOrdersByToken({ shop, accessToken });
+      const courierOrders = await fetchCourierOrdersByToken({ shop, accessToken });
+      if (courierOrders.length > 0) {
+        return courierOrders;
+      }
     } catch (error) {
       lastError = error;
     }
