@@ -136,6 +136,14 @@ export default function RepartidorPublicPortal() {
     return safePhone ? `tel:${safePhone}` : "";
   };
 
+  const confirmRouteAction = (request) => {
+    const orderNumber = String(request?.orderNumber || "").trim() || "-";
+    const customerName = String(request?.customerName || "Cliente").trim();
+    return window.confirm(
+      `¿Seguro que quieres marcar el pedido #${orderNumber} como en ruta?\n\nCliente: ${customerName}\n\nEsta acción enviará una notificación al cliente y ya no podrás presionarlo accidentalmente.`,
+    );
+  };
+
   return (
     <main className={styles.page}>
       <div className={styles.container}>
@@ -237,7 +245,15 @@ export default function RepartidorPublicPortal() {
                             </button>
                           )}
                           {isRouteActionVisible(request) ? (
-                            <Form method="post" className={styles.inlineActionForm}>
+                            <Form
+                              method="post"
+                              className={styles.inlineActionForm}
+                              onSubmit={(event) => {
+                                if (!confirmRouteAction(request)) {
+                                  event.preventDefault();
+                                }
+                              }}
+                            >
                               <input type="hidden" name="intent" value="courier_mark_en_route" />
                               <input
                                 type="hidden"
