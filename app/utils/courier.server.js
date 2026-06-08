@@ -21,6 +21,34 @@ function normalizeShop(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+async function resolveCourierShopSession(shopDomain) {
+  const shop = normalizeShop(shopDomain);
+  if (!shop) return null;
+
+  const sessions = await prisma.session.findMany({
+    where: { shop },
+    select: { id: true, shop: true, isOnline: true, accessToken: true },
+  });
+
+  const candidates = sessions
+    .map((session) => ({
+      id: String(session.id || "").trim(),
+      shop: String(session.shop || "").trim().toLowerCase(),
+      isOnline: Boolean(session.isOnline),
+      accessToken: String(session.accessToken || "").trim(),
+    }))
+    .filter((session) => session.shop && session.accessToken);
+
+  candidates.sort((a, b) => {
+    const aOffline = a.isOnline === false ? 0 : 1;
+    const bOffline = b.isOnline === false ? 0 : 1;
+    if (aOffline !== bOffline) return aOffline - bOffline;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  });
+
+  return candidates[0] || null;
+}
+
 function getCourierCustomAttribute(orderNode, keys) {
   const attributes = Array.isArray(orderNode?.customAttributes) ? orderNode.customAttributes : [];
   const normalizedKeys = keys.map((key) => String(key || "").trim().toLowerCase());
@@ -154,6 +182,44 @@ export async function emitCourierReturnRouteNotification({ shopDomain, requestRo
   });
 }
 
+async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
+  const orderId = String(shopifyOrderId || "").trim();
+  const cleanTag = String(tag || "").trim();
+  if (!shopDomain || !orderId || !cleanTag) return;
+
+  const session = await resolveCourierShopSession(shopDomain);
+  if (!session?.accessToken) return;
+
+  const response = await fetch(`https://${shopDomain}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": session.accessToken,
+    },
+    body: JSON.stringify({
+      query: `#graphql
+        mutation AddCourierRouteTag($id: ID!, $tags: [String!]!) {
+          tagsAdd(id: $id, tags: $tags) {
+            node { id }
+            userErrors { field message }
+          }
+        }`,
+      variables: {
+        id: orderId,
+        tags: [cleanTag],
+      },
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  const topErrors = payload?.errors || [];
+  const userErrors = payload?.data?.tagsAdd?.userErrors || [];
+  if (!response.ok || topErrors.length || userErrors.length) {
+    const message = topErrors[0]?.message || userErrors[0]?.message || `No se pudo agregar la etiqueta ${cleanTag}.`;
+    throw new Error(message);
+  }
+}
+
 export async function markCourierReturnAsEnRoute({ requestId }) {
   const id = Number(requestId || 0);
   if (!Number.isFinite(id) || id <= 0) {
@@ -171,6 +237,7 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
       customerPhone: true,
       returnMethod: true,
       status: true,
+      shopifyOrderId: true,
     },
   });
 
@@ -206,6 +273,20 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
     where: { id },
     data: { status: nextStatus },
   });
+
+  try {
+    await addShopifyOrderTag({
+      shopDomain: requestRow.shop,
+      shopifyOrderId: requestRow.shopifyOrderId,
+      tag: "en ruta",
+    });
+  } catch (error) {
+    console.error("Failed to sync Shopify route tag", {
+      shopDomain: requestRow.shop,
+      orderNumber: requestRow.orderNumber,
+      error: String(error?.message || error || "unknown"),
+    });
+  }
 
   await emitCourierReturnRouteNotification({
     shopDomain: requestRow.shop,
