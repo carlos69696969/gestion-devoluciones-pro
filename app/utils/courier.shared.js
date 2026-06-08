@@ -46,3 +46,13 @@ export function formatCourierAddress(request) {
   return parts.length ? parts.join(", ") : "-";
 }
 
+export function isCourierRouteStatus(status) {
+  return String(status || "")
+    .trim()
+    .toLowerCase()
+    .startsWith("en_ruta");
+}
+
+export function getCourierRouteStatusLabel(status) {
+  return isCourierRouteStatus(status) ? "en ruta" : String(status || "pendiente").replace(/_/g, " ");
+}
