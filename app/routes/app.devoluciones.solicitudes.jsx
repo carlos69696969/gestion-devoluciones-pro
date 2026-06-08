@@ -1764,12 +1764,22 @@ export default function ReturnsRequests() {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
 
+  const latestRequestByOrderNumber = new Map();
+  for (const requestRow of requests) {
+    const orderNumber = String(requestRow.orderNumber || "").trim();
+    if (!orderNumber || latestRequestByOrderNumber.has(orderNumber)) continue;
+    latestRequestByOrderNumber.set(orderNumber, requestRow);
+  }
+
   const reviewRequests = requests.filter(
     (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
   );
-  const activeRequests = requests.filter((requestRow) =>
-    METHOD_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
-  );
+  const activeRequests = requests.filter((requestRow) => {
+    const status = String(requestRow.status || "").toLowerCase();
+    if (!METHOD_QUEUE_STATUSES.has(status)) return false;
+    const orderNumber = String(requestRow.orderNumber || "").trim();
+    return latestRequestByOrderNumber.get(orderNumber)?.id === requestRow.id;
+  });
   const refundQueueRequests = requests.filter((requestRow) =>
     REFUND_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
   );
