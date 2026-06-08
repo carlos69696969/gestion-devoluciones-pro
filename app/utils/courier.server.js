@@ -1,6 +1,9 @@
 import prisma from "../db.server";
-import { dedupeCourierRequestsByOrderNumber, courierOrderTimestampMs } from "./courier.shared";
-import { getCourierRouteStatusFromTags } from "./courier.shared";
+import {
+  dedupeCourierRequestsByOrderNumber,
+  courierOrderTimestampMs,
+  getCourierRouteStatusFromTags,
+} from "./courier.shared";
 
 const ADMIN_API_VERSION = "2025-10";
 export const METHOD_QUEUE_STATUSES = new Set([
@@ -189,7 +192,9 @@ async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
   if (!shopDomain || !orderId || !cleanTag) return;
 
   const session = await resolveCourierShopSession(shopDomain);
-  if (!session?.accessToken) return;
+  if (!session?.accessToken) {
+    throw new Error("No se encontro una sesion valida de Shopify para sincronizar la orden.");
+  }
 
   const response = await fetch(`https://${shopDomain}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
     method: "POST",
@@ -491,6 +496,9 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
                 name
                 createdAt
                 displayFulfillmentStatus
+                customer {
+                  email
+                }
                 shippingAddress {
                   name
                   phone
@@ -551,6 +559,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
           id: orderNode.id,
           orderNumber: String(orderNode.name || "").replace("#", ""),
           customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
+          customerEmail: String(orderNode?.customer?.email || "").trim(),
           customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
           pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
           pickupAddress: String(shipping?.address1 || "").trim(),

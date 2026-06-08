@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Form, useActionData, useLoaderData } from "react-router";
+import { Form, redirect, useActionData, useLoaderData, useSearchParams } from "react-router";
 import adminStyles from "../styles/admin.module.css";
 import styles from "../styles/repartidor.module.css";
 import {
@@ -29,6 +29,7 @@ function getCourierStatusLabel(status) {
 
 export const action = async ({ request }) => {
   try {
+    const url = new URL(request.url);
     const formData = await request.formData();
     const formShop = String(formData.get("shop") || "").trim().toLowerCase();
     const shop = formShop || (await resolveCourierPortalShop(request)).shop;
@@ -52,7 +53,12 @@ export const action = async ({ request }) => {
       return result;
     }
 
-    return { ok: true, message: "Orden marcada en ruta y notificacion enviada." };
+    if (shop) {
+      url.searchParams.set("shop", shop);
+    }
+    url.searchParams.set("tab", "en_ruta");
+    url.searchParams.set("updated", String(Date.now()));
+    return redirect(`${url.pathname}?${url.searchParams.toString()}`);
   } catch (error) {
     console.error("Courier route action failed", error);
     return {
@@ -63,10 +69,14 @@ export const action = async ({ request }) => {
 };
 
 export const loader = async ({ request }) => {
+  const url = new URL(request.url);
   const { shop, sessionCandidates, allSessionCandidates } = await resolveCourierPortalShop(request);
+  const requestedTab = String(url.searchParams.get("tab") || "pedidos").trim().toLowerCase();
+  const activeTab = ["pedidos", "en_ruta", "historial"].includes(requestedTab) ? requestedTab : "pedidos";
 
   if (!shop || !sessionCandidates?.length) {
     return {
+      activeTab,
       shop: shop || "",
       courierOrders: [],
       error:
@@ -119,15 +129,17 @@ export const loader = async ({ request }) => {
   }
 
   return {
+    activeTab,
     shop: resolvedShop,
     courierOrders,
   };
 };
 
 export default function RepartidorPublicPortal() {
-  const { shop, courierOrders } = useLoaderData();
+  const { shop, courierOrders, activeTab: initialActiveTab } = useLoaderData();
   const actionData = useActionData();
-  const [activeTab, setActiveTab] = useState("pedidos");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
   const routeOrder = courierOrders.find((request) => isCourierRouteStatus(request?.status)) || courierOrders[0] || null;
   const visibleOrders =
     activeTab === "en_ruta"
@@ -156,11 +168,21 @@ export default function RepartidorPublicPortal() {
     return safePhone ? `tel:${safePhone}` : "";
   };
 
+  const handleTabChange = (nextTab) => {
+    setActiveTab(nextTab);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("tab", nextTab);
+    if (shop) {
+      nextParams.set("shop", shop);
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
+
   const confirmRouteAction = (request) => {
     const orderNumber = String(request?.orderNumber || "").trim() || "-";
     const customerName = String(request?.customerName || "Cliente").trim();
     return window.confirm(
-      `¿Seguro que quieres marcar el pedido #${orderNumber} como en ruta?\n\nCliente: ${customerName}\n\nEsta acción enviará una notificación al cliente y ya no podrás presionarlo accidentalmente.`,
+      `Seguro que quieres marcar el pedido #${orderNumber} como en ruta?\n\nCliente: ${customerName}\n\nEsta accion enviara una notificacion al cliente.`,
     );
   };
 
@@ -213,21 +235,21 @@ export default function RepartidorPublicPortal() {
             <button
               type="button"
               className={`${styles.tabButton} ${activeTab === "pedidos" ? styles.tabButtonActive : ""}`}
-              onClick={() => setActiveTab("pedidos")}
+              onClick={() => handleTabChange("pedidos")}
             >
               Pedidos
             </button>
             <button
               type="button"
               className={`${styles.tabButton} ${activeTab === "en_ruta" ? styles.tabButtonActive : ""}`}
-              onClick={() => setActiveTab("en_ruta")}
+              onClick={() => handleTabChange("en_ruta")}
             >
               En ruta
             </button>
             <button
               type="button"
               className={`${styles.tabButton} ${activeTab === "historial" ? styles.tabButtonActive : ""}`}
-              onClick={() => setActiveTab("historial")}
+              onClick={() => handleTabChange("historial")}
             >
               Historial
             </button>
@@ -293,9 +315,7 @@ export default function RepartidorPublicPortal() {
                               Telefono
                             </button>
                           )}
-                          {isRouteActionVisible(request) ? (
-                            renderRouteForm(request, "En ruta")
-                          ) : null}
+                          {isRouteActionVisible(request) ? renderRouteForm(request, "En ruta") : null}
                           <button type="button" className={styles.actionButton}>
                             Recibido
                           </button>
