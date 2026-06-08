@@ -32,7 +32,14 @@ const VIEW_MODE = {
   COURIER: "courier",
 };
 
-const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento_fallido_2"]);
+const METHOD_QUEUE_STATUSES = new Set([
+  "aprobada",
+  "intento_fallido_1",
+  "intento_fallido_2",
+  "en_ruta_1",
+  "en_ruta_2",
+  "en_ruta_3",
+]);
 const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
 const RETURN_TO_CUSTOMER_STATUSES = new Set(["por_devolver"]);
 const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"]);
@@ -1572,6 +1579,12 @@ function isCourierLocalDeliveryOrder(orderNode) {
   });
 }
 
+function getCourierStatusLabel(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized.startsWith("en_ruta")) return "en ruta";
+  return STATUS_LABEL[normalized] || normalized.replace(/_/g, " ");
+}
+
 async function fetchCourierOrders(admin) {
   const response = await admin.graphql(
     `#graphql
@@ -1688,7 +1701,7 @@ async function fetchPickupCourierOrders(shop) {
     pickupCountry: "Mexico",
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
-    status: "pendiente",
+    status: String(requestRow.status || "pendiente").trim() || "pendiente",
   }));
 }
 
@@ -1914,7 +1927,7 @@ export default function ReturnsRequests() {
                     >
                       {request.courierLabel}
                     </span>
-                    <span className={styles.courierBadgeStatus}>{request.status}</span>
+                    <span className={styles.courierBadgeStatus}>{getCourierStatusLabel(request.status)}</span>
                   </div>
                   <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
                   <p className={styles.courierCustomerName}>{request.customerName}</p>

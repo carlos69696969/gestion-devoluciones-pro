@@ -1,5 +1,6 @@
-import { useLoaderData } from "react-router";
+import { Form, useLoaderData } from "react-router";
 import { useState } from "react";
+import prisma from "../db.server";
 import adminStyles from "../styles/admin.module.css";
 import styles from "../styles/repartidor.module.css";
 import {
@@ -8,15 +9,85 @@ import {
   formatCourierScheduledDate,
 } from "../utils/courier.shared";
 import {
+  emitCourierReturnRouteNotification,
   fetchCourierOrdersForShop,
   fetchPickupCourierOrders,
+  getCourierNextRouteStatus,
+  getCourierRouteStatusLabel,
   resolveCourierPortalShop,
+  isCourierRouteStatus,
 } from "../utils/courier.server";
 
 export const headers = () => ({
   "Cache-Control": "no-store, max-age=0",
   "X-Robots-Tag": "noindex, nofollow",
 });
+
+function getCourierRouteStep(status) {
+  const match = String(status || "")
+    .trim()
+    .toLowerCase()
+    .match(/^en_ruta_(\d)$/);
+  return match ? Number(match[1]) : 0;
+}
+
+function getCourierStatusLabel(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "pendiente") return "pendiente";
+  return getCourierRouteStatusLabel(status);
+}
+
+export const action = async ({ request }) => {
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") || "").trim();
+  const requestId = Number(formData.get("requestId") || 0);
+
+  if (intent !== "courier_mark_en_route" || !Number.isFinite(requestId) || requestId <= 0) {
+    return { ok: false, error: "Accion no valida." };
+  }
+
+  const requestRow = await prisma.returnRequest.findUnique({
+    where: { id: requestId },
+    select: {
+      id: true,
+      shop: true,
+      orderNumber: true,
+      customerName: true,
+      customerEmail: true,
+      customerPhone: true,
+      returnMethod: true,
+      status: true,
+    },
+  });
+
+  if (!requestRow) {
+    return { ok: false, error: "No encontramos la orden de devolucion." };
+  }
+
+  if (String(requestRow.returnMethod || "") !== "pickup") {
+    return { ok: false, error: "Solo se puede marcar en ruta una devolucion de recoleccion." };
+  }
+
+  const currentStep = getCourierRouteStep(requestRow.status);
+  const nextStep = currentStep ? currentStep + 1 : 1;
+  if (nextStep > 3) {
+    return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
+  }
+
+  const nextStatus = getCourierNextRouteStatus(requestRow.status);
+  await prisma.returnRequest.update({
+    where: { id: requestId },
+    data: { status: nextStatus },
+  });
+
+  await emitCourierReturnRouteNotification({
+    shopDomain: requestRow.shop,
+    requestRow,
+    routeStep: nextStep,
+  });
+
+  return { ok: true, message: "Orden marcada en ruta y notificacion enviada." };
+};
 
 export const loader = async ({ request }) => {
   const { shop, sessionCandidates, allSessionCandidates } = await resolveCourierPortalShop(request);
@@ -83,7 +154,7 @@ export const loader = async ({ request }) => {
 export default function RepartidorPublicPortal() {
   const { shop, courierOrders } = useLoaderData();
   const [activeTab, setActiveTab] = useState("pedidos");
-  const routeOrder = courierOrders[0] || null;
+  const routeOrder = courierOrders.find((request) => isCourierRouteStatus(request?.status)) || courierOrders[0] || null;
   const visibleOrders =
     activeTab === "en_ruta"
       ? routeOrder
@@ -97,6 +168,7 @@ export default function RepartidorPublicPortal() {
   const emptyMessage =
     activeTab === "en_ruta" ? "No hay pedidos en ruta." : "No hay ordenes pendientes por entregar.";
   const isReturnOrder = (request) => String(request?.courierLabel || "") === "Devolucion";
+  const isRouteActionVisible = (request) => isReturnOrder(request) && !isCourierRouteStatus(request?.status);
 
   const buildMapsUrl = (request) => {
     const address = formatCourierAddress(request);
@@ -173,7 +245,7 @@ export default function RepartidorPublicPortal() {
                     >
                       {request.courierLabel}
                     </span>
-                    <span className={adminStyles.courierBadgeStatus}>{request.status}</span>
+                    <span className={adminStyles.courierBadgeStatus}>{getCourierStatusLabel(request.status)}</span>
                   </div>
                   <h3 className={adminStyles.courierOrderNumber}>#{request.orderNumber}</h3>
                   <p className={adminStyles.courierCustomerName}>{request.customerName}</p>
@@ -210,9 +282,19 @@ export default function RepartidorPublicPortal() {
                               Telefono
                             </button>
                           )}
-                          <button type="button" className={styles.actionButton}>
-                            En ruta
-                          </button>
+                          {isRouteActionVisible(request) ? (
+                            <Form method="post" className={styles.inlineActionForm}>
+                              <input type="hidden" name="intent" value="courier_mark_en_route" />
+                              <input
+                                type="hidden"
+                                name="requestId"
+                                value={String(request.id || "").replace(/^pickup-/, "")}
+                              />
+                              <button type="submit" className={styles.actionButton}>
+                                En ruta
+                              </button>
+                            </Form>
+                          ) : null}
                           <button type="button" className={styles.actionButton}>
                             Recibido
                           </button>

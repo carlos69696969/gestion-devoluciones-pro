@@ -117,6 +117,11 @@
   margin-top: 8px;
 }
 
+.inlineActionForm {
+  display: inline-flex;
+  margin: 0;
+}
+
 .actionButton {
   appearance: none;
   display: inline-flex;

@@ -1,7 +1,20 @@
 import prisma from "../db.server";
 
 const ADMIN_API_VERSION = "2025-10";
-export const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento_fallido_2"]);
+export const METHOD_QUEUE_STATUSES = new Set([
+  "aprobada",
+  "intento_fallido_1",
+  "intento_fallido_2",
+  "en_ruta_1",
+  "en_ruta_2",
+  "en_ruta_3",
+]);
+const NOTIFICATIONS_API_BASE_URL = String(
+  process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
+).replace(/\/+$/, "");
+const NOTIFICATIONS_API_KEY = String(
+  process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "",
+).trim();
 
 function normalizeShop(value) {
   return String(value || "").trim().toLowerCase();
@@ -37,6 +50,106 @@ export function isCourierLocalDeliveryOrder(orderNode) {
     const code = String(line?.code || "").toLowerCase();
     const category = String(line?.deliveryCategory || "").toLowerCase();
     return title.includes("local") || code.includes("local") || category.includes("local");
+  });
+}
+
+export function isCourierRouteStatus(status) {
+  return String(status || "")
+    .trim()
+    .toLowerCase()
+    .startsWith("en_ruta");
+}
+
+function getCourierRouteStep(status) {
+  const match = String(status || "")
+    .trim()
+    .toLowerCase()
+    .match(/^en_ruta_(\d)$/);
+  return match ? Number(match[1]) : 0;
+}
+
+export function getCourierRouteStatusLabel(status) {
+  return isCourierRouteStatus(status) ? "en ruta" : String(status || "pendiente").replace(/_/g, " ");
+}
+
+export function getCourierNextRouteStatus(status) {
+  const currentStep = getCourierRouteStep(status);
+  if (!currentStep) return "en_ruta_1";
+  if (currentStep >= 3) return "en_ruta_3";
+  return `en_ruta_${currentStep + 1}`;
+}
+
+export async function emitCourierReturnRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
+  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) return;
+
+  const title = "🚚 En ruta para recoger tu devolución";
+  const message = `Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya se dirige a tu domicilio para recoger tu devolucion. 📦 Ten tu paquete listo y correctamente sellado. 📝 No olvides colocar tu numero de pedido y nombre del comprador en el exterior del paquete.`;
+  const eventPayload = {
+    status: "order_in_transit",
+    event: "order_in_transit",
+    action: "courier_mark_en_route",
+    title,
+    message,
+    note: message,
+    source: "portal_repartidor",
+    order_number: requestRow.orderNumber || null,
+    return_id: requestRow.id || null,
+    customer: {
+      email: requestRow.customerEmail || null,
+      name: requestRow.customerName || null,
+      phone: requestRow.customerPhone || null,
+    },
+    return_method: requestRow.returnMethod || null,
+    courier_label: "Devolucion",
+    route_step: routeStep,
+  };
+
+  const endpoints = NOTIFICATIONS_API_KEY
+    ? [
+        `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`,
+        `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`,
+      ]
+    : [`${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`];
+
+  let lastFailure = null;
+  for (const endpoint of endpoints) {
+    const headers = {
+      "Content-Type": "application/json",
+      "x-shop-domain": shopDomain,
+    };
+    if (NOTIFICATIONS_API_KEY) {
+      headers["x-api-key"] = NOTIFICATIONS_API_KEY;
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          shopDomain,
+          event: eventPayload,
+        }),
+      });
+
+      if (response.ok) return;
+
+      const detail = await response.text().catch(() => "");
+      lastFailure = {
+        endpoint,
+        status: response.status,
+        detail: String(detail || "").slice(0, 300),
+      };
+    } catch (error) {
+      lastFailure = {
+        endpoint,
+        error: String(error?.message || error || "unknown"),
+      };
+    }
+  }
+
+  console.error("Failed to emit courier route notification", {
+    shopDomain,
+    ...lastFailure,
   });
 }
 
@@ -252,7 +365,7 @@ export async function fetchPickupCourierOrders(shop) {
     pickupCountry: "Mexico",
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
-    status: "pendiente",
+    status: String(requestRow.status || "pendiente").trim() || "pendiente",
     courierLabel: "Devolucion",
   }));
 }

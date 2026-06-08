@@ -4,12 +4,22 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
-const METHOD_QUEUE_STATUSES = new Set(["aprobada", "intento_fallido_1", "intento_fallido_2"]);
+const METHOD_QUEUE_STATUSES = new Set([
+  "aprobada",
+  "intento_fallido_1",
+  "intento_fallido_2",
+  "en_ruta_1",
+  "en_ruta_2",
+  "en_ruta_3",
+]);
 const MENU_COUNT_STATUSES = [
   "en_revision",
   "aprobada",
   "intento_fallido_1",
   "intento_fallido_2",
+  "en_ruta_1",
+  "en_ruta_2",
+  "en_ruta_3",
   "recibida",
   "por_devolver",
 ];
