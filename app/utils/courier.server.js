@@ -113,7 +113,9 @@ export function getCourierNextRouteStatus(status) {
 }
 
 export async function emitCourierReturnRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
-  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) return;
+  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
+    return { ok: false, error: "No se pudo preparar la notificacion." };
+  }
 
   const title = "\u{1F69A} En ruta para recoger tu devoluci\u00f3n";
   const message = `Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya se dirige a tu domicilio para recoger tu devolucion. \u{1F4E6} Ten tu paquete listo y correctamente sellado. \u{1F4DD} No olvides colocar tu numero de pedido y nombre del comprador en el exterior del paquete.`;
@@ -127,6 +129,8 @@ export async function emitCourierReturnRouteNotification({ shopDomain, requestRo
     source: "portal_repartidor",
     order_number: requestRow.orderNumber || null,
     return_id: requestRow.id || null,
+    email: requestRow.customerEmail || null,
+    customer_email: requestRow.customerEmail || null,
     customer: {
       email: requestRow.customerEmail || null,
       name: requestRow.customerName || null,
@@ -164,7 +168,9 @@ export async function emitCourierReturnRouteNotification({ shopDomain, requestRo
         }),
       });
 
-      if (response.ok) return;
+      if (response.ok) {
+        return { ok: true };
+      }
 
       const detail = await response.text().catch(() => "");
       lastFailure = {
@@ -184,6 +190,10 @@ export async function emitCourierReturnRouteNotification({ shopDomain, requestRo
     shopDomain,
     ...lastFailure,
   });
+  return {
+    ok: false,
+    error: lastFailure?.detail || lastFailure?.error || "No se pudo enviar la notificacion.",
+  };
 }
 
 async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
@@ -227,7 +237,9 @@ async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
 }
 
 async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
-  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) return;
+  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
+    return { ok: false, error: "No se pudo preparar la notificacion." };
+  }
 
   const title = "\u{1F69A} Tu pedido ya va en ruta";
   const message = `Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya va en camino. \u{1F4E6} Mantente atento para recibirlo.`;
@@ -240,6 +252,8 @@ async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, ro
     note: message,
     source: "portal_repartidor",
     order_number: requestRow.orderNumber || null,
+    email: requestRow.customerEmail || null,
+    customer_email: requestRow.customerEmail || null,
     customer: {
       email: requestRow.customerEmail || null,
       name: requestRow.customerName || null,
@@ -276,7 +290,9 @@ async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, ro
         }),
       });
 
-      if (response.ok) return;
+      if (response.ok) {
+        return { ok: true };
+      }
 
       const detail = await response.text().catch(() => "");
       lastFailure = {
@@ -296,6 +312,10 @@ async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, ro
     shopDomain,
     ...lastFailure,
   });
+  return {
+    ok: false,
+    error: lastFailure?.detail || lastFailure?.error || "No se pudo enviar la notificacion.",
+  };
 }
 
 export async function markCourierOrderAsEnRoute({
@@ -310,7 +330,7 @@ export async function markCourierOrderAsEnRoute({
   const isPickupRequest = String(requestId || "").startsWith("pickup-");
 
   if (isPickupRequest) {
-    return markCourierReturnAsEnRoute({
+    return sendCourierReturnRouteNotificationOnly({
       requestId: String(requestId || "").replace(/^pickup-/, ""),
     });
   }
@@ -326,15 +346,6 @@ export async function markCourierOrderAsEnRoute({
     return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
   }
 
-  const nextStatus = getCourierNextRouteStatus(currentStatus || "");
-  const nextTag = nextStep === 1 ? "en ruta" : `en ruta ${nextStep}`;
-
-  await addShopifyOrderTag({
-    shopDomain,
-    shopifyOrderId: orderGid,
-    tag: nextTag,
-  });
-
   const requestRow = {
     shop: shopDomain,
     orderNumber: String(orderNumber || "").trim() || orderGid.replace(/^gid:\/\/shopify\/Order\//, ""),
@@ -343,13 +354,58 @@ export async function markCourierOrderAsEnRoute({
     customerPhone: String(customerPhone || "-").trim() || "-",
   };
 
-  await emitCourierDeliveryRouteNotification({
+  const notificationResult = await emitCourierDeliveryRouteNotification({
     shopDomain,
     requestRow,
     routeStep: nextStep,
   });
+  if (!notificationResult?.ok) {
+    return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
+  }
 
-  return { ok: true, requestRow, nextStatus, routeStep: nextStep };
+  return { ok: true, requestRow, routeStep: nextStep };
+}
+
+async function sendCourierReturnRouteNotificationOnly({ requestId }) {
+  const id = Number(requestId || 0);
+  if (!Number.isFinite(id) || id <= 0) {
+    return { ok: false, error: "Accion no valida." };
+  }
+
+  const requestRow = await prisma.returnRequest.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      shop: true,
+      orderNumber: true,
+      customerName: true,
+      customerEmail: true,
+      customerPhone: true,
+      returnMethod: true,
+      status: true,
+    },
+  });
+
+  if (!requestRow) {
+    return { ok: false, error: "No encontramos la orden de devolucion." };
+  }
+
+  const currentStep = getCourierRouteStep(requestRow.status);
+  const nextStep = currentStep ? currentStep + 1 : 1;
+  if (nextStep > 3) {
+    return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
+  }
+
+  const notificationResult = await emitCourierReturnRouteNotification({
+    shopDomain: requestRow.shop,
+    requestRow,
+    routeStep: nextStep,
+  });
+  if (!notificationResult?.ok) {
+    return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
+  }
+
+  return { ok: true, requestRow, routeStep: nextStep };
 }
 
 export async function markCourierReturnAsEnRoute({ requestId }) {
