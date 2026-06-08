@@ -296,17 +296,18 @@ async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, ro
 export async function markCourierOrderAsEnRoute({
   shopDomain,
   requestId,
-  courierLabel,
   orderNumber,
   customerName,
   customerEmail,
   customerPhone,
+  currentStatus,
 }) {
-  const id = Number(requestId || 0);
   const isPickupRequest = String(requestId || "").startsWith("pickup-");
 
   if (isPickupRequest) {
-    return markCourierReturnAsEnRoute({ requestId });
+    return markCourierReturnAsEnRoute({
+      requestId: String(requestId || "").replace(/^pickup-/, ""),
+    });
   }
 
   const orderGid = String(requestId || "").trim();
@@ -314,13 +315,13 @@ export async function markCourierOrderAsEnRoute({
     return { ok: false, error: "Accion no valida." };
   }
 
-  const currentStep = 0;
+  const currentStep = getCourierRouteStep(currentStatus);
   const nextStep = currentStep ? currentStep + 1 : 1;
   if (nextStep > 3) {
     return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
   }
 
-  const nextStatus = getCourierNextRouteStatus(`en_ruta_${currentStep || 0}`);
+  const nextStatus = getCourierNextRouteStatus(currentStatus || "");
   const nextTag = nextStep === 1 ? "en ruta" : `en ruta ${nextStep}`;
 
   await addShopifyOrderTag({

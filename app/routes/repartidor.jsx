@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Form, useLoaderData } from "react-router";
+import { Form, useActionData, useLoaderData } from "react-router";
 import adminStyles from "../styles/admin.module.css";
 import styles from "../styles/repartidor.module.css";
 import {
@@ -28,30 +28,38 @@ function getCourierStatusLabel(status) {
 }
 
 export const action = async ({ request }) => {
-  const { shop } = await resolveCourierPortalShop(request);
-  const formData = await request.formData();
-  const intent = String(formData.get("intent") || "").trim();
-  const requestId = String(formData.get("requestId") || "").trim();
-  const requestType = String(formData.get("requestType") || "").trim();
+  try {
+    const formData = await request.formData();
+    const formShop = String(formData.get("shop") || "").trim().toLowerCase();
+    const shop = formShop || (await resolveCourierPortalShop(request)).shop;
+    const intent = String(formData.get("intent") || "").trim();
+    const requestId = String(formData.get("requestId") || "").trim();
 
-  if (intent !== "courier_mark_en_route" || !requestId) {
-    return { ok: false, error: "Accion no valida." };
+    if (intent !== "courier_mark_en_route" || !requestId) {
+      return { ok: false, error: "Accion no valida." };
+    }
+
+    const result = await markCourierOrderAsEnRoute({
+      shopDomain: shop,
+      requestId,
+      orderNumber: String(formData.get("orderNumber") || "").trim(),
+      customerName: String(formData.get("customerName") || "").trim(),
+      customerEmail: String(formData.get("customerEmail") || "").trim(),
+      customerPhone: String(formData.get("customerPhone") || "").trim(),
+      currentStatus: String(formData.get("currentStatus") || "").trim(),
+    });
+    if (!result.ok) {
+      return result;
+    }
+
+    return { ok: true, message: "Orden marcada en ruta y notificacion enviada." };
+  } catch (error) {
+    console.error("Courier route action failed", error);
+    return {
+      ok: false,
+      error: String(error?.message || error || "No se pudo marcar la orden en ruta."),
+    };
   }
-
-  const result = await markCourierOrderAsEnRoute({
-    shopDomain: shop,
-    requestId,
-    courierLabel: requestType,
-    orderNumber: String(formData.get("orderNumber") || "").trim(),
-    customerName: String(formData.get("customerName") || "").trim(),
-    customerEmail: String(formData.get("customerEmail") || "").trim(),
-    customerPhone: String(formData.get("customerPhone") || "").trim(),
-  });
-  if (!result.ok) {
-    return result;
-  }
-
-  return { ok: true, message: "Orden marcada en ruta y notificacion enviada." };
 };
 
 export const loader = async ({ request }) => {
@@ -118,6 +126,7 @@ export const loader = async ({ request }) => {
 
 export default function RepartidorPublicPortal() {
   const { shop, courierOrders } = useLoaderData();
+  const actionData = useActionData();
   const [activeTab, setActiveTab] = useState("pedidos");
   const routeOrder = courierOrders.find((request) => isCourierRouteStatus(request?.status)) || courierOrders[0] || null;
   const visibleOrders =
@@ -165,13 +174,14 @@ export default function RepartidorPublicPortal() {
         }
       }}
     >
+      <input type="hidden" name="shop" value={shop || ""} />
       <input type="hidden" name="intent" value="courier_mark_en_route" />
       <input type="hidden" name="requestId" value={String(request.id || "")} />
-      <input type="hidden" name="requestType" value={String(request.courierLabel || "")} />
       <input type="hidden" name="orderNumber" value={String(request.orderNumber || "")} />
       <input type="hidden" name="customerName" value={String(request.customerName || "")} />
       <input type="hidden" name="customerEmail" value={String(request.customerEmail || "")} />
       <input type="hidden" name="customerPhone" value={String(request.customerPhone || "")} />
+      <input type="hidden" name="currentStatus" value={String(request.status || "")} />
       <button type="submit" className={styles.actionButton}>
         {buttonLabel}
       </button>
@@ -193,6 +203,11 @@ export default function RepartidorPublicPortal() {
         </header>
 
         <section className={styles.card}>
+          {actionData?.ok === false && actionData?.error ? (
+            <p className={styles.empty} role="alert" aria-live="polite">
+              {actionData.error}
+            </p>
+          ) : null}
           <h2 className={styles.cardTitle}>Ordenes repartidor</h2>
           <div className={styles.tabRow} role="tablist" aria-label="Secciones de repartidor">
             <button
