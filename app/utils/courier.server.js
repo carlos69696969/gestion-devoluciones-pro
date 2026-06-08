@@ -82,8 +82,8 @@ export function getCourierNextRouteStatus(status) {
 export async function emitCourierReturnRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
   if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) return;
 
-  const title = "🚚 En ruta para recoger tu devolución";
-  const message = `Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya se dirige a tu domicilio para recoger tu devolucion. 📦 Ten tu paquete listo y correctamente sellado. 📝 No olvides colocar tu numero de pedido y nombre del comprador en el exterior del paquete.`;
+  const title = "\u{1F69A} En ruta para recoger tu devoluci\u00f3n";
+  const message = `Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya se dirige a tu domicilio para recoger tu devolucion. \u{1F4E6} Ten tu paquete listo y correctamente sellado. \u{1F4DD} No olvides colocar tu numero de pedido y nombre del comprador en el exterior del paquete.`;
   const eventPayload = {
     status: "order_in_transit",
     event: "order_in_transit",
@@ -151,6 +151,55 @@ export async function emitCourierReturnRouteNotification({ shopDomain, requestRo
     shopDomain,
     ...lastFailure,
   });
+}
+
+export async function markCourierReturnAsEnRoute({ requestId }) {
+  const id = Number(requestId || 0);
+  if (!Number.isFinite(id) || id <= 0) {
+    return { ok: false, error: "Accion no valida." };
+  }
+
+  const requestRow = await prisma.returnRequest.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      shop: true,
+      orderNumber: true,
+      customerName: true,
+      customerEmail: true,
+      customerPhone: true,
+      returnMethod: true,
+      status: true,
+    },
+  });
+
+  if (!requestRow) {
+    return { ok: false, error: "No encontramos la orden de devolucion." };
+  }
+
+  if (String(requestRow.returnMethod || "") !== "pickup") {
+    return { ok: false, error: "Solo se puede marcar en ruta una devolucion de recoleccion." };
+  }
+
+  const currentStep = getCourierRouteStep(requestRow.status);
+  const nextStep = currentStep ? currentStep + 1 : 1;
+  if (nextStep > 3) {
+    return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
+  }
+
+  const nextStatus = getCourierNextRouteStatus(requestRow.status);
+  await prisma.returnRequest.update({
+    where: { id },
+    data: { status: nextStatus },
+  });
+
+  await emitCourierReturnRouteNotification({
+    shopDomain: requestRow.shop,
+    requestRow,
+    routeStep: nextStep,
+  });
+
+  return { ok: true, requestRow, nextStatus, routeStep: nextStep };
 }
 
 
