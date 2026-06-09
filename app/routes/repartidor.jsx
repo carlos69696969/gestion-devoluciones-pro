@@ -342,6 +342,11 @@ export default function RepartidorPublicPortal() {
                       {request.courierLabel}
                     </span>
                     <div className={styles.statusGroup}>
+                      {!isReturnOrder(request) && getVisibleDeliveryAttemptCount(request) > 0 ? (
+                        <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>
+                          {getDeliveryAttemptLabel(getVisibleDeliveryAttemptCount(request))}
+                        </span>
+                      ) : null}
                       <span
                         className={`${adminStyles.courierBadgeStatus} ${
                           isCourierRouteStatus(request.status)
@@ -353,11 +358,6 @@ export default function RepartidorPublicPortal() {
                       >
                         {getCourierStatusLabel(request.status)}
                       </span>
-                      {!isReturnOrder(request) && getVisibleDeliveryAttemptCount(request) > 0 ? (
-                        <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>
-                          {getDeliveryAttemptLabel(getVisibleDeliveryAttemptCount(request))}
-                        </span>
-                      ) : null}
                     </div>
                   </div>
                   <h3 className={adminStyles.courierOrderNumber}>#{request.orderNumber}</h3>
