@@ -25,9 +25,9 @@ function normalizeShop(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-async function resolveCourierShopSession(shopDomain) {
+async function resolveCourierShopSessions(shopDomain) {
   const shop = normalizeShop(shopDomain);
-  if (!shop) return null;
+  if (!shop) return [];
 
   const sessions = await prisma.session.findMany({
     where: { shop },
@@ -50,9 +50,13 @@ async function resolveCourierShopSession(shopDomain) {
     return String(a.id || "").localeCompare(String(b.id || ""));
   });
 
-  return candidates[0] || null;
+  return candidates;
 }
 
+async function resolveCourierShopSession(shopDomain) {
+  const sessions = await resolveCourierShopSessions(shopDomain);
+  return sessions[0] || null;
+}
 function getCourierCustomAttribute(orderNode, keys) {
   const attributes = Array.isArray(orderNode?.customAttributes) ? orderNode.customAttributes : [];
   const normalizedKeys = keys.map((key) => String(key || "").trim().toLowerCase());
@@ -201,41 +205,55 @@ async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
   const cleanTag = String(tag || "").trim();
   if (!shopDomain || !orderId || !cleanTag) return;
 
-  const session = await resolveCourierShopSession(shopDomain);
-  if (!session?.accessToken) {
+  const sessions = await resolveCourierShopSessions(shopDomain);
+  if (!sessions.length) {
     throw new Error("No se encontro una sesion valida de Shopify para sincronizar la orden.");
   }
 
-  const response = await fetch(`https://${shopDomain}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": session.accessToken,
-    },
-    body: JSON.stringify({
-      query: `#graphql
-        mutation AddCourierRouteTag($id: ID!, $tags: [String!]!) {
-          tagsAdd(id: $id, tags: $tags) {
-            node { id }
-            userErrors { field message }
-          }
-        }`,
-      variables: {
-        id: orderId,
-        tags: [cleanTag],
-      },
-    }),
-  });
+  let lastError = null;
 
-  const payload = await response.json().catch(() => ({}));
-  const topErrors = payload?.errors || [];
-  const userErrors = payload?.data?.tagsAdd?.userErrors || [];
-  if (!response.ok || topErrors.length || userErrors.length) {
-    const message = topErrors[0]?.message || userErrors[0]?.message || `No se pudo agregar la etiqueta ${cleanTag}.`;
-    throw new Error(message);
+  for (const session of sessions) {
+    try {
+      const response = await fetch(`https://${shopDomain}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": session.accessToken,
+        },
+        body: JSON.stringify({
+          query: `#graphql
+            mutation AddCourierRouteTag($id: ID!, $tags: [String!]!) {
+              tagsAdd(id: $id, tags: $tags) {
+                node { id }
+                userErrors { field message }
+              }
+            }`,
+          variables: {
+            id: orderId,
+            tags: [cleanTag],
+          },
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      const topErrors = payload?.errors || [];
+      const userErrors = payload?.data?.tagsAdd?.userErrors || [];
+      if (!response.ok || topErrors.length || userErrors.length) {
+        lastError =
+          topErrors[0]?.message ||
+          userErrors[0]?.message ||
+          `No se pudo agregar la etiqueta ${cleanTag}.`;
+        continue;
+      }
+
+      return;
+    } catch (error) {
+      lastError = String(error?.message || error || `No se pudo agregar la etiqueta ${cleanTag}.`);
+    }
   }
-}
 
+  throw new Error(lastError || `No se pudo agregar la etiqueta ${cleanTag}.`);
+}
 async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
   if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
     return { ok: false, error: "No se pudo preparar la notificacion." };
