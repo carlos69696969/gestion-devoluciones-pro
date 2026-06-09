@@ -108,3 +108,23 @@ model ReturnSettings {
   updatedAt           DateTime @updatedAt
   createdAt           DateTime @default(now())
 }
+
+model PushDevice {
+  id             Int      @id @default(autoincrement())
+  shop           String
+  token          String   @unique
+  customerId     String?
+  customerEmail  String?
+  platform       String   @default("android")
+  packageName    String?
+  androidVersion String?
+  deviceId       String?
+  isActive       Boolean  @default(true)
+  lastSeenAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([shop, customerEmail])
+  @@index([shop, customerId])
+  @@index([shop, isActive])
+}
