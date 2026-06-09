@@ -49,9 +49,55 @@ const COURIER_STATUS_TAGS = [
   "intento entrega 3",
 ];
 
+function normalizeCourierTag(value) {
+  return String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+}
+
 function getCourierRouteTag(step) {
   const safeStep = Math.min(Math.max(Number(step || 0), 1), 3);
   return safeStep === 1 ? "en ruta" : `en ruta ${safeStep}`;
+}
+
+function getPreferredCourierStatusTag(tags) {
+  const normalizedTags = new Set((Array.isArray(tags) ? tags : []).map(normalizeCourierTag));
+  if (normalizedTags.has("entregado")) return "entregado";
+  if (normalizedTags.has("no entregado")) return "no entregado";
+  if (normalizedTags.has("en ruta 3")) return "en ruta 3";
+  if (normalizedTags.has("en ruta 2")) return "en ruta 2";
+  if (normalizedTags.has("en ruta")) return "en ruta";
+
+  const attemptCount = Math.max(0, Number(getCourierDeliveryAttemptCountFromTags(tags) || 0));
+  if (attemptCount >= 3) return "en ruta 3";
+  if (attemptCount === 2) return "en ruta 2";
+  if (attemptCount === 1) return "en ruta";
+  if (normalizedTags.has("reintentar entrega")) return "en ruta";
+  return null;
+}
+
+async function normalizeCourierOrderTags({ shopDomain, shopifyOrderId, tags }) {
+  const preferredTag = getPreferredCourierStatusTag(tags);
+  if (!preferredTag) return;
+
+  const currentCourierTags = Array.from(
+    new Set((Array.isArray(tags) ? tags : []).map(normalizeCourierTag).filter((tag) => COURIER_STATUS_TAGS.includes(tag))),
+  );
+
+  if (!currentCourierTags.length) return;
+
+  const needsNormalization =
+    currentCourierTags.length > 1 ||
+    currentCourierTags.some((tag) => tag !== preferredTag) ||
+    currentCourierTags.some((tag) => tag.startsWith("intento entrega")) ||
+    currentCourierTags.includes("reintentar entrega");
+
+  if (!needsNormalization) return;
+
+  await syncShopifyOrderTags({
+    shopDomain,
+    shopifyOrderId,
+    addTags: [preferredTag],
+    removeTags: currentCourierTags.filter((tag) => tag !== preferredTag),
+  });
 }
 
 async function replaceCourierOrderStatusTag({ shopDomain, shopifyOrderId, statusTag }) {
@@ -880,6 +926,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
 
   for (const queryString of queryCandidates) {
     const nodes = await fetchCourierOrdersByQuery({ shop, accessToken, queryString });
+    const normalizationJobs = [];
     const courierOrders = nodes
       .filter((orderNode) => {
         const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
@@ -890,6 +937,27 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
       .map((orderNode) => {
         const shipping = orderNode.shippingAddress || null;
         const billing = orderNode.billingAddress || null;
+        const courierTags = Array.isArray(orderNode?.tags) ? orderNode.tags : [];
+        const preferredTag = getPreferredCourierStatusTag(courierTags);
+        if (preferredTag) {
+          const normalizedCourierTags = Array.from(
+            new Set(courierTags.map(normalizeCourierTag).filter((tag) => COURIER_STATUS_TAGS.includes(tag))),
+          );
+          const shouldNormalize =
+            normalizedCourierTags.length > 1 ||
+            normalizedCourierTags.some((tag) => tag !== preferredTag) ||
+            normalizedCourierTags.some((tag) => tag.startsWith("intento entrega")) ||
+            normalizedCourierTags.includes("reintentar entrega");
+          if (shouldNormalize) {
+            normalizationJobs.push(
+              normalizeCourierOrderTags({
+                shopDomain: shop,
+                shopifyOrderId: orderNode.id,
+                tags: courierTags,
+              }),
+            );
+          }
+        }
         return {
           id: orderNode.id,
           orderNumber: String(orderNode.name || "").replace("#", ""),
@@ -910,6 +978,10 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
           courierLabel: "Entrega",
         };
       });
+
+    if (normalizationJobs.length > 0) {
+      await Promise.allSettled(normalizationJobs);
+    }
 
     if (courierOrders.length > 0) {
       return courierOrders;
