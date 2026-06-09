@@ -32,6 +32,26 @@ function normalizeDeliveryAttemptCount(value, fallback = 0) {
   return Math.min(Math.max(Math.trunc(parsed), 0), 3);
 }
 
+async function getReturnBranchDetails(shopDomain) {
+  const shop = normalizeShop(shopDomain);
+  if (!shop) {
+    return {
+      branchAddress: "",
+      branchHours: "",
+    };
+  }
+
+  const settings = await prisma.returnSettings.findUnique({
+    where: { shop },
+    select: { branchAddress: true, branchHours: true },
+  });
+
+  return {
+    branchAddress: String(settings?.branchAddress || "").trim(),
+    branchHours: String(settings?.branchHours || "").trim(),
+  };
+}
+
 function getDeliveryAttemptTag(attemptCount) {
   const safeAttemptCount = Math.min(Math.max(Number(attemptCount || 0), 1), 3);
   return `intento entrega ${safeAttemptCount}`;
@@ -378,6 +398,12 @@ async function emitCourierDeliveryManualStatusNotification({ shopDomain, request
     return { ok: false, error: "No se pudo preparar la notificacion." };
   }
 
+  const attemptCount = Math.max(0, Number(requestRow.attemptCount || 0) || 0);
+  const branchDetails =
+    status === "no_entregado" && attemptCount >= 3
+      ? await getReturnBranchDetails(shopDomain)
+      : { branchAddress: "", branchHours: "" };
+
   const endpoints = NOTIFICATIONS_API_KEY
     ? [
         {
@@ -418,7 +444,9 @@ async function emitCourierDeliveryManualStatusNotification({ shopDomain, request
           orderNumber: requestRow.orderNumber || null,
           customerEmail: requestRow.customerEmail || null,
           status,
-          attemptCount: Number(requestRow.attemptCount || 0) || 0,
+          attemptCount,
+          branchAddress: branchDetails.branchAddress || null,
+          branchHours: branchDetails.branchHours || null,
           routeStep,
         }),
       });
