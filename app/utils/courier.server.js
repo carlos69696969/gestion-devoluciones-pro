@@ -200,10 +200,46 @@ export async function emitCourierReturnRouteNotification({ shopDomain, requestRo
   };
 }
 
-async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
+async function mutateShopifyOrderTags({ shopDomain, orderId, session, mutationName, tags, fallbackError }) {
+  const cleanTags = (Array.isArray(tags) ? tags : []).map((tag) => String(tag || "").trim()).filter(Boolean);
+  if (!cleanTags.length) {
+    return;
+  }
+
+  const response = await fetch(`https://${shopDomain}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": session.accessToken,
+    },
+    body: JSON.stringify({
+      query: `#graphql
+        mutation SyncCourierOrderTags($id: ID!, $tags: [String!]!) {
+          ${mutationName}(id: $id, tags: $tags) {
+            node { id }
+            userErrors { field message }
+          }
+        }`,
+      variables: {
+        id: orderId,
+        tags: cleanTags,
+      },
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  const topErrors = payload?.errors || [];
+  const userErrors = payload?.data?.[mutationName]?.userErrors || [];
+  if (!response.ok || topErrors.length || userErrors.length) {
+    throw new Error(topErrors[0]?.message || userErrors[0]?.message || fallbackError);
+  }
+}
+
+async function syncShopifyOrderTags({ shopDomain, shopifyOrderId, addTags = [], removeTags = [] }) {
   const orderId = String(shopifyOrderId || "").trim();
-  const cleanTag = String(tag || "").trim();
-  if (!shopDomain || !orderId || !cleanTag) return;
+  const addList = (Array.isArray(addTags) ? addTags : []).map((tag) => String(tag || "").trim()).filter(Boolean);
+  const removeList = (Array.isArray(removeTags) ? removeTags : []).map((tag) => String(tag || "").trim()).filter(Boolean);
+  if (!shopDomain || !orderId || (!addList.length && !removeList.length)) return;
 
   const sessions = await resolveCourierShopSessions(shopDomain);
   if (!sessions.length) {
@@ -214,45 +250,41 @@ async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
 
   for (const session of sessions) {
     try {
-      const response = await fetch(`https://${shopDomain}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Shopify-Access-Token": session.accessToken,
-        },
-        body: JSON.stringify({
-          query: `#graphql
-            mutation AddCourierRouteTag($id: ID!, $tags: [String!]!) {
-              tagsAdd(id: $id, tags: $tags) {
-                node { id }
-                userErrors { field message }
-              }
-            }`,
-          variables: {
-            id: orderId,
-            tags: [cleanTag],
-          },
-        }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      const topErrors = payload?.errors || [];
-      const userErrors = payload?.data?.tagsAdd?.userErrors || [];
-      if (!response.ok || topErrors.length || userErrors.length) {
-        lastError =
-          topErrors[0]?.message ||
-          userErrors[0]?.message ||
-          `No se pudo agregar la etiqueta ${cleanTag}.`;
-        continue;
+      if (removeList.length) {
+        await mutateShopifyOrderTags({
+          shopDomain,
+          orderId,
+          session,
+          mutationName: "tagsRemove",
+          tags: removeList,
+          fallbackError: `No se pudo quitar la etiqueta ${removeList[0]}.`,
+        });
       }
-
+      if (addList.length) {
+        await mutateShopifyOrderTags({
+          shopDomain,
+          orderId,
+          session,
+          mutationName: "tagsAdd",
+          tags: addList,
+          fallbackError: `No se pudo agregar la etiqueta ${addList[0]}.`,
+        });
+      }
       return;
     } catch (error) {
-      lastError = String(error?.message || error || `No se pudo agregar la etiqueta ${cleanTag}.`);
+      lastError = String(error?.message || error || "No se pudieron sincronizar las etiquetas de Shopify.");
     }
   }
 
-  throw new Error(lastError || `No se pudo agregar la etiqueta ${cleanTag}.`);
+  throw new Error(lastError || "No se pudieron sincronizar las etiquetas de Shopify.");
+}
+
+async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
+  return syncShopifyOrderTags({
+    shopDomain,
+    shopifyOrderId,
+    addTags: [tag],
+  });
 }
 async function emitCourierDeliveryManualStatusNotification({ shopDomain, requestRow, status, routeStep = null }) {
   if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
@@ -431,7 +463,22 @@ export async function markCourierOrderAsNotDelivered({
     customerName: String(customerName || "Cliente").trim(),
     customerEmail: String(customerEmail || "").trim(),
     customerPhone: String(customerPhone || "-").trim() || "-",
+    status: "no_entregado",
   };
+
+  try {
+    await syncShopifyOrderTags({
+      shopDomain,
+      shopifyOrderId: orderGid,
+      addTags: ["no entregado"],
+      removeTags: ["en ruta", "en ruta 2", "en ruta 3"],
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || error || "No se pudo marcar la orden como no entregada en Shopify."),
+    };
+  }
 
   const notificationResult = await emitCourierDeliveryManualStatusNotification({
     shopDomain,
@@ -442,7 +489,7 @@ export async function markCourierOrderAsNotDelivered({
     return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
   }
 
-  return { ok: true, requestRow };
+  return { ok: true, requestRow, nextStatus: "no_entregado" };
 }
 async function sendCourierReturnRouteNotificationOnly({ requestId }) {
   const id = Number(requestId || 0);

@@ -7,6 +7,7 @@ import {
   formatCourierAddress,
   formatCourierScheduledDate,
   getCourierRouteStatusLabel,
+  isCourierHistoryStatus,
   isCourierRouteStatus,
 } from "../utils/courier.shared";
 import {
@@ -58,7 +59,7 @@ export const action = async ({ request }) => {
     if (shop) {
       url.searchParams.set("shop", shop);
     }
-    url.searchParams.set("tab", "en_ruta");
+    url.searchParams.set("tab", intent === "courier_mark_not_delivered" ? "historial" : "en_ruta");
     url.searchParams.set("updated", String(Date.now()));
     return redirect(`${url.pathname}?${url.searchParams.toString()}`);
   } catch (error) {
@@ -141,22 +142,30 @@ export default function RepartidorPublicPortal() {
   const actionData = useActionData();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
-  const routeOrder = courierOrders.find((request) => isCourierRouteStatus(request?.status)) || courierOrders[0] || null;
+  const historyOrders = courierOrders.filter((request) => isCourierHistoryStatus(request?.status));
+  const routeOrders = courierOrders.filter((request) => isCourierRouteStatus(request?.status));
+  const pendingOrders = courierOrders.filter(
+    (request) => !isCourierRouteStatus(request?.status) && !isCourierHistoryStatus(request?.status),
+  );
+  const routeOrder = routeOrders[0] || null;
   const visibleOrders =
     activeTab === "en_ruta"
       ? routeOrder
         ? [routeOrder]
         : []
       : activeTab === "historial"
-        ? []
-        : courierOrders;
+        ? historyOrders
+        : pendingOrders;
   const hasOrders = visibleOrders.length > 0;
   const isHistoryTab = activeTab === "historial";
   const emptyMessage =
-    activeTab === "en_ruta" ? "No hay pedidos en ruta." : "No hay ordenes pendientes por entregar.";
+    activeTab === "en_ruta"
+      ? "No hay pedidos en ruta."
+      : activeTab === "historial"
+        ? "No hay ordenes en historial."
+        : "No hay ordenes pendientes por entregar.";
   const isReturnOrder = (request) => String(request?.courierLabel || "") === "Devolucion";
-  const isRouteActionVisible = (request) => !isCourierRouteStatus(request?.status);
-
+  const isRouteActionVisible = (request) => !isCourierRouteStatus(request?.status) && !isCourierHistoryStatus(request?.status);
   const buildMapsUrl = (request) => {
     const address = formatCourierAddress(request);
     const query = encodeURIComponent(address);

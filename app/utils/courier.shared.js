@@ -53,6 +53,11 @@ export function isCourierRouteStatus(status) {
     .startsWith("en_ruta");
 }
 
+export function isCourierHistoryStatus(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  return ["no_entregado", "entregado", "no_recibido", "recibido"].includes(normalized);
+}
+
 export function getCourierRouteStatusLabel(status) {
   return isCourierRouteStatus(status) ? "en ruta" : String(status || "pendiente").replace(/_/g, " ");
 }
@@ -70,6 +75,9 @@ export function getCourierRouteStepFromTags(tags) {
 }
 
 export function getCourierRouteStatusFromTags(tags) {
+  const normalizedTags = new Set((Array.isArray(tags) ? tags : []).map(normalizeCourierTag));
+  if (normalizedTags.has("no entregado")) return "no_entregado";
+  if (normalizedTags.has("entregado")) return "entregado";
   const step = getCourierRouteStepFromTags(tags);
   return step ? `en_ruta_${step}` : "pendiente";
 }
