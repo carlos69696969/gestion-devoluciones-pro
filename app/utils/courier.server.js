@@ -343,6 +343,7 @@ async function emitCourierDeliveryManualStatusNotification({ shopDomain, request
           orderNumber: requestRow.orderNumber || null,
           customerEmail: requestRow.customerEmail || null,
           status,
+          attemptCount: Number(requestRow.attemptCount || 0) || 0,
           routeStep,
         }),
       });
