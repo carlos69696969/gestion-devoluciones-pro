@@ -9,12 +9,14 @@ import {
   getCourierRouteStatusLabel,
   isCourierHistoryStatus,
   isCourierRouteStatus,
+  isCourierRouteTabStatus,
 } from "../utils/courier.shared";
 import {
   fetchCourierOrdersForShop,
   fetchPickupCourierOrders,
   markCourierOrderAsEnRoute,
   markCourierOrderAsNotDelivered,
+  markCourierOrderForRetry,
   resolveCourierPortalShop,
 } from "../utils/courier.server";
 
@@ -26,7 +28,14 @@ export const headers = () => ({
 function getCourierStatusLabel(status) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "pendiente") return "pendiente";
+  if (normalized === "reintento_pendiente") return "listo para reintento";
   return getCourierRouteStatusLabel(status);
+}
+
+function getDeliveryAttemptLabel(attemptCount) {
+  const safeAttemptCount = Math.max(0, Number(attemptCount || 0));
+  if (!safeAttemptCount) return "";
+  return safeAttemptCount === 1 ? "1 intento de entrega" : `${safeAttemptCount} intentos de entrega`;
 }
 
 export const action = async ({ request }) => {
@@ -38,11 +47,16 @@ export const action = async ({ request }) => {
     const intent = String(formData.get("intent") || "").trim();
     const requestId = String(formData.get("requestId") || "").trim();
 
-    if (!["courier_mark_en_route", "courier_mark_not_delivered"].includes(intent) || !requestId) {
+    if (!["courier_mark_en_route", "courier_mark_not_delivered", "courier_retry_delivery"].includes(intent) || !requestId) {
       return { ok: false, error: "Accion no valida." };
     }
 
-    const actionHandler = intent === "courier_mark_not_delivered" ? markCourierOrderAsNotDelivered : markCourierOrderAsEnRoute;
+    const actionHandler =
+      intent === "courier_mark_not_delivered"
+        ? markCourierOrderAsNotDelivered
+        : intent === "courier_retry_delivery"
+          ? markCourierOrderForRetry
+          : markCourierOrderAsEnRoute;
     const result = await actionHandler({
       shopDomain: shop,
       requestId,
@@ -51,6 +65,7 @@ export const action = async ({ request }) => {
       customerEmail: String(formData.get("customerEmail") || "").trim(),
       customerPhone: String(formData.get("customerPhone") || "").trim(),
       currentStatus: String(formData.get("currentStatus") || "").trim(),
+      currentAttemptCount: String(formData.get("currentAttemptCount") || "").trim(),
     });
     if (!result.ok) {
       return result;
@@ -61,7 +76,18 @@ export const action = async ({ request }) => {
     }
     url.searchParams.set("tab", intent === "courier_mark_not_delivered" ? "historial" : "en_ruta");
     url.searchParams.set("overrideRequestId", requestId);
-    url.searchParams.set("overrideStatus", String(result?.nextStatus || (intent === "courier_mark_not_delivered" ? "no_entregado" : "pendiente")));
+    url.searchParams.set(
+      "overrideStatus",
+      String(
+        result?.nextStatus ||
+          (intent === "courier_mark_not_delivered"
+            ? "no_entregado"
+            : intent === "courier_retry_delivery"
+              ? "reintento_pendiente"
+              : "pendiente"),
+      ),
+    );
+    url.searchParams.set("overrideAttemptCount", String(result?.attemptCount || formData.get("currentAttemptCount") || "0"));
     url.searchParams.set("updated", String(Date.now()));
     return redirect(`${url.pathname}?${url.searchParams.toString()}`);
   } catch (error) {
@@ -146,15 +172,20 @@ export default function RepartidorPublicPortal() {
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
   const overrideRequestId = String(searchParams.get("overrideRequestId") || "").trim();
   const overrideStatus = String(searchParams.get("overrideStatus") || "").trim().toLowerCase();
+  const overrideAttemptCount = Math.max(0, Number(searchParams.get("overrideAttemptCount") || "0"));
   const effectiveCourierOrders = courierOrders.map((request) =>
     overrideRequestId && String(request?.id || "").trim() === overrideRequestId
-      ? { ...request, status: overrideStatus || request?.status || "pendiente" }
+      ? {
+          ...request,
+          status: overrideStatus || request?.status || "pendiente",
+          attemptCount: overrideAttemptCount || Number(request?.attemptCount || 0),
+        }
       : request,
   );
   const historyOrders = effectiveCourierOrders.filter((request) => isCourierHistoryStatus(request?.status));
-  const routeOrders = effectiveCourierOrders.filter((request) => isCourierRouteStatus(request?.status));
+  const routeOrders = effectiveCourierOrders.filter((request) => isCourierRouteTabStatus(request?.status));
   const pendingOrders = effectiveCourierOrders.filter(
-    (request) => !isCourierRouteStatus(request?.status) && !isCourierHistoryStatus(request?.status),
+    (request) => !isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status),
   );
   const routeOrder = routeOrders[0] || null;
   const visibleOrders =
@@ -174,6 +205,7 @@ export default function RepartidorPublicPortal() {
         : "No hay ordenes pendientes por entregar.";
   const isReturnOrder = (request) => String(request?.courierLabel || "") === "Devolucion";
   const isRouteActionVisible = (request) => !isCourierRouteStatus(request?.status) && !isCourierHistoryStatus(request?.status);
+  const isNotDeliveredStatus = (request) => String(request?.status || "").trim().toLowerCase() === "no_entregado";
   const buildMapsUrl = (request) => {
     const address = formatCourierAddress(request);
     const query = encodeURIComponent(address);
@@ -196,20 +228,27 @@ export default function RepartidorPublicPortal() {
     setSearchParams(nextParams, { replace: true });
   };
 
-  const confirmCourierAction = (request, actionLabel) => {
+  const confirmCourierAction = (request, actionLabel, confirmNote = "Esta accion enviara una notificacion al cliente.") => {
     const orderNumber = String(request?.orderNumber || "").trim() || "-";
     const customerName = String(request?.customerName || "Cliente").trim();
     return window.confirm(
-      `Seguro que quieres marcar el pedido #${orderNumber} como ${actionLabel}?\n\nCliente: ${customerName}\n\nEsta accion enviara una notificacion al cliente.`,
+      `Seguro que quieres marcar el pedido #${orderNumber} como ${actionLabel}?\n\nCliente: ${customerName}\n\n${confirmNote}`,
     );
   };
 
-  const renderCourierActionForm = (request, buttonLabel, intent, actionLabel = buttonLabel.toLowerCase()) => (
+  const renderCourierActionForm = (
+    request,
+    buttonLabel,
+    intent,
+    actionLabel = buttonLabel.toLowerCase(),
+    buttonClassName = styles.actionButton,
+    confirmNote = "Esta accion enviara una notificacion al cliente.",
+  ) => (
     <Form
       method="post"
       className={styles.inlineActionForm}
       onSubmit={(event) => {
-        if (!confirmCourierAction(request, actionLabel)) {
+        if (!confirmCourierAction(request, actionLabel, confirmNote)) {
           event.preventDefault();
         }
       }}
@@ -222,7 +261,8 @@ export default function RepartidorPublicPortal() {
       <input type="hidden" name="customerEmail" value={String(request.customerEmail || "")} />
       <input type="hidden" name="customerPhone" value={String(request.customerPhone || "")} />
       <input type="hidden" name="currentStatus" value={String(request.status || "")} />
-      <button type="submit" className={styles.actionButton}>
+      <input type="hidden" name="currentAttemptCount" value={String(request.attemptCount || 0)} />
+      <button type="submit" className={buttonClassName}>
         {buttonLabel}
       </button>
     </Form>
@@ -295,7 +335,24 @@ export default function RepartidorPublicPortal() {
                     >
                       {request.courierLabel}
                     </span>
-                    <span className={`${adminStyles.courierBadgeStatus} ${isCourierRouteStatus(request.status) ? styles.statusBadgeRoute : ""}`}>{getCourierStatusLabel(request.status)}</span>
+                    <div className={styles.statusGroup}>
+                      <span
+                        className={`${adminStyles.courierBadgeStatus} ${
+                          isCourierRouteStatus(request.status)
+                            ? styles.statusBadgeRoute
+                            : isNotDeliveredStatus(request)
+                              ? styles.statusBadgeFailed
+                              : ""
+                        }`}
+                      >
+                        {getCourierStatusLabel(request.status)}
+                      </span>
+                      {!isReturnOrder(request) && Number(request?.attemptCount || 0) > 0 ? (
+                        <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
+                          {getDeliveryAttemptLabel(request.attemptCount)}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   <h3 className={adminStyles.courierOrderNumber}>#{request.orderNumber}</h3>
                   <p className={adminStyles.courierCustomerName}>{request.customerName}</p>
@@ -304,6 +361,18 @@ export default function RepartidorPublicPortal() {
                   </p>
                   <p className={adminStyles.courierAddress}>{formatCourierAddress(request)}</p>
                   <p className={adminStyles.courierField}>{request.customerPhone || "-"}</p>
+                  {activeTab === "historial" && !isReturnOrder(request) && isNotDeliveredStatus(request) ? (
+                    <div className={styles.historyActionRow}>
+                      {renderCourierActionForm(
+                        request,
+                        "Reeintentar",
+                        "courier_retry_delivery",
+                        "reeintentar entrega",
+                        `${styles.actionButton} ${styles.actionButtonRetry}`,
+                        "Esta accion devolvera la orden al flujo de ruta para intentar la entrega nuevamente.",
+                      )}
+                    </div>
+                  ) : null}
                   {activeTab === "en_ruta" ? (
                     <div className={styles.actionRow}>
                       {isReturnOrder(request) ? (
@@ -367,10 +436,20 @@ export default function RepartidorPublicPortal() {
                             </button>
                           )}
                           {isRouteActionVisible(request) ? renderCourierActionForm(request, "En ruta", "courier_mark_en_route", "en ruta") : null}
-                          <button type="button" className={styles.actionButton}>
-                            Entregado
-                          </button>
-                          {renderCourierActionForm(request, "No entregado", "courier_mark_not_delivered", "no entregado")}
+                          {isCourierRouteStatus(request.status) ? (
+                            <>
+                              <button type="button" className={styles.actionButton}>
+                                Entregado
+                              </button>
+                              {renderCourierActionForm(
+                                request,
+                                "No entregado",
+                                "courier_mark_not_delivered",
+                                "no entregado",
+                                `${styles.actionButton} ${styles.actionButtonDanger}`,
+                              )}
+                            </>
+                          ) : null}
                         </>
                       )}
                     </div>

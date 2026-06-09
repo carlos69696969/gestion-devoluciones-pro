@@ -53,6 +53,14 @@ export function isCourierRouteStatus(status) {
     .startsWith("en_ruta");
 }
 
+export function isCourierRetryPendingStatus(status) {
+  return String(status || "").trim().toLowerCase() === "reintento_pendiente";
+}
+
+export function isCourierRouteTabStatus(status) {
+  return isCourierRouteStatus(status) || isCourierRetryPendingStatus(status);
+}
+
 export function isCourierHistoryStatus(status) {
   const normalized = String(status || "").trim().toLowerCase();
   return ["no_entregado", "entregado", "no_recibido", "recibido"].includes(normalized);
@@ -74,10 +82,24 @@ export function getCourierRouteStepFromTags(tags) {
   return 0;
 }
 
+export function getCourierDeliveryAttemptCountFromTags(tags) {
+  const normalizedTags = Array.isArray(tags) ? tags.map(normalizeCourierTag) : [];
+  let attemptCount = 0;
+
+  for (const tag of normalizedTags) {
+    const match = tag.match(/^intento entrega (\d)$/);
+    if (!match) continue;
+    attemptCount = Math.max(attemptCount, Number(match[1]) || 0);
+  }
+
+  return attemptCount;
+}
+
 export function getCourierRouteStatusFromTags(tags) {
   const normalizedTags = new Set((Array.isArray(tags) ? tags : []).map(normalizeCourierTag));
   if (normalizedTags.has("no entregado")) return "no_entregado";
   if (normalizedTags.has("entregado")) return "entregado";
+  if (normalizedTags.has("reintentar entrega")) return "reintento_pendiente";
   const step = getCourierRouteStepFromTags(tags);
   return step ? `en_ruta_${step}` : "pendiente";
 }

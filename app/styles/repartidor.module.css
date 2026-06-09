@@ -122,6 +122,14 @@
   margin: 0;
 }
 
+.statusGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .actionButton {
   appearance: none;
   display: inline-flex;
@@ -157,6 +165,35 @@
   border-color: #d1d5db;
 }
 
+.actionButtonDanger {
+  background: #fff1f1;
+  border-color: #e35d6a;
+  color: #c5283d;
+}
+
+.actionButtonDanger:hover {
+  background: #ffe3e5;
+  border-color: #d9364f;
+}
+
+.actionButtonRetry {
+  background: #f3f3f3;
+  border-color: #8c9196;
+  color: #202223;
+}
+
+.actionButtonRetry:hover {
+  background: #e8e9ea;
+  border-color: #6d7175;
+}
+
+.historyActionRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
 .error {
   margin: 0 0 12px;
   color: #b42318;
@@ -178,4 +215,16 @@
   background: #e9f1ff !important;
   border-color: #005bd3 !important;
   color: #005bd3 !important;
+}
+
+.statusBadgeFailed {
+  background: #fff1f1 !important;
+  border-color: #d9364f !important;
+  color: #c5283d !important;
+}
+
+.statusBadgeAttempt {
+  background: #fff5ea !important;
+  border-color: #ffb86b !important;
+  color: #b45309 !important;
 }

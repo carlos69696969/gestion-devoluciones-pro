@@ -2,6 +2,7 @@ import prisma from "../db.server";
 import {
   dedupeCourierRequestsByOrderNumber,
   courierOrderTimestampMs,
+  getCourierDeliveryAttemptCountFromTags,
   getCourierRouteStatusFromTags,
 } from "./courier.shared";
 
@@ -23,6 +24,17 @@ const NOTIFICATIONS_API_KEY = String(
 
 function normalizeShop(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function normalizeDeliveryAttemptCount(value, fallback = 0) {
+  const parsed = Number(value || 0);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.trunc(parsed), 0), 3);
+}
+
+function getDeliveryAttemptTag(attemptCount) {
+  const safeAttemptCount = Math.min(Math.max(Number(attemptCount || 0), 1), 3);
+  return `intento entrega ${safeAttemptCount}`;
 }
 
 async function resolveCourierShopSessions(shopDomain) {
@@ -382,6 +394,7 @@ export async function markCourierOrderAsEnRoute({
   customerEmail,
   customerPhone,
   currentStatus,
+  currentAttemptCount,
 }) {
   const isPickupRequest = String(requestId || "").startsWith("pickup-");
 
@@ -412,13 +425,15 @@ export async function markCourierOrderAsEnRoute({
     customerEmail: String(customerEmail || "").trim(),
     customerPhone: String(customerPhone || "-").trim() || "-",
     status: nextStatus,
+    attemptCount: normalizeDeliveryAttemptCount(currentAttemptCount),
   };
 
   try {
-    await addShopifyOrderTag({
+    await syncShopifyOrderTags({
       shopDomain,
       shopifyOrderId: orderGid,
-      tag: routeTag,
+      addTags: [routeTag],
+      removeTags: ["no entregado", "reintentar entrega"],
     });
   } catch (error) {
     return {
@@ -436,7 +451,7 @@ export async function markCourierOrderAsEnRoute({
     return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
   }
 
-  return { ok: true, requestRow, routeStep: nextStep, nextStatus };
+  return { ok: true, requestRow, routeStep: nextStep, nextStatus, attemptCount: requestRow.attemptCount };
 }
 export async function markCourierOrderAsNotDelivered({
   shopDomain,
@@ -445,6 +460,7 @@ export async function markCourierOrderAsNotDelivered({
   customerName,
   customerEmail,
   customerPhone,
+  currentAttemptCount,
 }) {
   const isPickupRequest = String(requestId || "").startsWith("pickup-");
   if (isPickupRequest) {
@@ -456,6 +472,7 @@ export async function markCourierOrderAsNotDelivered({
     return { ok: false, error: "Accion no valida." };
   }
 
+  const nextAttemptCount = Math.max(1, Math.min(normalizeDeliveryAttemptCount(currentAttemptCount) + 1, 3));
   const requestRow = {
     shop: shopDomain,
     shopifyOrderId: orderGid,
@@ -464,14 +481,15 @@ export async function markCourierOrderAsNotDelivered({
     customerEmail: String(customerEmail || "").trim(),
     customerPhone: String(customerPhone || "-").trim() || "-",
     status: "no_entregado",
+    attemptCount: nextAttemptCount,
   };
 
   try {
     await syncShopifyOrderTags({
       shopDomain,
       shopifyOrderId: orderGid,
-      addTags: ["no entregado"],
-      removeTags: ["en ruta", "en ruta 2", "en ruta 3"],
+      addTags: ["no entregado", getDeliveryAttemptTag(nextAttemptCount)],
+      removeTags: ["en ruta", "en ruta 2", "en ruta 3", "reintentar entrega", "intento entrega 1", "intento entrega 2", "intento entrega 3"],
     });
   } catch (error) {
     return {
@@ -489,7 +507,55 @@ export async function markCourierOrderAsNotDelivered({
     return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
   }
 
-  return { ok: true, requestRow, nextStatus: "no_entregado" };
+  return { ok: true, requestRow, nextStatus: "no_entregado", attemptCount: nextAttemptCount };
+}
+
+export async function markCourierOrderForRetry({
+  shopDomain,
+  requestId,
+  orderNumber,
+  customerName,
+  customerEmail,
+  customerPhone,
+  currentAttemptCount,
+}) {
+  const isPickupRequest = String(requestId || "").startsWith("pickup-");
+  if (isPickupRequest) {
+    return { ok: false, error: "Esta accion solo aplica para entregas." };
+  }
+
+  const orderGid = String(requestId || "").trim();
+  if (!shopDomain || !orderGid) {
+    return { ok: false, error: "Accion no valida." };
+  }
+
+  const nextAttemptCount = Math.max(1, normalizeDeliveryAttemptCount(currentAttemptCount, 1));
+  const requestRow = {
+    shop: shopDomain,
+    shopifyOrderId: orderGid,
+    orderNumber: String(orderNumber || "").trim() || orderGid.replace(/^gid:\/\/shopify\/Order\//, ""),
+    customerName: String(customerName || "Cliente").trim(),
+    customerEmail: String(customerEmail || "").trim(),
+    customerPhone: String(customerPhone || "-").trim() || "-",
+    status: "reintento_pendiente",
+    attemptCount: nextAttemptCount,
+  };
+
+  try {
+    await syncShopifyOrderTags({
+      shopDomain,
+      shopifyOrderId: orderGid,
+      addTags: ["reintentar entrega", getDeliveryAttemptTag(nextAttemptCount)],
+      removeTags: ["no entregado", "en ruta", "en ruta 2", "en ruta 3", "intento entrega 1", "intento entrega 2", "intento entrega 3"],
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || error || "No se pudo reenviar la orden a ruta."),
+    };
+  }
+
+  return { ok: true, requestRow, nextStatus: "reintento_pendiente", attemptCount: nextAttemptCount };
 }
 async function sendCourierReturnRouteNotificationOnly({ requestId }) {
   const id = Number(requestId || 0);
@@ -751,6 +817,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
           createdAt: orderNode.createdAt,
           updatedAt: orderNode.createdAt,
           status: getCourierRouteStatusFromTags(orderNode.tags),
+          attemptCount: getCourierDeliveryAttemptCountFromTags(orderNode.tags),
           courierLabel: "Entrega",
         };
       });
@@ -827,6 +894,7 @@ export async function fetchPickupCourierOrders(shop) {
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
     status: String(requestRow.status || "pendiente").trim() || "pendiente",
+    attemptCount: 0,
     courierLabel: "Devolucion",
   }));
 
