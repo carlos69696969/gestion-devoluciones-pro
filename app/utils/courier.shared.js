@@ -63,7 +63,7 @@ export function isCourierRouteTabStatus(status) {
 
 export function isCourierHistoryStatus(status) {
   const normalized = String(status || "").trim().toLowerCase();
-  return ["no_entregado", "entregado", "no_recibido", "recibido"].includes(normalized);
+  return ["no_entregado", "recoger_en_sucursal", "entregado", "no_recibido", "recibido"].includes(normalized);
 }
 
 export function getCourierRouteStatusLabel(status) {
@@ -96,6 +96,7 @@ export function getCourierDeliveryAttemptCountFromTags(tags) {
   if (attemptCount > 0) {
     return attemptCount;
   }
+  if (normalizedTagSet.has("recoger en sucursal")) return 3;
   if (normalizedTagSet.has("en ruta 3")) return 3;
   if (normalizedTagSet.has("en ruta 2")) return 2;
   if (normalizedTagSet.has("en ruta")) return 1;
@@ -105,7 +106,11 @@ export function getCourierDeliveryAttemptCountFromTags(tags) {
 
 export function getCourierRouteStatusFromTags(tags) {
   const normalizedTags = new Set((Array.isArray(tags) ? tags : []).map(normalizeCourierTag));
-  if (normalizedTags.has("no entregado")) return "no_entregado";
+  const attemptCount = getCourierDeliveryAttemptCountFromTags(tags);
+  if (normalizedTags.has("recoger en sucursal")) return "recoger_en_sucursal";
+  if (normalizedTags.has("no entregado")) {
+    return attemptCount >= 3 ? "recoger_en_sucursal" : "no_entregado";
+  }
   if (normalizedTags.has("entregado")) return "entregado";
   if (normalizedTags.has("reintentar entrega")) return "reintento_pendiente";
   const step = getCourierRouteStepFromTags(tags);

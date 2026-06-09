@@ -62,6 +62,7 @@ const COURIER_STATUS_TAGS = [
   "en ruta 2",
   "en ruta 3",
   "no entregado",
+  "recoger en sucursal",
   "entregado",
   "reintentar entrega",
   "intento entrega 1",
@@ -81,12 +82,13 @@ function getCourierRouteTag(step) {
 function getPreferredCourierStatusTag(tags) {
   const normalizedTags = new Set((Array.isArray(tags) ? tags : []).map(normalizeCourierTag));
   if (normalizedTags.has("entregado")) return "entregado";
-  if (normalizedTags.has("no entregado")) return "no entregado";
+  if (normalizedTags.has("recoger en sucursal")) return "recoger en sucursal";
+  const attemptCount = Math.max(0, Number(getCourierDeliveryAttemptCountFromTags(tags) || 0));
+  if (normalizedTags.has("no entregado")) return attemptCount >= 3 ? "recoger en sucursal" : "no entregado";
   if (normalizedTags.has("en ruta 3")) return "en ruta 3";
   if (normalizedTags.has("en ruta 2")) return "en ruta 2";
   if (normalizedTags.has("en ruta")) return "en ruta";
 
-  const attemptCount = Math.max(0, Number(getCourierDeliveryAttemptCountFromTags(tags) || 0));
   if (attemptCount >= 3) return "en ruta 3";
   if (attemptCount === 2) return "en ruta 2";
   if (attemptCount === 1) return "en ruta";
@@ -497,7 +499,6 @@ export async function markCourierOrderAsEnRoute({
   customerName,
   customerEmail,
   customerPhone,
-  currentStatus,
   currentAttemptCount,
 }) {
   const isPickupRequest = String(requestId || "").startsWith("pickup-");
@@ -563,6 +564,7 @@ export async function markCourierOrderAsNotDelivered({
   customerName,
   customerEmail,
   customerPhone,
+  currentStatus,
   currentAttemptCount,
 }) {
   const isPickupRequest = String(requestId || "").startsWith("pickup-");
@@ -576,6 +578,8 @@ export async function markCourierOrderAsNotDelivered({
   }
 
   const nextAttemptCount = Math.max(1, normalizeDeliveryAttemptCount(currentAttemptCount, 1));
+  const nextStatus = nextAttemptCount >= 3 ? "recoger_en_sucursal" : "no_entregado";
+  const statusTag = nextAttemptCount >= 3 ? "recoger en sucursal" : "no entregado";
   const requestRow = {
     shop: shopDomain,
     shopifyOrderId: orderGid,
@@ -583,7 +587,7 @@ export async function markCourierOrderAsNotDelivered({
     customerName: String(customerName || "Cliente").trim(),
     customerEmail: String(customerEmail || "").trim(),
     customerPhone: String(customerPhone || "-").trim() || "-",
-    status: "no_entregado",
+    status: nextStatus,
     attemptCount: nextAttemptCount,
   };
 
@@ -591,7 +595,7 @@ export async function markCourierOrderAsNotDelivered({
     await replaceCourierOrderStatusTag({
       shopDomain,
       shopifyOrderId: orderGid,
-      statusTag: "no entregado",
+      statusTag,
     });
   } catch (error) {
     return {
@@ -609,7 +613,7 @@ export async function markCourierOrderAsNotDelivered({
     return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
   }
 
-  return { ok: true, requestRow, nextStatus: "no_entregado", attemptCount: nextAttemptCount };
+  return { ok: true, requestRow, nextStatus, attemptCount: nextAttemptCount };
 }
 
 export async function markCourierOrderForRetry({
@@ -619,6 +623,7 @@ export async function markCourierOrderForRetry({
   customerName,
   customerEmail,
   customerPhone,
+  currentStatus,
   currentAttemptCount,
 }) {
   const isPickupRequest = String(requestId || "").startsWith("pickup-");
@@ -629,6 +634,11 @@ export async function markCourierOrderForRetry({
   const orderGid = String(requestId || "").trim();
   if (!shopDomain || !orderGid) {
     return { ok: false, error: "Accion no valida." };
+  }
+
+  const normalizedCurrentStatus = String(currentStatus || "").trim().toLowerCase();
+  if (normalizedCurrentStatus === "recoger_en_sucursal") {
+    return { ok: false, error: "Esta orden ya esta pendiente por recoger en sucursal." };
   }
 
   const nextAttemptCount = Math.min(Math.max(normalizeDeliveryAttemptCount(currentAttemptCount, 0) + 1, 1), 3);

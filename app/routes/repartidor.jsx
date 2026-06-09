@@ -36,7 +36,8 @@ function getCourierStatusLabel(status) {
 function getFailedDeliveryAttemptCount(request) {
   const currentAttemptCount = Math.max(0, Number(request?.attemptCount || 0));
   if (currentAttemptCount > 0) return currentAttemptCount;
-  return String(request?.status || "").trim().toLowerCase() === "no_entregado" ? 1 : 0;
+  const normalizedStatus = String(request?.status || "").trim().toLowerCase();
+  return normalizedStatus === "no_entregado" ? 1 : 0;
 }
 
 function getDeliveryAttemptLabel(request) {
@@ -44,7 +45,7 @@ function getDeliveryAttemptLabel(request) {
   if (!failedAttemptCount) return "";
 
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
-  if (normalizedStatus === "no_entregado") {
+  if (["no_entregado", "recoger_en_sucursal"].includes(normalizedStatus)) {
     return failedAttemptCount === 1 ? "1 intento de entrega" : `${failedAttemptCount} intentos de entrega`;
   }
 
@@ -230,6 +231,7 @@ export default function RepartidorPublicPortal() {
   const isReturnOrder = (request) => String(request?.courierLabel || "") === "Devolucion";
   const isRouteActionVisible = (request) => !isCourierRouteStatus(request?.status) && !isCourierHistoryStatus(request?.status);
   const isNotDeliveredStatus = (request) => String(request?.status || "").trim().toLowerCase() === "no_entregado";
+  const isPickupReadyStatus = (request) => String(request?.status || "").trim().toLowerCase() === "recoger_en_sucursal";
   const canShowDeliveryResultActions = (request) =>
     !isReturnOrder(request) &&
     activeTab === "en_ruta" &&
@@ -373,6 +375,8 @@ export default function RepartidorPublicPortal() {
                         className={`${adminStyles.courierBadgeStatus} ${
                           isCourierRouteStatus(request.status)
                             ? styles.statusBadgeRoute
+                            : isPickupReadyStatus(request)
+                              ? styles.statusBadgeAttempt
                             : isNotDeliveredStatus(request)
                               ? styles.statusBadgeFailed
                               : ""
