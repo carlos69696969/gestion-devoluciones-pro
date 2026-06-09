@@ -237,62 +237,83 @@ async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
 }
 
 async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
-  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL || !NOTIFICATIONS_API_KEY) {
+  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
     return { ok: false, error: "No se pudo preparar la notificacion." };
   }
 
-  const endpoint = `${NOTIFICATIONS_API_BASE_URL}/api/orders/manual-status`;
-  const headers = {
-    "Content-Type": "application/json",
-    "x-shop-domain": shopDomain,
-    "x-api-key": NOTIFICATIONS_API_KEY,
-  };
+  const endpoints = NOTIFICATIONS_API_KEY
+    ? [
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/api/orders/manual-status`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+            "x-api-key": NOTIFICATIONS_API_KEY,
+          },
+        },
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/proxy/orders/manual-status`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+          },
+        },
+      ]
+    : [
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/proxy/orders/manual-status`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+          },
+        },
+      ];
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        shopDomain,
-        orderNumber: requestRow.orderNumber || null,
-        customerEmail: requestRow.customerEmail || null,
-        status: "en_ruta",
-        routeStep,
-      }),
-    });
+  let lastFailure = null;
 
-    if (response.ok) {
-      return { ok: true };
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint.url, {
+        method: "POST",
+        headers: endpoint.headers,
+        body: JSON.stringify({
+          shopDomain,
+          orderNumber: requestRow.orderNumber || null,
+          customerEmail: requestRow.customerEmail || null,
+          status: "en_ruta",
+          routeStep,
+        }),
+      });
+
+      if (response.ok) {
+        return { ok: true };
+      }
+
+      const detail = await response.text().catch(() => "");
+      lastFailure = {
+        endpoint: endpoint.url,
+        status: response.status,
+        detail: String(detail || "").slice(0, 300),
+      };
+    } catch (error) {
+      lastFailure = {
+        endpoint: endpoint.url,
+        error: String(error?.message || error || "unknown"),
+      };
     }
-
-    const detail = await response.text().catch(() => "");
-    console.error("Failed to emit courier delivery notification", {
-      shopDomain,
-      orderNumber: requestRow.orderNumber || null,
-      routeStep,
-      endpoint,
-      responseStatus: response.status,
-      detail: String(detail || "").slice(0, 300),
-    });
-    return {
-      ok: false,
-      error: String(detail || "").slice(0, 300) || "No se pudo enviar la notificacion.",
-    };
-  } catch (error) {
-    console.error("Failed to emit courier delivery notification", {
-      shopDomain,
-      orderNumber: requestRow.orderNumber || null,
-      routeStep,
-      endpoint,
-      error: String(error?.message || error || "unknown"),
-    });
-    return {
-      ok: false,
-      error: String(error?.message || error || "No se pudo enviar la notificacion."),
-    };
   }
-}
 
+  console.error("Failed to emit courier delivery notification", {
+    shopDomain,
+    orderNumber: requestRow.orderNumber || null,
+    routeStep,
+    ...lastFailure,
+  });
+  return {
+    ok: false,
+    error: lastFailure?.detail || lastFailure?.error || "No se pudo enviar la notificacion.",
+  };
+}
 export async function markCourierOrderAsEnRoute({
   shopDomain,
   requestId,
