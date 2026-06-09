@@ -254,7 +254,7 @@ async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
 
   throw new Error(lastError || `No se pudo agregar la etiqueta ${cleanTag}.`);
 }
-async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
+async function emitCourierDeliveryManualStatusNotification({ shopDomain, requestRow, status, routeStep = null }) {
   if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
     return { ok: false, error: "No se pudo preparar la notificacion." };
   }
@@ -298,7 +298,7 @@ async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, ro
           shopDomain,
           orderNumber: requestRow.orderNumber || null,
           customerEmail: requestRow.customerEmail || null,
-          status: "en_ruta",
+          status,
           routeStep,
         }),
       });
@@ -324,6 +324,7 @@ async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, ro
   console.error("Failed to emit courier delivery notification", {
     shopDomain,
     orderNumber: requestRow.orderNumber || null,
+    status,
     routeStep,
     ...lastFailure,
   });
@@ -331,6 +332,15 @@ async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, ro
     ok: false,
     error: lastFailure?.detail || lastFailure?.error || "No se pudo enviar la notificacion.",
   };
+}
+
+async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
+  return emitCourierDeliveryManualStatusNotification({
+    shopDomain,
+    requestRow,
+    status: "en_ruta",
+    routeStep,
+  });
 }
 export async function markCourierOrderAsEnRoute({
   shopDomain,
@@ -395,6 +405,44 @@ export async function markCourierOrderAsEnRoute({
   }
 
   return { ok: true, requestRow, routeStep: nextStep, nextStatus };
+}
+export async function markCourierOrderAsNotDelivered({
+  shopDomain,
+  requestId,
+  orderNumber,
+  customerName,
+  customerEmail,
+  customerPhone,
+}) {
+  const isPickupRequest = String(requestId || "").startsWith("pickup-");
+  if (isPickupRequest) {
+    return { ok: false, error: "Esta accion solo aplica para entregas." };
+  }
+
+  const orderGid = String(requestId || "").trim();
+  if (!shopDomain || !orderGid) {
+    return { ok: false, error: "Accion no valida." };
+  }
+
+  const requestRow = {
+    shop: shopDomain,
+    shopifyOrderId: orderGid,
+    orderNumber: String(orderNumber || "").trim() || orderGid.replace(/^gid:\/\/shopify\/Order\//, ""),
+    customerName: String(customerName || "Cliente").trim(),
+    customerEmail: String(customerEmail || "").trim(),
+    customerPhone: String(customerPhone || "-").trim() || "-",
+  };
+
+  const notificationResult = await emitCourierDeliveryManualStatusNotification({
+    shopDomain,
+    requestRow,
+    status: "no_entregado",
+  });
+  if (!notificationResult?.ok) {
+    return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
+  }
+
+  return { ok: true, requestRow };
 }
 async function sendCourierReturnRouteNotificationOnly({ requestId }) {
   const id = Number(requestId || 0);
