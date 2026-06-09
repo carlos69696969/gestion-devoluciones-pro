@@ -166,7 +166,6 @@ export default function RepartidorPublicPortal() {
         ? historyOrders
         : pendingOrders;
   const hasOrders = visibleOrders.length > 0;
-  const isHistoryTab = activeTab === "historial";
   const emptyMessage =
     activeTab === "en_ruta"
       ? "No hay pedidos en ruta."
@@ -273,7 +272,7 @@ export default function RepartidorPublicPortal() {
             </button>
           </div>
 
-          {isHistoryTab ? null : !hasOrders ? (
+          {!hasOrders ? (
             <p className={styles.empty}>{emptyMessage}</p>
           ) : (
             <div className={adminStyles.courierGrid}>
