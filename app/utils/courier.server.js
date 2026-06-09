@@ -727,8 +727,10 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
     const nodes = await fetchCourierOrdersByQuery({ shop, accessToken, queryString });
     const courierOrders = nodes
       .filter((orderNode) => {
-        const status = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
-        return isCourierLocalDeliveryOrder(orderNode) && !["FULFILLED", "RESTOCKED"].includes(status);
+        const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
+        const courierStatus = getCourierRouteStatusFromTags(orderNode?.tags);
+        const hasTrackedCourierStatus = courierStatus !== "pendiente";
+        return isCourierLocalDeliveryOrder(orderNode) && (hasTrackedCourierStatus || !["FULFILLED", "RESTOCKED"].includes(fulfillmentStatus));
       })
       .map((orderNode) => {
         const shipping = orderNode.shippingAddress || null;
