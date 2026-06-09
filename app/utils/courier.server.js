@@ -676,6 +676,33 @@ export async function markCourierOrderForRetry({
   };
 }
 
+export async function markCourierOrderReadyForBranchPickup({ shopDomain, requestId }) {
+  const isPickupRequest = String(requestId || "").startsWith("pickup-");
+  if (isPickupRequest) {
+    return { ok: false, error: "Esta accion solo aplica para entregas." };
+  }
+
+  const orderGid = String(requestId || "").trim();
+  if (!shopDomain || !orderGid) {
+    return { ok: false, error: "Accion no valida." };
+  }
+
+  try {
+    await replaceCourierOrderStatusTag({
+      shopDomain,
+      shopifyOrderId: orderGid,
+      statusTag: "recoger en sucursal",
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || error || "No se pudo marcar la orden para recoger en sucursal."),
+    };
+  }
+
+  return { ok: true, nextStatus: "recoger_en_sucursal", attemptCount: 3 };
+}
+
 export async function markCourierOrderAsDelivered({
   shopDomain,
   requestId,

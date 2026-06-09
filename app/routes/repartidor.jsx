@@ -18,6 +18,7 @@ import {
   markCourierOrderAsEnRoute,
   markCourierOrderAsNotDelivered,
   markCourierOrderForRetry,
+  markCourierOrderReadyForBranchPickup,
   resolveCourierPortalShop,
 } from "../utils/courier.server";
 
@@ -128,6 +129,9 @@ export const loader = async ({ request }) => {
   const { shop, sessionCandidates, allSessionCandidates } = await resolveCourierPortalShop(request);
   const requestedTab = String(url.searchParams.get("tab") || "pedidos").trim().toLowerCase();
   const activeTab = ["pedidos", "en_ruta", "historial"].includes(requestedTab) ? requestedTab : "pedidos";
+  const overrideRequestId = String(url.searchParams.get("overrideRequestId") || "").trim();
+  const overrideStatus = String(url.searchParams.get("overrideStatus") || "").trim().toLowerCase();
+  const overrideAttemptCount = Math.max(0, Number(url.searchParams.get("overrideAttemptCount") || "0"));
 
   if (!shop || !sessionCandidates?.length) {
     return {
@@ -183,6 +187,29 @@ export const loader = async ({ request }) => {
     }
   }
 
+  const overrideTargetOrder = courierOrders.find((requestRow) => String(requestRow?.id || "").trim() === overrideRequestId);
+  if (
+    overrideRequestId &&
+    !overrideRequestId.startsWith("pickup-") &&
+    overrideStatus === "no_entregado" &&
+    overrideAttemptCount >= 3 &&
+    String(overrideTargetOrder?.status || "").trim().toLowerCase() !== "recoger_en_sucursal"
+  ) {
+    await markCourierOrderReadyForBranchPickup({
+      shopDomain: resolvedShop,
+      requestId: overrideRequestId,
+    });
+    courierOrders = courierOrders.map((requestRow) =>
+      String(requestRow?.id || "").trim() === overrideRequestId
+        ? {
+            ...requestRow,
+            status: "recoger_en_sucursal",
+            attemptCount: Math.max(overrideAttemptCount, Number(requestRow?.attemptCount || 0), 3),
+          }
+        : requestRow,
+    );
+  }
+
   return {
     activeTab,
     shop: resolvedShop,
@@ -199,13 +226,18 @@ export default function RepartidorPublicPortal() {
   const overrideStatus = String(searchParams.get("overrideStatus") || "").trim().toLowerCase();
   const overrideAttemptCount = Math.max(0, Number(searchParams.get("overrideAttemptCount") || "0"));
   const effectiveCourierOrders = courierOrders.map((request) =>
-    overrideRequestId && String(request?.id || "").trim() === overrideRequestId
-      ? {
-          ...request,
-          status: overrideStatus || request?.status || "pendiente",
-          attemptCount: overrideAttemptCount || Number(request?.attemptCount || 0),
-        }
-      : request,
+    (() => {
+      const isOverrideTarget = overrideRequestId && String(request?.id || "").trim() === overrideRequestId;
+      const attemptCount = isOverrideTarget
+        ? overrideAttemptCount || Number(request?.attemptCount || 0)
+        : Number(request?.attemptCount || 0);
+      const status = isOverrideTarget ? overrideStatus || request?.status || "pendiente" : request?.status;
+      return {
+        ...request,
+        status: status === "no_entregado" && attemptCount >= 3 ? "recoger_en_sucursal" : status,
+        attemptCount,
+      };
+    })(),
   );
   const historyOrders = effectiveCourierOrders.filter((request) => isCourierHistoryStatus(request?.status));
   const routeOrders = effectiveCourierOrders.filter((request) => isCourierRouteTabStatus(request?.status));
