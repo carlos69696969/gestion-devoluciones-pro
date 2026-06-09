@@ -278,7 +278,7 @@ export default function RepartidorPublicPortal() {
                     >
                       {request.courierLabel}
                     </span>
-                    <span className={adminStyles.courierBadgeStatus}>{getCourierStatusLabel(request.status)}</span>
+                    <span className={`${adminStyles.courierBadgeStatus} ${isCourierRouteStatus(request.status) ? styles.statusBadgeRoute : ""}`}>{getCourierStatusLabel(request.status)}</span>
                   </div>
                   <h3 className={adminStyles.courierOrderNumber}>#{request.orderNumber}</h3>
                   <p className={adminStyles.courierCustomerName}>{request.customerName}</p>

@@ -173,3 +173,9 @@
     font-size: 28px;
   }
 }
+
+.statusBadgeRoute {
+  background: #e9f1ff;
+  border-color: #005bd3;
+  color: #005bd3;
+}

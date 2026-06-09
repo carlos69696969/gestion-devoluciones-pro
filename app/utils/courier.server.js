@@ -326,7 +326,7 @@ export async function markCourierOrderAsEnRoute({
   const isPickupRequest = String(requestId || "").startsWith("pickup-");
 
   if (isPickupRequest) {
-    return sendCourierReturnRouteNotificationOnly({
+    return markCourierReturnAsEnRoute({
       requestId: String(requestId || "").replace(/^pickup-/, ""),
     });
   }
@@ -342,13 +342,30 @@ export async function markCourierOrderAsEnRoute({
     return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
   }
 
+  const nextStatus = getCourierNextRouteStatus(currentStatus);
+  const routeTag = nextStep === 1 ? "en ruta" : `en ruta ${nextStep}`;
   const requestRow = {
     shop: shopDomain,
+    shopifyOrderId: orderGid,
     orderNumber: String(orderNumber || "").trim() || orderGid.replace(/^gid:\/\/shopify\/Order\//, ""),
     customerName: String(customerName || "Cliente").trim(),
     customerEmail: String(customerEmail || "").trim(),
     customerPhone: String(customerPhone || "-").trim() || "-",
+    status: nextStatus,
   };
+
+  try {
+    await addShopifyOrderTag({
+      shopDomain,
+      shopifyOrderId: orderGid,
+      tag: routeTag,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || error || "No se pudo marcar la orden en ruta en Shopify."),
+    };
+  }
 
   const notificationResult = await emitCourierDeliveryRouteNotification({
     shopDomain,
@@ -359,9 +376,8 @@ export async function markCourierOrderAsEnRoute({
     return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
   }
 
-  return { ok: true, requestRow, routeStep: nextStep };
+  return { ok: true, requestRow, routeStep: nextStep, nextStatus };
 }
-
 async function sendCourierReturnRouteNotificationOnly({ requestId }) {
   const id = Number(requestId || 0);
   if (!Number.isFinite(id) || id <= 0) {
