@@ -4,7 +4,7 @@ import { Form, useActionData, useFetcher, useLoaderData, useLocation, useNavigat
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { dedupeCourierRequestsByOrderNumber } from "../utils/courier.shared";
+import { dedupeCourierRequestsByOrderNumber, getCourierRouteStatusFromTags } from "../utils/courier.shared";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -32,6 +32,7 @@ const VIEW_MODE = {
   TO_RETURN: "to_return",
   HISTORY: "history",
   COURIER: "courier",
+  BRANCH_PICKUP: "branch_pickup",
 };
 
 const METHOD_QUEUE_STATUSES = new Set([
@@ -265,6 +266,7 @@ function normalizeViewMode(rawValue) {
   if (value === VIEW_MODE.TO_RETURN) return VIEW_MODE.TO_RETURN;
   if (value === VIEW_MODE.HISTORY) return VIEW_MODE.HISTORY;
   if (value === VIEW_MODE.COURIER) return VIEW_MODE.COURIER;
+  if (value === VIEW_MODE.BRANCH_PICKUP) return VIEW_MODE.BRANCH_PICKUP;
   return VIEW_MODE.BRANCH;
 }
 
@@ -279,6 +281,7 @@ function viewModeFromPathname(pathname) {
   if (path.endsWith("/to_return")) return VIEW_MODE.TO_RETURN;
   if (path.endsWith("/history")) return VIEW_MODE.HISTORY;
   if (path.endsWith("/repartidor")) return VIEW_MODE.COURIER;
+  if (path.endsWith("/branch_pickup")) return VIEW_MODE.BRANCH_PICKUP;
   return "";
 }
 
@@ -1055,7 +1058,7 @@ export const loader = async ({ request }) => {
   };
 
   const rawRequests =
-    viewMode === VIEW_MODE.COURIER
+    viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.BRANCH_PICKUP
       ? []
       : await prisma.returnRequest.findMany({
           where,
@@ -1075,6 +1078,11 @@ export const loader = async ({ request }) => {
             courierLabel: "Devolución",
           })),
         ]
+      : viewMode === VIEW_MODE.BRANCH_PICKUP
+        ? (await fetchBranchPickupCourierOrders(admin)).map((requestRow) => ({
+            ...requestRow,
+            courierLabel: "Entrega",
+          }))
       : [];
 
   const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
@@ -1751,6 +1759,84 @@ async function fetchCourierOrders(admin) {
     .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
 }
 
+async function fetchBranchPickupCourierOrders(admin) {
+  const response = await admin.graphql(
+    `#graphql
+    query BranchPickupCourierOrders {
+      orders(first: 250, query: "tag:'recoger en sucursal'", sortKey: UPDATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            name
+            createdAt
+            displayFulfillmentStatus
+            tags
+            shippingAddress {
+              name
+              phone
+              address1
+              address2
+              city
+              province
+              zip
+              country
+            }
+            billingAddress {
+              name
+              phone
+            }
+            customAttributes {
+              key
+              value
+            }
+            shippingLines(first: 5) {
+              nodes {
+                title
+                code
+                deliveryCategory
+              }
+            }
+          }
+        }
+      }
+    }`,
+  );
+  const payload = await response.json();
+  const errors = payload?.errors || [];
+  if (errors.length) {
+    throw new Error(errors[0]?.message || "No se pudieron cargar las ordenes para recoger en sucursal.");
+  }
+
+  const nodes = payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || [];
+  return nodes
+    .filter((orderNode) => {
+      const status = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
+      return isCourierLocalDeliveryOrder(orderNode) && !["FULFILLED", "RESTOCKED"].includes(status);
+    })
+    .map((orderNode) => {
+      const shipping = orderNode.shippingAddress || null;
+      const billing = orderNode.billingAddress || null;
+      return {
+        id: orderNode.id,
+        orderNumber: String(orderNode.name || "").replace("#", ""),
+        customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
+        customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
+        pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
+        pickupAddress: String(shipping?.address1 || "").trim(),
+        pickupNeighborhood: String(shipping?.address2 || "").trim(),
+        pickupCity: String(shipping?.city || "").trim(),
+        pickupState: String(shipping?.province || "").trim(),
+        pickupPostalCode: String(shipping?.zip || "").trim(),
+        pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
+        createdAt: orderNode.createdAt,
+        updatedAt: orderNode.createdAt,
+        status: getCourierRouteStatusFromTags(orderNode.tags),
+      };
+    })
+    .filter((requestRow) => String(requestRow.status || "").toLowerCase() === "recoger_en_sucursal")
+    .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
+}
+
 async function fetchPickupCourierOrders(shop) {
   const pickupOrders = await prisma.returnRequest.findMany({
     where: {
@@ -1895,6 +1981,8 @@ export default function ReturnsRequests() {
           ? "Historial"
         : viewMode === VIEW_MODE.COURIER
           ? "Ordenes repartidor"
+        : viewMode === VIEW_MODE.BRANCH_PICKUP
+          ? "Recoger en sucursal"
         : "Entrega en sucursal";
 
   return (
@@ -2046,7 +2134,51 @@ export default function ReturnsRequests() {
           )}
         </s-section>
       ) : null}
+
+      {viewMode === VIEW_MODE.BRANCH_PICKUP ? (
+        <s-section heading="Recoger en sucursal">
+          {courierOrders.length === 0 ? (
+            <p>No hay ordenes para recoger en sucursal.</p>
+          ) : (
+            <div className={styles.courierGrid}>
+              {courierOrders.map((request) => (
+                <CourierOrderCard key={request.id} request={request} />
+              ))}
+            </div>
+          )}
+        </s-section>
+      ) : null}
     </s-page>
+  );
+}
+
+function CourierOrderCard({ request }) {
+  return (
+    <article
+      className={`${styles.courierCard} ${
+        request.courierLabel === "Devolución" ? styles.courierCardReturn : styles.courierCardDelivery
+      }`}
+    >
+      <div className={styles.courierHeader}>
+        <span
+          className={
+            request.courierLabel === "Devolución"
+              ? styles.courierBadgeReturn
+              : styles.courierBadgeDelivery
+          }
+        >
+          {request.courierLabel}
+        </span>
+        <span className={styles.courierBadgeStatus}>{getCourierStatusLabel(request.status)}</span>
+      </div>
+      <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
+      <p className={styles.courierCustomerName}>{request.customerName}</p>
+      <p className={styles.courierField}>
+        <strong>Programado:</strong> {formatCourierScheduledDate(request.pickupDate)}
+      </p>
+      <p className={styles.courierAddress}>{formatCourierAddress(request)}</p>
+      <p className={styles.courierField}>{request.customerPhone || "-"}</p>
+    </article>
   );
 }
 
