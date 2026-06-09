@@ -174,4 +174,8 @@
   }
 }
 
-.statusBadgeRoute {`r`n  background: #e9f1ff !important;`r`n  border-color: #005bd3 !important;`r`n  color: #005bd3 !important;`r`n}
+.statusBadgeRoute {
+  background: #e9f1ff !important;
+  border-color: #005bd3 !important;
+  color: #005bd3 !important;
+}
