@@ -32,16 +32,26 @@ function getCourierStatusLabel(status) {
   return getCourierRouteStatusLabel(status);
 }
 
-function getDeliveryAttemptLabel(attemptCount) {
-  const safeAttemptCount = Math.max(0, Number(attemptCount || 0));
-  if (!safeAttemptCount) return "";
-  return safeAttemptCount === 1 ? "1 intento de entrega" : `${safeAttemptCount} intentos de entrega`;
-}
-
-function getVisibleDeliveryAttemptCount(request) {
+function getFailedDeliveryAttemptCount(request) {
   const currentAttemptCount = Math.max(0, Number(request?.attemptCount || 0));
   if (currentAttemptCount > 0) return currentAttemptCount;
   return String(request?.status || "").trim().toLowerCase() === "no_entregado" ? 1 : 0;
+}
+
+function getDeliveryAttemptLabel(request) {
+  const failedAttemptCount = getFailedDeliveryAttemptCount(request);
+  if (!failedAttemptCount) return "";
+
+  const normalizedStatus = String(request?.status || "").trim().toLowerCase();
+  if (normalizedStatus === "no_entregado") {
+    return failedAttemptCount === 1 ? "1 intento de entrega" : `${failedAttemptCount} intentos de entrega`;
+  }
+
+  const currentAttemptNumber = Math.min(failedAttemptCount + 1, 3);
+  if (currentAttemptNumber === 1) return "primer intento de entrega";
+  if (currentAttemptNumber === 2) return "segundo intento de entrega";
+  if (currentAttemptNumber === 3) return "tercer intento de entrega";
+  return `${currentAttemptNumber} intento de entrega`;
 }
 
 export const action = async ({ request }) => {
@@ -346,9 +356,9 @@ export default function RepartidorPublicPortal() {
                       {request.courierLabel}
                     </span>
                     <div className={styles.statusGroup}>
-                      {!isReturnOrder(request) && getVisibleDeliveryAttemptCount(request) > 0 ? (
+                      {!isReturnOrder(request) && getFailedDeliveryAttemptCount(request) > 0 ? (
                         <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>
-                          {getDeliveryAttemptLabel(getVisibleDeliveryAttemptCount(request))}
+                          {getDeliveryAttemptLabel(request)}
                         </span>
                       ) : null}
                       <span
