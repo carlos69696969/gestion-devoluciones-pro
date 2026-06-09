@@ -237,85 +237,60 @@ async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
 }
 
 async function emitCourierDeliveryRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
-  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
+  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL || !NOTIFICATIONS_API_KEY) {
     return { ok: false, error: "No se pudo preparar la notificacion." };
   }
 
-  const title = "\u{1F69A} Tu pedido ya va en ruta";
-  const message = `Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya va en camino. \u{1F4E6} Mantente atento para recibirlo.`;
-  const eventPayload = {
-    status: "order_in_transit",
-    event: "order_in_transit",
-    action: "courier_mark_en_route",
-    title,
-    message,
-    note: message,
-    source: "portal_repartidor",
-    order_number: requestRow.orderNumber || null,
-    email: requestRow.customerEmail || null,
-    customer_email: requestRow.customerEmail || null,
-    customer: {
-      email: requestRow.customerEmail || null,
-      name: requestRow.customerName || null,
-      phone: requestRow.customerPhone || null,
-    },
-    courier_label: "Entrega",
-    route_step: routeStep,
+  const endpoint = `${NOTIFICATIONS_API_BASE_URL}/api/orders/manual-status`;
+  const headers = {
+    "Content-Type": "application/json",
+    "x-shop-domain": shopDomain,
+    "x-api-key": NOTIFICATIONS_API_KEY,
   };
 
-  const endpoints = NOTIFICATIONS_API_KEY
-    ? [
-        `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`,
-        `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`,
-      ]
-    : [`${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`];
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        shopDomain,
+        orderNumber: requestRow.orderNumber || null,
+        customerEmail: requestRow.customerEmail || null,
+        status: "en_ruta",
+        routeStep,
+      }),
+    });
 
-  let lastFailure = null;
-  for (const endpoint of endpoints) {
-    const headers = {
-      "Content-Type": "application/json",
-      "x-shop-domain": shopDomain,
+    if (response.ok) {
+      return { ok: true };
+    }
+
+    const detail = await response.text().catch(() => "");
+    console.error("Failed to emit courier delivery notification", {
+      shopDomain,
+      orderNumber: requestRow.orderNumber || null,
+      routeStep,
+      endpoint,
+      responseStatus: response.status,
+      detail: String(detail || "").slice(0, 300),
+    });
+    return {
+      ok: false,
+      error: String(detail || "").slice(0, 300) || "No se pudo enviar la notificacion.",
     };
-    if (NOTIFICATIONS_API_KEY) {
-      headers["x-api-key"] = NOTIFICATIONS_API_KEY;
-    }
-
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          shopDomain,
-          event: eventPayload,
-        }),
-      });
-
-      if (response.ok) {
-        return { ok: true };
-      }
-
-      const detail = await response.text().catch(() => "");
-      lastFailure = {
-        endpoint,
-        status: response.status,
-        detail: String(detail || "").slice(0, 300),
-      };
-    } catch (error) {
-      lastFailure = {
-        endpoint,
-        error: String(error?.message || error || "unknown"),
-      };
-    }
+  } catch (error) {
+    console.error("Failed to emit courier delivery notification", {
+      shopDomain,
+      orderNumber: requestRow.orderNumber || null,
+      routeStep,
+      endpoint,
+      error: String(error?.message || error || "unknown"),
+    });
+    return {
+      ok: false,
+      error: String(error?.message || error || "No se pudo enviar la notificacion."),
+    };
   }
-
-  console.error("Failed to emit courier delivery notification", {
-    shopDomain,
-    ...lastFailure,
-  });
-  return {
-    ok: false,
-    error: lastFailure?.detail || lastFailure?.error || "No se pudo enviar la notificacion.",
-  };
 }
 
 export async function markCourierOrderAsEnRoute({
@@ -707,3 +682,4 @@ export async function fetchPickupCourierOrders(shop) {
     (a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
   );
 }
+
