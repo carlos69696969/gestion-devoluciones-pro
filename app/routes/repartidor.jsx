@@ -60,6 +60,8 @@ export const action = async ({ request }) => {
       url.searchParams.set("shop", shop);
     }
     url.searchParams.set("tab", intent === "courier_mark_not_delivered" ? "historial" : "en_ruta");
+    url.searchParams.set("overrideRequestId", requestId);
+    url.searchParams.set("overrideStatus", String(result?.nextStatus || (intent === "courier_mark_not_delivered" ? "no_entregado" : "pendiente")));
     url.searchParams.set("updated", String(Date.now()));
     return redirect(`${url.pathname}?${url.searchParams.toString()}`);
   } catch (error) {
@@ -142,9 +144,16 @@ export default function RepartidorPublicPortal() {
   const actionData = useActionData();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
-  const historyOrders = courierOrders.filter((request) => isCourierHistoryStatus(request?.status));
-  const routeOrders = courierOrders.filter((request) => isCourierRouteStatus(request?.status));
-  const pendingOrders = courierOrders.filter(
+  const overrideRequestId = String(searchParams.get("overrideRequestId") || "").trim();
+  const overrideStatus = String(searchParams.get("overrideStatus") || "").trim().toLowerCase();
+  const effectiveCourierOrders = courierOrders.map((request) =>
+    overrideRequestId && String(request?.id || "").trim() === overrideRequestId
+      ? { ...request, status: overrideStatus || request?.status || "pendiente" }
+      : request,
+  );
+  const historyOrders = effectiveCourierOrders.filter((request) => isCourierHistoryStatus(request?.status));
+  const routeOrders = effectiveCourierOrders.filter((request) => isCourierRouteStatus(request?.status));
+  const pendingOrders = effectiveCourierOrders.filter(
     (request) => !isCourierRouteStatus(request?.status) && !isCourierHistoryStatus(request?.status),
   );
   const routeOrder = routeOrders[0] || null;
