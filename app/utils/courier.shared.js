@@ -84,6 +84,7 @@ export function getCourierRouteStepFromTags(tags) {
 
 export function getCourierDeliveryAttemptCountFromTags(tags) {
   const normalizedTags = Array.isArray(tags) ? tags.map(normalizeCourierTag) : [];
+  const normalizedTagSet = new Set(normalizedTags);
   let attemptCount = 0;
 
   for (const tag of normalizedTags) {
@@ -92,6 +93,13 @@ export function getCourierDeliveryAttemptCountFromTags(tags) {
     attemptCount = Math.max(attemptCount, Number(match[1]) || 0);
   }
 
+  if (attemptCount > 0) {
+    return attemptCount;
+  }
+  if (normalizedTagSet.has("en ruta 3")) return 3;
+  if (normalizedTagSet.has("en ruta 2")) return 2;
+  if (normalizedTagSet.has("en ruta")) return 1;
+  if (normalizedTagSet.has("no entregado")) return 1;
   return attemptCount;
 }
 

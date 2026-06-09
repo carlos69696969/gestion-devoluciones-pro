@@ -37,6 +37,35 @@ function getDeliveryAttemptTag(attemptCount) {
   return `intento entrega ${safeAttemptCount}`;
 }
 
+const COURIER_STATUS_TAGS = [
+  "en ruta",
+  "en ruta 2",
+  "en ruta 3",
+  "no entregado",
+  "entregado",
+  "reintentar entrega",
+  "intento entrega 1",
+  "intento entrega 2",
+  "intento entrega 3",
+];
+
+function getCourierRouteTag(step) {
+  const safeStep = Math.min(Math.max(Number(step || 0), 1), 3);
+  return safeStep === 1 ? "en ruta" : `en ruta ${safeStep}`;
+}
+
+async function replaceCourierOrderStatusTag({ shopDomain, shopifyOrderId, statusTag }) {
+  const cleanStatusTag = String(statusTag || "").trim();
+  if (!shopDomain || !shopifyOrderId || !cleanStatusTag) return;
+
+  await syncShopifyOrderTags({
+    shopDomain,
+    shopifyOrderId,
+    addTags: [cleanStatusTag],
+    removeTags: COURIER_STATUS_TAGS.filter((tag) => tag !== cleanStatusTag),
+  });
+}
+
 async function resolveCourierShopSessions(shopDomain) {
   const shop = normalizeShop(shopDomain);
   if (!shop) return [];
@@ -417,7 +446,7 @@ export async function markCourierOrderAsEnRoute({
   }
 
   const nextStatus = getCourierNextRouteStatus(currentStatus);
-  const routeTag = nextStep === 1 ? "en ruta" : `en ruta ${nextStep}`;
+  const routeTag = getCourierRouteTag(nextStep);
   const requestRow = {
     shop: shopDomain,
     shopifyOrderId: orderGid,
@@ -426,15 +455,14 @@ export async function markCourierOrderAsEnRoute({
     customerEmail: String(customerEmail || "").trim(),
     customerPhone: String(customerPhone || "-").trim() || "-",
     status: nextStatus,
-    attemptCount: normalizeDeliveryAttemptCount(currentAttemptCount),
+    attemptCount: nextStep,
   };
 
   try {
-    await syncShopifyOrderTags({
+    await replaceCourierOrderStatusTag({
       shopDomain,
       shopifyOrderId: orderGid,
-      addTags: [routeTag],
-      removeTags: ["no entregado", "reintentar entrega"],
+      statusTag: routeTag,
     });
   } catch (error) {
     return {
@@ -473,7 +501,7 @@ export async function markCourierOrderAsNotDelivered({
     return { ok: false, error: "Accion no valida." };
   }
 
-  const nextAttemptCount = Math.max(1, Math.min(normalizeDeliveryAttemptCount(currentAttemptCount) + 1, 3));
+  const nextAttemptCount = Math.max(1, normalizeDeliveryAttemptCount(currentAttemptCount, 1));
   const requestRow = {
     shop: shopDomain,
     shopifyOrderId: orderGid,
@@ -486,11 +514,10 @@ export async function markCourierOrderAsNotDelivered({
   };
 
   try {
-    await syncShopifyOrderTags({
+    await replaceCourierOrderStatusTag({
       shopDomain,
       shopifyOrderId: orderGid,
-      addTags: ["no entregado", getDeliveryAttemptTag(nextAttemptCount)],
-      removeTags: ["en ruta", "en ruta 2", "en ruta 3", "reintentar entrega", "intento entrega 1", "intento entrega 2", "intento entrega 3"],
+      statusTag: "no entregado",
     });
   } catch (error) {
     return {
@@ -530,7 +557,9 @@ export async function markCourierOrderForRetry({
     return { ok: false, error: "Accion no valida." };
   }
 
-  const nextAttemptCount = Math.max(1, normalizeDeliveryAttemptCount(currentAttemptCount, 1));
+  const nextAttemptCount = Math.min(Math.max(normalizeDeliveryAttemptCount(currentAttemptCount, 0) + 1, 1), 3);
+  const routeTag = getCourierRouteTag(nextAttemptCount);
+  const nextStatus = nextAttemptCount === 1 ? "en_ruta" : `en_ruta_${nextAttemptCount}`;
   const requestRow = {
     shop: shopDomain,
     shopifyOrderId: orderGid,
@@ -538,16 +567,15 @@ export async function markCourierOrderForRetry({
     customerName: String(customerName || "Cliente").trim(),
     customerEmail: String(customerEmail || "").trim(),
     customerPhone: String(customerPhone || "-").trim() || "-",
-    status: "reintento_pendiente",
+    status: nextStatus,
     attemptCount: nextAttemptCount,
   };
 
   try {
-    await syncShopifyOrderTags({
+    await replaceCourierOrderStatusTag({
       shopDomain,
       shopifyOrderId: orderGid,
-      addTags: ["reintentar entrega", getDeliveryAttemptTag(nextAttemptCount)],
-      removeTags: ["no entregado", "en ruta", "en ruta 2", "en ruta 3", "intento entrega 1", "intento entrega 2", "intento entrega 3"],
+      statusTag: routeTag,
     });
   } catch (error) {
     return {
@@ -556,7 +584,67 @@ export async function markCourierOrderForRetry({
     };
   }
 
-  return { ok: true, requestRow, nextStatus: "reintento_pendiente", attemptCount: nextAttemptCount };
+  return {
+    ok: true,
+    requestRow,
+    nextStatus,
+    attemptCount: nextAttemptCount,
+  };
+}
+
+export async function markCourierOrderAsDelivered({
+  shopDomain,
+  requestId,
+  orderNumber,
+  customerName,
+  customerEmail,
+  customerPhone,
+  currentAttemptCount,
+}) {
+  const isPickupRequest = String(requestId || "").startsWith("pickup-");
+  if (isPickupRequest) {
+    return { ok: false, error: "Esta accion solo aplica para entregas." };
+  }
+
+  const orderGid = String(requestId || "").trim();
+  if (!shopDomain || !orderGid) {
+    return { ok: false, error: "Accion no valida." };
+  }
+
+  const requestRow = {
+    shop: shopDomain,
+    shopifyOrderId: orderGid,
+    orderNumber: String(orderNumber || "").trim() || orderGid.replace(/^gid:\/\/shopify\/Order\//, ""),
+    customerName: String(customerName || "Cliente").trim(),
+    customerEmail: String(customerEmail || "").trim(),
+    customerPhone: String(customerPhone || "-").trim() || "-",
+    status: "entregado",
+    attemptCount: Math.max(1, normalizeDeliveryAttemptCount(currentAttemptCount, 1)),
+  };
+
+  try {
+    await replaceCourierOrderStatusTag({
+      shopDomain,
+      shopifyOrderId: orderGid,
+      statusTag: "entregado",
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || error || "No se pudo marcar la orden como entregada en Shopify."),
+    };
+  }
+
+  const notificationResult = await emitCourierDeliveryManualStatusNotification({
+    shopDomain,
+    requestRow,
+    status: "entregado",
+  });
+  if (!notificationResult?.ok) {
+    return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
+  }
+
+  return { ok: true, requestRow, nextStatus: "entregado", attemptCount: requestRow.attemptCount };
 }
 async function sendCourierReturnRouteNotificationOnly({ requestId }) {
   const id = Number(requestId || 0);

@@ -14,6 +14,7 @@ import {
 import {
   fetchCourierOrdersForShop,
   fetchPickupCourierOrders,
+  markCourierOrderAsDelivered,
   markCourierOrderAsEnRoute,
   markCourierOrderAsNotDelivered,
   markCourierOrderForRetry,
@@ -63,12 +64,14 @@ export const action = async ({ request }) => {
     const intent = String(formData.get("intent") || "").trim();
     const requestId = String(formData.get("requestId") || "").trim();
 
-    if (!["courier_mark_en_route", "courier_mark_not_delivered", "courier_retry_delivery"].includes(intent) || !requestId) {
+    if (!["courier_mark_en_route", "courier_mark_not_delivered", "courier_mark_delivered", "courier_retry_delivery"].includes(intent) || !requestId) {
       return { ok: false, error: "Accion no valida." };
     }
 
     const actionHandler =
-      intent === "courier_mark_not_delivered"
+      intent === "courier_mark_delivered"
+        ? markCourierOrderAsDelivered
+        : intent === "courier_mark_not_delivered"
         ? markCourierOrderAsNotDelivered
         : intent === "courier_retry_delivery"
           ? markCourierOrderForRetry
@@ -90,17 +93,22 @@ export const action = async ({ request }) => {
     if (shop) {
       url.searchParams.set("shop", shop);
     }
-    url.searchParams.set("tab", intent === "courier_mark_not_delivered" ? "historial" : "en_ruta");
+    url.searchParams.set(
+      "tab",
+      intent === "courier_mark_not_delivered" || intent === "courier_mark_delivered" ? "historial" : "en_ruta",
+    );
     url.searchParams.set("overrideRequestId", requestId);
     url.searchParams.set(
       "overrideStatus",
       String(
         result?.nextStatus ||
-          (intent === "courier_mark_not_delivered"
-            ? "no_entregado"
-            : intent === "courier_retry_delivery"
-              ? "reintento_pendiente"
-              : "pendiente"),
+          (intent === "courier_mark_delivered"
+            ? "entregado"
+            : intent === "courier_mark_not_delivered"
+              ? "no_entregado"
+              : intent === "courier_retry_delivery"
+                ? "en_ruta"
+                : "en_ruta"),
       ),
     );
     url.searchParams.set("overrideAttemptCount", String(result?.attemptCount || formData.get("currentAttemptCount") || "0"));
@@ -458,9 +466,7 @@ export default function RepartidorPublicPortal() {
                           {isRouteActionVisible(request) ? renderCourierActionForm(request, "En ruta", "courier_mark_en_route", "en ruta") : null}
                           {canShowDeliveryResultActions(request) ? (
                             <>
-                              <button type="button" className={styles.actionButton}>
-                                Entregado
-                              </button>
+                              {renderCourierActionForm(request, "Entregado", "courier_mark_delivered", "entregado")}
                               {renderCourierActionForm(
                                 request,
                                 "No entregado",
