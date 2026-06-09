@@ -21,6 +21,7 @@ const REQUEST_CREATED_KIND = "request_created";
 const STATUS_REVIEW_KIND = "status_review";
 const STATUS_APPROVED_KIND = "status_approved";
 const STATUS_RECEIVED_KIND = "status_received";
+const STATUS_IN_ROUTE_KIND = "status_in_route";
 const STATUS_REFUNDED_KIND = "status_refunded";
 const PICKUP_DEADLINE_DAYS = 30;
 const EVIDENCE_IMAGE_MAX_EDGE = 1280;
@@ -34,6 +35,7 @@ const TIMELINE_META_KINDS = new Set([
   STATUS_REVIEW_KIND,
   STATUS_APPROVED_KIND,
   STATUS_RECEIVED_KIND,
+  STATUS_IN_ROUTE_KIND,
   STATUS_REFUNDED_KIND,
   RETURNED_TO_CUSTOMER_KIND,
   NOT_RETURNED_KIND,
@@ -54,6 +56,7 @@ const ITEM_BLOCK_STATUSES = new Set([
 const ACTIVE_RETURN_STATUSES = new Set([
   "en_revision",
   "aprobada",
+  "en_ruta",
   "intento_fallido_1",
   "intento_fallido_2",
   "recibida",
@@ -520,6 +523,7 @@ function timelineLabelFromStatus(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return "Solicitud en revision";
   if (normalized === "aprobada") return "Devolucion aprobada";
+  if (normalized === "en_ruta") return "En ruta";
   if (normalized === "intento_fallido_1") return "Intento de devolucion fallido (1 de 2)";
   if (normalized === "intento_fallido_2") return "Intento de devolucion fallido (2 de 2)";
   if (normalized === "rechazada") return "Devolucion rechazada";
@@ -549,6 +553,7 @@ function timelineLabelFromReasonEntry(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
   if (kind === STATUS_REVIEW_KIND) return "Solicitud en revision";
   if (kind === STATUS_APPROVED_KIND) return "Devolucion aprobada";
+  if (kind === STATUS_IN_ROUTE_KIND) return "En ruta";
   if (kind === STATUS_RECEIVED_KIND) return "Recibimos tu producto";
   if (kind === STATUS_REFUNDED_KIND) return "Reembolso procesado";
   if (kind === "attempt_failed_1") return "Intento de devolucion fallido (1 de 2)";
@@ -610,6 +615,7 @@ function timelineKindFromStatus(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return STATUS_REVIEW_KIND;
   if (normalized === "aprobada") return STATUS_APPROVED_KIND;
+  if (normalized === "en_ruta") return STATUS_IN_ROUTE_KIND;
   if (normalized === "recibida") return STATUS_RECEIVED_KIND;
   if (normalized === "reembolsada" || normalized === "completada") return STATUS_REFUNDED_KIND;
   return "";
@@ -619,6 +625,7 @@ function hasReachedApprovedPhase(status) {
   const normalized = String(status || "").toLowerCase();
   return [
     "aprobada",
+    "en_ruta",
     "intento_fallido_1",
     "intento_fallido_2",
     "recibida",
@@ -775,6 +782,7 @@ function statusLabelForCustomer(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return "en revision";
   if (normalized === "aprobada") return "aprobada";
+  if (normalized === "en_ruta") return "en ruta";
   if (normalized === "intento_fallido_1") return "intento de devolucion fallido";
   if (normalized === "intento_fallido_2") return "segundo intento de devolucion fallido";
   if (normalized === "por_devolver") return "recoge tu paquete en nuestra sucursal";

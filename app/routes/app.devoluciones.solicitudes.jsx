@@ -11,6 +11,7 @@ const STATUS_LABEL = {
   pendiente: "pendiente",
   en_revision: "en revision",
   aprobada: "aprobada",
+  en_ruta: "en ruta",
   intento_fallido_1: "intento de devolucion fallido",
   intento_fallido_2: "segundo intento de devolucion fallido",
   por_devolver: "pendiente por recoger",
@@ -35,11 +36,12 @@ const VIEW_MODE = {
 
 const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
-  "intento_fallido_1",
-  "intento_fallido_2",
+  "en_ruta",
   "en_ruta_1",
   "en_ruta_2",
   "en_ruta_3",
+  "intento_fallido_1",
+  "intento_fallido_2",
 ]);
 const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
 const RETURN_TO_CUSTOMER_STATUSES = new Set(["por_devolver"]);
@@ -51,12 +53,14 @@ const REQUEST_CREATED_KIND = "request_created";
 const STATUS_REVIEW_KIND = "status_review";
 const STATUS_APPROVED_KIND = "status_approved";
 const STATUS_RECEIVED_KIND = "status_received";
+const STATUS_IN_ROUTE_KIND = "status_in_route";
 const STATUS_REFUNDED_KIND = "status_refunded";
 const TIMELINE_META_KINDS = new Set([
   REQUEST_CREATED_KIND,
   STATUS_REVIEW_KIND,
   STATUS_APPROVED_KIND,
   STATUS_RECEIVED_KIND,
+  STATUS_IN_ROUTE_KIND,
   STATUS_REFUNDED_KIND,
   RETURNED_TO_CUSTOMER_KIND,
   NOT_RETURNED_KIND,
@@ -174,6 +178,54 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, not
   });
 }
 
+async function emitOrderStatusNotification({ shopDomain, requestRow, status, note = "" }) {
+  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL || !NOTIFICATIONS_API_KEY) {
+    return;
+  }
+
+  const endpoint = `${NOTIFICATIONS_API_BASE_URL}/api/orders/manual-status`;
+  const headers = {
+    "Content-Type": "application/json",
+    "x-shop-domain": shopDomain,
+    "x-api-key": NOTIFICATIONS_API_KEY,
+  };
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        shopDomain,
+        orderNumber: requestRow.orderNumber || null,
+        customerEmail: requestRow.customerEmail || null,
+        status,
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      console.error("Failed to emit order status notification", {
+        shopDomain,
+        orderNumber: requestRow.orderNumber || null,
+        status,
+        note,
+        endpoint,
+        responseStatus: response.status,
+        detail: String(detail || "").slice(0, 300),
+      });
+    }
+  } catch (error) {
+    console.error("Failed to emit order status notification", {
+      shopDomain,
+      orderNumber: requestRow.orderNumber || null,
+      status,
+      note,
+      endpoint,
+      error: String(error?.message || error || "unknown"),
+    });
+  }
+}
+
 const PICKUP_FAILED_REASON_OPTIONS = [
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta. Nuestro equipo volverá a intentarlo mañana. 📦✨",
   "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
@@ -189,6 +241,7 @@ const NEVER_ARRIVED_BRANCH_REASON = "Nunca llego a la sucursal para completar la
 function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
   if (status === "aprobada") return "statusApproved";
+  if (status === "en_ruta") return "statusApproved";
   if (status === "intento_fallido_1" || status === "intento_fallido_2") return "statusAttemptFailed";
   if (status === "por_devolver") return "statusPendingReturn";
   if (status === "rechazada") return "statusRejected";
@@ -393,6 +446,7 @@ function timelineLabelFromStatus(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return "Solicitud en revision";
   if (normalized === "aprobada") return "Devolucion aprobada";
+  if (normalized === "en_ruta") return "En ruta";
   if (normalized === "intento_fallido_1") return "Intento de devolucion fallido (1 de 2)";
   if (normalized === "intento_fallido_2") return "Intento de devolucion fallido (2 de 2)";
   if (normalized === "rechazada") return "Devolucion rechazada";
@@ -408,6 +462,7 @@ function timelineLabelFromReasonEntry(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
   if (kind === STATUS_REVIEW_KIND) return "Solicitud en revision";
   if (kind === STATUS_APPROVED_KIND) return "Devolucion aprobada";
+  if (kind === STATUS_IN_ROUTE_KIND) return "En ruta";
   if (kind === STATUS_RECEIVED_KIND) return "Recibimos tu producto";
   if (kind === STATUS_REFUNDED_KIND) return "Reembolso procesado";
   if (kind === "attempt_failed_1") return "Intento de devolucion fallido (1 de 2)";
@@ -423,6 +478,7 @@ function timelineToneFromStatus(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return "review";
   if (normalized === "aprobada") return "approved";
+  if (normalized === "en_ruta") return "approved";
   if (normalized === "intento_fallido_1" || normalized === "intento_fallido_2") return "attempt";
   if (normalized === "rechazada") return "rejected";
   if (normalized === "recibida") return "received";
@@ -437,6 +493,7 @@ function timelineToneFromReasonEntry(entry) {
   if (kind === REQUEST_CREATED_KIND) return "default";
   if (kind === STATUS_REVIEW_KIND) return "review";
   if (kind === STATUS_APPROVED_KIND) return "approved";
+  if (kind === STATUS_IN_ROUTE_KIND) return "approved";
   if (kind === STATUS_RECEIVED_KIND) return "received";
   if (kind === STATUS_REFUNDED_KIND) return "refunded";
   if (kind === "attempt_failed_1" || kind === "attempt_failed_2") return "attempt";
@@ -456,6 +513,9 @@ function timelineStatusDescription(status, requestRow) {
     return requestRow.returnMethod === "pickup"
       ? "Tu solicitud fue aprobada. Recogeremos tu producto en el domicilio y fecha indicados."
       : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.";
+  }
+  if (normalized === "en_ruta") {
+    return "Tu recoleccion ya va en ruta hacia tu domicilio. Nuestro equipo se dirige para continuar el proceso.";
   }
   if (normalized === "recibida") {
     return "Recibimos tu producto. Estamos validando para finalizar el proceso.";
@@ -484,6 +544,7 @@ function timelineKindFromStatus(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return STATUS_REVIEW_KIND;
   if (normalized === "aprobada") return STATUS_APPROVED_KIND;
+  if (normalized === "en_ruta") return STATUS_IN_ROUTE_KIND;
   if (normalized === "recibida") return STATUS_RECEIVED_KIND;
   if (normalized === "reembolsada" || normalized === "completada") return STATUS_REFUNDED_KIND;
   return "";
@@ -493,6 +554,7 @@ function hasReachedApprovedPhase(status) {
   const normalized = String(status || "").toLowerCase();
   return [
     "aprobada",
+    "en_ruta",
     "intento_fallido_1",
     "intento_fallido_2",
     "recibida",
@@ -1175,10 +1237,37 @@ export const action = async ({ request }) => {
     return { ok: true, message: "Solicitud rechazada." };
   }
 
+  if (intent === "mark_in_route") {
+    if (String(requestRow.returnMethod || "").toLowerCase() !== "pickup") {
+      return { ok: false, error: "Solo aplica a solicitudes de recoleccion a domicilio." };
+    }
+    if (String(requestRow.status || "").toLowerCase() !== "aprobada") {
+      return { ok: false, error: "Solo puedes marcar en ruta una solicitud aprobada." };
+    }
+    const routeNote = "Tu recoleccion ya va en ruta hacia tu domicilio. Nuestro equipo se dirige para continuar el proceso.";
+    await prisma.returnRequest.update({
+      where: { id },
+      data: {
+        status: "en_ruta",
+        rejectionReason: appendTimelineMetaEntry(requestRow.rejectionReason, {
+          kind: STATUS_IN_ROUTE_KIND,
+          reason: routeNote,
+        }),
+      },
+    });
+    await emitOrderStatusNotification({
+      shopDomain: session.shop,
+      requestRow,
+      status: "en_ruta",
+      note: routeNote,
+    });
+    return { ok: true, message: "Solicitud marcada como en ruta y notificada al cliente." };
+  }
+
   if (intent === "mark_received") {
     const currentStatus = String(requestRow.status || "").toLowerCase();
     const canMarkReceived =
-      currentStatus === "aprobada" || isPickupFailedAttemptStatus(currentStatus);
+      currentStatus === "aprobada" || currentStatus === "en_ruta" || isPickupFailedAttemptStatus(currentStatus);
     if (!canMarkReceived) {
       return {
         ok: false,
@@ -1243,7 +1332,7 @@ export const action = async ({ request }) => {
     if (requestRow.returnMethod !== "pickup") {
       return { ok: false, error: "Solo aplica a solicitudes de recoleccion a domicilio." };
     }
-    if (currentStatus !== "aprobada" && currentStatus !== "intento_fallido_1") {
+    if (currentStatus !== "aprobada" && currentStatus !== "en_ruta" && currentStatus !== "intento_fallido_1") {
       return { ok: false, error: "Ya no puedes registrar mas intentos fallidos para esta solicitud." };
     }
     const rejectionReason = String(formData.get("rejectionReason") || "").trim();
@@ -1979,11 +2068,12 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
   const status = String(request.status || "").toLowerCase();
   const isPickupMethod = request.returnMethod === "pickup";
   const isPickupFailedAttempt = isPickupFailedAttemptStatus(status);
-  const canMarkReceived = status === "aprobada" || isPickupFailedAttempt;
+  const canMarkInRoute = isPickupMethod && status === "aprobada";
+  const canMarkReceived = status === "aprobada" || status === "en_ruta" || isPickupFailedAttempt;
   const canMarkNeverArrived =
     !isPickupMethod && status === "aprobada" && Boolean(request.isBranchDeliveryDeadlineExpired);
   const canRegisterPickupFailedAttempt =
-    isPickupMethod && (status === "aprobada" || status === "intento_fallido_1");
+    isPickupMethod && (status === "aprobada" || status === "en_ruta" || status === "intento_fallido_1");
   const canRejectAfterFailedPickups = isPickupMethod && status === "intento_fallido_2";
   const canMarkReturnedToCustomer = status === "por_devolver";
   const canMarkNotReturned = status === "por_devolver" && Boolean(request.isPickupDeadlineExpired);
@@ -2295,6 +2385,16 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
               </button>
             </Form>
           </>
+        ) : null}
+
+        {canMarkInRoute ? (
+          <Form method="post" action={currentFormAction}>
+            <input type="hidden" name="intent" value="mark_in_route" />
+            <input type="hidden" name="id" value={request.id} />
+            <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+              En ruta
+            </button>
+          </Form>
         ) : null}
 
         {canMarkReceived ? (

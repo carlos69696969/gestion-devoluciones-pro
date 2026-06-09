@@ -1,6 +1,7 @@
 const ACTIVE_RETURN_STATUSES = [
   "en_revision",
   "aprobada",
+  "en_ruta",
   "intento_fallido_1",
   "intento_fallido_2",
   "recibida",
