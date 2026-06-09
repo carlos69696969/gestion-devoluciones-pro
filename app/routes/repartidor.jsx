@@ -38,6 +38,12 @@ function getDeliveryAttemptLabel(attemptCount) {
   return safeAttemptCount === 1 ? "1 intento de entrega" : `${safeAttemptCount} intentos de entrega`;
 }
 
+function getVisibleDeliveryAttemptCount(request) {
+  const currentAttemptCount = Math.max(0, Number(request?.attemptCount || 0));
+  if (currentAttemptCount > 0) return currentAttemptCount;
+  return String(request?.status || "").trim().toLowerCase() === "no_entregado" ? 1 : 0;
+}
+
 export const action = async ({ request }) => {
   try {
     const url = new URL(request.url);
@@ -347,9 +353,9 @@ export default function RepartidorPublicPortal() {
                       >
                         {getCourierStatusLabel(request.status)}
                       </span>
-                      {!isReturnOrder(request) && Number(request?.attemptCount || 0) > 0 ? (
-                        <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
-                          {getDeliveryAttemptLabel(request.attemptCount)}
+                      {!isReturnOrder(request) && getVisibleDeliveryAttemptCount(request) > 0 ? (
+                        <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>
+                          {getDeliveryAttemptLabel(getVisibleDeliveryAttemptCount(request))}
                         </span>
                       ) : null}
                     </div>
