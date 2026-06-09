@@ -28,7 +28,7 @@ export const headers = () => ({
 function getCourierStatusLabel(status) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "pendiente") return "pendiente";
-  if (normalized === "reintento_pendiente") return "listo para reintento";
+  if (normalized === "reintento_pendiente") return "pendiente";
   return getCourierRouteStatusLabel(status);
 }
 
@@ -212,6 +212,10 @@ export default function RepartidorPublicPortal() {
   const isReturnOrder = (request) => String(request?.courierLabel || "") === "Devolucion";
   const isRouteActionVisible = (request) => !isCourierRouteStatus(request?.status) && !isCourierHistoryStatus(request?.status);
   const isNotDeliveredStatus = (request) => String(request?.status || "").trim().toLowerCase() === "no_entregado";
+  const canShowDeliveryResultActions = (request) =>
+    !isReturnOrder(request) &&
+    activeTab === "en_ruta" &&
+    isCourierRouteTabStatus(request?.status);
   const buildMapsUrl = (request) => {
     const address = formatCourierAddress(request);
     const query = encodeURIComponent(address);
@@ -442,7 +446,7 @@ export default function RepartidorPublicPortal() {
                             </button>
                           )}
                           {isRouteActionVisible(request) ? renderCourierActionForm(request, "En ruta", "courier_mark_en_route", "en ruta") : null}
-                          {isCourierRouteStatus(request.status) ? (
+                          {canShowDeliveryResultActions(request) ? (
                             <>
                               <button type="button" className={styles.actionButton}>
                                 Entregado
