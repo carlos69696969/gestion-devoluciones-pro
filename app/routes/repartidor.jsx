@@ -19,6 +19,8 @@ import {
   markCourierOrderAsNotDelivered,
   markCourierOrderForRetry,
   markCourierOrderReadyForBranchPickup,
+  markCourierReturnAsReceived,
+  markCourierReturnPickupAttemptFailed,
   resolveCourierPortalShop,
 } from "../utils/courier.server";
 
@@ -115,13 +117,27 @@ export const action = async ({ request }) => {
     const intent = String(formData.get("intent") || "").trim();
     const requestId = String(formData.get("requestId") || "").trim();
 
-    if (!["courier_mark_en_route", "courier_mark_not_delivered", "courier_mark_delivered", "courier_retry_delivery"].includes(intent) || !requestId) {
+    if (
+      ![
+        "courier_mark_en_route",
+        "courier_mark_not_delivered",
+        "courier_mark_delivered",
+        "courier_retry_delivery",
+        "courier_return_mark_received",
+        "courier_return_pickup_attempt_failed",
+      ].includes(intent) ||
+      !requestId
+    ) {
       return { ok: false, error: "Accion no valida." };
     }
 
     const actionHandler =
       intent === "courier_mark_delivered"
         ? markCourierOrderAsDelivered
+        : intent === "courier_return_mark_received"
+          ? markCourierReturnAsReceived
+        : intent === "courier_return_pickup_attempt_failed"
+          ? markCourierReturnPickupAttemptFailed
         : intent === "courier_mark_not_delivered"
         ? markCourierOrderAsNotDelivered
         : intent === "courier_retry_delivery"
@@ -347,6 +363,10 @@ export default function RepartidorPublicPortal() {
   const isRouteActionVisible = (request) => !isCourierRouteStatus(request?.status) && !isCourierHistoryStatus(request?.status);
   const isNotDeliveredStatus = (request) => String(request?.status || "").trim().toLowerCase() === "no_entregado";
   const isPickupReadyStatus = (request) => String(request?.status || "").trim().toLowerCase() === "recoger_en_sucursal";
+  const canShowReturnResultActions = (request) =>
+    isReturnOrder(request) &&
+    activeTab === "en_ruta" &&
+    isCourierRouteTabStatus(request?.status);
   const canShowDeliveryResultActions = (request) =>
     !isReturnOrder(request) &&
     activeTab === "en_ruta" &&
@@ -549,12 +569,24 @@ export default function RepartidorPublicPortal() {
                             </button>
                           )}
                           {isRouteActionVisible(request) ? renderCourierActionForm(request, "En ruta", "courier_mark_en_route", "en ruta") : null}
-                          <button type="button" className={styles.actionButton}>
-                            Recibido
-                          </button>
-                          <button type="button" className={styles.actionButton}>
-                            No recibido
-                          </button>
+                          {canShowReturnResultActions(request) ? (
+                            <>
+                              {renderCourierActionForm(
+                                request,
+                                "Recibido",
+                                "courier_return_mark_received",
+                                "recibido",
+                              )}
+                              {renderCourierActionForm(
+                                request,
+                                "Intento de devolucion fallido",
+                                "courier_return_pickup_attempt_failed",
+                                "intento de devolucion fallido",
+                                `${styles.actionButton} ${styles.actionButtonDanger}`,
+                                "Esta accion registrara un intento fallido de recoleccion y notificara al cliente.",
+                              )}
+                            </>
+                          ) : null}
                         </>
                       ) : (
                         <>

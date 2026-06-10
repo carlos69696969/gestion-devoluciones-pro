@@ -21,6 +21,15 @@ const NOTIFICATIONS_API_BASE_URL = String(
 const NOTIFICATIONS_API_KEY = String(
   process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "",
 ).trim();
+const STATUS_RECEIVED_KIND = "status_received";
+const PICKUP_FAILED_REASON_FIRST =
+  "No logramos completar la recoleccion. Visitamos tu domicilio, pero no obtuvimos respuesta. Nuestro equipo volvera a intentarlo.";
+const PICKUP_FAILED_REASON_SECOND =
+  "Recoleccion reagendada. Nos comunicamos contigo y acordamos realizar un nuevo intento, ya que no te encontrabas en el domicilio indicado.";
+const RETURN_EVENT_BY_INTENT = {
+  courier_return_mark_received: "return_picked_up",
+  courier_return_pickup_attempt_failed: "return_pickup_scheduled",
+};
 
 function normalizeShop(value) {
   return String(value || "").trim().toLowerCase();
@@ -50,6 +59,43 @@ async function getReturnBranchDetails(shopDomain) {
     branchAddress: String(settings?.branchAddress || "").trim(),
     branchHours: String(settings?.branchHours || "").trim(),
   };
+}
+
+function parseReasonEntries(rawValue) {
+  const text = String(rawValue || "").trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed?.entries)) return parsed.entries.filter(Boolean);
+  } catch {
+    return [{ kind: "legacy", reason: text, at: "" }];
+  }
+  return [{ kind: "legacy", reason: text, at: "" }];
+}
+
+function appendReasonEntry(rawValue, entry) {
+  const entries = parseReasonEntries(rawValue);
+  entries.push({
+    kind: String(entry?.kind || "legacy"),
+    reason: String(entry?.reason || "").trim(),
+    at: new Date().toISOString(),
+  });
+  return JSON.stringify({ entries });
+}
+
+function appendTimelineMetaEntry(rawValue, entry) {
+  const kind = String(entry?.kind || "").trim().toLowerCase();
+  if (!kind) return rawValue || "";
+  const entries = parseReasonEntries(rawValue);
+  if (entries.some((item) => String(item?.kind || "").toLowerCase() === kind)) {
+    return JSON.stringify({ entries });
+  }
+  entries.push({
+    kind,
+    reason: String(entry?.reason || "").trim(),
+    at: new Date().toISOString(),
+  });
+  return JSON.stringify({ entries });
 }
 
 function getDeliveryAttemptTag(attemptCount) {
@@ -301,6 +347,90 @@ export async function emitCourierReturnRouteNotification({ shopDomain, requestRo
 
   console.error("Failed to emit courier route notification", {
     shopDomain,
+    ...lastFailure,
+  });
+  return {
+    ok: false,
+    error: lastFailure?.detail || lastFailure?.error || "No se pudo enviar la notificacion.",
+  };
+}
+
+async function emitCourierReturnActionNotification({ shopDomain, requestRow, intent, note = "" }) {
+  if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
+    return { ok: true };
+  }
+
+  const mappedStatus = RETURN_EVENT_BY_INTENT[intent];
+  if (!mappedStatus) return { ok: true };
+
+  const eventPayload = {
+    status: mappedStatus,
+    event: mappedStatus,
+    action: intent,
+    return_reference: requestRow.orderNumber || (requestRow.id ? `DEV-${requestRow.id}` : ""),
+    return_id: requestRow.id || null,
+    order_number: requestRow.orderNumber || null,
+    email: requestRow.customerEmail || null,
+    customer_email: requestRow.customerEmail || null,
+    customer: {
+      email: requestRow.customerEmail || null,
+      name: requestRow.customerName || null,
+      phone: requestRow.customerPhone || null,
+    },
+    note: note || "",
+    source: "portal_repartidor",
+    return_method: requestRow.returnMethod || null,
+    courier_label: "Devolucion",
+  };
+
+  const endpoints = NOTIFICATIONS_API_KEY
+    ? [
+        `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`,
+        `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`,
+      ]
+    : [`${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`];
+
+  let lastFailure = null;
+  for (const endpoint of endpoints) {
+    const headers = {
+      "Content-Type": "application/json",
+      "x-shop-domain": shopDomain,
+    };
+    if (NOTIFICATIONS_API_KEY) {
+      headers["x-api-key"] = NOTIFICATIONS_API_KEY;
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          shopDomain,
+          event: eventPayload,
+        }),
+      });
+
+      if (response.ok) {
+        return { ok: true };
+      }
+
+      const detail = await response.text().catch(() => "");
+      lastFailure = {
+        endpoint,
+        status: response.status,
+        detail: String(detail || "").slice(0, 300),
+      };
+    } catch (error) {
+      lastFailure = {
+        endpoint,
+        error: String(error?.message || error || "unknown"),
+      };
+    }
+  }
+
+  console.error("Failed to emit courier return action notification", {
+    shopDomain,
+    intent,
     ...lastFailure,
   });
   return {
@@ -875,6 +1005,127 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
   });
 
   return { ok: true, requestRow, nextStatus, routeStep: nextStep };
+}
+
+function isCourierReturnRouteLikeStatus(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  return normalized === "en_ruta" || normalized.startsWith("en_ruta_");
+}
+
+function getCourierReturnFailedAttemptStatus(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "aprobada" || normalized === "en_ruta" || normalized === "en_ruta_1") {
+    return "intento_fallido_1";
+  }
+  if (normalized === "intento_fallido_1" || normalized === "en_ruta_2" || normalized === "en_ruta_3") {
+    return "intento_fallido_2";
+  }
+  return "";
+}
+
+async function getCourierReturnRequestForAction(requestId) {
+  const id = Number(String(requestId || "").replace(/^pickup-/, "") || 0);
+  if (!Number.isFinite(id) || id <= 0) {
+    return { ok: false, error: "Accion no valida." };
+  }
+
+  const requestRow = await prisma.returnRequest.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      shop: true,
+      orderNumber: true,
+      customerName: true,
+      customerEmail: true,
+      customerPhone: true,
+      returnMethod: true,
+      status: true,
+      rejectionReason: true,
+      updatedAt: true,
+    },
+  });
+
+  if (!requestRow) {
+    return { ok: false, error: "No encontramos la orden de devolucion." };
+  }
+
+  if (String(requestRow.returnMethod || "").toLowerCase() !== "pickup") {
+    return { ok: false, error: "Esta accion solo aplica para devoluciones de recoleccion." };
+  }
+
+  return { ok: true, requestRow };
+}
+
+export async function markCourierReturnAsReceived({ requestId }) {
+  const lookup = await getCourierReturnRequestForAction(requestId);
+  if (!lookup.ok) return lookup;
+
+  const requestRow = lookup.requestRow;
+  const currentStatus = String(requestRow.status || "").trim().toLowerCase();
+  const canMarkReceived =
+    currentStatus === "aprobada" ||
+    isCourierReturnRouteLikeStatus(currentStatus) ||
+    currentStatus === "intento_fallido_1" ||
+    currentStatus === "intento_fallido_2";
+
+  if (!canMarkReceived) {
+    return { ok: false, error: "Solo puedes marcar como recibida una devolucion aprobada o con intento fallido." };
+  }
+
+  await prisma.returnRequest.update({
+    where: { id: requestRow.id },
+    data: {
+      status: "recibida",
+      receivedAt: new Date(),
+      rejectionReason: appendTimelineMetaEntry(requestRow.rejectionReason, {
+        kind: STATUS_RECEIVED_KIND,
+        reason: "Recibimos tu producto. Estamos validando para finalizar el proceso.",
+      }),
+    },
+  });
+
+  await emitCourierReturnActionNotification({
+    shopDomain: requestRow.shop,
+    requestRow,
+    intent: "courier_return_mark_received",
+    note: "Recibimos tu producto para validar la devolucion.",
+  });
+
+  return { ok: true, requestRow, nextStatus: "recibida", attemptCount: 0 };
+}
+
+export async function markCourierReturnPickupAttemptFailed({ requestId }) {
+  const lookup = await getCourierReturnRequestForAction(requestId);
+  if (!lookup.ok) return lookup;
+
+  const requestRow = lookup.requestRow;
+  const currentStatus = String(requestRow.status || "").trim().toLowerCase();
+  const nextStatus = getCourierReturnFailedAttemptStatus(currentStatus);
+  if (!nextStatus) {
+    return { ok: false, error: "Ya no puedes registrar mas intentos fallidos para esta devolucion." };
+  }
+
+  const rejectionReason = nextStatus === "intento_fallido_1" ? PICKUP_FAILED_REASON_FIRST : PICKUP_FAILED_REASON_SECOND;
+
+  await prisma.returnRequest.update({
+    where: { id: requestRow.id },
+    data: {
+      status: nextStatus,
+      rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+        kind: nextStatus === "intento_fallido_1" ? "attempt_failed_1" : "attempt_failed_2",
+        reason: rejectionReason,
+      }),
+    },
+  });
+
+  await emitCourierReturnActionNotification({
+    shopDomain: requestRow.shop,
+    requestRow,
+    intent: "courier_return_pickup_attempt_failed",
+    note: rejectionReason,
+  });
+
+  return { ok: true, requestRow, nextStatus, attemptCount: 0 };
 }
 
 
