@@ -85,7 +85,8 @@ function getReturnFailedAttemptCount(request) {
 
 function getReturnFailedAttemptLabel(request) {
   const failedAttemptCount = getReturnFailedAttemptCount(request);
-  return failedAttemptCount ? `intento fallido ${failedAttemptCount}` : "";
+  if (!failedAttemptCount) return "";
+  return failedAttemptCount === 1 ? "1 intento" : `${failedAttemptCount} intentos`;
 }
 
 function getReturnRetryAttemptLabel(request) {
