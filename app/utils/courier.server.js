@@ -17,6 +17,8 @@ export const METHOD_QUEUE_STATUSES = new Set([
   "en_ruta_2",
   "en_ruta_3",
   "recibida",
+  "reembolsada",
+  "completada",
   "rechazada",
 ]);
 const NOTIFICATIONS_API_BASE_URL = String(
@@ -1486,7 +1488,9 @@ export async function fetchPickupCourierOrders(shop) {
     pickupCountry: "Mexico",
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
-    status: String(requestRow.status || "pendiente").trim() || "pendiente",
+    status: ["reembolsada", "completada"].includes(String(requestRow.status || "").trim().toLowerCase())
+      ? "recibida"
+      : String(requestRow.status || "pendiente").trim() || "pendiente",
     attemptCount: getReturnFailedAttemptCount(requestRow.rejectionReason),
     courierLabel: "Devolucion",
   }));
