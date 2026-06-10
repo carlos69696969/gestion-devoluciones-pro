@@ -27,7 +27,7 @@ import {
 } from "../utils/courier.server";
 
 const PICKUP_FAILED_REASON_OPTIONS = [
-  "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta. Nuestro equipo volverá a intentarlo mañana. 📦✨",
+  "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨",
   "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
 ];
 
@@ -500,7 +500,9 @@ export default function RepartidorPublicPortal() {
       onSubmit={(event) => {
         if (!confirmCourierAction(request, "intento de devolucion fallido", "Se enviara el mensaje seleccionado al cliente.")) {
           event.preventDefault();
+          return;
         }
+        setFailedPickupRequest(null);
       }}
     >
       <input type="hidden" name="shop" value={shop || ""} />

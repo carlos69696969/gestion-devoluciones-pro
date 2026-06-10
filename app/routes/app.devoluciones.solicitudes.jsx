@@ -228,7 +228,7 @@ async function emitOrderStatusNotification({ shopDomain, requestRow, status, not
 }
 
 const PICKUP_FAILED_REASON_OPTIONS = [
-  "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta. Nuestro equipo volverá a intentarlo mañana. 📦✨",
+  "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨",
   "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
 ];
 const REJECT_AFTER_FAILED_AUTO_REASON =
