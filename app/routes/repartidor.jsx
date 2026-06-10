@@ -32,6 +32,14 @@ const PICKUP_FAILED_REASON_OPTIONS = [
 ];
 const FINAL_PICKUP_REJECTION_REASON =
   "❌🚚 Después de 3 intentos de recolección en el domicilio registrado, no fue posible recibir el producto. Por esta razón, la solicitud de devolución fue rechazada automáticamente.";
+const SECOND_PICKUP_FAILED_WARNING =
+  "⚠️ Nota importante: Si mañana no logramos localizarte en tu domicilio por tercera ocasión, tu devolución será cancelada. 📦❌";
+
+function getFailedPickupMessage(request, rejectionReason) {
+  const normalizedStatus = String(request?.status || "").trim().toLowerCase();
+  if (normalizedStatus !== "en_ruta_2") return rejectionReason;
+  return `${rejectionReason}\n\n${SECOND_PICKUP_FAILED_WARNING}`;
+}
 
 export const headers = () => ({
   "Cache-Control": "no-store, max-age=0",
@@ -496,8 +504,10 @@ export default function RepartidorPublicPortal() {
     </Form>
   );
 
-  const renderFailedPickupReasonForm = (request, rejectionReason, index) => (
-    <Form
+  const renderFailedPickupReasonForm = (request, rejectionReason, index) => {
+    const failedPickupMessage = getFailedPickupMessage(request, rejectionReason);
+    return (
+      <Form
       method="post"
       onSubmit={(event) => {
         if (!confirmCourierAction(request, "intento de devolucion fallido", "Se enviara el mensaje seleccionado al cliente.")) {
@@ -522,13 +532,14 @@ export default function RepartidorPublicPortal() {
       <input type="hidden" name="customerPhone" value={String(request.customerPhone || "")} />
       <input type="hidden" name="currentStatus" value={String(request.status || "")} />
       <input type="hidden" name="currentAttemptCount" value={String(request.attemptCount || 0)} />
-      <input type="hidden" name="rejectionReason" value={rejectionReason} />
-      <button type="submit" className={styles.reasonOptionButton}>
-        <span className={styles.reasonOptionLabel}>Mensaje automatico {index + 1}</span>
-        <span className={styles.reasonOptionText}>{rejectionReason}</span>
-      </button>
-    </Form>
-  );
+        <input type="hidden" name="rejectionReason" value={failedPickupMessage} />
+        <button type="submit" className={styles.reasonOptionButton}>
+          <span className={styles.reasonOptionLabel}>Mensaje automatico {index + 1}</span>
+          <span className={styles.reasonOptionText}>{failedPickupMessage}</span>
+        </button>
+      </Form>
+    );
+  };
   return (
     <main className={styles.page}>
       <div className={styles.container}>
