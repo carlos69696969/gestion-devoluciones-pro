@@ -990,7 +990,7 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
     return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
   }
 
-  const nextStatus = getCourierNextRouteStatus(requestRow.status);
+  const nextStatus = `en_ruta_${nextStep}`;
   await prisma.returnRequest.update({
     where: { id },
     data: { status: nextStatus },
@@ -1155,7 +1155,12 @@ export async function markCourierReturnForRetry({ requestId }) {
     data: { status: "reintento_pendiente" },
   });
 
-  return { ok: true, requestRow, nextStatus: "reintento_pendiente", attemptCount: 0 };
+  return {
+    ok: true,
+    requestRow,
+    nextStatus: "reintento_pendiente",
+    attemptCount: getReturnFailedAttemptCount(requestRow.rejectionReason),
+  };
 }
 
 
@@ -1382,6 +1387,7 @@ export async function fetchPickupCourierOrders(shop) {
       createdAt: true,
       updatedAt: true,
       status: true,
+      rejectionReason: true,
     },
     orderBy: [{ pickupDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     take: 250,
@@ -1402,7 +1408,7 @@ export async function fetchPickupCourierOrders(shop) {
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
     status: String(requestRow.status || "pendiente").trim() || "pendiente",
-    attemptCount: 0,
+    attemptCount: getReturnFailedAttemptCount(requestRow.rejectionReason),
     courierLabel: "Devolucion",
   }));
 

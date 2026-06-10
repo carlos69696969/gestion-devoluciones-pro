@@ -71,6 +71,15 @@ function getReturnFailedAttemptLabel(request) {
   return failedAttemptCount ? `intento fallido ${failedAttemptCount}` : "";
 }
 
+function getReturnRetryAttemptLabel(request) {
+  const normalizedStatus = String(request?.status || "").trim().toLowerCase();
+  if (normalizedStatus !== "reintento_pendiente") return "";
+  const nextAttemptNumber = Math.min(Math.max(Number(request?.attemptCount || 0) + 1, 1), 3);
+  if (nextAttemptNumber === 1) return "primer intento";
+  if (nextAttemptNumber === 2) return "segundo intento";
+  return "tercer intento";
+}
+
 async function fetchNextPendingCourierOrder({ shop, sessionCandidates, allSessionCandidates, excludeRequestId }) {
   if (!shop || !sessionCandidates?.length) return null;
 
@@ -381,6 +390,8 @@ export default function RepartidorPublicPortal() {
   const isRouteActionVisible = (request) => !isCourierRouteStatus(request?.status) && !isCourierHistoryStatus(request?.status);
   const isNotDeliveredStatus = (request) => String(request?.status || "").trim().toLowerCase() === "no_entregado";
   const isPickupReadyStatus = (request) => String(request?.status || "").trim().toLowerCase() === "recoger_en_sucursal";
+  const isReturnRetryPendingStatus = (request) =>
+    isReturnOrder(request) && String(request?.status || "").trim().toLowerCase() === "reintento_pendiente";
   const isReturnPickupFailedStatus = (request) =>
     ["intento_fallido_1", "intento_fallido_2"].includes(String(request?.status || "").trim().toLowerCase());
   const canShowReturnResultActions = (request) =>
@@ -550,6 +561,11 @@ export default function RepartidorPublicPortal() {
                           {getCourierStatusLabel(request.status)}
                         </span>
                       )}
+                      {isReturnRetryPendingStatus(request) ? (
+                        <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
+                          {getReturnRetryAttemptLabel(request)}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   <h3 className={adminStyles.courierOrderNumber}>#{request.orderNumber}</h3>
