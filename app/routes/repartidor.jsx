@@ -645,7 +645,7 @@ export default function RepartidorPublicPortal() {
                               isCourierRouteStatus(request.status)
                                 ? styles.statusBadgeRoute
                                 : String(request.status || "").trim().toLowerCase() === "recibida"
-                                  ? adminStyles.courierBadgeDelivery
+                                  ? styles.statusBadgeReceived
                                 : isPickupReadyStatus(request)
                                   ? styles.statusBadgeAttempt
                                 : isNotDeliveredStatus(request)

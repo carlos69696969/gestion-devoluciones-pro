@@ -229,6 +229,12 @@
   color: #b45309 !important;
 }
 
+.statusBadgeReceived {
+  background: #ecfdf3 !important;
+  border-color: #a7f3d0 !important;
+  color: #047857 !important;
+}
+
 .modalBackdrop {
   position: fixed;
   inset: 0;
