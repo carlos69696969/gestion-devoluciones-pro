@@ -8,6 +8,7 @@ const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
   "intento_fallido_1",
   "intento_fallido_2",
+  "intento_fallido_3",
   "en_ruta_1",
   "en_ruta_2",
   "en_ruta_3",
@@ -17,6 +18,7 @@ const MENU_COUNT_STATUSES = [
   "aprobada",
   "intento_fallido_1",
   "intento_fallido_2",
+  "intento_fallido_3",
   "en_ruta_1",
   "en_ruta_2",
   "en_ruta_3",
@@ -27,37 +29,44 @@ const MENU_COUNT_STATUSES = [
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
-  const grouped = await prisma.returnRequest.groupBy({
-    by: ["status", "returnMethod"],
+  const requests = await prisma.returnRequest.findMany({
     where: {
       shop: session.shop,
       status: { in: MENU_COUNT_STATUSES },
     },
-    _count: { _all: true },
+    select: {
+      id: true,
+      orderNumber: true,
+      status: true,
+      returnMethod: true,
+    },
   });
 
-  const navCounts = {
-    pickup: 0,
-    branch: 0,
-    review: 0,
-    refunds: 0,
-    toReturn: 0,
+  const uniqueOrders = {
+    pickup: new Set(),
+    branch: new Set(),
+    review: new Set(),
+    refunds: new Set(),
+    toReturn: new Set(),
   };
 
-  for (const row of grouped) {
+  for (const row of requests) {
     const status = String(row.status || "").toLowerCase();
-    const count = Number(row?._count?._all || 0);
-    if (!count) continue;
+    const orderKey = String(row.orderNumber || "").trim() || `request-${row.id}`;
 
-    if (status === "en_revision") navCounts.review += count;
-    if (status === "recibida") navCounts.refunds += count;
-    if (status === "por_devolver") navCounts.toReturn += count;
+    if (status === "en_revision") uniqueOrders.review.add(orderKey);
+    if (status === "recibida") uniqueOrders.refunds.add(orderKey);
+    if (status === "por_devolver") uniqueOrders.toReturn.add(orderKey);
 
     if (METHOD_QUEUE_STATUSES.has(status)) {
-      if (String(row.returnMethod || "").toLowerCase() === "pickup") navCounts.pickup += count;
-      else navCounts.branch += count;
+      if (String(row.returnMethod || "").toLowerCase() === "pickup") uniqueOrders.pickup.add(orderKey);
+      else uniqueOrders.branch.add(orderKey);
     }
   }
+
+  const navCounts = Object.fromEntries(
+    Object.entries(uniqueOrders).map(([key, orderNumbers]) => [key, orderNumbers.size]),
+  );
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "", navCounts };
