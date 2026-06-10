@@ -368,10 +368,15 @@ export default function RepartidorPublicPortal() {
   const effectiveCourierOrders = courierOrders.map((request) =>
     (() => {
       const isOverrideTarget = overrideRequestId && String(request?.id || "").trim() === overrideRequestId;
-      const attemptCount = isOverrideTarget
+      const persistedStatus = String(request?.status || "").trim().toLowerCase();
+      const hasFinalPersistedStatus = ["rechazada", "recibida", "reembolsada", "completada", "denegada"].includes(
+        persistedStatus,
+      );
+      const canApplyOverride = isOverrideTarget && !hasFinalPersistedStatus;
+      const attemptCount = canApplyOverride
         ? overrideAttemptCount || Number(request?.attemptCount || 0)
         : Number(request?.attemptCount || 0);
-      const status = isOverrideTarget ? overrideStatus || request?.status || "pendiente" : request?.status;
+      const status = canApplyOverride ? overrideStatus || request?.status || "pendiente" : request?.status;
       return {
         ...request,
         status: status === "no_entregado" && attemptCount >= 3 ? "recoger_en_sucursal" : status,
