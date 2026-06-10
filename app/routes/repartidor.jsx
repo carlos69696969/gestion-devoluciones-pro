@@ -547,24 +547,26 @@ export default function RepartidorPublicPortal() {
                           </span>
                         </>
                       ) : (
-                        <span
-                          className={`${adminStyles.courierBadgeStatus} ${
-                            isCourierRouteStatus(request.status)
-                              ? styles.statusBadgeRoute
-                              : isPickupReadyStatus(request)
-                                ? styles.statusBadgeAttempt
-                              : isNotDeliveredStatus(request)
-                                ? styles.statusBadgeFailed
-                                : ""
-                          }`}
-                        >
-                          {getCourierStatusLabel(request.status)}
-                        </span>
-                      )}
-                      {isReturnRetryPendingStatus(request) ? (
-                        <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
-                          {getReturnRetryAttemptLabel(request)}
-                        </span>
+                        <>
+                          {isReturnRetryPendingStatus(request) ? (
+                            <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
+                              {getReturnRetryAttemptLabel(request)}
+                            </span>
+                          ) : null}
+                          <span
+                            className={`${adminStyles.courierBadgeStatus} ${
+                              isCourierRouteStatus(request.status)
+                                ? styles.statusBadgeRoute
+                                : isPickupReadyStatus(request)
+                                  ? styles.statusBadgeAttempt
+                                : isNotDeliveredStatus(request)
+                                  ? styles.statusBadgeFailed
+                                  : ""
+                            }`}
+                          >
+                            {getCourierStatusLabel(request.status)}
+                          </span>
+                        </>
                       ) : null}
                     </div>
                   </div>
