@@ -635,6 +635,13 @@ export default function RepartidorPublicPortal() {
                         </>
                       ) : (
                         <>
+                          {isReturnOrder(request) &&
+                          String(request.status || "").trim().toLowerCase() === "recibida" &&
+                          Number(request.attemptCount || 0) >= 2 ? (
+                            <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
+                              {`${Number(request.attemptCount)} intentos`}
+                            </span>
+                          ) : null}
                           {isReturnRetryPendingStatus(request) || isReturnRetryRouteStatus(request) ? (
                             <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
                               {getReturnRetryAttemptLabel(request)}
