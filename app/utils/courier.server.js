@@ -499,6 +499,7 @@ export async function markCourierOrderAsEnRoute({
   customerName,
   customerEmail,
   customerPhone,
+  currentStatus,
   currentAttemptCount,
 }) {
   const isPickupRequest = String(requestId || "").startsWith("pickup-");

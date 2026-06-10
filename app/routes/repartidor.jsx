@@ -57,12 +57,61 @@ function getDeliveryAttemptLabel(request) {
   return `${currentAttemptNumber} intento de entrega`;
 }
 
+async function fetchNextPendingCourierOrder({ shop, sessionCandidates, allSessionCandidates, excludeRequestId }) {
+  if (!shop || !sessionCandidates?.length) return null;
+
+  const sessionCandidatesByShop = new Map();
+  for (const sessionCandidate of allSessionCandidates || sessionCandidates || []) {
+    const candidateShop = String(sessionCandidate?.shop || "").trim().toLowerCase();
+    if (!candidateShop) continue;
+    const current = sessionCandidatesByShop.get(candidateShop) || [];
+    current.push(sessionCandidate);
+    sessionCandidatesByShop.set(candidateShop, current);
+  }
+
+  const shopCandidates = [
+    shop,
+    ...Array.from(sessionCandidatesByShop.keys()).filter((candidate) => candidate !== shop),
+  ].filter(Boolean);
+
+  for (const shopCandidate of shopCandidates) {
+    const candidateSessions = sessionCandidatesByShop.get(shopCandidate) || [];
+    if (!candidateSessions.length) continue;
+
+    const [deliveryResult, pickupResult] = await Promise.allSettled([
+      fetchCourierOrdersForShop({ shop: shopCandidate, sessionCandidates: candidateSessions }),
+      fetchPickupCourierOrders(shopCandidate),
+    ]);
+
+    const deliveryOrders = deliveryResult.status === "fulfilled" ? deliveryResult.value : [];
+    const pickupOrders = pickupResult.status === "fulfilled" ? pickupResult.value : [];
+    const pendingOrder = [...deliveryOrders, ...pickupOrders]
+      .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b))
+      .find((requestRow) => {
+        const requestRowId = String(requestRow?.id || "").trim();
+        return (
+          requestRowId &&
+          requestRowId !== excludeRequestId &&
+          !isCourierRouteTabStatus(requestRow?.status) &&
+          !isCourierHistoryStatus(requestRow?.status)
+        );
+      });
+
+    if (pendingOrder) {
+      return { shop: shopCandidate, order: pendingOrder };
+    }
+  }
+
+  return null;
+}
+
 export const action = async ({ request }) => {
   try {
     const url = new URL(request.url);
     const formData = await request.formData();
     const formShop = String(formData.get("shop") || "").trim().toLowerCase();
-    const shop = formShop || (await resolveCourierPortalShop(request)).shop;
+    const portalShop = await resolveCourierPortalShop(request);
+    const shop = formShop || portalShop.shop;
     const intent = String(formData.get("intent") || "").trim();
     const requestId = String(formData.get("requestId") || "").trim();
 
@@ -95,25 +144,56 @@ export const action = async ({ request }) => {
     if (shop) {
       url.searchParams.set("shop", shop);
     }
-    url.searchParams.set(
-      "tab",
-      intent === "courier_mark_not_delivered" || intent === "courier_mark_delivered" ? "historial" : "en_ruta",
+
+    let nextOverrideRequestId = requestId;
+    let nextOverrideStatus = String(
+      result?.nextStatus ||
+        (intent === "courier_mark_delivered"
+          ? "entregado"
+          : intent === "courier_mark_not_delivered"
+            ? "no_entregado"
+            : intent === "courier_retry_delivery"
+              ? "en_ruta"
+              : "en_ruta"),
     );
-    url.searchParams.set("overrideRequestId", requestId);
-    url.searchParams.set(
-      "overrideStatus",
-      String(
-        result?.nextStatus ||
-          (intent === "courier_mark_delivered"
-            ? "entregado"
-            : intent === "courier_mark_not_delivered"
-              ? "no_entregado"
-              : intent === "courier_retry_delivery"
-                ? "en_ruta"
-                : "en_ruta"),
-      ),
-    );
-    url.searchParams.set("overrideAttemptCount", String(result?.attemptCount || formData.get("currentAttemptCount") || "0"));
+    let nextOverrideAttemptCount = String(result?.attemptCount || formData.get("currentAttemptCount") || "0");
+    const nextTab = "en_ruta";
+
+    if (intent === "courier_mark_not_delivered" || intent === "courier_mark_delivered") {
+      const nextPending = await fetchNextPendingCourierOrder({
+        shop,
+        sessionCandidates: portalShop.sessionCandidates,
+        allSessionCandidates: portalShop.allSessionCandidates,
+        excludeRequestId: requestId,
+      });
+
+      if (nextPending?.order) {
+        const nextRouteResult = await markCourierOrderAsEnRoute({
+          shopDomain: nextPending.shop,
+          requestId: String(nextPending.order.id || ""),
+          orderNumber: String(nextPending.order.orderNumber || ""),
+          customerName: String(nextPending.order.customerName || ""),
+          customerEmail: String(nextPending.order.customerEmail || ""),
+          customerPhone: String(nextPending.order.customerPhone || ""),
+          currentStatus: String(nextPending.order.status || ""),
+          currentAttemptCount: String(nextPending.order.attemptCount || 0),
+        });
+
+        if (nextRouteResult?.ok) {
+          nextOverrideRequestId = String(nextPending.order.id || "");
+          nextOverrideStatus = String(nextRouteResult.nextStatus || "en_ruta");
+          nextOverrideAttemptCount = String(nextRouteResult.attemptCount || nextPending.order.attemptCount || 1);
+          if (nextPending.shop) {
+            url.searchParams.set("shop", nextPending.shop);
+          }
+        }
+      }
+    }
+
+    url.searchParams.set("tab", nextTab);
+    url.searchParams.set("overrideRequestId", nextOverrideRequestId);
+    url.searchParams.set("overrideStatus", nextOverrideStatus);
+    url.searchParams.set("overrideAttemptCount", nextOverrideAttemptCount);
     url.searchParams.set("updated", String(Date.now()));
     return redirect(`${url.pathname}?${url.searchParams.toString()}`);
   } catch (error) {
