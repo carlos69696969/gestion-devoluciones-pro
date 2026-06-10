@@ -699,15 +699,6 @@ export async function markCourierOrderAsEnRoute({
     };
   }
 
-  const notificationResult = await emitCourierDeliveryRouteNotification({
-    shopDomain,
-    requestRow,
-    routeStep: nextStep,
-  });
-  if (!notificationResult?.ok) {
-    return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
-  }
-
   return { ok: true, requestRow, routeStep: nextStep, nextStatus, attemptCount: requestRow.attemptCount };
 }
 export async function markCourierOrderAsNotDelivered({

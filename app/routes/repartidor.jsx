@@ -69,7 +69,9 @@ function getDeliveryAttemptLabel(request) {
     return failedAttemptCount === 1 ? "1 intento de entrega" : `${failedAttemptCount} intentos de entrega`;
   }
 
-  const currentAttemptNumber = Math.min(failedAttemptCount + 1, 3);
+  const currentAttemptNumber = isCourierRouteStatus(normalizedStatus)
+    ? Math.min(failedAttemptCount, 3)
+    : Math.min(failedAttemptCount + 1, 3);
   if (currentAttemptNumber === 1) return "primer intento de entrega";
   if (currentAttemptNumber === 2) return "segundo intento de entrega";
   if (currentAttemptNumber === 3) return "tercer intento de entrega";
