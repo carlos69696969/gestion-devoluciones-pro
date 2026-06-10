@@ -57,8 +57,13 @@ const ACTIVE_RETURN_STATUSES = new Set([
   "en_revision",
   "aprobada",
   "en_ruta",
+  "en_ruta_1",
+  "en_ruta_2",
+  "en_ruta_3",
+  "reintento_pendiente",
   "intento_fallido_1",
   "intento_fallido_2",
+  "intento_fallido_3",
   "recibida",
   "por_devolver",
   "reembolso_denegado",
@@ -523,9 +528,11 @@ function timelineLabelFromStatus(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return "Solicitud en revision";
   if (normalized === "aprobada") return "Devolucion aprobada";
-  if (normalized === "en_ruta") return "En ruta";
+  if (normalized === "en_ruta" || normalized.startsWith("en_ruta_")) return "En ruta";
   if (normalized === "intento_fallido_1") return "Intento de devolucion fallido (1 de 2)";
   if (normalized === "intento_fallido_2") return "Intento de devolucion fallido (2 de 2)";
+  if (normalized === "intento_fallido_3") return "Intento de devolucion fallido (3 de 3)";
+  if (normalized === "reintento_pendiente") return "Pendiente para reintento";
   if (normalized === "rechazada") return "Devolucion rechazada";
   if (normalized === "recibida") return "Recibimos tu producto";
   if (normalized === "por_devolver") return "Pendiente por recoger";
@@ -626,8 +633,13 @@ function hasReachedApprovedPhase(status) {
   return [
     "aprobada",
     "en_ruta",
+    "en_ruta_1",
+    "en_ruta_2",
+    "en_ruta_3",
+    "reintento_pendiente",
     "intento_fallido_1",
     "intento_fallido_2",
+    "intento_fallido_3",
     "recibida",
     "por_devolver",
     "no_devuelto",
@@ -782,9 +794,11 @@ function statusLabelForCustomer(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return "en revision";
   if (normalized === "aprobada") return "aprobada";
-  if (normalized === "en_ruta") return "en ruta";
+  if (normalized === "en_ruta" || normalized.startsWith("en_ruta_")) return "en ruta";
+  if (normalized === "reintento_pendiente") return "pendiente para reintento";
   if (normalized === "intento_fallido_1") return "intento de devolucion fallido";
   if (normalized === "intento_fallido_2") return "segundo intento de devolucion fallido";
+  if (normalized === "intento_fallido_3") return "tercer intento de devolucion fallido";
   if (normalized === "por_devolver") return "recoge tu paquete en nuestra sucursal";
   if (normalized === "reembolso_denegado") return "reembolso denegado";
   if (normalized === "no_devuelto") return "no devuelto";
@@ -1235,7 +1249,9 @@ export const loader = async ({ request }) => {
       const latestRequest = completedRequests[0] || null;
       const latestStatus = String(latestRequest?.status || "").toLowerCase();
       const hasPendingReview = latestStatus === "en_revision";
-      const hasFailedPickupAttempt = ["intento_fallido_1", "intento_fallido_2"].includes(latestStatus);
+      const hasFailedPickupAttempt = ["intento_fallido_1", "intento_fallido_2", "intento_fallido_3"].includes(
+        latestStatus,
+      );
       const hasRejected = latestStatus === "rechazada";
       const hasDenied = ["denegada", "por_devolver", "reembolso_denegado", "no_devuelto"].includes(latestStatus);
       const wasReturnedToCustomer = Boolean(latestRequest?.wasReturnedToCustomer);
