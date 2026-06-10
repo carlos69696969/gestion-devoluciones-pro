@@ -299,6 +299,13 @@ function itemKeyFromRecord(item) {
   return `title:${String(item?.title || "").trim().toLowerCase()}`;
 }
 
+function returnRequestItemsSignature(requestRow) {
+  const itemParts = (requestRow?.items || [])
+    .map((item) => `${itemKeyFromRecord(item)}:${Math.max(1, Number(item?.quantity || 1))}`)
+    .sort();
+  return `${String(requestRow?.orderNumber || "").trim()}|${itemParts.join(",")}`;
+}
+
 function formatVariantSummary(variantNode) {
   const options = Array.isArray(variantNode?.selectedOptions) ? variantNode.selectedOptions : [];
   const labels = options
@@ -1057,7 +1064,7 @@ export const loader = async ({ request }) => {
     ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
   };
 
-  const rawRequests =
+  let rawRequests =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.BRANCH_PICKUP
       ? []
       : await prisma.returnRequest.findMany({
@@ -1065,6 +1072,40 @@ export const loader = async ({ request }) => {
           include: { items: { select: itemSelect } },
           orderBy: { createdAt: "desc" },
         });
+
+  if ([VIEW_MODE.PICKUP, VIEW_MODE.BRANCH].includes(viewMode) && rawRequests.length > 0) {
+    const orderNumbers = [
+      ...new Set(rawRequests.map((requestRow) => String(requestRow.orderNumber || "").trim()).filter(Boolean)),
+    ];
+    const comparableRequests = await prisma.returnRequest.findMany({
+      where: {
+        shop: session.shop,
+        orderNumber: { in: orderNumbers },
+      },
+      include: {
+        items: {
+          select: {
+            lineItemId: true,
+            productId: true,
+            variantId: true,
+            title: true,
+            quantity: true,
+          },
+        },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    const latestRequestIdByItemsSignature = new Map();
+    for (const requestRow of comparableRequests) {
+      const signature = returnRequestItemsSignature(requestRow);
+      if (!latestRequestIdByItemsSignature.has(signature)) {
+        latestRequestIdByItemsSignature.set(signature, requestRow.id);
+      }
+    }
+    rawRequests = rawRequests.filter(
+      (requestRow) => latestRequestIdByItemsSignature.get(returnRequestItemsSignature(requestRow)) === requestRow.id,
+    );
+  }
 
   const courierOrdersRaw =
     viewMode === VIEW_MODE.COURIER
