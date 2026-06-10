@@ -563,11 +563,11 @@ export default function RepartidorPublicPortal() {
                                   ? styles.statusBadgeFailed
                                   : ""
                             }`}
-                          >
+                        >
                             {getCourierStatusLabel(request.status)}
                           </span>
                         </>
-                      ) : null}
+                      )}
                     </div>
                   </div>
                   <h3 className={adminStyles.courierOrderNumber}>#{request.orderNumber}</h3>
