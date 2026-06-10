@@ -290,6 +290,37 @@ export const loader = async ({ request }) => {
     );
   }
 
+  if (activeTab === "en_ruta" && !courierOrders.some((requestRow) => isCourierRouteTabStatus(requestRow?.status))) {
+    const nextPendingOrder = courierOrders.find(
+      (requestRow) => !isCourierRouteTabStatus(requestRow?.status) && !isCourierHistoryStatus(requestRow?.status),
+    );
+
+    if (nextPendingOrder) {
+      const nextRouteResult = await markCourierOrderAsEnRoute({
+        shopDomain: resolvedShop,
+        requestId: String(nextPendingOrder.id || ""),
+        orderNumber: String(nextPendingOrder.orderNumber || ""),
+        customerName: String(nextPendingOrder.customerName || ""),
+        customerEmail: String(nextPendingOrder.customerEmail || ""),
+        customerPhone: String(nextPendingOrder.customerPhone || ""),
+        currentStatus: String(nextPendingOrder.status || ""),
+        currentAttemptCount: String(nextPendingOrder.attemptCount || 0),
+      });
+
+      if (nextRouteResult?.ok) {
+        courierOrders = courierOrders.map((requestRow) =>
+          String(requestRow?.id || "").trim() === String(nextPendingOrder.id || "").trim()
+            ? {
+                ...requestRow,
+                status: String(nextRouteResult.nextStatus || "en_ruta"),
+                attemptCount: Number(nextRouteResult.attemptCount || nextRouteResult.routeStep || 1),
+              }
+            : requestRow,
+        );
+      }
+    }
+  }
+
   return {
     activeTab,
     shop: resolvedShop,
