@@ -1057,7 +1057,7 @@ export const loader = async ({ request }) => {
     ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
   };
 
-  let rawRequests =
+  const rawRequests =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.BRANCH_PICKUP
       ? []
       : await prisma.returnRequest.findMany({
@@ -1065,31 +1065,6 @@ export const loader = async ({ request }) => {
           include: { items: { select: itemSelect } },
           orderBy: { createdAt: "desc" },
         });
-
-  if ([VIEW_MODE.PICKUP, VIEW_MODE.BRANCH].includes(viewMode) && rawRequests.length > 0) {
-    const orderNumbers = [...new Set(rawRequests.map((requestRow) => String(requestRow.orderNumber || "").trim()).filter(Boolean))];
-    const latestRequests = await prisma.returnRequest.findMany({
-      where: {
-        shop: session.shop,
-        orderNumber: { in: orderNumbers },
-      },
-      select: {
-        id: true,
-        orderNumber: true,
-      },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    });
-    const latestRequestIdByOrderNumber = new Map();
-    for (const requestRow of latestRequests) {
-      const orderNumber = String(requestRow.orderNumber || "").trim();
-      if (!orderNumber || latestRequestIdByOrderNumber.has(orderNumber)) continue;
-      latestRequestIdByOrderNumber.set(orderNumber, requestRow.id);
-    }
-    rawRequests = rawRequests.filter((requestRow) => {
-      const orderNumber = String(requestRow.orderNumber || "").trim();
-      return latestRequestIdByOrderNumber.get(orderNumber) === requestRow.id;
-    });
-  }
 
   const courierOrdersRaw =
     viewMode === VIEW_MODE.COURIER
@@ -1980,21 +1955,12 @@ export default function ReturnsRequests() {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
 
-  const latestRequestByOrderNumber = new Map();
-  for (const requestRow of requests) {
-    const orderNumber = String(requestRow.orderNumber || "").trim();
-    if (!orderNumber || latestRequestByOrderNumber.has(orderNumber)) continue;
-    latestRequestByOrderNumber.set(orderNumber, requestRow);
-  }
-
   const reviewRequests = requests.filter(
     (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
   );
   const activeRequests = requests.filter((requestRow) => {
     const status = String(requestRow.status || "").toLowerCase();
-    if (!METHOD_QUEUE_STATUSES.has(status)) return false;
-    const orderNumber = String(requestRow.orderNumber || "").trim();
-    return latestRequestByOrderNumber.get(orderNumber)?.id === requestRow.id;
+    return METHOD_QUEUE_STATUSES.has(status);
   });
   const refundQueueRequests = requests.filter((requestRow) =>
     REFUND_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
