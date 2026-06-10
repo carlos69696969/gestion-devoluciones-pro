@@ -11,11 +11,13 @@ export const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
   "intento_fallido_1",
   "intento_fallido_2",
+  "intento_fallido_3",
   "reintento_pendiente",
   "en_ruta_1",
   "en_ruta_2",
   "en_ruta_3",
   "recibida",
+  "rechazada",
 ]);
 const NOTIFICATIONS_API_BASE_URL = String(
   process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
@@ -31,6 +33,7 @@ const PICKUP_FAILED_REASON_SECOND =
 const RETURN_EVENT_BY_INTENT = {
   courier_return_mark_received: "return_picked_up",
   courier_return_pickup_attempt_failed: "return_pickup_scheduled",
+  courier_return_reject_after_failed_pickups: "return_rejected",
 };
 
 function normalizeShop(value) {
@@ -1037,8 +1040,11 @@ function getCourierReturnFailedAttemptStatus(status) {
   if (normalized === "aprobada" || normalized === "en_ruta" || normalized === "en_ruta_1") {
     return "intento_fallido_1";
   }
-  if (normalized === "intento_fallido_1" || normalized === "en_ruta_2" || normalized === "en_ruta_3") {
+  if (normalized === "intento_fallido_1" || normalized === "en_ruta_2") {
     return "intento_fallido_2";
+  }
+  if (normalized === "intento_fallido_2" || normalized === "en_ruta_3") {
+    return "intento_fallido_3";
   }
   return "";
 }
@@ -1086,7 +1092,8 @@ export async function markCourierReturnAsReceived({ requestId }) {
     currentStatus === "aprobada" ||
     isCourierReturnRouteLikeStatus(currentStatus) ||
     currentStatus === "intento_fallido_1" ||
-    currentStatus === "intento_fallido_2";
+    currentStatus === "intento_fallido_2" ||
+    currentStatus === "intento_fallido_3";
 
   if (!canMarkReceived) {
     return { ok: false, error: "Solo puedes marcar como recibida una devolucion aprobada o con intento fallido." };
@@ -1134,7 +1141,7 @@ export async function markCourierReturnPickupAttemptFailed({ requestId, rejectio
     data: {
       status: nextStatus,
       rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
-        kind: nextStatus === "intento_fallido_1" ? "attempt_failed_1" : "attempt_failed_2",
+        kind: `attempt_failed_${nextStatus.replace("intento_fallido_", "")}`,
         reason: rejectionReason,
       }),
     },
@@ -1171,6 +1178,40 @@ export async function markCourierReturnForRetry({ requestId }) {
     nextStatus: "reintento_pendiente",
     attemptCount: getReturnFailedAttemptCount(requestRow.rejectionReason),
   };
+}
+
+export async function rejectCourierReturnAfterFailedPickups({ requestId }) {
+  const lookup = await getCourierReturnRequestForAction(requestId);
+  if (!lookup.ok) return lookup;
+
+  const requestRow = lookup.requestRow;
+  if (String(requestRow.status || "").trim().toLowerCase() !== "intento_fallido_3") {
+    return { ok: false, error: "Solo puedes rechazar despues del tercer intento fallido." };
+  }
+
+  const rejectionReason =
+    "❌🚚 Después de 3 intentos de recolección en el domicilio registrado, no fue posible recibir el producto. Por esta razón, la solicitud de devolución fue rechazada.";
+
+  await prisma.returnRequest.update({
+    where: { id: requestRow.id },
+    data: {
+      status: "rechazada",
+      rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+        kind: "rejected_after_attempts",
+        reason: rejectionReason,
+      }),
+      refundError: null,
+    },
+  });
+
+  await emitCourierReturnActionNotification({
+    shopDomain: requestRow.shop,
+    requestRow,
+    intent: "courier_return_reject_after_failed_pickups",
+    note: rejectionReason,
+  });
+
+  return { ok: true, requestRow, nextStatus: "rechazada", attemptCount: 3 };
 }
 
 

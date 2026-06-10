@@ -22,6 +22,7 @@ import {
   markCourierReturnAsReceived,
   markCourierReturnForRetry,
   markCourierReturnPickupAttemptFailed,
+  rejectCourierReturnAfterFailedPickups,
   resolveCourierPortalShop,
 } from "../utils/courier.server";
 
@@ -68,7 +69,8 @@ function getDeliveryAttemptLabel(request) {
 function getReturnFailedAttemptCount(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
   const match = normalizedStatus.match(/^intento_fallido_(\d+)$/);
-  return match ? Math.max(1, Number(match[1]) || 1) : 0;
+  if (match) return Math.max(1, Number(match[1]) || 1);
+  return normalizedStatus === "rechazada" ? Math.max(3, Number(request?.attemptCount || 0)) : 0;
 }
 
 function getReturnFailedAttemptLabel(request) {
@@ -155,6 +157,7 @@ export const action = async ({ request }) => {
         "courier_return_mark_received",
         "courier_return_pickup_attempt_failed",
         "courier_return_retry_pickup",
+        "courier_return_reject_after_failed_pickups",
       ].includes(intent) ||
       !requestId
     ) {
@@ -170,6 +173,8 @@ export const action = async ({ request }) => {
           ? markCourierReturnForRetry
         : intent === "courier_return_pickup_attempt_failed"
           ? markCourierReturnPickupAttemptFailed
+        : intent === "courier_return_reject_after_failed_pickups"
+          ? rejectCourierReturnAfterFailedPickups
         : intent === "courier_mark_not_delivered"
         ? markCourierOrderAsNotDelivered
         : intent === "courier_retry_delivery"
@@ -207,7 +212,9 @@ export const action = async ({ request }) => {
     );
     let nextOverrideAttemptCount = String(result?.attemptCount || formData.get("currentAttemptCount") || "0");
     const nextTab =
-      intent === "courier_return_mark_received" || intent === "courier_return_pickup_attempt_failed"
+      intent === "courier_return_mark_received" ||
+      intent === "courier_return_pickup_attempt_failed" ||
+      intent === "courier_return_reject_after_failed_pickups"
         ? "historial"
         : "en_ruta";
 
@@ -405,7 +412,11 @@ export default function RepartidorPublicPortal() {
   const isReturnRetryRouteStatus = (request) =>
     isReturnOrder(request) && /^en_ruta_[23]$/.test(String(request?.status || "").trim().toLowerCase());
   const isReturnPickupFailedStatus = (request) =>
-    ["intento_fallido_1", "intento_fallido_2"].includes(String(request?.status || "").trim().toLowerCase());
+    ["intento_fallido_1", "intento_fallido_2", "intento_fallido_3"].includes(
+      String(request?.status || "").trim().toLowerCase(),
+    );
+  const isReturnRejectedStatus = (request) =>
+    isReturnOrder(request) && String(request?.status || "").trim().toLowerCase() === "rechazada";
   const canShowReturnResultActions = (request) =>
     isReturnOrder(request) &&
     activeTab === "en_ruta" &&
@@ -584,6 +595,15 @@ export default function RepartidorPublicPortal() {
                             no recibido
                           </span>
                         </>
+                      ) : isReturnRejectedStatus(request) ? (
+                        <>
+                          <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
+                            3 intentos
+                          </span>
+                          <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>
+                            rechazada
+                          </span>
+                        </>
                       ) : (
                         <>
                           {isReturnRetryPendingStatus(request) || isReturnRetryRouteStatus(request) ? (
@@ -627,7 +647,10 @@ export default function RepartidorPublicPortal() {
                       )}
                     </div>
                   ) : null}
-                  {activeTab === "historial" && isReturnOrder(request) && isReturnPickupFailedStatus(request) ? (
+                  {activeTab === "historial" &&
+                  isReturnOrder(request) &&
+                  isReturnPickupFailedStatus(request) &&
+                  String(request.status || "").toLowerCase() !== "intento_fallido_3" ? (
                     <div className={styles.historyActionRow}>
                       {renderCourierActionForm(
                         request,
@@ -636,6 +659,20 @@ export default function RepartidorPublicPortal() {
                         "reintentar devolucion",
                         `${styles.actionButton} ${styles.actionButtonRetry}`,
                         "Esta accion devolvera la devolucion a En ruta como pendiente para que despues puedas marcarla en ruta manualmente.",
+                      )}
+                    </div>
+                  ) : null}
+                  {activeTab === "historial" &&
+                  isReturnOrder(request) &&
+                  String(request.status || "").toLowerCase() === "intento_fallido_3" ? (
+                    <div className={styles.historyActionRow}>
+                      {renderCourierActionForm(
+                        request,
+                        "Rechazar devolucion",
+                        "courier_return_reject_after_failed_pickups",
+                        "rechazada",
+                        `${styles.actionButton} ${styles.actionButtonDanger}`,
+                        "Esta accion rechazara definitivamente la devolucion y notificara al cliente.",
                       )}
                     </div>
                   ) : null}

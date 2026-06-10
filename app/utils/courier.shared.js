@@ -72,6 +72,8 @@ export function isCourierHistoryStatus(status) {
     "recibida",
     "intento_fallido_1",
     "intento_fallido_2",
+    "intento_fallido_3",
+    "rechazada",
   ].includes(normalized);
 }
 
