@@ -1057,7 +1057,7 @@ export const loader = async ({ request }) => {
     ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
   };
 
-  const rawRequests =
+  let rawRequests =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.BRANCH_PICKUP
       ? []
       : await prisma.returnRequest.findMany({
@@ -1065,6 +1065,31 @@ export const loader = async ({ request }) => {
           include: { items: { select: itemSelect } },
           orderBy: { createdAt: "desc" },
         });
+
+  if ([VIEW_MODE.PICKUP, VIEW_MODE.BRANCH].includes(viewMode) && rawRequests.length > 0) {
+    const orderNumbers = [...new Set(rawRequests.map((requestRow) => String(requestRow.orderNumber || "").trim()).filter(Boolean))];
+    const latestRequests = await prisma.returnRequest.findMany({
+      where: {
+        shop: session.shop,
+        orderNumber: { in: orderNumbers },
+      },
+      select: {
+        id: true,
+        orderNumber: true,
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    const latestRequestIdByOrderNumber = new Map();
+    for (const requestRow of latestRequests) {
+      const orderNumber = String(requestRow.orderNumber || "").trim();
+      if (!orderNumber || latestRequestIdByOrderNumber.has(orderNumber)) continue;
+      latestRequestIdByOrderNumber.set(orderNumber, requestRow.id);
+    }
+    rawRequests = rawRequests.filter((requestRow) => {
+      const orderNumber = String(requestRow.orderNumber || "").trim();
+      return latestRequestIdByOrderNumber.get(orderNumber) === requestRow.id;
+    });
+  }
 
   const courierOrdersRaw =
     viewMode === VIEW_MODE.COURIER
