@@ -337,6 +337,9 @@ function normalizeDisplayedReasonText(rawValue) {
   if (!text) return "";
   const compact = text.replace(/\s+/g, " ").trim();
   const lowered = compact.toLowerCase();
+  if (lowered === "tu reembolso fue procesado al metodo de pago original.") {
+    return "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙";
+  }
   if (lowered === "recibimos tu producto. estamos validando para finalizar el proceso.") {
     return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰";
   }
@@ -640,7 +643,7 @@ function buildStatusTimeline(requestRow) {
     pushEvent(
       "Reembolso procesado",
       requestRow.refundedAt,
-      "Tu reembolso fue procesado al metodo de pago original.",
+      "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙",
       "refunded",
     );
   }
@@ -1628,7 +1631,7 @@ export const action = async ({ request }) => {
           refundedAt: new Date(),
           rejectionReason: appendTimelineMetaEntry(requestRow.rejectionReason, {
             kind: STATUS_REFUNDED_KIND,
-            reason: "Tu reembolso fue procesado al metodo de pago original.",
+            reason: "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙",
           }),
           shopifyRefundId: refundId || null,
           refundedSubtotal: subtotal,
@@ -1640,7 +1643,7 @@ export const action = async ({ request }) => {
         shopDomain: session.shop,
         requestRow,
         intent,
-        note: "Tu reembolso fue procesado al metodo de pago original.",
+        note: "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙",
       });
       return { ok: true, message: "Reembolso procesado al metodo de pago original." };
     } catch (error) {
