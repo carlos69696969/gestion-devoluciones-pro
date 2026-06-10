@@ -1180,26 +1180,34 @@ export async function markCourierReturnForRetry({ requestId }) {
   };
 }
 
-export async function rejectCourierReturnAfterFailedPickups({ requestId }) {
+export async function rejectCourierReturnAfterFailedPickups({ requestId, rejectionReason: selectedRejectionReason }) {
   const lookup = await getCourierReturnRequestForAction(requestId);
   if (!lookup.ok) return lookup;
 
   const requestRow = lookup.requestRow;
-  if (String(requestRow.status || "").trim().toLowerCase() !== "intento_fallido_3") {
+  const currentStatus = String(requestRow.status || "").trim().toLowerCase();
+  if (currentStatus !== "intento_fallido_3" && currentStatus !== "en_ruta_3") {
     return { ok: false, error: "Solo puedes rechazar despues del tercer intento fallido." };
   }
 
   const rejectionReason =
-    "❌🚚 Después de 3 intentos de recolección en el domicilio registrado, no fue posible recibir el producto. Por esta razón, la solicitud de devolución fue rechazada.";
+    String(selectedRejectionReason || "").trim() ||
+    "❌🚚 Después de 3 intentos de recolección en el domicilio registrado, no fue posible recibir el producto. Por esta razón, la solicitud de devolución fue rechazada automáticamente.";
 
   await prisma.returnRequest.update({
     where: { id: requestRow.id },
     data: {
       status: "rechazada",
-      rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
-        kind: "rejected_after_attempts",
-        reason: rejectionReason,
-      }),
+      rejectionReason: appendReasonEntry(
+        appendReasonEntry(requestRow.rejectionReason, {
+          kind: "attempt_failed_3",
+          reason: rejectionReason,
+        }),
+        {
+          kind: "rejected_after_attempts",
+          reason: rejectionReason,
+        },
+      ),
       refundError: null,
     },
   });

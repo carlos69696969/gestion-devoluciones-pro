@@ -30,6 +30,8 @@ const PICKUP_FAILED_REASON_OPTIONS = [
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨",
   "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
 ];
+const FINAL_PICKUP_REJECTION_REASON =
+  "❌🚚 Después de 3 intentos de recolección en el domicilio registrado, no fue posible recibir el producto. Por esta razón, la solicitud de devolución fue rechazada automáticamente.";
 
 export const headers = () => ({
   "Cache-Control": "no-store, max-age=0",
@@ -506,7 +508,13 @@ export default function RepartidorPublicPortal() {
       }}
     >
       <input type="hidden" name="shop" value={shop || ""} />
-      <input type="hidden" name="intent" value="courier_return_pickup_attempt_failed" />
+      <input
+        type="hidden"
+        name="intent"
+        value={String(request.status || "").toLowerCase() === "en_ruta_3"
+          ? "courier_return_reject_after_failed_pickups"
+          : "courier_return_pickup_attempt_failed"}
+      />
       <input type="hidden" name="requestId" value={String(request.id || "")} />
       <input type="hidden" name="orderNumber" value={String(request.orderNumber || "")} />
       <input type="hidden" name="customerName" value={String(request.customerName || "")} />
@@ -794,7 +802,10 @@ export default function RepartidorPublicPortal() {
               Selecciona un mensaje completo
             </h2>
             <div className={styles.reasonOptionList}>
-              {PICKUP_FAILED_REASON_OPTIONS.map((option, index) => (
+              {(String(failedPickupRequest.status || "").toLowerCase() === "en_ruta_3"
+                ? [FINAL_PICKUP_REJECTION_REASON]
+                : PICKUP_FAILED_REASON_OPTIONS
+              ).map((option, index) => (
                 <div key={option}>{renderFailedPickupReasonForm(failedPickupRequest, option, index)}</div>
               ))}
             </div>
