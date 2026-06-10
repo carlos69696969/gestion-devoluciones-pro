@@ -740,6 +740,7 @@ function buildStatusTimeline(requestItem) {
   }
 
   for (const entry of requestItem.reasonEntries || []) {
+    if (String(entry?.kind || "").toLowerCase() === STATUS_IN_ROUTE_KIND) continue;
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
     const kind = String(entry?.kind || "").toLowerCase();
@@ -750,7 +751,9 @@ function buildStatusTimeline(requestItem) {
   }
 
   const currentStatusKind = timelineKindFromStatus(requestItem.status);
-  if (!currentStatusKind || !entryKinds.has(currentStatusKind)) {
+  const isInternalRouteStatus = String(requestItem.status || "").toLowerCase() === "en_ruta" ||
+    String(requestItem.status || "").toLowerCase().startsWith("en_ruta_");
+  if (!isInternalRouteStatus && (!currentStatusKind || !entryKinds.has(currentStatusKind))) {
     pushEvent(
       timelineLabelFromStatus(requestItem.status),
       requestItem.updatedAt,
@@ -794,7 +797,7 @@ function statusLabelForCustomer(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return "en revision";
   if (normalized === "aprobada") return "aprobada";
-  if (normalized === "en_ruta" || normalized.startsWith("en_ruta_")) return "en ruta";
+  if (normalized === "en_ruta" || normalized.startsWith("en_ruta_")) return "aprobada";
   if (normalized === "reintento_pendiente") return "pendiente para reintento";
   if (normalized === "intento_fallido_1") return "intento de devolucion fallido";
   if (normalized === "intento_fallido_2") return "segundo intento de devolucion fallido";
@@ -1168,7 +1171,7 @@ export const loader = async ({ request }) => {
               : null;
           return {
           id: requestRow.id,
-          status,
+          status: status === "en_ruta" || status.startsWith("en_ruta_") ? "aprobada" : status,
           statusLabel: statusLabelForCustomer(requestRow.status),
           rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
           reasonEntries: parseReasonEntries(requestRow.rejectionReason),

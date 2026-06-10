@@ -1249,14 +1249,15 @@ export const action = async ({ request }) => {
     if (String(requestRow.returnMethod || "").toLowerCase() !== "pickup") {
       return { ok: false, error: "Solo aplica a solicitudes de recoleccion a domicilio." };
     }
-    if (String(requestRow.status || "").toLowerCase() !== "aprobada") {
+    const currentStatus = String(requestRow.status || "").toLowerCase();
+    if (currentStatus !== "aprobada" && currentStatus !== "en_ruta" && !currentStatus.startsWith("en_ruta_")) {
       return { ok: false, error: "Solo puedes marcar en ruta una solicitud aprobada." };
     }
     const routeNote = "Tu recoleccion ya va en ruta hacia tu domicilio. Nuestro equipo se dirige para continuar el proceso.";
     await prisma.returnRequest.update({
       where: { id },
       data: {
-        status: "en_ruta",
+        status: currentStatus.startsWith("en_ruta_") ? currentStatus : "en_ruta",
         rejectionReason: appendTimelineMetaEntry(requestRow.rejectionReason, {
           kind: STATUS_IN_ROUTE_KIND,
           reason: routeNote,
@@ -1275,7 +1276,10 @@ export const action = async ({ request }) => {
   if (intent === "mark_received") {
     const currentStatus = String(requestRow.status || "").toLowerCase();
     const canMarkReceived =
-      currentStatus === "aprobada" || currentStatus === "en_ruta" || isPickupFailedAttemptStatus(currentStatus);
+      currentStatus === "aprobada" ||
+      currentStatus === "en_ruta" ||
+      currentStatus.startsWith("en_ruta_") ||
+      isPickupFailedAttemptStatus(currentStatus);
     if (!canMarkReceived) {
       return {
         ok: false,
@@ -1340,20 +1344,32 @@ export const action = async ({ request }) => {
     if (requestRow.returnMethod !== "pickup") {
       return { ok: false, error: "Solo aplica a solicitudes de recoleccion a domicilio." };
     }
-    if (currentStatus !== "aprobada" && currentStatus !== "en_ruta" && currentStatus !== "intento_fallido_1") {
+    if (
+      currentStatus !== "aprobada" &&
+      currentStatus !== "en_ruta" &&
+      !currentStatus.startsWith("en_ruta_") &&
+      currentStatus !== "intento_fallido_1" &&
+      currentStatus !== "intento_fallido_2"
+    ) {
       return { ok: false, error: "Ya no puedes registrar mas intentos fallidos para esta solicitud." };
     }
     const rejectionReason = String(formData.get("rejectionReason") || "").trim();
     if (!rejectionReason) {
       return { ok: false, error: "Escribe la descripcion obligatoria del intento fallido." };
     }
-    const nextStatus = currentStatus === "aprobada" ? "intento_fallido_1" : "intento_fallido_2";
+    const currentRouteAttempt = Number(currentStatus.match(/^en_ruta_(\d+)$/)?.[1] || 0);
+    const nextStatus =
+      currentStatus === "aprobada" || currentStatus === "en_ruta" || currentRouteAttempt <= 1
+        ? "intento_fallido_1"
+        : currentStatus === "intento_fallido_1" || currentRouteAttempt === 2
+          ? "intento_fallido_2"
+          : "intento_fallido_3";
     await prisma.returnRequest.update({
       where: { id },
       data: {
         status: nextStatus,
         rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
-          kind: nextStatus === "intento_fallido_1" ? "attempt_failed_1" : "attempt_failed_2",
+          kind: `attempt_failed_${nextStatus.replace("intento_fallido_", "")}`,
           reason: rejectionReason,
         }),
       },
@@ -2197,7 +2213,8 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
   const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
   const currentTimelineEvent = timelineEvents[0] || null;
   const olderTimelineEvents = timelineEvents.slice(1);
-  const status = String(request.status || "").toLowerCase();
+  const internalStatus = String(request.status || "").toLowerCase();
+  const status = internalStatus === "en_ruta" || internalStatus.startsWith("en_ruta_") ? "aprobada" : internalStatus;
   const isPickupMethod = request.returnMethod === "pickup";
   const isPickupFailedAttempt = isPickupFailedAttemptStatus(status);
   const canMarkInRoute = isPickupMethod && status === "aprobada";
