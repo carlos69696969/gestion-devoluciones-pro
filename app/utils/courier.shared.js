@@ -130,6 +130,17 @@ export function getCourierRouteStatusFromTags(tags) {
 
 export function dedupeCourierRequestsByOrderNumber(requests) {
   const byOrderNumber = new Map();
+  const finalStatuses = new Set([
+    "rechazada",
+    "recibida",
+    "reembolsada",
+    "completada",
+    "denegada",
+    "reembolso_denegado",
+    "no_devuelto",
+    "entregado",
+    "recoger_en_sucursal",
+  ]);
 
   for (const request of Array.isArray(requests) ? requests : []) {
     const orderNumber = String(request?.orderNumber || "").trim();
@@ -143,6 +154,14 @@ export function dedupeCourierRequestsByOrderNumber(requests) {
 
     const currentTimestamp = courierOrderTimestampMs(current);
     const nextTimestamp = courierOrderTimestampMs(request);
+    const currentIsFinal = finalStatuses.has(String(current?.status || "").trim().toLowerCase());
+    const nextIsFinal = finalStatuses.has(String(request?.status || "").trim().toLowerCase());
+    if (currentIsFinal !== nextIsFinal) {
+      if (nextIsFinal) {
+        byOrderNumber.set(orderNumber, request);
+      }
+      continue;
+    }
     if (nextTimestamp >= currentTimestamp) {
       byOrderNumber.set(orderNumber, request);
     }
