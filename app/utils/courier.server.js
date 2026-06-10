@@ -1009,20 +1009,6 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
     data: { status: nextStatus },
   });
 
-  try {
-    await addShopifyOrderTag({
-      shopDomain: requestRow.shop,
-      shopifyOrderId: requestRow.shopifyOrderId,
-      tag: nextStep === 1 ? "en ruta" : `en ruta ${nextStep}`,
-    });
-  } catch (error) {
-    console.error("Failed to sync Shopify route tag", {
-      shopDomain: requestRow.shop,
-      orderNumber: requestRow.orderNumber,
-      error: String(error?.message || error || "unknown"),
-    });
-  }
-
   await emitCourierReturnRouteNotification({
     shopDomain: requestRow.shop,
     requestRow,
