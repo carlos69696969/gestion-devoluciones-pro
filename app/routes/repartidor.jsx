@@ -25,6 +25,11 @@ import {
   resolveCourierPortalShop,
 } from "../utils/courier.server";
 
+const PICKUP_FAILED_REASON_OPTIONS = [
+  "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta. Nuestro equipo volverá a intentarlo mañana. 📦✨",
+  "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
+];
+
 export const headers = () => ({
   "Cache-Control": "no-store, max-age=0",
   "X-Robots-Tag": "noindex, nofollow",
@@ -73,10 +78,13 @@ function getReturnFailedAttemptLabel(request) {
 
 function getReturnRetryAttemptLabel(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
-  if (normalizedStatus !== "reintento_pendiente") return "";
+  if (normalizedStatus !== "reintento_pendiente" && !normalizedStatus.startsWith("en_ruta_")) return "";
+  const routeAttemptMatch = normalizedStatus.match(/^en_ruta_(\d+)$/);
+  const routeAttemptNumber = routeAttemptMatch ? Number(routeAttemptMatch[1]) || 1 : 0;
   const nextAttemptNumber = Math.min(Math.max(Number(request?.attemptCount || 0) + 1, 1), 3);
-  if (nextAttemptNumber === 1) return "primer intento";
-  if (nextAttemptNumber === 2) return "segundo intento";
+  const attemptNumber = routeAttemptNumber || nextAttemptNumber;
+  if (attemptNumber === 1) return "primer intento";
+  if (attemptNumber === 2) return "segundo intento";
   return "tercer intento";
 }
 
@@ -176,6 +184,7 @@ export const action = async ({ request }) => {
       customerPhone: String(formData.get("customerPhone") || "").trim(),
       currentStatus: String(formData.get("currentStatus") || "").trim(),
       currentAttemptCount: String(formData.get("currentAttemptCount") || "").trim(),
+      rejectionReason: String(formData.get("rejectionReason") || "").trim(),
     });
     if (!result.ok) {
       return result;
@@ -345,6 +354,7 @@ export default function RepartidorPublicPortal() {
   const actionData = useActionData();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
+  const [failedPickupRequest, setFailedPickupRequest] = useState(null);
   const overrideRequestId = String(searchParams.get("overrideRequestId") || "").trim();
   const overrideStatus = String(searchParams.get("overrideStatus") || "").trim().toLowerCase();
   const overrideAttemptCount = Math.max(0, Number(searchParams.get("overrideAttemptCount") || "0"));
@@ -392,6 +402,8 @@ export default function RepartidorPublicPortal() {
   const isPickupReadyStatus = (request) => String(request?.status || "").trim().toLowerCase() === "recoger_en_sucursal";
   const isReturnRetryPendingStatus = (request) =>
     isReturnOrder(request) && String(request?.status || "").trim().toLowerCase() === "reintento_pendiente";
+  const isReturnRetryRouteStatus = (request) =>
+    isReturnOrder(request) && /^en_ruta_[23]$/.test(String(request?.status || "").trim().toLowerCase());
   const isReturnPickupFailedStatus = (request) =>
     ["intento_fallido_1", "intento_fallido_2"].includes(String(request?.status || "").trim().toLowerCase());
   const canShowReturnResultActions = (request) =>
@@ -460,6 +472,32 @@ export default function RepartidorPublicPortal() {
       <input type="hidden" name="currentAttemptCount" value={String(request.attemptCount || 0)} />
       <button type="submit" className={buttonClassName}>
         {buttonLabel}
+      </button>
+    </Form>
+  );
+
+  const renderFailedPickupReasonForm = (request, rejectionReason, index) => (
+    <Form
+      method="post"
+      onSubmit={(event) => {
+        if (!confirmCourierAction(request, "intento de devolucion fallido", "Se enviara el mensaje seleccionado al cliente.")) {
+          event.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="shop" value={shop || ""} />
+      <input type="hidden" name="intent" value="courier_return_pickup_attempt_failed" />
+      <input type="hidden" name="requestId" value={String(request.id || "")} />
+      <input type="hidden" name="orderNumber" value={String(request.orderNumber || "")} />
+      <input type="hidden" name="customerName" value={String(request.customerName || "")} />
+      <input type="hidden" name="customerEmail" value={String(request.customerEmail || "")} />
+      <input type="hidden" name="customerPhone" value={String(request.customerPhone || "")} />
+      <input type="hidden" name="currentStatus" value={String(request.status || "")} />
+      <input type="hidden" name="currentAttemptCount" value={String(request.attemptCount || 0)} />
+      <input type="hidden" name="rejectionReason" value={rejectionReason} />
+      <button type="submit" className={styles.reasonOptionButton}>
+        <span className={styles.reasonOptionLabel}>Mensaje automatico {index + 1}</span>
+        <span className={styles.reasonOptionText}>{rejectionReason}</span>
       </button>
     </Form>
   );
@@ -548,7 +586,7 @@ export default function RepartidorPublicPortal() {
                         </>
                       ) : (
                         <>
-                          {isReturnRetryPendingStatus(request) ? (
+                          {isReturnRetryPendingStatus(request) || isReturnRetryRouteStatus(request) ? (
                             <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
                               {getReturnRetryAttemptLabel(request)}
                             </span>
@@ -638,14 +676,13 @@ export default function RepartidorPublicPortal() {
                                 "courier_return_mark_received",
                                 "recibido",
                               )}
-                              {renderCourierActionForm(
-                                request,
-                                "Intento de devolucion fallido",
-                                "courier_return_pickup_attempt_failed",
-                                "intento de devolucion fallido",
-                                `${styles.actionButton} ${styles.actionButtonDanger}`,
-                                "Esta accion registrara un intento fallido de recoleccion y notificara al cliente.",
-                              )}
+                              <button
+                                type="button"
+                                className={`${styles.actionButton} ${styles.actionButtonDanger}`}
+                                onClick={() => setFailedPickupRequest(request)}
+                              >
+                                Intento de devolucion fallido
+                              </button>
                             </>
                           ) : null}
                         </>
@@ -698,6 +735,31 @@ export default function RepartidorPublicPortal() {
           )}
         </section>
       </div>
+      {failedPickupRequest ? (
+        <div className={styles.modalBackdrop} role="presentation" onClick={() => setFailedPickupRequest(null)}>
+          <section
+            className={styles.reasonModal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="failed-pickup-reason-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="failed-pickup-reason-title" className={styles.reasonModalTitle}>
+              Selecciona un mensaje completo
+            </h2>
+            <div className={styles.reasonOptionList}>
+              {PICKUP_FAILED_REASON_OPTIONS.map((option, index) => (
+                <div key={option}>{renderFailedPickupReasonForm(failedPickupRequest, option, index)}</div>
+              ))}
+            </div>
+            <div className={styles.reasonModalActions}>
+              <button type="button" className={styles.actionButton} onClick={() => setFailedPickupRequest(null)}>
+                Cerrar
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

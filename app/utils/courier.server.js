@@ -1114,7 +1114,7 @@ export async function markCourierReturnAsReceived({ requestId }) {
   return { ok: true, requestRow, nextStatus: "recibida", attemptCount: 0 };
 }
 
-export async function markCourierReturnPickupAttemptFailed({ requestId }) {
+export async function markCourierReturnPickupAttemptFailed({ requestId, rejectionReason: selectedRejectionReason }) {
   const lookup = await getCourierReturnRequestForAction(requestId);
   if (!lookup.ok) return lookup;
 
@@ -1125,7 +1125,9 @@ export async function markCourierReturnPickupAttemptFailed({ requestId }) {
     return { ok: false, error: "Ya no puedes registrar mas intentos fallidos para esta devolucion." };
   }
 
-  const rejectionReason = nextStatus === "intento_fallido_1" ? PICKUP_FAILED_REASON_FIRST : PICKUP_FAILED_REASON_SECOND;
+  const rejectionReason =
+    String(selectedRejectionReason || "").trim() ||
+    (nextStatus === "intento_fallido_1" ? PICKUP_FAILED_REASON_FIRST : PICKUP_FAILED_REASON_SECOND);
 
   await prisma.returnRequest.update({
     where: { id: requestRow.id },
