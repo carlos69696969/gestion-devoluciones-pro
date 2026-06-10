@@ -63,7 +63,16 @@ export function isCourierRouteTabStatus(status) {
 
 export function isCourierHistoryStatus(status) {
   const normalized = String(status || "").trim().toLowerCase();
-  return ["no_entregado", "recoger_en_sucursal", "entregado", "no_recibido", "recibido", "recibida"].includes(normalized);
+  return [
+    "no_entregado",
+    "recoger_en_sucursal",
+    "entregado",
+    "no_recibido",
+    "recibido",
+    "recibida",
+    "intento_fallido_1",
+    "intento_fallido_2",
+  ].includes(normalized);
 }
 
 export function getCourierRouteStatusLabel(status) {

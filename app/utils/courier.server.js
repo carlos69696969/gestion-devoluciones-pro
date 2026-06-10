@@ -11,9 +11,11 @@ export const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
   "intento_fallido_1",
   "intento_fallido_2",
+  "reintento_pendiente",
   "en_ruta_1",
   "en_ruta_2",
   "en_ruta_3",
+  "recibida",
 ]);
 const NOTIFICATIONS_API_BASE_URL = String(
   process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
@@ -96,6 +98,13 @@ function appendTimelineMetaEntry(rawValue, entry) {
     at: new Date().toISOString(),
   });
   return JSON.stringify({ entries });
+}
+
+function getReturnFailedAttemptCount(rawValue) {
+  return parseReasonEntries(rawValue).reduce((maxAttempt, entry) => {
+    const match = String(entry?.kind || "").toLowerCase().match(/^attempt_failed_(\d)$/);
+    return match ? Math.max(maxAttempt, Number(match[1]) || 0) : maxAttempt;
+  }, 0);
 }
 
 function getDeliveryAttemptTag(attemptCount) {
@@ -948,6 +957,7 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
       returnMethod: true,
       status: true,
       shopifyOrderId: true,
+      rejectionReason: true,
     },
   });
 
@@ -967,13 +977,15 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
     "no_devuelto",
     "reembolsada",
     "completada",
+    "recibida",
   ]);
   if (blockedStatuses.has(normalizedStatus)) {
     return { ok: false, error: "Esta solicitud ya esta cerrada y no se puede volver a poner en ruta." };
   }
 
   const currentStep = getCourierRouteStep(requestRow.status);
-  const nextStep = currentStep ? currentStep + 1 : 1;
+  const failedAttemptStep = normalizedStatus === "reintento_pendiente" ? getReturnFailedAttemptCount(requestRow.rejectionReason) : 0;
+  const nextStep = currentStep ? currentStep + 1 : Math.min(Math.max(failedAttemptStep + 1, 1), 3);
   if (nextStep > 3) {
     return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
   }
@@ -1126,6 +1138,24 @@ export async function markCourierReturnPickupAttemptFailed({ requestId }) {
   });
 
   return { ok: true, requestRow, nextStatus, attemptCount: 0 };
+}
+
+export async function markCourierReturnForRetry({ requestId }) {
+  const lookup = await getCourierReturnRequestForAction(requestId);
+  if (!lookup.ok) return lookup;
+
+  const requestRow = lookup.requestRow;
+  const currentStatus = String(requestRow.status || "").trim().toLowerCase();
+  if (currentStatus !== "intento_fallido_1" && currentStatus !== "intento_fallido_2") {
+    return { ok: false, error: "Solo puedes reintentar una devolucion con intento fallido." };
+  }
+
+  await prisma.returnRequest.update({
+    where: { id: requestRow.id },
+    data: { status: "reintento_pendiente" },
+  });
+
+  return { ok: true, requestRow, nextStatus: "reintento_pendiente", attemptCount: 0 };
 }
 
 
