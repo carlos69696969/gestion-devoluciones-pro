@@ -87,8 +87,8 @@ function latestReturnedToCustomerAtFromRaw(rawValue) {
 
 function reasonEntryLabel(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
-  if (kind === "attempt_failed_1") return "Intento de recoleccion fallido (1 de 2)";
-  if (kind === "attempt_failed_2") return "Intento de recoleccion fallido (2 de 2)";
+  if (kind === "attempt_failed_1") return "Primer intento";
+  if (kind === "attempt_failed_2") return "Segundo intento";
   if (kind === "rejected_after_attempts") return "Motivo de rechazo final";
   if (kind === "review_rejected") return "Motivo de rechazo";
   if (kind === "denied_after_received") return "Motivo de denegacion";

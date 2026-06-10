@@ -529,8 +529,8 @@ function timelineLabelFromStatus(status) {
   if (normalized === "en_revision") return "Solicitud en revision";
   if (normalized === "aprobada") return "Devolucion aprobada";
   if (normalized === "en_ruta" || normalized.startsWith("en_ruta_")) return "En ruta";
-  if (normalized === "intento_fallido_1") return "Intento de devolucion fallido (1 de 2)";
-  if (normalized === "intento_fallido_2") return "Intento de devolucion fallido (2 de 2)";
+  if (normalized === "intento_fallido_1") return "Primer intento";
+  if (normalized === "intento_fallido_2") return "Segundo intento";
   if (normalized === "intento_fallido_3") return "Intento de devolucion fallido (3 de 3)";
   if (normalized === "reintento_pendiente") return "Pendiente para reintento";
   if (normalized === "rechazada") return "Devolucion rechazada";
@@ -563,8 +563,8 @@ function timelineLabelFromReasonEntry(entry) {
   if (kind === STATUS_IN_ROUTE_KIND) return "En ruta";
   if (kind === STATUS_RECEIVED_KIND) return "Recibimos tu producto";
   if (kind === STATUS_REFUNDED_KIND) return "Reembolso procesado";
-  if (kind === "attempt_failed_1") return "Intento de devolucion fallido (1 de 2)";
-  if (kind === "attempt_failed_2") return "Intento de devolucion fallido (2 de 2)";
+  if (kind === "attempt_failed_1") return "Primer intento";
+  if (kind === "attempt_failed_2") return "Segundo intento";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "Devolucion rechazada";
   if (kind === "denied_after_received") return "Reembolso denegado";
   if (kind === NOT_RETURNED_KIND) return "No devuelto";
