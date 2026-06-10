@@ -26,23 +26,57 @@ const MENU_COUNT_STATUSES = [
   "por_devolver",
 ];
 
+function itemKeyFromRecord(item) {
+  const lineItemId = String(item?.lineItemId || "").trim();
+  if (lineItemId) return `line:${lineItemId}`;
+  const variantId = String(item?.variantId || "").trim();
+  if (variantId) return `variant:${variantId}`;
+  const productId = String(item?.productId || "").trim();
+  if (productId) return `product:${productId}`;
+  return `title:${String(item?.title || "").trim().toLowerCase()}`;
+}
+
+function returnRequestItemsSignature(requestRow) {
+  const itemParts = (requestRow?.items || [])
+    .map((item) => `${itemKeyFromRecord(item)}:${Math.max(1, Number(item?.quantity || 1))}`)
+    .sort();
+  return `${String(requestRow?.orderNumber || "").trim()}|${itemParts.join(",")}`;
+}
+
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
 
   const requests = await prisma.returnRequest.findMany({
     where: {
       shop: session.shop,
-      status: { in: MENU_COUNT_STATUSES },
     },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: {
       id: true,
       orderNumber: true,
       status: true,
       returnMethod: true,
+      items: {
+        select: {
+          lineItemId: true,
+          productId: true,
+          variantId: true,
+          title: true,
+          quantity: true,
+        },
+      },
     },
   });
 
-  const uniqueOrders = {
+  const latestRequestIdByItemsSignature = new Map();
+  for (const row of requests) {
+    const signature = returnRequestItemsSignature(row);
+    if (!latestRequestIdByItemsSignature.has(signature)) {
+      latestRequestIdByItemsSignature.set(signature, row.id);
+    }
+  }
+
+  const uniqueRequests = {
     pickup: new Set(),
     branch: new Set(),
     review: new Set(),
@@ -52,20 +86,26 @@ export const loader = async ({ request }) => {
 
   for (const row of requests) {
     const status = String(row.status || "").toLowerCase();
-    const orderKey = String(row.orderNumber || "").trim() || `request-${row.id}`;
+    if (!MENU_COUNT_STATUSES.includes(status)) continue;
 
-    if (status === "en_revision") uniqueOrders.review.add(orderKey);
-    if (status === "recibida") uniqueOrders.refunds.add(orderKey);
-    if (status === "por_devolver") uniqueOrders.toReturn.add(orderKey);
+    const signature = returnRequestItemsSignature(row);
+    if (latestRequestIdByItemsSignature.get(signature) !== row.id) continue;
+
+    if (status === "en_revision") uniqueRequests.review.add(signature);
+    if (status === "recibida") uniqueRequests.refunds.add(signature);
+    if (status === "por_devolver") uniqueRequests.toReturn.add(signature);
 
     if (METHOD_QUEUE_STATUSES.has(status)) {
-      if (String(row.returnMethod || "").toLowerCase() === "pickup") uniqueOrders.pickup.add(orderKey);
-      else uniqueOrders.branch.add(orderKey);
+      if (String(row.returnMethod || "").toLowerCase() === "pickup") {
+        uniqueRequests.pickup.add(signature);
+      } else {
+        uniqueRequests.branch.add(signature);
+      }
     }
   }
 
   const navCounts = Object.fromEntries(
-    Object.entries(uniqueOrders).map(([key, orderNumbers]) => [key, orderNumbers.size]),
+    Object.entries(uniqueRequests).map(([key, signatures]) => [key, signatures.size]),
   );
 
   // eslint-disable-next-line no-undef
