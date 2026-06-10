@@ -577,11 +577,11 @@ export default function RepartidorPublicPortal() {
                       ) : null}
                       {isReturnOrder(request) && isReturnPickupFailedStatus(request) ? (
                         <>
-                          <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>
-                            no recibido
-                          </span>
                           <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
                             {getReturnFailedAttemptLabel(request)}
+                          </span>
+                          <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>
+                            no recibido
                           </span>
                         </>
                       ) : (
