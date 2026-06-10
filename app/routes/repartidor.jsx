@@ -60,6 +60,17 @@ function getDeliveryAttemptLabel(request) {
   return `${currentAttemptNumber} intento de entrega`;
 }
 
+function getReturnFailedAttemptCount(request) {
+  const normalizedStatus = String(request?.status || "").trim().toLowerCase();
+  const match = normalizedStatus.match(/^intento_fallido_(\d+)$/);
+  return match ? Math.max(1, Number(match[1]) || 1) : 0;
+}
+
+function getReturnFailedAttemptLabel(request) {
+  const failedAttemptCount = getReturnFailedAttemptCount(request);
+  return failedAttemptCount ? `intento fallido ${failedAttemptCount}` : "";
+}
+
 async function fetchNextPendingCourierOrder({ shop, sessionCandidates, allSessionCandidates, excludeRequestId }) {
   if (!shop || !sessionCandidates?.length) return null;
 
@@ -515,19 +526,30 @@ export default function RepartidorPublicPortal() {
                           {getDeliveryAttemptLabel(request)}
                         </span>
                       ) : null}
-                      <span
-                        className={`${adminStyles.courierBadgeStatus} ${
-                          isCourierRouteStatus(request.status)
-                            ? styles.statusBadgeRoute
-                            : isPickupReadyStatus(request)
-                              ? styles.statusBadgeAttempt
-                            : isNotDeliveredStatus(request)
-                              ? styles.statusBadgeFailed
-                              : ""
-                        }`}
-                      >
-                        {getCourierStatusLabel(request.status)}
-                      </span>
+                      {isReturnOrder(request) && isReturnPickupFailedStatus(request) ? (
+                        <>
+                          <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>
+                            no recibido
+                          </span>
+                          <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
+                            {getReturnFailedAttemptLabel(request)}
+                          </span>
+                        </>
+                      ) : (
+                        <span
+                          className={`${adminStyles.courierBadgeStatus} ${
+                            isCourierRouteStatus(request.status)
+                              ? styles.statusBadgeRoute
+                              : isPickupReadyStatus(request)
+                                ? styles.statusBadgeAttempt
+                              : isNotDeliveredStatus(request)
+                                ? styles.statusBadgeFailed
+                                : ""
+                          }`}
+                        >
+                          {getCourierStatusLabel(request.status)}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <h3 className={adminStyles.courierOrderNumber}>#{request.orderNumber}</h3>
