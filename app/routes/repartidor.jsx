@@ -72,9 +72,9 @@ function getDeliveryAttemptLabel(request) {
   const currentAttemptNumber = isCourierRouteStatus(normalizedStatus)
     ? Math.min(failedAttemptCount, 3)
     : Math.min(failedAttemptCount + 1, 3);
-  if (currentAttemptNumber === 1) return "primer intento de entrega";
-  if (currentAttemptNumber === 2) return "segundo intento de entrega";
-  if (currentAttemptNumber === 3) return "tercer intento de entrega";
+  if (currentAttemptNumber === 1) return "";
+  if (currentAttemptNumber === 2) return "segundo intento";
+  if (currentAttemptNumber === 3) return "tercer intento";
   return `${currentAttemptNumber} intento de entrega`;
 }
 
@@ -612,7 +612,7 @@ export default function RepartidorPublicPortal() {
                       {request.courierLabel}
                     </span>
                     <div className={styles.statusGroup}>
-                      {!isReturnOrder(request) && getFailedDeliveryAttemptCount(request) > 0 ? (
+                      {!isReturnOrder(request) && getDeliveryAttemptLabel(request) ? (
                         <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>
                           {getDeliveryAttemptLabel(request)}
                         </span>
