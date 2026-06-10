@@ -384,7 +384,9 @@ export default function RepartidorPublicPortal() {
       };
     })(),
   );
-  const historyOrders = effectiveCourierOrders.filter((request) => isCourierHistoryStatus(request?.status));
+  const historyOrders = effectiveCourierOrders
+    .filter((request) => isCourierHistoryStatus(request?.status))
+    .sort((firstRequest, secondRequest) => courierOrderTimestampMs(secondRequest) - courierOrderTimestampMs(firstRequest));
   const routeOrders = effectiveCourierOrders.filter((request) => isCourierRouteTabStatus(request?.status));
   const pendingOrders = effectiveCourierOrders.filter(
     (request) => !isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status),
