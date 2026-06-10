@@ -336,15 +336,19 @@ export async function emitCourierReturnRouteNotification({ shopDomain, requestRo
         }),
       });
 
-      if (response.ok) {
+      const responsePayload = await response.json().catch(() => null);
+      if (response.ok && !responsePayload?.result?.skipped) {
         return { ok: true };
       }
 
-      const detail = await response.text().catch(() => "");
       lastFailure = {
         endpoint,
         status: response.status,
-        detail: String(detail || "").slice(0, 300),
+        detail: String(
+          responsePayload?.result?.reason ||
+            responsePayload?.error ||
+            "El centro de notificaciones omitio el evento.",
+        ).slice(0, 300),
       };
     } catch (error) {
       lastFailure = {
@@ -419,15 +423,19 @@ async function emitCourierReturnActionNotification({ shopDomain, requestRow, int
         }),
       });
 
-      if (response.ok) {
+      const responsePayload = await response.json().catch(() => null);
+      if (response.ok && !responsePayload?.result?.skipped) {
         return { ok: true };
       }
 
-      const detail = await response.text().catch(() => "");
       lastFailure = {
         endpoint,
         status: response.status,
-        detail: String(detail || "").slice(0, 300),
+        detail: String(
+          responsePayload?.result?.reason ||
+            responsePayload?.error ||
+            "El centro de notificaciones omitio el evento.",
+        ).slice(0, 300),
       };
     } catch (error) {
       lastFailure = {
