@@ -1106,7 +1106,7 @@ export async function markCourierReturnAsReceived({ requestId }) {
       receivedAt: new Date(),
       rejectionReason: appendTimelineMetaEntry(requestRow.rejectionReason, {
         kind: STATUS_RECEIVED_KIND,
-        reason: "Recibimos tu producto. Estamos validando para finalizar el proceso.",
+        reason: "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰",
       }),
     },
   });

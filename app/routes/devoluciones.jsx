@@ -86,6 +86,9 @@ function normalizeDisplayedReasonText(rawValue) {
   if (!text) return "";
   const compact = text.replace(/\s+/g, " ").trim();
   const lowered = compact.toLowerCase();
+  if (lowered === "recibimos tu producto. estamos validando para finalizar el proceso.") {
+    return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰";
+  }
   if (
     lowered.includes("devolucion fue regresada con ecxito") ||
     lowered.includes("devolucion fue regresada con éxito") ||
@@ -598,7 +601,7 @@ function timelineStatusDescription(status, requestItem) {
       : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.";
   }
   if (normalized === "recibida") {
-    return "Recibimos tu producto. Estamos validando para finalizar el proceso.";
+    return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰";
   }
   if (normalized === "reembolsada" || normalized === "completada") {
     return "Tu reembolso ya fue procesado al metodo de pago original.";

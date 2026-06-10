@@ -337,6 +337,9 @@ function normalizeDisplayedReasonText(rawValue) {
   if (!text) return "";
   const compact = text.replace(/\s+/g, " ").trim();
   const lowered = compact.toLowerCase();
+  if (lowered === "recibimos tu producto. estamos validando para finalizar el proceso.") {
+    return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰";
+  }
   if (
     lowered.includes("devolucion fue regresada con ecxito") ||
     lowered.includes("devolucion fue regresada con éxito") ||
@@ -528,7 +531,7 @@ function timelineStatusDescription(status, requestRow) {
     return "Tu recoleccion ya va en ruta hacia tu domicilio. Nuestro equipo se dirige para continuar el proceso.";
   }
   if (normalized === "recibida") {
-    return "Recibimos tu producto. Estamos validando para finalizar el proceso.";
+    return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰";
   }
   if (normalized === "reembolsada" || normalized === "completada") {
     return "Tu reembolso ya fue procesado al metodo de pago original.";
@@ -1334,7 +1337,7 @@ export const action = async ({ request }) => {
         receivedAt: new Date(),
         rejectionReason: appendTimelineMetaEntry(requestRow.rejectionReason, {
           kind: STATUS_RECEIVED_KIND,
-          reason: "Recibimos tu producto. Estamos validando para finalizar el proceso.",
+          reason: "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰",
         }),
       },
     });
