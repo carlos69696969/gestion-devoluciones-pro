@@ -134,17 +134,18 @@ export function dedupeCourierRequestsByOrderNumber(requests) {
   for (const request of Array.isArray(requests) ? requests : []) {
     const orderNumber = String(request?.orderNumber || "").trim();
     if (!orderNumber) continue;
+    const dedupeKey = String(request?.dedupeKey || orderNumber).trim();
 
-    const current = byOrderNumber.get(orderNumber);
+    const current = byOrderNumber.get(dedupeKey);
     if (!current) {
-      byOrderNumber.set(orderNumber, request);
+      byOrderNumber.set(dedupeKey, request);
       continue;
     }
 
     const currentTimestamp = courierOrderTimestampMs(current);
     const nextTimestamp = courierOrderTimestampMs(request);
     if (nextTimestamp >= currentTimestamp) {
-      byOrderNumber.set(orderNumber, request);
+      byOrderNumber.set(dedupeKey, request);
     }
   }
 

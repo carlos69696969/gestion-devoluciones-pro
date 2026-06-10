@@ -1447,6 +1447,15 @@ export async function fetchPickupCourierOrders(shop) {
       updatedAt: true,
       status: true,
       rejectionReason: true,
+      items: {
+        select: {
+          lineItemId: true,
+          productId: true,
+          variantId: true,
+          title: true,
+          quantity: true,
+        },
+      },
     },
     orderBy: [{ pickupDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     take: 250,
@@ -1455,6 +1464,17 @@ export async function fetchPickupCourierOrders(shop) {
   const courierOrders = pickupOrders.map((requestRow) => ({
     id: `pickup-${requestRow.id}`,
     orderNumber: String(requestRow.orderNumber || "").replace("#", ""),
+    dedupeKey: `${String(requestRow.orderNumber || "").trim()}|${(requestRow.items || [])
+      .map((item) => {
+        const itemKey =
+          String(item?.lineItemId || "").trim() ||
+          String(item?.variantId || "").trim() ||
+          String(item?.productId || "").trim() ||
+          String(item?.title || "").trim().toLowerCase();
+        return `${itemKey}:${Math.max(1, Number(item?.quantity || 1))}`;
+      })
+      .sort()
+      .join(",")}`,
     customerName: String(requestRow.customerName || "Cliente").trim(),
     customerPhone: String(requestRow.customerPhone || "-").trim() || "-",
     pickupDate: String(requestRow.pickupDate || requestRow.createdAt || "").trim(),
