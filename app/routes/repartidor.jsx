@@ -72,10 +72,14 @@ function getDeliveryAttemptLabel(request) {
   const currentAttemptNumber = isCourierRouteStatus(normalizedStatus)
     ? Math.min(failedAttemptCount, 3)
     : Math.min(failedAttemptCount + 1, 3);
-  if (currentAttemptNumber === 1) return "";
-  if (currentAttemptNumber === 2) return "segundo intento";
-  if (currentAttemptNumber === 3) return "tercer intento";
-  return `${currentAttemptNumber} intento de entrega`;
+  if (currentAttemptNumber === 1 && isCourierRouteStatus(normalizedStatus)) return "";
+  return currentAttemptNumber === 1 ? "1 intento" : `${currentAttemptNumber} intentos`;
+}
+
+function courierHistoryTimestampMs(request) {
+  const updatedAtMs = new Date(request?.updatedAt || "").getTime();
+  if (Number.isFinite(updatedAtMs)) return updatedAtMs;
+  return courierOrderTimestampMs(request);
 }
 
 function getReturnFailedAttemptCount(request) {
@@ -399,7 +403,7 @@ export default function RepartidorPublicPortal() {
   );
   const historyOrders = effectiveCourierOrders
     .filter((request) => isCourierHistoryStatus(request?.status))
-    .sort((firstRequest, secondRequest) => courierOrderTimestampMs(secondRequest) - courierOrderTimestampMs(firstRequest));
+    .sort((firstRequest, secondRequest) => courierHistoryTimestampMs(secondRequest) - courierHistoryTimestampMs(firstRequest));
   const routeOrders = effectiveCourierOrders.filter((request) => isCourierRouteTabStatus(request?.status));
   const pendingOrders = effectiveCourierOrders.filter(
     (request) => !isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status),
@@ -653,7 +657,9 @@ export default function RepartidorPublicPortal() {
                             className={`${adminStyles.courierBadgeStatus} ${
                               isCourierRouteStatus(request.status)
                                 ? styles.statusBadgeRoute
-                                : String(request.status || "").trim().toLowerCase() === "recibida"
+                                : ["recibida", "entregado"].includes(
+                                    String(request.status || "").trim().toLowerCase(),
+                                  )
                                   ? styles.statusBadgeReceived
                                 : isPickupReadyStatus(request)
                                   ? styles.statusBadgeAttempt

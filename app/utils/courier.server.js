@@ -1428,6 +1428,7 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
                 id
                 name
                 createdAt
+                updatedAt
                 displayFulfillmentStatus
                 shippingAddress {
                   name
@@ -1524,7 +1525,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
           pickupPostalCode: String(shipping?.zip || "").trim(),
           pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
           createdAt: orderNode.createdAt,
-          updatedAt: orderNode.createdAt,
+          updatedAt: orderNode.updatedAt || orderNode.createdAt,
           status: getCourierRouteStatusFromTags(orderNode.tags),
           attemptCount: getCourierDeliveryAttemptCountFromTags(orderNode.tags),
           courierLabel: "Entrega",
