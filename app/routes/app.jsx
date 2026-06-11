@@ -89,14 +89,15 @@ export const loader = async ({ request }) => {
     if (!MENU_COUNT_STATUSES.includes(status)) continue;
 
     const signature = returnRequestItemsSignature(row);
-    if (latestRequestIdByItemsSignature.get(signature) !== row.id) continue;
+    const isPickupRequest = String(row.returnMethod || "").toLowerCase() === "pickup";
+    if (!isPickupRequest && latestRequestIdByItemsSignature.get(signature) !== row.id) continue;
 
     if (status === "en_revision") uniqueRequests.review.add(signature);
     if (status === "recibida") uniqueRequests.refunds.add(signature);
     if (status === "por_devolver") uniqueRequests.toReturn.add(signature);
 
     if (METHOD_QUEUE_STATUSES.has(status)) {
-      if (String(row.returnMethod || "").toLowerCase() === "pickup") {
+      if (isPickupRequest) {
         uniqueRequests.pickup.add(`request:${row.id}`);
       } else {
         uniqueRequests.branch.add(signature);
