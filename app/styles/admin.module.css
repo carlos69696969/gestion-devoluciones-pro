@@ -830,6 +830,20 @@
   color: #6b7280;
 }
 
+.courierStatusGroup {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.courierBadgeAttempt {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
 .courierField,
 .courierAddress {
   margin: 0;

@@ -709,12 +709,40 @@ function courierEventLabel(status, attempt) {
   return normalized.replace(/_/g, " ");
 }
 
+function returnCourierHistoryLabel(entry, finalAttempt) {
+  const kind = String(entry?.kind || "").trim().toLowerCase();
+  const failedAttemptMatch = kind.match(/^attempt_failed_(\d)$/);
+  if (failedAttemptMatch) return `${courierAttemptLabel(failedAttemptMatch[1])} no entregado`;
+  if (kind === STATUS_RECEIVED_KIND) return `${courierAttemptLabel(finalAttempt)} entregado`;
+  if (kind === "rejected_after_attempts") return `${courierAttemptLabel(finalAttempt)} rechazado`;
+  return timelineLabelFromReasonEntry(entry);
+}
+
+function courierAttemptFromHistoryEvents(historyEvents, fallbackAttempt = 0) {
+  const historyAttempt = (historyEvents || []).reduce((maxAttempt, event) => {
+    const match = String(event?.label || "").match(/^(Primer|Segundo|Tercer) intento/i);
+    if (!match) return maxAttempt;
+    const attempt = match[1].toLowerCase() === "primer" ? 1 : match[1].toLowerCase() === "segundo" ? 2 : 3;
+    return Math.max(maxAttempt, attempt);
+  }, 0);
+  return Math.max(historyAttempt, Number(fallbackAttempt || 0));
+}
+
 function buildCourierHistoryEvents(request) {
   if (request.courierLabel === "Devolución") {
-    return parseReasonEntries(request.rejectionReason)
+    const entries = parseReasonEntries(request.rejectionReason);
+    const finalAttempt = Math.max(
+      1,
+      entries.reduce((maxAttempt, entry) => {
+        const kind = String(entry?.kind || "").trim().toLowerCase();
+        const match = kind.match(/^(?:courier_en_route_|courier_retry_|attempt_failed_)(\d)$/);
+        return match ? Math.max(maxAttempt, Number(match[1]) || 0) : maxAttempt;
+      }, 0),
+    );
+    return entries
       .map((entry, index) => ({
         id: `${entry.kind}-${entry.at}-${index}`,
-        label: timelineLabelFromReasonEntry(entry),
+        label: returnCourierHistoryLabel(entry, finalAttempt),
         at: entry.at,
         atMs: parseEventMs(entry.at),
       }))
@@ -2433,7 +2461,7 @@ export default function ReturnsRequests() {
           ) : (
             <div className={styles.courierGrid}>
               {courierOrders.map((request) => (
-                <CourierOrderCard key={request.id} request={request} />
+                <CourierOrderCard key={request.id} request={request} showFinalAttemptBadge />
               ))}
             </div>
           )}
@@ -2457,7 +2485,8 @@ export default function ReturnsRequests() {
   );
 }
 
-function CourierOrderCard({ request }) {
+function CourierOrderCard({ request, showFinalAttemptBadge = false }) {
+  const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
   return (
     <article
       className={`${styles.courierCard} ${
@@ -2474,7 +2503,14 @@ function CourierOrderCard({ request }) {
         >
           {request.courierLabel}
         </span>
-        <span className={styles.courierBadgeStatus}>{getCourierStatusLabel(request.status)}</span>
+        <div className={styles.courierStatusGroup}>
+          {showFinalAttemptBadge && finalAttempt > 0 ? (
+            <span className={`${styles.courierBadgeStatus} ${styles.courierBadgeAttempt}`}>
+              {courierAttemptLabel(finalAttempt)}
+            </span>
+          ) : null}
+          <span className={styles.courierBadgeStatus}>{getCourierStatusLabel(request.status)}</span>
+        </div>
       </div>
       <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
       <p className={styles.courierCustomerName}>{request.customerName}</p>
