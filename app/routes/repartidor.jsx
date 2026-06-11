@@ -82,6 +82,23 @@ function courierHistoryTimestampMs(request) {
   return courierOrderTimestampMs(request);
 }
 
+function courierMexicoDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function isCourierHistoryFromToday(request) {
+  const historyTimestamp = courierHistoryTimestampMs(request);
+  if (!historyTimestamp) return false;
+  return courierMexicoDateKey(historyTimestamp) === courierMexicoDateKey(new Date());
+}
+
 function getReturnFailedAttemptCount(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
   const match = normalizedStatus.match(/^intento_fallido_(\d+)$/);
@@ -402,7 +419,7 @@ export default function RepartidorPublicPortal() {
     })(),
   );
   const historyOrders = effectiveCourierOrders
-    .filter((request) => isCourierHistoryStatus(request?.status))
+    .filter((request) => isCourierHistoryStatus(request?.status) && isCourierHistoryFromToday(request))
     .sort((firstRequest, secondRequest) => courierHistoryTimestampMs(secondRequest) - courierHistoryTimestampMs(firstRequest));
   const routeOrders = effectiveCourierOrders.filter((request) => isCourierRouteTabStatus(request?.status));
   const pendingOrders = effectiveCourierOrders.filter(
