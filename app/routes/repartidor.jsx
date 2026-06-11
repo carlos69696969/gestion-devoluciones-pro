@@ -693,7 +693,10 @@ export default function RepartidorPublicPortal() {
                                   : ""
                             }`}
                         >
-                            {activeTab === "pedidos" ? "pendiente" : getCourierStatusLabel(request.status)}
+                            {activeTab === "pedidos" ||
+                            (activeTab === "en_ruta" && !isCourierRouteStatus(request.status))
+                              ? "pendiente"
+                              : getCourierStatusLabel(request.status)}
                           </span>
                         </>
                       )}
