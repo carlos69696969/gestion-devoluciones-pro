@@ -540,6 +540,142 @@ async function syncShopifyOrderTags({ shopDomain, shopifyOrderId, addTags = [], 
   throw new Error(lastError || "No se pudieron sincronizar las etiquetas de Shopify.");
 }
 
+async function markShopifyOrderFulfillmentsAsDelivered({ shopDomain, shopifyOrderId }) {
+  const orderId = String(shopifyOrderId || "").trim();
+  if (!shopDomain || !orderId) {
+    throw new Error("No se pudo identificar la orden para marcarla como entregada.");
+  }
+
+  const sessions = await resolveCourierShopSessions(shopDomain);
+  if (!sessions.length) {
+    throw new Error("No se encontro una sesion valida de Shopify para completar la entrega.");
+  }
+
+  let lastError = null;
+
+  for (const session of sessions) {
+    try {
+      const queryResponse = await fetch(`https://${shopDomain}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": session.accessToken,
+        },
+        body: JSON.stringify({
+          query: `#graphql
+            query CourierOrderFulfillments($id: ID!) {
+              order(id: $id) {
+                fulfillmentOrders(first: 50) {
+                  nodes {
+                    id
+                    status
+                  }
+                }
+                fulfillments {
+                  id
+                  status
+                  deliveredAt
+                }
+              }
+            }`,
+          variables: { id: orderId },
+        }),
+      });
+
+      const queryPayload = await queryResponse.json().catch(() => ({}));
+      const queryErrors = queryPayload?.errors || [];
+      if (!queryResponse.ok || queryErrors.length || !queryPayload?.data?.order) {
+        throw new Error(queryErrors[0]?.message || "No se pudieron consultar las preparaciones de la orden.");
+      }
+
+      const fulfillmentOrderIds = (queryPayload.data.order.fulfillmentOrders?.nodes || [])
+        .filter((fulfillmentOrder) => ["OPEN", "IN_PROGRESS"].includes(String(fulfillmentOrder?.status || "").toUpperCase()))
+        .map((fulfillmentOrder) => String(fulfillmentOrder?.id || "").trim())
+        .filter(Boolean);
+      const fulfillmentIds = (queryPayload.data.order.fulfillments || [])
+        .filter((fulfillment) => !fulfillment?.deliveredAt && String(fulfillment?.status || "").toUpperCase() !== "CANCELLED")
+        .map((fulfillment) => String(fulfillment?.id || "").trim())
+        .filter(Boolean);
+
+      if (fulfillmentOrderIds.length) {
+        const createResponse = await fetch(`https://${shopDomain}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": session.accessToken,
+          },
+          body: JSON.stringify({
+            query: `#graphql
+              mutation CompleteCourierFulfillment($fulfillment: FulfillmentInput!) {
+                fulfillmentCreate(fulfillment: $fulfillment) {
+                  fulfillment { id }
+                  userErrors { field message }
+                }
+              }`,
+            variables: {
+              fulfillment: {
+                notifyCustomer: false,
+                lineItemsByFulfillmentOrder: fulfillmentOrderIds.map((fulfillmentOrderId) => ({ fulfillmentOrderId })),
+              },
+            },
+          }),
+        });
+
+        const createPayload = await createResponse.json().catch(() => ({}));
+        const createErrors = createPayload?.errors || [];
+        const createUserErrors = createPayload?.data?.fulfillmentCreate?.userErrors || [];
+        const createdFulfillmentId = String(createPayload?.data?.fulfillmentCreate?.fulfillment?.id || "").trim();
+        if (!createResponse.ok || createErrors.length || createUserErrors.length || !createdFulfillmentId) {
+          throw new Error(
+            createErrors[0]?.message ||
+              createUserErrors[0]?.message ||
+              "No se pudo completar la preparacion de la orden.",
+          );
+        }
+        fulfillmentIds.push(createdFulfillmentId);
+      }
+
+      for (const fulfillmentId of Array.from(new Set(fulfillmentIds))) {
+        const eventResponse = await fetch(`https://${shopDomain}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": session.accessToken,
+          },
+          body: JSON.stringify({
+            query: `#graphql
+              mutation MarkCourierFulfillmentDelivered($fulfillmentEvent: FulfillmentEventInput!) {
+                fulfillmentEventCreate(fulfillmentEvent: $fulfillmentEvent) {
+                  fulfillmentEvent { id status }
+                  userErrors { field message }
+                }
+              }`,
+            variables: {
+              fulfillmentEvent: {
+                fulfillmentId,
+                status: "DELIVERED",
+              },
+            },
+          }),
+        });
+
+        const eventPayload = await eventResponse.json().catch(() => ({}));
+        const eventErrors = eventPayload?.errors || [];
+        const eventUserErrors = eventPayload?.data?.fulfillmentEventCreate?.userErrors || [];
+        if (!eventResponse.ok || eventErrors.length || eventUserErrors.length) {
+          throw new Error(eventErrors[0]?.message || eventUserErrors[0]?.message || "No se pudo registrar la entrega.");
+        }
+      }
+
+      return;
+    } catch (error) {
+      lastError = String(error?.message || error || "No se pudo marcar la orden como entregada.");
+    }
+  }
+
+  throw new Error(lastError || "No se pudo marcar la orden como entregada.");
+}
+
 async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
   return syncShopifyOrderTags({
     shopDomain,
@@ -893,6 +1029,10 @@ export async function markCourierOrderAsDelivered({
   };
 
   try {
+    await markShopifyOrderFulfillmentsAsDelivered({
+      shopDomain,
+      shopifyOrderId: orderGid,
+    });
     await replaceCourierOrderStatusTag({
       shopDomain,
       shopifyOrderId: orderGid,
