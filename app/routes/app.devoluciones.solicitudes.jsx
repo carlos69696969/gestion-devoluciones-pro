@@ -1807,7 +1807,12 @@ async function fetchCourierOrders(admin) {
   return nodes
     .filter((orderNode) => {
       const status = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
-      return isCourierLocalDeliveryOrder(orderNode) && !["FULFILLED", "RESTOCKED"].includes(status);
+      const courierStatus = getCourierRouteStatusFromTags(orderNode?.tags);
+      return (
+        isCourierLocalDeliveryOrder(orderNode) &&
+        !["FULFILLED", "RESTOCKED"].includes(status) &&
+        courierStatus !== "recoger_en_sucursal"
+      );
     })
     .map((orderNode) => {
       const shipping = orderNode.shippingAddress || null;
@@ -1888,7 +1893,7 @@ async function fetchBranchPickupCourierOrders(admin) {
       return (
         isCourierLocalDeliveryOrder(orderNode) &&
         !["FULFILLED", "RESTOCKED"].includes(status) &&
-        courierStatus !== "recoger_en_sucursal"
+        courierStatus === "recoger_en_sucursal"
       );
     })
     .map((orderNode) => {
@@ -1911,7 +1916,6 @@ async function fetchBranchPickupCourierOrders(admin) {
         status: getCourierRouteStatusFromTags(orderNode.tags),
       };
     })
-    .filter((requestRow) => String(requestRow.status || "").toLowerCase() === "recoger_en_sucursal")
     .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
 }
 
