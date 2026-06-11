@@ -1125,7 +1125,7 @@ export const loader = async ({ request }) => {
           orderBy: { createdAt: "desc" },
         });
 
-  if ([VIEW_MODE.PICKUP, VIEW_MODE.BRANCH].includes(viewMode) && rawRequests.length > 0) {
+  if (viewMode === VIEW_MODE.BRANCH && rawRequests.length > 0) {
     const orderNumbers = [
       ...new Set(rawRequests.map((requestRow) => String(requestRow.orderNumber || "").trim()).filter(Boolean)),
     ];

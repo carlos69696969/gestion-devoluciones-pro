@@ -97,7 +97,7 @@ export const loader = async ({ request }) => {
 
     if (METHOD_QUEUE_STATUSES.has(status)) {
       if (String(row.returnMethod || "").toLowerCase() === "pickup") {
-        uniqueRequests.pickup.add(signature);
+        uniqueRequests.pickup.add(`request:${row.id}`);
       } else {
         uniqueRequests.branch.add(signature);
       }
