@@ -130,16 +130,20 @@ async function recordCourierDeliveryEvent({
   const cleanStatus = String(status || "").trim().toLowerCase();
   if (!shop || !cleanRequestId || !cleanStatus || cleanRequestId.startsWith("pickup-")) return;
 
-  await prisma.courierEvent.create({
-    data: {
-      shop,
-      requestId: cleanRequestId,
-      orderNumber: String(orderNumber || "").trim() || null,
-      status: cleanStatus,
-      attempt: Math.max(0, Number(attemptCount || 0)) || null,
-      note: String(note || "").trim() || null,
-    },
-  });
+  try {
+    await prisma.courierEvent.create({
+      data: {
+        shop,
+        requestId: cleanRequestId,
+        orderNumber: String(orderNumber || "").trim() || null,
+        status: cleanStatus,
+        attempt: Math.max(0, Number(attemptCount || 0)) || null,
+        note: String(note || "").trim() || null,
+      },
+    });
+  } catch (error) {
+    console.error("Courier event history is not available yet", error);
+  }
 }
 
 const COURIER_STATUS_TAGS = [

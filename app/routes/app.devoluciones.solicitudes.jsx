@@ -1221,15 +1221,20 @@ export const loader = async ({ request }) => {
     .filter((requestRow) => requestRow.courierLabel === "Entrega")
     .map((requestRow) => String(requestRow.id || "").trim())
     .filter(Boolean);
-  const deliveryHistoryEvents = deliveryRequestIds.length
-    ? await prisma.courierEvent.findMany({
+  let deliveryHistoryEvents = [];
+  if (deliveryRequestIds.length) {
+    try {
+      deliveryHistoryEvents = await prisma.courierEvent.findMany({
         where: {
           shop: session.shop,
           requestId: { in: deliveryRequestIds },
         },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      })
-    : [];
+      });
+    } catch (error) {
+      console.error("Courier event history is not available yet", error);
+    }
+  }
   const deliveryHistoryByRequestId = new Map();
   for (const event of deliveryHistoryEvents) {
     const current = deliveryHistoryByRequestId.get(event.requestId) || [];
