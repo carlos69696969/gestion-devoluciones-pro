@@ -843,6 +843,47 @@
   font-weight: 400;
 }
 
+.courierHistoryDetails {
+  margin-top: 4px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 8px;
+}
+
+.courierHistorySummary {
+  width: fit-content;
+  cursor: pointer;
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 800;
+  list-style: none;
+}
+
+.courierHistorySummary::-webkit-details-marker {
+  display: none;
+}
+
+.courierHistoryList {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.courierHistoryItem {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 8px;
+  background: #f9fafb;
+  padding: 8px 10px;
+  color: #111827;
+  font-size: 13px;
+}
+
+.courierHistoryItem span {
+  color: #6b7280;
+  white-space: nowrap;
+}
+
 @media (max-width: 720px) {
   .grid2 { grid-template-columns: 1fr; }
   .statusForm .select { width: 100%; }

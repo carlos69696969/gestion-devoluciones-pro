@@ -1631,6 +1631,7 @@ export async function fetchPickupCourierOrders(shop) {
     pickupCountry: "Mexico",
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
+    rejectionReason: requestRow.rejectionReason,
     status: ["reembolsada", "completada"].includes(String(requestRow.status || "").trim().toLowerCase())
       ? "recibida"
       : String(requestRow.status || "pendiente").trim() || "pendiente",

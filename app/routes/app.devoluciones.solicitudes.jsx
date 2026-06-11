@@ -685,6 +685,47 @@ function buildStatusTimeline(requestRow) {
   return Array.from(dedup.values()).sort((a, b) => b.atMs - a.atMs);
 }
 
+function buildCourierHistoryEvents(request) {
+  if (request.courierLabel === "Devolución") {
+    return parseReasonEntries(request.rejectionReason)
+      .map((entry, index) => ({
+        id: `${entry.kind}-${entry.at}-${index}`,
+        label: timelineLabelFromReasonEntry(entry),
+        at: entry.at,
+        atMs: parseEventMs(entry.at),
+      }))
+      .filter((entry) => entry.label && entry.atMs)
+      .sort((a, b) => a.atMs - b.atMs);
+  }
+
+  const status = String(request.status || "").trim().toLowerCase();
+  if (status === "pendiente") return [];
+  const finalLabels = {
+    entregado: "Entregado",
+    no_entregado: "No entregado",
+    recoger_en_sucursal: "Recoger en sucursal",
+    reintento_pendiente: "Reprogramado",
+  };
+  return [{
+    id: `delivery-${status}`,
+    label: finalLabels[status] || "En ruta",
+    at: request.updatedAt,
+    atMs: parseEventMs(request.updatedAt),
+  }].filter((entry) => entry.atMs);
+}
+
+function formatCourierHistoryDate(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function pickParentTransaction(transactions) {
   const success = transactions.filter((tx) => String(tx.status || "").toUpperCase() === "SUCCESS");
   return (
@@ -1205,11 +1246,16 @@ export const loader = async ({ request }) => {
     };
   });
 
-  const courierOrders = courierOrdersRaw.sort((a, b) =>
-    viewMode === VIEW_MODE.COURIER_HISTORY
-      ? courierOrderTimestampMs(b) - courierOrderTimestampMs(a)
-      : courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
-  );
+  const courierOrders = courierOrdersRaw
+    .map((requestRow) => ({
+      ...requestRow,
+      historyEvents: buildCourierHistoryEvents(requestRow),
+    }))
+    .sort((a, b) =>
+      viewMode === VIEW_MODE.COURIER_HISTORY
+        ? courierOrderTimestampMs(b) - courierOrderTimestampMs(a)
+        : courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
+    );
 
   return { requests, courierOrders, viewMode };
 };
@@ -2324,32 +2370,7 @@ export default function ReturnsRequests() {
           ) : (
             <div className={styles.courierGrid}>
               {courierOrders.map((request) => (
-                <article
-                  key={request.id}
-                  className={`${styles.courierCard} ${
-                    request.courierLabel === "Devolución" ? styles.courierCardReturn : styles.courierCardDelivery
-                  }`}
-                >
-                  <div className={styles.courierHeader}>
-                    <span
-                      className={
-                        request.courierLabel === "Devolución"
-                          ? styles.courierBadgeReturn
-                          : styles.courierBadgeDelivery
-                      }
-                    >
-                      {request.courierLabel}
-                    </span>
-                    <span className={styles.courierBadgeStatus}>{getCourierStatusLabel(request.status)}</span>
-                  </div>
-                  <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
-                  <p className={styles.courierCustomerName}>{request.customerName}</p>
-                  <p className={styles.courierField}>
-                    <strong>Programado:</strong> {formatCourierScheduledDate(request.pickupDate)}
-                  </p>
-                  <p className={styles.courierAddress}>{formatCourierAddress(request)}</p>
-                  <p className={styles.courierField}>{request.customerPhone || "-"}</p>
-                </article>
+                <CourierOrderCard key={request.id} request={request} />
               ))}
             </div>
           )}
@@ -2413,6 +2434,19 @@ function CourierOrderCard({ request }) {
       </p>
       <p className={styles.courierAddress}>{formatCourierAddress(request)}</p>
       <p className={styles.courierField}>{request.customerPhone || "-"}</p>
+      {request.historyEvents?.length ? (
+        <details className={styles.courierHistoryDetails}>
+          <summary className={styles.courierHistorySummary}>Ver más ↓</summary>
+          <div className={styles.courierHistoryList}>
+            {request.historyEvents.map((event) => (
+              <div key={event.id} className={styles.courierHistoryItem}>
+                <strong>{event.label}</strong>
+                <span>{formatCourierHistoryDate(event.at)}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
     </article>
   );
 }
