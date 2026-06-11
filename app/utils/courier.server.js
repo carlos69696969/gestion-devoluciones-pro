@@ -1474,6 +1474,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
   if (!shop || !accessToken) return [];
 
   const queryCandidates = ["fulfillment_status:unfulfilled", "status:open", "status:any"];
+  const courierOrdersById = new Map();
 
   for (const queryString of queryCandidates) {
     const nodes = await fetchCourierOrdersByQuery({ shop, accessToken, queryString });
@@ -1534,12 +1535,15 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
       await Promise.allSettled(normalizationJobs);
     }
 
-    if (courierOrders.length > 0) {
-      return courierOrders;
+    for (const courierOrder of courierOrders) {
+      const orderId = String(courierOrder?.id || "").trim();
+      if (orderId) {
+        courierOrdersById.set(orderId, courierOrder);
+      }
     }
   }
 
-  return [];
+  return Array.from(courierOrdersById.values());
 }
 
 export async function fetchCourierOrdersForShop({ shop, sessionCandidates }) {
