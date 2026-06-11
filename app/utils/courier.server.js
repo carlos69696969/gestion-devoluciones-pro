@@ -1485,13 +1485,15 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
         const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
         const courierStatus = getCourierRouteStatusFromTags(orderNode?.tags);
         const hasTrackedCourierStatus = courierStatus !== "pendiente";
-        return isCourierLocalDeliveryOrder(orderNode) && (hasTrackedCourierStatus || !["FULFILLED", "RESTOCKED"].includes(fulfillmentStatus));
+        return isCourierLocalDeliveryOrder(orderNode) && (hasTrackedCourierStatus || fulfillmentStatus !== "RESTOCKED");
       })
       .map((orderNode) => {
         const shipping = orderNode.shippingAddress || null;
         const billing = orderNode.billingAddress || null;
         const courierTags = Array.isArray(orderNode?.tags) ? orderNode.tags : [];
-        const preferredTag = getPreferredCourierStatusTag(courierTags);
+        const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
+        const isShopifyDelivered = fulfillmentStatus === "FULFILLED";
+        const preferredTag = isShopifyDelivered ? "entregado" : getPreferredCourierStatusTag(courierTags);
         if (preferredTag) {
           const normalizedCourierTags = Array.from(
             new Set(courierTags.map(normalizeCourierTag).filter((tag) => COURIER_STATUS_TAGS.includes(tag))),
@@ -1503,11 +1505,17 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
             normalizedCourierTags.includes("reintentar entrega");
           if (shouldNormalize) {
             normalizationJobs.push(
-              normalizeCourierOrderTags({
-                shopDomain: shop,
-                shopifyOrderId: orderNode.id,
-                tags: courierTags,
-              }),
+              isShopifyDelivered
+                ? replaceCourierOrderStatusTag({
+                    shopDomain: shop,
+                    shopifyOrderId: orderNode.id,
+                    statusTag: "entregado",
+                  })
+                : normalizeCourierOrderTags({
+                    shopDomain: shop,
+                    shopifyOrderId: orderNode.id,
+                    tags: courierTags,
+                  }),
             );
           }
         }
@@ -1526,7 +1534,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
           pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
           createdAt: orderNode.createdAt,
           updatedAt: orderNode.updatedAt || orderNode.createdAt,
-          status: getCourierRouteStatusFromTags(orderNode.tags),
+          status: isShopifyDelivered ? "entregado" : getCourierRouteStatusFromTags(orderNode.tags),
           attemptCount: getCourierDeliveryAttemptCountFromTags(orderNode.tags),
           courierLabel: "Entrega",
         };
