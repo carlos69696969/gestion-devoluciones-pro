@@ -117,6 +117,31 @@ function getDeliveryAttemptTag(attemptCount) {
   return `intento entrega ${safeAttemptCount}`;
 }
 
+async function recordCourierDeliveryEvent({
+  shopDomain,
+  requestId,
+  orderNumber,
+  status,
+  attemptCount,
+  note = "",
+}) {
+  const shop = normalizeShop(shopDomain);
+  const cleanRequestId = String(requestId || "").trim();
+  const cleanStatus = String(status || "").trim().toLowerCase();
+  if (!shop || !cleanRequestId || !cleanStatus || cleanRequestId.startsWith("pickup-")) return;
+
+  await prisma.courierEvent.create({
+    data: {
+      shop,
+      requestId: cleanRequestId,
+      orderNumber: String(orderNumber || "").trim() || null,
+      status: cleanStatus,
+      attempt: Math.max(0, Number(attemptCount || 0)) || null,
+      note: String(note || "").trim() || null,
+    },
+  });
+}
+
 const COURIER_STATUS_TAGS = [
   "en ruta",
   "en ruta 2",
@@ -846,6 +871,14 @@ export async function markCourierOrderAsEnRoute({
     };
   }
 
+  await recordCourierDeliveryEvent({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber: requestRow.orderNumber,
+    status: nextStatus,
+    attemptCount: nextStep,
+  });
+
   if (nextStep >= 2) {
     const notificationResult = await emitCourierDeliveryRouteNotification({
       shopDomain,
@@ -905,6 +938,14 @@ export async function markCourierOrderAsNotDelivered({
       error: String(error?.message || error || "No se pudo marcar la orden como no entregada en Shopify."),
     };
   }
+
+  await recordCourierDeliveryEvent({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber: requestRow.orderNumber,
+    status: nextStatus,
+    attemptCount: nextAttemptCount,
+  });
 
   const notificationResult = await emitCourierDeliveryManualStatusNotification({
     shopDomain,
@@ -969,6 +1010,14 @@ export async function markCourierOrderForRetry({
     };
   }
 
+  await recordCourierDeliveryEvent({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber: requestRow.orderNumber,
+    status: nextStatus,
+    attemptCount: currentAttempt,
+  });
+
   return {
     ok: true,
     requestRow,
@@ -977,7 +1026,7 @@ export async function markCourierOrderForRetry({
   };
 }
 
-export async function markCourierOrderReadyForBranchPickup({ shopDomain, requestId }) {
+export async function markCourierOrderReadyForBranchPickup({ shopDomain, requestId, orderNumber = "" }) {
   const isPickupRequest = String(requestId || "").startsWith("pickup-");
   if (isPickupRequest) {
     return { ok: false, error: "Esta accion solo aplica para entregas." };
@@ -1000,6 +1049,14 @@ export async function markCourierOrderReadyForBranchPickup({ shopDomain, request
       error: String(error?.message || error || "No se pudo marcar la orden para recoger en sucursal."),
     };
   }
+
+  await recordCourierDeliveryEvent({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber,
+    status: "recoger_en_sucursal",
+    attemptCount: 3,
+  });
 
   return { ok: true, nextStatus: "recoger_en_sucursal", attemptCount: 3 };
 }
@@ -1050,6 +1107,14 @@ export async function markCourierOrderAsDelivered({
       error: String(error?.message || error || "No se pudo marcar la orden como entregada en Shopify."),
     };
   }
+
+  await recordCourierDeliveryEvent({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber: requestRow.orderNumber,
+    status: "entregado",
+    attemptCount: requestRow.attemptCount,
+  });
 
   const notificationResult = await emitCourierDeliveryManualStatusNotification({
     shopDomain,
@@ -1158,7 +1223,13 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
   const nextStatus = `en_ruta_${nextStep}`;
   await prisma.returnRequest.update({
     where: { id },
-    data: { status: nextStatus },
+    data: {
+      status: nextStatus,
+      rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+        kind: `courier_en_route_${nextStep}`,
+        reason: `${nextStep === 1 ? "Primer" : nextStep === 2 ? "Segundo" : "Tercer"} intento en ruta`,
+      }),
+    },
   });
 
   await emitCourierReturnRouteNotification({
@@ -1309,7 +1380,13 @@ export async function markCourierReturnForRetry({ requestId }) {
 
   await prisma.returnRequest.update({
     where: { id: requestRow.id },
-    data: { status: "reintento_pendiente" },
+    data: {
+      status: "reintento_pendiente",
+      rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+        kind: `courier_retry_${getReturnFailedAttemptCount(requestRow.rejectionReason) + 1}`,
+        reason: "Recoleccion reprogramada para un nuevo intento.",
+      }),
+    },
   });
 
   return {

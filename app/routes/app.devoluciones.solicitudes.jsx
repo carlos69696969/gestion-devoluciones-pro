@@ -455,6 +455,7 @@ function reasonEntryLabel(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
   if (kind === "attempt_failed_1") return "Primer intento";
   if (kind === "attempt_failed_2") return "Segundo intento";
+  if (kind === "attempt_failed_3") return "Tercer intento";
   if (kind === "rejected_after_attempts") return "Motivo de rechazo final";
   if (kind === "review_rejected") return "Motivo de rechazo";
   if (kind === "denied_after_received") return "Motivo de denegacion";
@@ -481,6 +482,10 @@ function timelineLabelFromStatus(status) {
 
 function timelineLabelFromReasonEntry(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
+  const courierRouteMatch = kind.match(/^courier_en_route_(\d)$/);
+  if (courierRouteMatch) return `${courierAttemptLabel(courierRouteMatch[1])} en ruta`;
+  const courierRetryMatch = kind.match(/^courier_retry_(\d)$/);
+  if (courierRetryMatch) return `${courierAttemptLabel(courierRetryMatch[1])} reprogramado`;
   if (kind === STATUS_REVIEW_KIND) return "Solicitud en revision";
   if (kind === STATUS_APPROVED_KIND) return "Devolucion aprobada";
   if (kind === STATUS_IN_ROUTE_KIND) return "En ruta";
@@ -500,7 +505,7 @@ function timelineToneFromStatus(status) {
   if (normalized === "en_revision") return "review";
   if (normalized === "aprobada") return "approved";
   if (normalized === "en_ruta") return "approved";
-  if (normalized === "intento_fallido_1" || normalized === "intento_fallido_2") return "attempt";
+  if (normalized === "intento_fallido_1" || normalized === "intento_fallido_2" || normalized === "intento_fallido_3") return "attempt";
   if (normalized === "rechazada") return "rejected";
   if (normalized === "recibida") return "received";
   if (normalized === "por_devolver") return "pending";
@@ -517,7 +522,7 @@ function timelineToneFromReasonEntry(entry) {
   if (kind === STATUS_IN_ROUTE_KIND) return "approved";
   if (kind === STATUS_RECEIVED_KIND) return "received";
   if (kind === STATUS_REFUNDED_KIND) return "refunded";
-  if (kind === "attempt_failed_1" || kind === "attempt_failed_2") return "attempt";
+  if (kind === "attempt_failed_1" || kind === "attempt_failed_2" || kind === "attempt_failed_3") return "attempt";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "rejected";
   if (kind === "denied_after_received") return "denied";
   if (kind === RETURNED_TO_CUSTOMER_KIND) return "pending";
@@ -685,6 +690,25 @@ function buildStatusTimeline(requestRow) {
   return Array.from(dedup.values()).sort((a, b) => b.atMs - a.atMs);
 }
 
+function courierAttemptLabel(attempt) {
+  const attemptNumber = Number(attempt || 0);
+  if (attemptNumber === 1) return "Primer intento";
+  if (attemptNumber === 2) return "Segundo intento";
+  if (attemptNumber === 3) return "Tercer intento";
+  return "Intento";
+}
+
+function courierEventLabel(status, attempt) {
+  const normalized = String(status || "").trim().toLowerCase();
+  const attemptLabel = courierAttemptLabel(attempt);
+  if (normalized === "en_ruta" || normalized.startsWith("en_ruta_")) return `${attemptLabel} en ruta`;
+  if (normalized === "no_entregado") return `${attemptLabel} no entregado`;
+  if (normalized === "reintento_pendiente") return `${attemptLabel} reprogramado`;
+  if (normalized === "recoger_en_sucursal") return "Enviado a recoger en sucursal";
+  if (normalized === "entregado") return `${attemptLabel} entregado`;
+  return normalized.replace(/_/g, " ");
+}
+
 function buildCourierHistoryEvents(request) {
   if (request.courierLabel === "Devolución") {
     return parseReasonEntries(request.rejectionReason)
@@ -698,19 +722,23 @@ function buildCourierHistoryEvents(request) {
       .sort((a, b) => a.atMs - b.atMs);
   }
 
+  if (request.persistedHistoryEvents?.length) {
+    return request.persistedHistoryEvents.map((event) => ({
+      id: `delivery-event-${event.id}`,
+      label: courierEventLabel(event.status, event.attempt),
+      at: event.createdAt,
+      atMs: parseEventMs(event.createdAt),
+      note: event.note || "",
+    }));
+  }
+
   const status = String(request.status || "").trim().toLowerCase();
   if (status === "pendiente") return [];
-  const finalLabels = {
-    entregado: "Entregado",
-    no_entregado: "No entregado",
-    recoger_en_sucursal: "Recoger en sucursal",
-    reintento_pendiente: "Reprogramado",
-  };
   return [{
     id: `delivery-${status}`,
-    label: finalLabels[status] || "En ruta",
-    at: request.updatedAt,
-    atMs: parseEventMs(request.updatedAt),
+    label: courierEventLabel(status, request.attemptCount),
+    at: request.courierHistoryAt || request.updatedAt,
+    atMs: parseEventMs(request.courierHistoryAt || request.updatedAt),
   }].filter((entry) => entry.atMs);
 }
 
@@ -1189,6 +1217,26 @@ export const loader = async ({ request }) => {
           ]
       : [];
 
+  const deliveryRequestIds = courierOrdersRaw
+    .filter((requestRow) => requestRow.courierLabel === "Entrega")
+    .map((requestRow) => String(requestRow.id || "").trim())
+    .filter(Boolean);
+  const deliveryHistoryEvents = deliveryRequestIds.length
+    ? await prisma.courierEvent.findMany({
+        where: {
+          shop: session.shop,
+          requestId: { in: deliveryRequestIds },
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      })
+    : [];
+  const deliveryHistoryByRequestId = new Map();
+  for (const event of deliveryHistoryEvents) {
+    const current = deliveryHistoryByRequestId.get(event.requestId) || [];
+    current.push(event);
+    deliveryHistoryByRequestId.set(event.requestId, current);
+  }
+
   const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
   const imagesByOrder = shouldLoadImages
     ? await fetchOrderItemImageMaps(
@@ -1249,7 +1297,10 @@ export const loader = async ({ request }) => {
   const courierOrders = courierOrdersRaw
     .map((requestRow) => ({
       ...requestRow,
-      historyEvents: buildCourierHistoryEvents(requestRow),
+      historyEvents: buildCourierHistoryEvents({
+        ...requestRow,
+        persistedHistoryEvents: deliveryHistoryByRequestId.get(String(requestRow.id || "").trim()) || [],
+      }),
     }))
     .sort((a, b) =>
       viewMode === VIEW_MODE.COURIER_HISTORY
@@ -1912,6 +1963,7 @@ async function fetchBranchPickupCourierOrders(admin) {
             id
             name
             createdAt
+            updatedAt
             displayFulfillmentStatus
             tags
             shippingAddress {
@@ -1977,7 +2029,7 @@ async function fetchBranchPickupCourierOrders(admin) {
         pickupPostalCode: String(shipping?.zip || "").trim(),
         pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
         createdAt: orderNode.createdAt,
-        updatedAt: orderNode.createdAt,
+        updatedAt: orderNode.updatedAt || orderNode.createdAt,
         status: getCourierRouteStatusFromTags(orderNode.tags),
       };
     })
@@ -2089,6 +2141,7 @@ async function fetchPickupCourierHistoryOrders(shop) {
     pickupCountry: "Mexico",
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
+    rejectionReason: requestRow.rejectionReason,
     status: String(requestRow.status || "").trim().toLowerCase(),
   }));
 }
@@ -2114,6 +2167,7 @@ async function fetchPickupCourierOrders(shop) {
       createdAt: true,
       updatedAt: true,
       status: true,
+      rejectionReason: true,
       items: {
         select: {
           lineItemId: true,
@@ -2143,6 +2197,7 @@ async function fetchPickupCourierOrders(shop) {
     pickupCountry: "Mexico",
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
+    rejectionReason: requestRow.rejectionReason,
     status: String(requestRow.status || "pendiente").trim() || "pendiente",
     }))
     .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
@@ -2423,19 +2478,23 @@ function CourierOrderCard({ request }) {
       </p>
       <p className={styles.courierAddress}>{formatCourierAddress(request)}</p>
       <p className={styles.courierField}>{request.customerPhone || "-"}</p>
-      {request.historyEvents?.length ? (
-        <details className={styles.courierHistoryDetails}>
-          <summary className={styles.courierHistorySummary}>Ver más ↓</summary>
-          <div className={styles.courierHistoryList}>
-            {request.historyEvents.map((event) => (
+      <details className={styles.courierHistoryDetails}>
+        <summary className={styles.courierHistorySummary}>Ver más ↓</summary>
+        <div className={styles.courierHistoryList}>
+          {request.historyEvents?.length ? (
+            request.historyEvents.map((event) => (
               <div key={event.id} className={styles.courierHistoryItem}>
                 <strong>{event.label}</strong>
                 <span>{formatCourierHistoryDate(event.at)}</span>
               </div>
-            ))}
-          </div>
-        </details>
-      ) : null}
+            ))
+          ) : (
+            <div className={styles.courierHistoryItem}>
+              <strong>Sin acciones registradas todavía</strong>
+            </div>
+          )}
+        </div>
+      </details>
     </article>
   );
 }

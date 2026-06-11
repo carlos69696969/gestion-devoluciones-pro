@@ -380,6 +380,7 @@ export const loader = async ({ request }) => {
     await markCourierOrderReadyForBranchPickup({
       shopDomain: resolvedShop,
       requestId: overrideRequestId,
+      orderNumber: overrideTargetOrder?.orderNumber || "",
     });
     courierOrders = courierOrders.map((requestRow) =>
       String(requestRow?.id || "").trim() === overrideRequestId

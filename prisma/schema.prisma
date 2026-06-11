@@ -93,6 +93,19 @@ model ReturnItem {
   returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
 }
 
+model CourierEvent {
+  id          Int      @id @default(autoincrement())
+  shop        String
+  requestId   String
+  orderNumber String?
+  status      String
+  attempt     Int?
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([shop, requestId, createdAt])
+}
+
 model ReturnSettings {
   id                  Int      @id @default(autoincrement())
   shop                String   @unique
