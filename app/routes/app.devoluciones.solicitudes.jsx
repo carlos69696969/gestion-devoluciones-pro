@@ -711,6 +711,7 @@ function courierEventLabel(status, attempt) {
 
 function returnCourierHistoryLabel(entry, finalAttempt) {
   const kind = String(entry?.kind || "").trim().toLowerCase();
+  if (kind === STATUS_APPROVED_KIND) return "";
   const failedAttemptMatch = kind.match(/^attempt_failed_(\d)$/);
   if (failedAttemptMatch) return `${courierAttemptLabel(failedAttemptMatch[1])} no entregado`;
   if (kind === STATUS_RECEIVED_KIND) return `${courierAttemptLabel(finalAttempt)} entregado`;
@@ -774,8 +775,8 @@ function formatCourierHistoryDate(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "";
   return new Intl.DateTimeFormat("es-MX", {
-    day: "2-digit",
-    month: "2-digit",
+    day: "numeric",
+    month: "long",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
