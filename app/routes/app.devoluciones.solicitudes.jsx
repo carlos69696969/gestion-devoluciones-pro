@@ -4,7 +4,7 @@ import { Form, useActionData, useFetcher, useLoaderData, useLocation, useNavigat
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { dedupeCourierRequestsByOrderNumber, getCourierRouteStatusFromTags } from "../utils/courier.shared";
+import { getCourierRouteStatusFromTags } from "../utils/courier.shared";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -2098,6 +2098,7 @@ async function fetchPickupCourierOrders(shop) {
     where: {
       shop,
       returnMethod: "pickup",
+      status: { in: Array.from(METHOD_QUEUE_STATUSES) },
     },
     select: {
       id: true,
@@ -2127,16 +2128,7 @@ async function fetchPickupCourierOrders(shop) {
     take: 500,
   });
 
-  const latestPickupOrdersBySignature = new Map();
-  for (const requestRow of pickupOrders) {
-    const signature = returnRequestItemsSignature(requestRow);
-    if (!latestPickupOrdersBySignature.has(signature)) {
-      latestPickupOrdersBySignature.set(signature, requestRow);
-    }
-  }
-
-  const courierOrders = Array.from(latestPickupOrdersBySignature.values())
-    .filter((requestRow) => METHOD_QUEUE_STATUSES.has(String(requestRow.status || "").trim().toLowerCase()))
+  return pickupOrders
     .map((requestRow) => ({
     id: `pickup-${requestRow.id}`,
     orderNumber: String(requestRow.orderNumber || "").replace("#", ""),
@@ -2152,11 +2144,8 @@ async function fetchPickupCourierOrders(shop) {
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
     status: String(requestRow.status || "pendiente").trim() || "pendiente",
-    }));
-
-  return dedupeCourierRequestsByOrderNumber(courierOrders).sort(
-    (a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
-  );
+    }))
+    .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
 }
 
 function courierOrderTimestampMs(request) {

@@ -78,6 +78,7 @@ export const loader = async ({ request }) => {
 
   const uniqueRequests = {
     pickup: new Set(),
+    courier: new Set(),
     branch: new Set(),
     review: new Set(),
     refunds: new Set(),
@@ -98,7 +99,9 @@ export const loader = async ({ request }) => {
 
     if (METHOD_QUEUE_STATUSES.has(status)) {
       if (isPickupRequest) {
-        uniqueRequests.pickup.add(`request:${row.id}`);
+        const requestKey = `request:${row.id}`;
+        uniqueRequests.pickup.add(requestKey);
+        uniqueRequests.courier.add(requestKey);
       } else {
         uniqueRequests.branch.add(signature);
       }
@@ -148,7 +151,9 @@ export default function App() {
           {withCount("Devoluciones a devolver", navCounts?.toReturn || 0)}
         </s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/history")}>Historial</s-link>
-        <s-link href={withEmbedParams("/app/devoluciones/solicitudes/repartidor")}>Ordenes repartidor</s-link>
+        <s-link href={withEmbedParams("/app/devoluciones/solicitudes/repartidor")}>
+          {withCount("Ordenes repartidor", navCounts?.courier || 0)}
+        </s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/courier_history")}>Historial repartidor</s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/branch_pickup")}>Recoger en sucursal</s-link>
       </s-app-nav>
