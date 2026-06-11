@@ -678,7 +678,7 @@ export async function markCourierOrderAsEnRoute({
     return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
   }
 
-  const nextStatus = getCourierNextRouteStatus(currentStatus);
+  const nextStatus = `en_ruta_${nextStep}`;
   const routeTag = getCourierRouteTag(nextStep);
   const requestRow = {
     shop: shopDomain,
@@ -702,6 +702,17 @@ export async function markCourierOrderAsEnRoute({
       ok: false,
       error: String(error?.message || error || "No se pudo marcar la orden en ruta en Shopify."),
     };
+  }
+
+  if (nextStep >= 2) {
+    const notificationResult = await emitCourierDeliveryRouteNotification({
+      shopDomain,
+      requestRow,
+      routeStep: nextStep,
+    });
+    if (!notificationResult?.ok) {
+      return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
+    }
   }
 
   return { ok: true, requestRow, routeStep: nextStep, nextStatus, attemptCount: requestRow.attemptCount };
