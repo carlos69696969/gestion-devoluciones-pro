@@ -99,6 +99,12 @@ function isCourierHistoryFromToday(request) {
   return courierMexicoDateKey(historyTimestamp) === courierMexicoDateKey(new Date());
 }
 
+function isCourierScheduledTodayOrLater(request) {
+  const scheduledDate = new Date(request?.pickupDate || request?.createdAt || "");
+  if (Number.isNaN(scheduledDate.getTime())) return true;
+  return courierMexicoDateKey(scheduledDate) >= courierMexicoDateKey(new Date());
+}
+
 function getReturnFailedAttemptCount(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
   const match = normalizedStatus.match(/^intento_fallido_(\d+)$/);
@@ -421,7 +427,9 @@ export default function RepartidorPublicPortal() {
   const historyOrders = effectiveCourierOrders
     .filter((request) => isCourierHistoryStatus(request?.status) && isCourierHistoryFromToday(request))
     .sort((firstRequest, secondRequest) => courierHistoryTimestampMs(secondRequest) - courierHistoryTimestampMs(firstRequest));
-  const routeOrders = effectiveCourierOrders.filter((request) => isCourierRouteTabStatus(request?.status));
+  const routeOrders = effectiveCourierOrders.filter(
+    (request) => isCourierRouteTabStatus(request?.status) && isCourierScheduledTodayOrLater(request),
+  );
   const pendingOrders = effectiveCourierOrders.filter(
     (request) => !isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status),
   );
@@ -685,7 +693,7 @@ export default function RepartidorPublicPortal() {
                                   : ""
                             }`}
                         >
-                            {getCourierStatusLabel(request.status)}
+                            {activeTab === "pedidos" ? "pendiente" : getCourierStatusLabel(request.status)}
                           </span>
                         </>
                       )}
