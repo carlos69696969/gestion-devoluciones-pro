@@ -32,8 +32,10 @@ const VIEW_MODE = {
   TO_RETURN: "to_return",
   HISTORY: "history",
   COURIER: "courier",
+  COURIER_HISTORY: "courier_history",
   BRANCH_PICKUP: "branch_pickup",
 };
+const COURIER_HISTORY_SINCE = new Date("2026-06-10T00:00:00-06:00");
 
 const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
@@ -267,6 +269,7 @@ function normalizeViewMode(rawValue) {
   if (value === VIEW_MODE.TO_RETURN) return VIEW_MODE.TO_RETURN;
   if (value === VIEW_MODE.HISTORY) return VIEW_MODE.HISTORY;
   if (value === VIEW_MODE.COURIER) return VIEW_MODE.COURIER;
+  if (value === VIEW_MODE.COURIER_HISTORY) return VIEW_MODE.COURIER_HISTORY;
   if (value === VIEW_MODE.BRANCH_PICKUP) return VIEW_MODE.BRANCH_PICKUP;
   return VIEW_MODE.BRANCH;
 }
@@ -281,6 +284,7 @@ function viewModeFromPathname(pathname) {
   if (path.endsWith("/refunds")) return VIEW_MODE.REFUNDS;
   if (path.endsWith("/to_return")) return VIEW_MODE.TO_RETURN;
   if (path.endsWith("/history")) return VIEW_MODE.HISTORY;
+  if (path.endsWith("/courier_history")) return VIEW_MODE.COURIER_HISTORY;
   if (path.endsWith("/repartidor")) return VIEW_MODE.COURIER;
   if (path.endsWith("/branch_pickup")) return VIEW_MODE.BRANCH_PICKUP;
   return "";
@@ -1072,7 +1076,7 @@ export const loader = async ({ request }) => {
   };
 
   let rawRequests =
-    viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.BRANCH_PICKUP
+    viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.COURIER_HISTORY || viewMode === VIEW_MODE.BRANCH_PICKUP
       ? []
       : await prisma.returnRequest.findMany({
           where,
@@ -1131,6 +1135,17 @@ export const loader = async ({ request }) => {
             ...requestRow,
             courierLabel: "Entrega",
           }))
+      : viewMode === VIEW_MODE.COURIER_HISTORY
+        ? [
+            ...(await fetchCourierHistoryOrders(admin)).map((requestRow) => ({
+              ...requestRow,
+              courierLabel: "Entrega",
+            })),
+            ...(await fetchPickupCourierHistoryOrders(session.shop)).map((requestRow) => ({
+              ...requestRow,
+              courierLabel: "Devolución",
+            })),
+          ]
       : [];
 
   const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
@@ -1190,7 +1205,11 @@ export const loader = async ({ request }) => {
     };
   });
 
-  const courierOrders = courierOrdersRaw.sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
+  const courierOrders = courierOrdersRaw.sort((a, b) =>
+    viewMode === VIEW_MODE.COURIER_HISTORY
+      ? courierOrderTimestampMs(b) - courierOrderTimestampMs(a)
+      : courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
+  );
 
   return { requests, courierOrders, viewMode };
 };
@@ -1919,6 +1938,115 @@ async function fetchBranchPickupCourierOrders(admin) {
     .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
 }
 
+async function fetchCourierHistoryOrders(admin) {
+  const response = await admin.graphql(
+    `#graphql
+    query CourierHistoryOrders {
+      orders(first: 250, query: "updated_at:>=2026-06-10", sortKey: UPDATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            name
+            createdAt
+            updatedAt
+            displayFulfillmentStatus
+            tags
+            shippingAddress {
+              name
+              phone
+              address1
+              address2
+              city
+              province
+              zip
+              country
+            }
+            billingAddress {
+              name
+              phone
+            }
+            customAttributes {
+              key
+              value
+            }
+            shippingLines(first: 5) {
+              nodes {
+                title
+                code
+                deliveryCategory
+              }
+            }
+          }
+        }
+      }
+    }`,
+  );
+  const payload = await response.json();
+  const errors = payload?.errors || [];
+  if (errors.length) {
+    throw new Error(errors[0]?.message || "No se pudo cargar el historial repartidor.");
+  }
+
+  const nodes = payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || [];
+  return nodes
+    .filter(
+      (orderNode) =>
+        isCourierLocalDeliveryOrder(orderNode) &&
+        getCourierRouteStatusFromTags(orderNode?.tags) === "entregado" &&
+        new Date(orderNode.updatedAt || orderNode.createdAt).getTime() >= COURIER_HISTORY_SINCE.getTime(),
+    )
+    .map((orderNode) => {
+      const shipping = orderNode.shippingAddress || null;
+      const billing = orderNode.billingAddress || null;
+      return {
+        id: orderNode.id,
+        orderNumber: String(orderNode.name || "").replace("#", ""),
+        customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
+        customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
+        pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
+        pickupAddress: String(shipping?.address1 || "").trim(),
+        pickupNeighborhood: String(shipping?.address2 || "").trim(),
+        pickupCity: String(shipping?.city || "").trim(),
+        pickupState: String(shipping?.province || "").trim(),
+        pickupPostalCode: String(shipping?.zip || "").trim(),
+        pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
+        createdAt: orderNode.createdAt,
+        updatedAt: orderNode.updatedAt || orderNode.createdAt,
+        status: "entregado",
+      };
+    });
+}
+
+async function fetchPickupCourierHistoryOrders(shop) {
+  const requests = await prisma.returnRequest.findMany({
+    where: {
+      shop,
+      returnMethod: "pickup",
+      status: { in: ["recibida", "rechazada"] },
+      updatedAt: { gte: COURIER_HISTORY_SINCE },
+    },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: 500,
+  });
+
+  return requests.map((requestRow) => ({
+    id: `pickup-${requestRow.id}`,
+    orderNumber: String(requestRow.orderNumber || "").replace("#", ""),
+    customerName: String(requestRow.customerName || "Cliente").trim(),
+    customerPhone: String(requestRow.customerPhone || "-").trim() || "-",
+    pickupDate: String(requestRow.pickupDate || requestRow.createdAt || "").trim(),
+    pickupAddress: String(requestRow.pickupAddress || "").trim(),
+    pickupNeighborhood: String(requestRow.pickupNeighborhood || "").trim(),
+    pickupCity: String(requestRow.pickupCity || "").trim(),
+    pickupState: String(requestRow.pickupState || "").trim(),
+    pickupPostalCode: String(requestRow.pickupPostalCode || "").trim(),
+    pickupCountry: "Mexico",
+    createdAt: requestRow.createdAt,
+    updatedAt: requestRow.updatedAt,
+    status: String(requestRow.status || "").trim().toLowerCase(),
+  }));
+}
+
 async function fetchPickupCourierOrders(shop) {
   const pickupOrders = await prisma.returnRequest.findMany({
     where: {
@@ -2072,6 +2200,8 @@ export default function ReturnsRequests() {
           ? "Historial"
         : viewMode === VIEW_MODE.COURIER
           ? "Ordenes repartidor"
+        : viewMode === VIEW_MODE.COURIER_HISTORY
+          ? "Historial repartidor"
         : viewMode === VIEW_MODE.BRANCH_PICKUP
           ? "Recoger en sucursal"
         : "Entrega en sucursal";
@@ -2220,6 +2350,20 @@ export default function ReturnsRequests() {
                   <p className={styles.courierAddress}>{formatCourierAddress(request)}</p>
                   <p className={styles.courierField}>{request.customerPhone || "-"}</p>
                 </article>
+              ))}
+            </div>
+          )}
+        </s-section>
+      ) : null}
+
+      {viewMode === VIEW_MODE.COURIER_HISTORY ? (
+        <s-section heading="Historial repartidor">
+          {courierOrders.length === 0 ? (
+            <p>No hay ordenes finalizadas desde el 10 de junio de 2026.</p>
+          ) : (
+            <div className={styles.courierGrid}>
+              {courierOrders.map((request) => (
+                <CourierOrderCard key={request.id} request={request} />
               ))}
             </div>
           )}
