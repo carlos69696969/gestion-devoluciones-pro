@@ -1884,7 +1884,12 @@ async function fetchBranchPickupCourierOrders(admin) {
   return nodes
     .filter((orderNode) => {
       const status = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
-      return isCourierLocalDeliveryOrder(orderNode) && !["FULFILLED", "RESTOCKED"].includes(status);
+      const courierStatus = getCourierRouteStatusFromTags(orderNode?.tags);
+      return (
+        isCourierLocalDeliveryOrder(orderNode) &&
+        !["FULFILLED", "RESTOCKED"].includes(status) &&
+        courierStatus !== "recoger_en_sucursal"
+      );
     })
     .map((orderNode) => {
       const shipping = orderNode.shippingAddress || null;
@@ -1915,7 +1920,6 @@ async function fetchPickupCourierOrders(shop) {
     where: {
       shop,
       returnMethod: "pickup",
-      status: { in: Array.from(METHOD_QUEUE_STATUSES) },
     },
     select: {
       id: true,
@@ -1931,12 +1935,31 @@ async function fetchPickupCourierOrders(shop) {
       createdAt: true,
       updatedAt: true,
       status: true,
+      items: {
+        select: {
+          lineItemId: true,
+          productId: true,
+          variantId: true,
+          title: true,
+          quantity: true,
+        },
+      },
     },
-    orderBy: [{ pickupDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-    take: 250,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 500,
   });
 
-  const courierOrders = pickupOrders.map((requestRow) => ({
+  const latestPickupOrdersBySignature = new Map();
+  for (const requestRow of pickupOrders) {
+    const signature = returnRequestItemsSignature(requestRow);
+    if (!latestPickupOrdersBySignature.has(signature)) {
+      latestPickupOrdersBySignature.set(signature, requestRow);
+    }
+  }
+
+  const courierOrders = Array.from(latestPickupOrdersBySignature.values())
+    .filter((requestRow) => METHOD_QUEUE_STATUSES.has(String(requestRow.status || "").trim().toLowerCase()))
+    .map((requestRow) => ({
     id: `pickup-${requestRow.id}`,
     orderNumber: String(requestRow.orderNumber || "").replace("#", ""),
     customerName: String(requestRow.customerName || "Cliente").trim(),
@@ -1951,7 +1974,7 @@ async function fetchPickupCourierOrders(shop) {
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
     status: String(requestRow.status || "pendiente").trim() || "pendiente",
-  }));
+    }));
 
   return dedupeCourierRequestsByOrderNumber(courierOrders).sort(
     (a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
