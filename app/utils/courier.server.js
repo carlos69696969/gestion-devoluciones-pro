@@ -1430,6 +1430,9 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
                 createdAt
                 updatedAt
                 displayFulfillmentStatus
+                fulfillments(first: 20) {
+                  deliveredAt
+                }
                 shippingAddress {
                   name
                   phone
@@ -1493,6 +1496,10 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
         const courierTags = Array.isArray(orderNode?.tags) ? orderNode.tags : [];
         const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
         const isShopifyDelivered = fulfillmentStatus === "FULFILLED";
+        const deliveredAt = (orderNode?.fulfillments || [])
+          .map((fulfillment) => String(fulfillment?.deliveredAt || "").trim())
+          .filter(Boolean)
+          .sort((firstDate, secondDate) => new Date(secondDate).getTime() - new Date(firstDate).getTime())[0] || "";
         const preferredTag = isShopifyDelivered ? "entregado" : getPreferredCourierStatusTag(courierTags);
         if (preferredTag) {
           const normalizedCourierTags = Array.from(
@@ -1534,6 +1541,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
           pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
           createdAt: orderNode.createdAt,
           updatedAt: orderNode.updatedAt || orderNode.createdAt,
+          courierHistoryAt: isShopifyDelivered ? deliveredAt : "",
           status: isShopifyDelivered ? "entregado" : getCourierRouteStatusFromTags(orderNode.tags),
           attemptCount: getCourierDeliveryAttemptCountFromTags(orderNode.tags),
           courierLabel: "Entrega",

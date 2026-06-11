@@ -77,6 +77,9 @@ function getDeliveryAttemptLabel(request) {
 }
 
 function courierHistoryTimestampMs(request) {
+  const courierHistoryAtMs = new Date(request?.courierHistoryAt || "").getTime();
+  if (Number.isFinite(courierHistoryAtMs)) return courierHistoryAtMs;
+  if (String(request?.courierLabel || "").trim().toLowerCase() === "entrega") return 0;
   const updatedAtMs = new Date(request?.updatedAt || "").getTime();
   if (Number.isFinite(updatedAtMs)) return updatedAtMs;
   return courierOrderTimestampMs(request);
