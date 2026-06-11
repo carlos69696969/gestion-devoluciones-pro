@@ -585,7 +585,13 @@ async function markShopifyOrderFulfillmentsAsDelivered({ shopDomain, shopifyOrde
       const queryPayload = await queryResponse.json().catch(() => ({}));
       const queryErrors = queryPayload?.errors || [];
       if (!queryResponse.ok || queryErrors.length || !queryPayload?.data?.order) {
-        throw new Error(queryErrors[0]?.message || "No se pudieron consultar las preparaciones de la orden.");
+        const queryError = String(queryErrors[0]?.message || "").trim();
+        if (queryError.toLowerCase().includes("access denied for fulfillmentorders")) {
+          throw new Error(
+            "Shopify requiere reautorizar la app con permisos de fulfillment antes de marcar pedidos como entregados.",
+          );
+        }
+        throw new Error(queryError || "No se pudieron consultar las preparaciones de la orden.");
       }
 
       const fulfillmentOrderIds = (queryPayload.data.order.fulfillmentOrders?.nodes || [])
