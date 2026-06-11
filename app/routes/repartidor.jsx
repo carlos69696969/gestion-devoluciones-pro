@@ -220,7 +220,7 @@ export const action = async ({ request }) => {
           : intent === "courier_mark_not_delivered"
             ? "no_entregado"
             : intent === "courier_retry_delivery"
-              ? "en_ruta"
+              ? "reintento_pendiente"
               : "en_ruta"),
     );
     let nextOverrideAttemptCount = String(result?.attemptCount || formData.get("currentAttemptCount") || "0");

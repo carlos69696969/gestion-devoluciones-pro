@@ -668,7 +668,12 @@ export async function markCourierOrderAsEnRoute({
   }
 
   const currentStep = getCourierRouteStep(currentStatus);
-  const nextStep = currentStep ? currentStep + 1 : 1;
+  const isRetryPending = String(currentStatus || "").trim().toLowerCase() === "reintento_pendiente";
+  const nextStep = currentStep
+    ? currentStep + 1
+    : isRetryPending
+      ? Math.min(normalizeDeliveryAttemptCount(currentAttemptCount, 0) + 1, 3)
+      : 1;
   if (nextStep > 3) {
     return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
   }
@@ -785,9 +790,8 @@ export async function markCourierOrderForRetry({
     return { ok: false, error: "Esta orden ya esta pendiente por recoger en sucursal." };
   }
 
-  const nextAttemptCount = Math.min(Math.max(normalizeDeliveryAttemptCount(currentAttemptCount, 0) + 1, 1), 3);
-  const routeTag = getCourierRouteTag(nextAttemptCount);
-  const nextStatus = nextAttemptCount === 1 ? "en_ruta" : `en_ruta_${nextAttemptCount}`;
+  const currentAttempt = normalizeDeliveryAttemptCount(currentAttemptCount, 0);
+  const nextStatus = "reintento_pendiente";
   const requestRow = {
     shop: shopDomain,
     shopifyOrderId: orderGid,
@@ -796,14 +800,14 @@ export async function markCourierOrderForRetry({
     customerEmail: String(customerEmail || "").trim(),
     customerPhone: String(customerPhone || "-").trim() || "-",
     status: nextStatus,
-    attemptCount: nextAttemptCount,
+    attemptCount: currentAttempt,
   };
 
   try {
     await replaceCourierOrderStatusTag({
       shopDomain,
       shopifyOrderId: orderGid,
-      statusTag: routeTag,
+      statusTag: "reintentar entrega",
     });
   } catch (error) {
     return {
@@ -816,7 +820,7 @@ export async function markCourierOrderForRetry({
     ok: true,
     requestRow,
     nextStatus,
-    attemptCount: nextAttemptCount,
+    attemptCount: currentAttempt,
   };
 }
 
