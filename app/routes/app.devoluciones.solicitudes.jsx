@@ -43,6 +43,7 @@ const METHOD_QUEUE_STATUSES = new Set([
   "en_ruta_3",
   "intento_fallido_1",
   "intento_fallido_2",
+  "no_recibido",
 ]);
 const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
 const RETURN_TO_CUSTOMER_STATUSES = new Set(["por_devolver"]);
@@ -1742,6 +1743,13 @@ function isCourierLocalDeliveryOrder(orderNode) {
 
 function getCourierStatusLabel(status) {
   const normalized = String(status || "").trim().toLowerCase();
+  if (
+    ["no_entregado", "reintento_pendiente", "no_recibido", "intento_fallido_1", "intento_fallido_2"].includes(
+      normalized,
+    )
+  ) {
+    return "reprogramado";
+  }
   if (normalized.startsWith("en_ruta")) return "en ruta";
   return STATUS_LABEL[normalized] || normalized.replace(/_/g, " ");
 }
@@ -1756,7 +1764,9 @@ async function fetchCourierOrders(admin) {
             id
             name
             createdAt
+            updatedAt
             displayFulfillmentStatus
+            tags
             shippingAddress {
               name
               phone
@@ -1815,8 +1825,8 @@ async function fetchCourierOrders(admin) {
         pickupPostalCode: String(shipping?.zip || "").trim(),
         pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
         createdAt: orderNode.createdAt,
-        updatedAt: orderNode.createdAt,
-        status: "pendiente",
+        updatedAt: orderNode.updatedAt || orderNode.createdAt,
+        status: getCourierRouteStatusFromTags(orderNode.tags),
       };
     })
     .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
