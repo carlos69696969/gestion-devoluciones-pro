@@ -2606,11 +2606,19 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
   const historyView = String(searchParams.get("historyView") || "").trim();
   const selectedCourierId = Number(searchParams.get("courierId") || 0);
   const baseHref = "/app/devoluciones/solicitudes/courier_history";
+  const buildHistoryHref = ({ view = "", courierId = "" } = {}) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (view) nextParams.set("historyView", view);
+    else nextParams.delete("historyView");
+    if (courierId) nextParams.set("courierId", String(courierId));
+    else nextParams.delete("courierId");
+    return `${baseHref}?${nextParams.toString()}`;
+  };
 
   if (historyView === "all") {
     return (
       <div className={styles.courierHistoryDirectoryList}>
-        <a className={styles.courierHistoryBackLink} href={baseHref}>← Regresar</a>
+        <a className={styles.courierHistoryBackLink} href={buildHistoryHref()}>← Regresar</a>
         <h3>Historial de todas las ordenes</h3>
         <div className={styles.courierGrid}>
           {orders.map((request) => (
@@ -2627,7 +2635,7 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
     const dates = [...new Set(courierActivities.map((activity) => mexicoActivityDateKey(activity.createdAt)))].sort().reverse();
     return (
       <div className={styles.courierHistoryDirectoryList}>
-        <a className={styles.courierHistoryBackLink} href={baseHref}>← Regresar</a>
+        <a className={styles.courierHistoryBackLink} href={buildHistoryHref()}>← Regresar</a>
         <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
         {dates.length ? (
           <div className={styles.courierCalendar}>
@@ -2669,7 +2677,7 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
           <a
             key={courier.id}
             className={`${styles.btn} ${styles.courierHistoryDirectorySummary}`}
-            href={`${baseHref}?historyView=courier&courierId=${courier.id}`}
+            href={buildHistoryHref({ view: "courier", courierId: courier.id })}
           >
               Historial del repartidor {courier.name}
           </a>
@@ -2677,7 +2685,7 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
       })}
       <a
         className={`${styles.btn} ${styles.btnPrimary} ${styles.courierHistoryDirectorySummary}`}
-        href={`${baseHref}?historyView=all`}
+        href={buildHistoryHref({ view: "all" })}
       >
           Historial de todas las ordenes
       </a>
