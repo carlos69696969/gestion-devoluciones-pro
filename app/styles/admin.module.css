@@ -903,9 +903,37 @@
   gap: 14px;
 }
 
+.courierHistoryDirectoryList,
+.courierCalendar {
+  display: grid;
+  gap: 12px;
+}
+
 .courierHistoryDirectorySummary {
   width: fit-content;
   list-style: none;
+}
+
+.courierCalendar {
+  margin-top: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.courierCalendarDay {
+  border: 1px solid #e1e3e5;
+  border-radius: 12px;
+  background: #fafbfb;
+  padding: 12px;
+}
+
+.courierCalendarDay > summary {
+  cursor: pointer;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.courierCalendarDay .courierGrid {
+  margin-top: 12px;
 }
 
 .courierHistoryDirectorySummary::-webkit-details-marker {

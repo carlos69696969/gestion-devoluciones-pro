@@ -1383,14 +1383,22 @@ export const loader = async ({ request }) => {
     );
 
   const couriers =
-    viewMode === VIEW_MODE.COURIERS
+    viewMode === VIEW_MODE.COURIERS || viewMode === VIEW_MODE.COURIER_HISTORY
       ? await prisma.courier.findMany({
           where: { shop: session.shop },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         })
       : [];
 
-  return { requests, courierOrders, couriers, viewMode };
+  const courierActivities =
+    viewMode === VIEW_MODE.COURIER_HISTORY
+      ? await prisma.courierActivity.findMany({
+          where: { shop: session.shop },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        })
+      : [];
+
+  return { requests, courierOrders, couriers, courierActivities, viewMode };
 };
 
 export const action = async ({ request }) => {
@@ -2366,7 +2374,7 @@ function historyTimestampMs(request) {
 }
 
 export default function ReturnsRequests() {
-  const { requests, courierOrders, couriers = [], viewMode } = useLoaderData();
+  const { requests, courierOrders, couriers = [], courierActivities = [], viewMode } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -2551,16 +2559,11 @@ export default function ReturnsRequests() {
           {courierOrders.length === 0 ? (
             <p>No hay ordenes finalizadas desde el 10 de junio de 2026.</p>
           ) : (
-            <details className={styles.courierHistoryDirectory}>
-              <summary className={`${styles.btn} ${styles.btnPrimary} ${styles.courierHistoryDirectorySummary}`}>
-                Historial de todas las ordenes
-              </summary>
-              <div className={styles.courierGrid}>
-                {courierOrders.map((request) => (
-                  <CourierOrderCard key={request.id} request={request} showFinalAttemptBadge />
-                ))}
-              </div>
-            </details>
+            <CourierHistoryDirectory
+              couriers={couriers}
+              activities={courierActivities}
+              orders={courierOrders}
+            />
           )}
         </s-section>
       ) : null}
@@ -2583,6 +2586,73 @@ export default function ReturnsRequests() {
         <CouriersSection couriers={couriers} isSubmitting={isSubmitting} />
       ) : null}
     </s-page>
+  );
+}
+
+function mexicoActivityDateKey(value) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(value));
+}
+
+function CourierHistoryDirectory({ couriers, activities, orders }) {
+  const orderByRequestId = new Map(orders.map((order) => [String(order.id || ""), order]));
+  return (
+    <div className={styles.courierHistoryDirectoryList}>
+      {couriers.map((courier) => {
+        const courierActivities = activities.filter((activity) => Number(activity.courierId) === Number(courier.id));
+        const dates = [...new Set(courierActivities.map((activity) => mexicoActivityDateKey(activity.createdAt)))].sort().reverse();
+        return (
+          <details key={courier.id} className={styles.courierHistoryDirectory}>
+            <summary className={`${styles.btn} ${styles.courierHistoryDirectorySummary}`}>
+              Historial del repartidor {courier.name}
+            </summary>
+            {dates.length ? (
+              <div className={styles.courierCalendar}>
+                {dates.map((dateKey) => {
+                  const dayActivities = courierActivities.filter(
+                    (activity) => mexicoActivityDateKey(activity.createdAt) === dateKey,
+                  );
+                  const dayOrders = [
+                    ...new Map(
+                      dayActivities
+                        .map((activity) => orderByRequestId.get(String(activity.requestId || "")))
+                        .filter(Boolean)
+                        .map((order) => [String(order.id || ""), order]),
+                    ).values(),
+                  ];
+                  return (
+                    <details key={dateKey} className={styles.courierCalendarDay}>
+                      <summary>{new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}</summary>
+                      <div className={styles.courierGrid}>
+                        {dayOrders.map((order) => (
+                          <CourierOrderCard key={order.id} request={order} showFinalAttemptBadge />
+                        ))}
+                      </div>
+                    </details>
+                  );
+                })}
+              </div>
+            ) : (
+              <p>No hay actividad registrada para este repartidor.</p>
+            )}
+          </details>
+        );
+      })}
+      <details className={styles.courierHistoryDirectory}>
+        <summary className={`${styles.btn} ${styles.btnPrimary} ${styles.courierHistoryDirectorySummary}`}>
+          Historial de todas las ordenes
+        </summary>
+        <div className={styles.courierGrid}>
+          {orders.map((request) => (
+            <CourierOrderCard key={request.id} request={request} showFinalAttemptBadge />
+          ))}
+        </div>
+      </details>
+    </div>
   );
 }
 

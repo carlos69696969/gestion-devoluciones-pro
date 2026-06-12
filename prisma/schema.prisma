@@ -118,6 +118,20 @@ model Courier {
   @@index([shop, createdAt])
 }
 
+model CourierActivity {
+  id          Int      @id @default(autoincrement())
+  shop        String
+  courierId   Int
+  courierName String
+  requestId   String
+  orderNumber String?
+  action      String
+  createdAt   DateTime @default(now())
+
+  @@index([shop, courierId, createdAt])
+  @@index([shop, requestId, createdAt])
+}
+
 model ReturnSettings {
   id                  Int      @id @default(autoincrement())
   shop                String   @unique

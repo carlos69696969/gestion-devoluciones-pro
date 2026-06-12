@@ -266,7 +266,8 @@ export const action = async ({ request }) => {
       });
     }
 
-    if (!(await getCourierDailyAccess(request, shop))) {
+    const dailyAccess = await getCourierDailyAccess(request, shop);
+    if (!dailyAccess) {
       return { ok: false, error: "Tu acceso diario vencio. Ingresa nuevamente tu codigo." };
     }
 
@@ -316,6 +317,17 @@ export const action = async ({ request }) => {
     if (!result.ok) {
       return result;
     }
+
+    await prisma.courierActivity.create({
+      data: {
+        shop,
+        courierId: Number(dailyAccess.courierId),
+        courierName: String(dailyAccess.courierName || ""),
+        requestId,
+        orderNumber: String(formData.get("orderNumber") || "").trim() || null,
+        action: intent,
+      },
+    });
 
     if (shop) {
       url.searchParams.set("shop", shop);
