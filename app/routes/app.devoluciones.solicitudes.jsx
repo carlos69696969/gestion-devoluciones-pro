@@ -1419,6 +1419,18 @@ export const action = async ({ request }) => {
     return { ok: true, message: "Repartidor guardado correctamente." };
   }
 
+  if (intent === "delete_courier") {
+    const courierId = Number(formData.get("courierId") || 0);
+    if (!courierId) return { ok: false, error: "Repartidor invalido." };
+    const deletedCourier = await prisma.courier.deleteMany({
+      where: { id: courierId, shop: session.shop },
+    });
+    if (!deletedCourier.count) {
+      return { ok: false, error: "No se encontro el repartidor." };
+    }
+    return { ok: true, message: "Repartidor dado de baja correctamente." };
+  }
+
   if (intent === "load_request_media") {
     if (!id) return { ok: false, intent, error: "Solicitud invalida." };
     const mediaRequestRow = await prisma.returnRequest.findFirst({
@@ -2629,7 +2641,21 @@ function CouriersSection({ couriers, isSubmitting }) {
                 <strong>{courier.name}</strong>
               </summary>
               <div className={styles.courierDirectoryCode}>
-                Codigo unico: <strong>{courier.code}</strong>
+                <div>Codigo unico: <strong>{courier.code}</strong></div>
+                <Form
+                  method="post"
+                  onSubmit={(event) => {
+                    if (!window.confirm(`¿Deseas dar de baja a ${courier.name}?`)) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  <input type="hidden" name="intent" value="delete_courier" />
+                  <input type="hidden" name="courierId" value={courier.id} />
+                  <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
+                    Dar de baja
+                  </button>
+                </Form>
               </div>
             </details>
           ))}

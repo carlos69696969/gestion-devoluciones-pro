@@ -949,6 +949,12 @@
   border-top: 1px solid #e1e3e5;
   padding: 14px 16px;
   background: #fafbfb;
+  display: grid;
+  gap: 12px;
+}
+
+.courierDirectoryCode form {
+  width: fit-content;
 }
 
 @media (max-width: 720px) {

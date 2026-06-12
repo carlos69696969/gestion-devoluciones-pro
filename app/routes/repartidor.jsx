@@ -120,6 +120,15 @@ async function getCourierDailyAccess(request, shop) {
   ) {
     return null;
   }
+  const courier = await prisma.courier.findFirst({
+    where: {
+      id: Number(access.courierId),
+      shop: String(shop || "").trim().toLowerCase(),
+    },
+    select: { id: true, name: true },
+  });
+  if (!courier) return null;
+  access.courierName = courier.name;
   return access;
 }
 
