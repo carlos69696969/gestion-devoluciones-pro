@@ -898,8 +898,62 @@
   white-space: nowrap;
 }
 
+.couriersLayout {
+  display: grid;
+  gap: 14px;
+  max-width: 760px;
+}
+
+.couriersLayout > button {
+  width: fit-content;
+}
+
+.courierCreateForm {
+  display: grid;
+  gap: 14px;
+}
+
+.courierCodeField {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.courierDirectory {
+  display: grid;
+  gap: 10px;
+}
+
+.courierDirectoryCard {
+  border: 1px solid #e1e3e5;
+  border-radius: 14px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.courierDirectorySummary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  cursor: pointer;
+}
+
+.courierDirectorySummary span {
+  color: #6d7175;
+  font-weight: 700;
+}
+
+.courierDirectoryCode {
+  border-top: 1px solid #e1e3e5;
+  padding: 14px 16px;
+  background: #fafbfb;
+}
+
 @media (max-width: 720px) {
   .grid2 { grid-template-columns: 1fr; }
   .statusForm .select { width: 100%; }
   .rejectForm .input { width: 100%; }
+  .courierCodeField { grid-template-columns: 1fr; }
 }

@@ -1382,7 +1382,15 @@ export const loader = async ({ request }) => {
         : courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
     );
 
-  return { requests, courierOrders, viewMode };
+  const couriers =
+    viewMode === VIEW_MODE.COURIERS
+      ? await prisma.courier.findMany({
+          where: { shop: session.shop },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        })
+      : [];
+
+  return { requests, courierOrders, couriers, viewMode };
 };
 
 export const action = async ({ request }) => {
@@ -1390,6 +1398,26 @@ export const action = async ({ request }) => {
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
   const id = Number(formData.get("id") || 0);
+
+  if (intent === "create_courier") {
+    const name = String(formData.get("name") || "").trim();
+    const code = String(formData.get("code") || "").trim();
+    if (!name) return { ok: false, error: "Escribe el nombre del repartidor." };
+    if (!/^\d{6}$/.test(code)) {
+      return { ok: false, error: "Genera un codigo numerico de 6 digitos." };
+    }
+    const existingCourier = await prisma.courier.findFirst({
+      where: { shop: session.shop, code },
+      select: { id: true },
+    });
+    if (existingCourier) {
+      return { ok: false, error: "Ese codigo ya existe. Genera uno nuevo." };
+    }
+    await prisma.courier.create({
+      data: { shop: session.shop, name, code },
+    });
+    return { ok: true, message: "Repartidor guardado correctamente." };
+  }
 
   if (intent === "load_request_media") {
     if (!id) return { ok: false, intent, error: "Solicitud invalida." };
@@ -2326,7 +2354,7 @@ function historyTimestampMs(request) {
 }
 
 export default function ReturnsRequests() {
-  const { requests, courierOrders, viewMode } = useLoaderData();
+  const { requests, courierOrders, couriers = [], viewMode } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -2533,7 +2561,81 @@ export default function ReturnsRequests() {
           )}
         </s-section>
       ) : null}
+
+      {viewMode === VIEW_MODE.COURIERS ? (
+        <CouriersSection couriers={couriers} isSubmitting={isSubmitting} />
+      ) : null}
     </s-page>
+  );
+}
+
+function CouriersSection({ couriers, isSubmitting }) {
+  const [showForm, setShowForm] = useState(false);
+  const [code, setCode] = useState("");
+
+  const generateCode = () => {
+    setCode(String(Math.floor(100000 + Math.random() * 900000)));
+  };
+
+  return (
+    <s-section heading="Repartidores">
+      <div className={`${styles.wrap} ${styles.couriersLayout}`}>
+        <button
+          className={`${styles.btn} ${styles.btnPrimary}`}
+          type="button"
+          onClick={() => setShowForm((current) => !current)}
+        >
+          Agregar repartidor
+        </button>
+
+        {showForm ? (
+          <Form method="post" className={`${styles.card} ${styles.courierCreateForm}`}>
+            <input type="hidden" name="intent" value="create_courier" />
+            <label className={styles.label}>
+              Nombre del repartidor
+              <input className={styles.input} name="name" required />
+            </label>
+            <div className={styles.courierCodeField}>
+              <label className={styles.label}>
+                Codigo unico
+                <input
+                  className={styles.input}
+                  name="code"
+                  value={code}
+                  readOnly
+                  required
+                  placeholder="Genera un codigo de 6 digitos"
+                />
+              </label>
+              <button className={styles.btn} type="button" onClick={generateCode}>
+                Generar codigo
+              </button>
+            </div>
+            <button
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              type="submit"
+              disabled={isSubmitting || !code}
+            >
+              Guardar
+            </button>
+          </Form>
+        ) : null}
+
+        <div className={styles.courierDirectory}>
+          {couriers.map((courier) => (
+            <details key={courier.id} className={styles.courierDirectoryCard}>
+              <summary className={styles.courierDirectorySummary}>
+                <span>Repartidor</span>
+                <strong>{courier.name}</strong>
+              </summary>
+              <div className={styles.courierDirectoryCode}>
+                Codigo unico: <strong>{courier.code}</strong>
+              </div>
+            </details>
+          ))}
+        </div>
+      </div>
+    </s-section>
   );
 }
 
