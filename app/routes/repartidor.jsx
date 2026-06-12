@@ -796,7 +796,7 @@ export default function RepartidorPublicPortal() {
                                 className={`${styles.actionButton} ${styles.actionButtonDanger}`}
                                 onClick={() => setFailedPickupRequest(request)}
                               >
-                                Intento de devolucion fallido
+                                No recibido
                               </button>
                             </>
                           ) : null}
