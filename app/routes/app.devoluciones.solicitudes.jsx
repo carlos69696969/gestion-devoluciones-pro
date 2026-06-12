@@ -717,6 +717,20 @@ function courierEventLabel(status, attempt) {
   return normalized.replace(/_/g, " ");
 }
 
+function courierHistoryEventLabel(event) {
+  const label = courierEventLabel(event.status, event.attempt);
+  if (String(event.status || "").trim().toLowerCase() !== "reintento_pendiente") return label;
+  const reprogrammedDate = new Date(event.createdAt);
+  if (!Number.isFinite(reprogrammedDate.getTime())) return label;
+  reprogrammedDate.setDate(reprogrammedDate.getDate() + 1);
+  const formattedDate = new Intl.DateTimeFormat("es-MX", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(reprogrammedDate);
+  return `${label} para el ${formattedDate}`;
+}
+
 function returnCourierHistoryLabel(entry, finalAttempt) {
   const kind = String(entry?.kind || "").trim().toLowerCase();
   if (kind === STATUS_APPROVED_KIND) return "";
@@ -762,7 +776,7 @@ function buildCourierHistoryEvents(request) {
   if (request.persistedHistoryEvents?.length) {
     return request.persistedHistoryEvents.map((event) => ({
       id: `delivery-event-${event.id}`,
-      label: courierEventLabel(event.status, event.attempt),
+      label: courierHistoryEventLabel(event),
       at: event.createdAt,
       atMs: parseEventMs(event.createdAt),
       note: event.note || "",
