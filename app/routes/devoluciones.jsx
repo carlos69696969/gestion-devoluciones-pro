@@ -387,6 +387,19 @@ function addDays(date, days) {
   return copy;
 }
 
+function startOfLocalDay(date) {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function toDateInputValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function toMXN(value) {
   return Number(value || 0).toFixed(2);
 }
@@ -1510,7 +1523,14 @@ export const action = async ({ request }) => {
   }
 
   if (payload.returnMethod === "pickup" && String(payload.pickupDate || "").trim()) {
-    const selectedDate = new Date(`${payload.pickupDate}T23:59:59`);
+    const selectedDate = new Date(`${payload.pickupDate}T00:00:00`);
+    const minimumPickupDate = addDays(startOfLocalDay(new Date()), 1);
+    if (Number.isFinite(selectedDate.getTime()) && selectedDate.getTime() < minimumPickupDate.getTime()) {
+      return {
+        ok: false,
+        error: `Elige una fecha de recoleccion a partir del ${minimumPickupDate.toLocaleDateString("es-MX")}.`,
+      };
+    }
     if (Number.isFinite(selectedDate.getTime()) && selectedDate.getTime() > limitDate.getTime()) {
       return {
         ok: false,
@@ -2073,6 +2093,8 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     [order.deliveredAt, order.createdAt, settings.returnWindowDays],
   );
   const limitDateISO = useMemo(() => limitDateObj.toISOString().slice(0, 10), [limitDateObj]);
+  const minimumPickupDateObj = useMemo(() => addDays(startOfLocalDay(new Date()), 1), []);
+  const minimumPickupDateISO = useMemo(() => toDateInputValue(minimumPickupDateObj), [minimumPickupDateObj]);
   const [step, setStep] = useState(1);
   const [submitLocked, setSubmitLocked] = useState(false);
   const [clientError, setClientError] = useState("");
@@ -2208,7 +2230,10 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
         if (missing) return `Completa: ${missing[1]}.`;
 
         if (String(pickup.pickupDate || "").trim()) {
-          const selectedDate = new Date(`${pickup.pickupDate}T23:59:59`);
+          const selectedDate = new Date(`${pickup.pickupDate}T00:00:00`);
+          if (Number.isFinite(selectedDate.getTime()) && selectedDate.getTime() < minimumPickupDateObj.getTime()) {
+            return `Elige una fecha de recoleccion a partir del ${minimumPickupDateObj.toLocaleDateString("es-MX")}.`;
+          }
           if (Number.isFinite(selectedDate.getTime()) && selectedDate.getTime() > limitDateObj.getTime()) {
             return `Esa fecha sobrepasa el tiempo de devolucion. Fecha limite: ${limitDateObj.toLocaleDateString("es-MX")}.`;
           }
@@ -2563,6 +2588,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                         type="date"
                         value={pickup.pickupDate}
                         onChange={(event) => setPickup((prev) => ({ ...prev, pickupDate: event.target.value }))}
+                        min={minimumPickupDateISO}
                         max={limitDateISO}
                         className={styles.input}
                       />
