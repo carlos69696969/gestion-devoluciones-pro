@@ -699,6 +699,11 @@ function courierAttemptLabel(attempt) {
   return "Intento";
 }
 
+function pickupRescheduleAttemptLabel(status) {
+  const match = String(status || "").trim().toLowerCase().match(/^intento_fallido_(\d)$/);
+  return match ? courierAttemptLabel(match[1]) : "";
+}
+
 function courierEventLabel(status, attempt) {
   const normalized = String(status || "").trim().toLowerCase();
   const attemptLabel = courierAttemptLabel(attempt);
@@ -2375,6 +2380,7 @@ export default function ReturnsRequests() {
                         isSubmitting={isSubmitting}
                         enableLazyMedia
                         hidePickupActions
+                        showPickupRescheduleStatus
                       />
                     ))}
                   </div>
@@ -2555,6 +2561,7 @@ function RequestCard({
   enableLazyMedia = false,
   hideCourierProgress = false,
   hidePickupActions = false,
+  showPickupRescheduleStatus = false,
 }) {
   const [viewerImage, setViewerImage] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -2589,6 +2596,7 @@ function RequestCard({
       ? "Intento de recoleccion fallido (te queda 1)"
       : `Intento de recoleccion fallido (te quedan ${remainingPickupAttempts})`;
   const statusClassName = styles[getStatusClassName(status)];
+  const pickupRescheduleAttempt = showPickupRescheduleStatus ? pickupRescheduleAttemptLabel(status) : "";
   const isDeniedReturnedToCustomer = status === "reembolso_denegado" && request.wasReturnedToCustomer;
   const isHistoryStatus = HISTORY_STATUSES.has(status);
   const closedAt =
@@ -2653,6 +2661,8 @@ function RequestCard({
               <>
                 reembolso denegado - <span className={styles.returnedToCustomerStatus}>devuelto al cliente</span>
               </>
+            ) : pickupRescheduleAttempt ? (
+              <>reprogramado · {pickupRescheduleAttempt}</>
             ) : (
               STATUS_LABEL[status] || status
             )}

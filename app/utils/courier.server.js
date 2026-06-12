@@ -112,6 +112,27 @@ function getReturnFailedAttemptCount(rawValue) {
   }, 0);
 }
 
+function getNextPickupDate(rawValue) {
+  const match = String(rawValue || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const date = match
+    ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+    : new Date();
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatPickupDateForMessage(rawValue) {
+  const match = String(rawValue || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return String(rawValue || "").trim();
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
 function getDeliveryAttemptTag(attemptCount) {
   const safeAttemptCount = Math.min(Math.max(Number(attemptCount || 0), 1), 3);
   return `intento entrega ${safeAttemptCount}`;
@@ -1282,6 +1303,7 @@ async function getCourierReturnRequestForAction(requestId) {
       returnMethod: true,
       status: true,
       rejectionReason: true,
+      pickupDate: true,
       updatedAt: true,
     },
   });
@@ -1350,14 +1372,18 @@ export async function markCourierReturnPickupAttemptFailed({ requestId, rejectio
   const rejectionReason =
     String(selectedRejectionReason || "").trim() ||
     (nextStatus === "intento_fallido_1" ? PICKUP_FAILED_REASON_FIRST : PICKUP_FAILED_REASON_SECOND);
+  const nextPickupDate = getNextPickupDate(requestRow.pickupDate);
+  const reprogrammedReason = `Reprogramado para el ${formatPickupDateForMessage(nextPickupDate)}.\n\n${rejectionReason}`;
+  const attemptCount = Number(nextStatus.replace("intento_fallido_", "")) || 0;
 
   await prisma.returnRequest.update({
     where: { id: requestRow.id },
     data: {
       status: nextStatus,
+      pickupDate: nextPickupDate,
       rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
-        kind: `attempt_failed_${nextStatus.replace("intento_fallido_", "")}`,
-        reason: rejectionReason,
+        kind: `attempt_failed_${attemptCount}`,
+        reason: reprogrammedReason,
       }),
     },
   });
@@ -1366,10 +1392,10 @@ export async function markCourierReturnPickupAttemptFailed({ requestId, rejectio
     shopDomain: requestRow.shop,
     requestRow,
     intent: "courier_return_pickup_attempt_failed",
-    note: rejectionReason,
+    note: reprogrammedReason,
   });
 
-  return { ok: true, requestRow, nextStatus, attemptCount: 0 };
+  return { ok: true, requestRow, nextStatus, attemptCount };
 }
 
 export async function markCourierReturnForRetry({ requestId }) {
