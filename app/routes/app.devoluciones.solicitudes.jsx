@@ -4,7 +4,7 @@ import { Form, useActionData, useFetcher, useLoaderData, useLocation, useNavigat
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getCourierRouteStatusFromTags } from "../utils/courier.shared";
+import { getCourierRouteStatusFromTags, isCourierHistoryStatus } from "../utils/courier.shared";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -1275,14 +1275,26 @@ export const loader = async ({ request }) => {
           }))
       : viewMode === VIEW_MODE.COURIER_HISTORY
         ? [
-            ...(await fetchCourierHistoryOrders(admin)).map((requestRow) => ({
-              ...requestRow,
-              courierLabel: "Entrega",
-            })),
-            ...(await fetchPickupCourierHistoryOrders(session.shop)).map((requestRow) => ({
-              ...requestRow,
-              courierLabel: "Devolución",
-            })),
+            ...new Map(
+              [
+                ...(await fetchCourierOrders(admin)).map((requestRow) => ({
+                  ...requestRow,
+                  courierLabel: "Entrega",
+                })),
+                ...(await fetchPickupCourierOrders(session.shop)).map((requestRow) => ({
+                  ...requestRow,
+                  courierLabel: "Devolución",
+                })),
+                ...(await fetchCourierHistoryOrders(admin)).map((requestRow) => ({
+                  ...requestRow,
+                  courierLabel: "Entrega",
+                })),
+                ...(await fetchPickupCourierHistoryOrders(session.shop)).map((requestRow) => ({
+                  ...requestRow,
+                  courierLabel: "Devolución",
+                })),
+              ].map((requestRow) => [String(requestRow.id || ""), requestRow]),
+            ).values(),
           ]
       : [];
 
@@ -2632,18 +2644,40 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
   if (historyView === "courier" && selectedCourierId) {
     const courier = couriers.find((item) => Number(item.id) === selectedCourierId);
     const courierActivities = activities.filter((activity) => Number(activity.courierId) === selectedCourierId);
-    const dates = [...new Set(courierActivities.map((activity) => mexicoActivityDateKey(activity.createdAt)))].sort().reverse();
+    const todayDateKey = mexicoActivityDateKey(new Date());
+    const currentOrders = orders.filter((order) => !isCourierHistoryStatus(order.status));
+    const todayActivityOrders = courierActivities
+      .filter((activity) => mexicoActivityDateKey(activity.createdAt) === todayDateKey)
+      .map((activity) => orderByRequestId.get(String(activity.requestId || "")))
+      .filter(Boolean);
+    const todayOrders = [
+      ...new Map(
+        [...currentOrders, ...todayActivityOrders].map((order) => [String(order.id || ""), order]),
+      ).values(),
+    ];
+    const dates = [
+      ...new Set([
+        todayDateKey,
+        ...courierActivities.map((activity) => mexicoActivityDateKey(activity.createdAt)),
+      ]),
+    ].filter(Boolean).sort().reverse();
     return (
       <div className={styles.courierHistoryDirectoryList}>
         <a className={styles.courierHistoryBackLink} href={buildHistoryHref()}>← Regresar</a>
-        <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
+        <div className={styles.courierHistoryHeader}>
+          <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
+          <div className={styles.courierHistoryCounters}>
+            <span className={styles.courierHistoryCounter}>Ordenes {todayOrders.length}</span>
+            <span className={styles.courierHistoryCounter}>Restantes {currentOrders.length}</span>
+          </div>
+        </div>
         {dates.length ? (
           <div className={styles.courierCalendar}>
             {dates.map((dateKey) => {
               const dayActivities = courierActivities.filter(
                 (activity) => mexicoActivityDateKey(activity.createdAt) === dateKey,
               );
-              const dayOrders = [
+              const activityOrders = [
                 ...new Map(
                   dayActivities
                     .map((activity) => orderByRequestId.get(String(activity.requestId || "")))
@@ -2651,14 +2685,21 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
                     .map((order) => [String(order.id || ""), order]),
                 ).values(),
               ];
+              const dayOrders = dateKey === todayDateKey
+                ? todayOrders
+                : activityOrders;
               return (
-                <details key={dateKey} className={styles.courierCalendarDay}>
+                <details key={dateKey} className={styles.courierCalendarDay} open={dateKey === todayDateKey}>
                   <summary>{new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}</summary>
-                  <div className={styles.courierGrid}>
-                    {dayOrders.map((order) => (
-                      <CourierOrderCard key={order.id} request={order} showFinalAttemptBadge />
-                    ))}
-                  </div>
+                  {dayOrders.length ? (
+                    <div className={styles.courierGrid}>
+                      {dayOrders.map((order) => (
+                        <CourierOrderCard key={order.id} request={order} showFinalAttemptBadge />
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No hay ordenes registradas para este dia.</p>
+                  )}
                 </details>
               );
             })}
