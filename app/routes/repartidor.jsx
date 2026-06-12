@@ -29,9 +29,9 @@ import {
 
 const courierDailyAccessCookie = createCookie("courier_daily_access", {
   httpOnly: true,
-  sameSite: "lax",
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
   secure: process.env.NODE_ENV === "production",
-  path: "/repartidor",
+  path: "/",
   maxAge: 60 * 60 * 26,
   secrets: [process.env.SHOPIFY_API_SECRET || "courier-daily-access"],
 });
@@ -507,7 +507,7 @@ export const loader = async ({ request }) => {
 export default function RepartidorPublicPortal() {
   const { shop, courierOrders, activeTab: initialActiveTab, requiresDailyAccess, courierName } = useLoaderData();
   const actionData = useActionData();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
   const [failedPickupRequest, setFailedPickupRequest] = useState(null);
   if (requiresDailyAccess) {
@@ -632,7 +632,7 @@ export default function RepartidorPublicPortal() {
     if (shop) {
       nextParams.set("shop", shop);
     }
-    setSearchParams(nextParams, { replace: true });
+    window.history.replaceState(null, "", `${window.location.pathname}?${nextParams.toString()}`);
   };
 
   const confirmCourierAction = (request, actionLabel, confirmNote = "Esta accion enviara una notificacion al cliente.") => {
