@@ -500,7 +500,7 @@ export default function RepartidorPublicPortal() {
             {actionData?.loginError ? (
               <p className={styles.accessError} role="alert">{actionData.loginError}</p>
             ) : null}
-            <Form method="post" className={styles.accessForm}>
+            <Form method="post" reloadDocument className={styles.accessForm}>
               <input type="hidden" name="intent" value="courier_daily_login" />
               <input type="hidden" name="shop" value={shop || ""} />
               <input
