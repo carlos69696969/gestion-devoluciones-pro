@@ -218,6 +218,19 @@ export const action = async ({ request }) => {
     const intent = String(formData.get("intent") || "").trim();
     const requestId = String(formData.get("requestId") || "").trim();
 
+    if (intent === "courier_daily_logout") {
+      url.searchParams.set("shop", shop);
+      url.searchParams.delete("updated");
+      url.searchParams.delete("overrideRequestId");
+      url.searchParams.delete("overrideStatus");
+      url.searchParams.delete("overrideAttemptCount");
+      return redirect(`${url.pathname}?${url.searchParams.toString()}`, {
+        headers: {
+          "Set-Cookie": await courierDailyAccessCookie.serialize("", { maxAge: 0 }),
+        },
+      });
+    }
+
     if (intent === "courier_daily_login") {
       const code = String(formData.get("code") || "").trim();
       if (!/^\d{6}$/.test(code)) {
@@ -682,13 +695,16 @@ export default function RepartidorPublicPortal() {
       <div className={styles.container}>
         <header className={styles.header}>
           <div>
-            <p className={styles.eyebrow}>Portal publico</p>
-            <h1 className={styles.title}>Ordenes repartidor</h1>
+            <h1 className={styles.title}>Cariana repartidores</h1>
             <p className={styles.subtitle}>
-              {courierName ? `Acceso de hoy: ${courierName}` : "Ordenes pendientes de entrega y devolucion."}
+              {courierName ? `Repartidor: ${courierName}` : "Ordenes pendientes de entrega y devolucion."}
             </p>
           </div>
-          <div className={styles.shopBadge}>{shop ? `Tienda: ${shop}` : "Sin tienda detectada"}</div>
+          <Form method="post">
+            <input type="hidden" name="intent" value="courier_daily_logout" />
+            <input type="hidden" name="shop" value={shop || ""} />
+            <button className={styles.logoutButton} type="submit">Cerrar sesion</button>
+          </Form>
         </header>
 
         <section className={styles.card}>
