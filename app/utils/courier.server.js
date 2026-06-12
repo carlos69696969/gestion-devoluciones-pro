@@ -1648,7 +1648,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
           pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
           createdAt: orderNode.createdAt,
           updatedAt: orderNode.updatedAt || orderNode.createdAt,
-          courierHistoryAt: isShopifyDelivered ? deliveredAt : "",
+          courierHistoryAt: isShopifyDelivered ? deliveredAt : orderNode.updatedAt || "",
           status: isShopifyDelivered ? "entregado" : getCourierRouteStatusFromTags(orderNode.tags),
           attemptCount: getCourierDeliveryAttemptCountFromTags(orderNode.tags),
           courierLabel: "Entrega",
