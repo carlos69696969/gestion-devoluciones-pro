@@ -600,7 +600,7 @@ function parseEventMs(value) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-function buildStatusTimeline(requestRow) {
+function buildStatusTimeline(requestRow, hideCourierProgress = false) {
   const events = [];
   const entryKinds = new Set(
     (requestRow.timelineEntries || []).map((entry) => String(entry?.kind || "").toLowerCase()).filter(Boolean),
@@ -662,9 +662,10 @@ function buildStatusTimeline(requestRow) {
   }
 
   for (const entry of requestRow.timelineEntries || []) {
+    const kind = String(entry?.kind || "").toLowerCase();
+    if (hideCourierProgress && (kind.startsWith("courier_en_route_") || kind.startsWith("courier_retry_"))) continue;
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
-    const kind = String(entry?.kind || "").toLowerCase();
     const note = kind === RETURNED_TO_CUSTOMER_KIND
       ? RETURNED_TO_CUSTOMER_MESSAGE
       : normalizeDisplayedReasonText(entry.reason);
@@ -2433,7 +2434,13 @@ export default function ReturnsRequests() {
             ) : (
               <div className={`${styles.wrap} ${styles.reqGrid}`}>
                 {historyRequests.map((request) => (
-                  <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} enableLazyMedia />
+                  <RequestCard
+                    key={request.id}
+                    request={request}
+                    isSubmitting={isSubmitting}
+                    enableLazyMedia
+                    hideCourierProgress
+                  />
                 ))}
               </div>
             )}
@@ -2541,7 +2548,7 @@ function CourierOrderCard({ request, showFinalAttemptBadge = false }) {
   );
 }
 
-function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
+function RequestCard({ request, isSubmitting, enableLazyMedia = false, hideCourierProgress = false }) {
   const [viewerImage, setViewerImage] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [mediaRequested, setMediaRequested] = useState(false);
@@ -2553,7 +2560,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false }) {
   const mediaFetcher = useFetcher();
   const location = useLocation();
   const currentFormAction = `${location.pathname}${location.search}`;
-  const timelineEvents = detailsOpen ? buildStatusTimeline(request) : [];
+  const timelineEvents = detailsOpen ? buildStatusTimeline(request, hideCourierProgress) : [];
   const currentTimelineEvent = timelineEvents[0] || null;
   const olderTimelineEvents = timelineEvents.slice(1);
   const internalStatus = String(request.status || "").toLowerCase();
