@@ -898,6 +898,24 @@
   white-space: nowrap;
 }
 
+.courierHistoryDirectory {
+  display: grid;
+  gap: 14px;
+}
+
+.courierHistoryDirectorySummary {
+  width: fit-content;
+  list-style: none;
+}
+
+.courierHistoryDirectorySummary::-webkit-details-marker {
+  display: none;
+}
+
+.courierHistoryDirectory[open] .courierHistoryDirectorySummary {
+  margin-bottom: 14px;
+}
+
 .couriersLayout {
   display: grid;
   gap: 14px;

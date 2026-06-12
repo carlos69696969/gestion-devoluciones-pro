@@ -2551,11 +2551,16 @@ export default function ReturnsRequests() {
           {courierOrders.length === 0 ? (
             <p>No hay ordenes finalizadas desde el 10 de junio de 2026.</p>
           ) : (
-            <div className={styles.courierGrid}>
-              {courierOrders.map((request) => (
-                <CourierOrderCard key={request.id} request={request} showFinalAttemptBadge />
-              ))}
-            </div>
+            <details className={styles.courierHistoryDirectory}>
+              <summary className={`${styles.btn} ${styles.btnPrimary} ${styles.courierHistoryDirectorySummary}`}>
+                Historial de todas las ordenes
+              </summary>
+              <div className={styles.courierGrid}>
+                {courierOrders.map((request) => (
+                  <CourierOrderCard key={request.id} request={request} showFinalAttemptBadge />
+                ))}
+              </div>
+            </details>
           )}
         </s-section>
       ) : null}
