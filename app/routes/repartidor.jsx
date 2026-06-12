@@ -60,7 +60,7 @@ function getFailedDeliveryAttemptCount(request) {
   return normalizedStatus === "no_entregado" ? 1 : 0;
 }
 
-function getDeliveryAttemptLabel(request) {
+function getDeliveryAttemptLabel(request, activeTab) {
   const failedAttemptCount = getFailedDeliveryAttemptCount(request);
   if (!failedAttemptCount) return "";
 
@@ -73,6 +73,11 @@ function getDeliveryAttemptLabel(request) {
     ? Math.min(failedAttemptCount, 3)
     : Math.min(failedAttemptCount + 1, 3);
   if (currentAttemptNumber === 1 && isCourierRouteStatus(normalizedStatus)) return "";
+  if (activeTab === "en_ruta") {
+    if (currentAttemptNumber === 1) return "Primer intento";
+    if (currentAttemptNumber === 2) return "Segundo intento";
+    return "Tercer intento";
+  }
   return currentAttemptNumber === 1 ? "1 intento" : `${currentAttemptNumber} intentos`;
 }
 
@@ -477,7 +482,7 @@ export default function RepartidorPublicPortal() {
   const canShowDeliveryResultActions = (request) =>
     !isReturnOrder(request) &&
     activeTab === "en_ruta" &&
-    isCourierRouteTabStatus(request?.status);
+    isCourierRouteStatus(request?.status);
   const buildMapsUrl = (request) => {
     const address = formatCourierAddress(request);
     const query = encodeURIComponent(address);
@@ -645,9 +650,9 @@ export default function RepartidorPublicPortal() {
                       {request.courierLabel}
                     </span>
                     <div className={styles.statusGroup}>
-                      {!isReturnOrder(request) && getDeliveryAttemptLabel(request) ? (
+                      {!isReturnOrder(request) && getDeliveryAttemptLabel(request, activeTab) ? (
                         <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>
-                          {getDeliveryAttemptLabel(request)}
+                          {getDeliveryAttemptLabel(request, activeTab)}
                         </span>
                       ) : null}
                       {isReturnOrder(request) && isReturnPickupFailedStatus(request) ? (
