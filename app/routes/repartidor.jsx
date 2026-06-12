@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Form, redirect, useActionData, useLoaderData, useSearchParams } from "react-router";
+import { createCookie, Form, redirect, useActionData, useLoaderData, useSearchParams } from "react-router";
+import prisma from "../db.server";
 import adminStyles from "../styles/admin.module.css";
 import styles from "../styles/repartidor.module.css";
 import {
@@ -25,6 +26,15 @@ import {
   rejectCourierReturnAfterFailedPickups,
   resolveCourierPortalShop,
 } from "../utils/courier.server";
+
+const courierDailyAccessCookie = createCookie("courier_daily_access", {
+  httpOnly: true,
+  sameSite: "lax",
+  secure: process.env.NODE_ENV === "production",
+  path: "/repartidor",
+  maxAge: 60 * 60 * 26,
+  secrets: [process.env.SHOPIFY_API_SECRET || "courier-daily-access"],
+});
 
 const PICKUP_FAILED_REASON_OPTIONS = [
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨",
@@ -99,6 +109,18 @@ function courierMexicoDateKey(value) {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
+}
+
+async function getCourierDailyAccess(request, shop) {
+  const access = await courierDailyAccessCookie.parse(request.headers.get("Cookie"));
+  if (
+    String(access?.shop || "").trim().toLowerCase() !== String(shop || "").trim().toLowerCase() ||
+    String(access?.dateKey || "") !== courierMexicoDateKey(new Date()) ||
+    !Number(access?.courierId)
+  ) {
+    return null;
+  }
+  return access;
 }
 
 function isCourierHistoryFromToday(request) {
@@ -195,6 +217,36 @@ export const action = async ({ request }) => {
     const shop = formShop || portalShop.shop;
     const intent = String(formData.get("intent") || "").trim();
     const requestId = String(formData.get("requestId") || "").trim();
+
+    if (intent === "courier_daily_login") {
+      const code = String(formData.get("code") || "").trim();
+      if (!/^\d{6}$/.test(code)) {
+        return { ok: false, loginError: "Ingresa un codigo valido de 6 digitos." };
+      }
+      const courier = await prisma.courier.findFirst({
+        where: { shop, code },
+        select: { id: true, name: true },
+      });
+      if (!courier) {
+        return { ok: false, loginError: "El codigo ingresado no es valido." };
+      }
+      url.searchParams.set("shop", shop);
+      url.searchParams.set("tab", "pedidos");
+      return redirect(`${url.pathname}?${url.searchParams.toString()}`, {
+        headers: {
+          "Set-Cookie": await courierDailyAccessCookie.serialize({
+            shop,
+            courierId: courier.id,
+            courierName: courier.name,
+            dateKey: courierMexicoDateKey(new Date()),
+          }),
+        },
+      });
+    }
+
+    if (!(await getCourierDailyAccess(request, shop))) {
+      return { ok: false, error: "Tu acceso diario vencio. Ingresa nuevamente tu codigo." };
+    }
 
     if (
       ![
@@ -320,6 +372,17 @@ export const loader = async ({ request }) => {
   const overrideStatus = String(url.searchParams.get("overrideStatus") || "").trim().toLowerCase();
   const overrideAttemptCount = Math.max(0, Number(url.searchParams.get("overrideAttemptCount") || "0"));
 
+  const dailyAccess = shop ? await getCourierDailyAccess(request, shop) : null;
+  if (!dailyAccess) {
+    return {
+      activeTab,
+      shop: shop || "",
+      courierOrders: [],
+      requiresDailyAccess: true,
+      courierName: "",
+    };
+  }
+
   if (!shop || !sessionCandidates?.length) {
     return {
       activeTab,
@@ -402,15 +465,48 @@ export const loader = async ({ request }) => {
     activeTab,
     shop: resolvedShop,
     courierOrders,
+    requiresDailyAccess: false,
+    courierName: dailyAccess.courierName || "",
   };
 };
 
 export default function RepartidorPublicPortal() {
-  const { shop, courierOrders, activeTab: initialActiveTab } = useLoaderData();
+  const { shop, courierOrders, activeTab: initialActiveTab, requiresDailyAccess, courierName } = useLoaderData();
   const actionData = useActionData();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
   const [failedPickupRequest, setFailedPickupRequest] = useState(null);
+  if (requiresDailyAccess) {
+    return (
+      <main className={styles.page}>
+        <div className={styles.accessContainer}>
+          <section className={`${styles.card} ${styles.accessCard}`}>
+            <p className={styles.eyebrow}>Portal del repartidor</p>
+            <h1 className={styles.cardTitle}>Ingresa tu codigo</h1>
+            <p className={styles.subtitle}>Tu codigo es necesario para acceder a las ordenes de hoy.</p>
+            {actionData?.loginError ? (
+              <p className={styles.accessError} role="alert">{actionData.loginError}</p>
+            ) : null}
+            <Form method="post" className={styles.accessForm}>
+              <input type="hidden" name="intent" value="courier_daily_login" />
+              <input type="hidden" name="shop" value={shop || ""} />
+              <input
+                className={styles.accessInput}
+                name="code"
+                inputMode="numeric"
+                pattern="\d{6}"
+                maxLength={6}
+                placeholder="Codigo de 6 digitos"
+                autoComplete="one-time-code"
+                required
+              />
+              <button className={styles.accessButton} type="submit">Entrar</button>
+            </Form>
+          </section>
+        </div>
+      </main>
+    );
+  }
   const overrideRequestId = String(searchParams.get("overrideRequestId") || "").trim();
   const overrideStatus = String(searchParams.get("overrideStatus") || "").trim().toLowerCase();
   const overrideAttemptCount = Math.max(0, Number(searchParams.get("overrideAttemptCount") || "0"));
@@ -589,7 +685,7 @@ export default function RepartidorPublicPortal() {
             <p className={styles.eyebrow}>Portal publico</p>
             <h1 className={styles.title}>Ordenes repartidor</h1>
             <p className={styles.subtitle}>
-              Vista publica y sin login para ver ordenes pendientes de entrega y devolucion.
+              {courierName ? `Acceso de hoy: ${courierName}` : "Ordenes pendientes de entrega y devolucion."}
             </p>
           </div>
           <div className={styles.shopBadge}>{shop ? `Tienda: ${shop}` : "Sin tienda detectada"}</div>

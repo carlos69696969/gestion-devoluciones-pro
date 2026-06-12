@@ -11,6 +11,55 @@
   padding: 28px 16px 56px;
 }
 
+.accessContainer {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  box-sizing: border-box;
+}
+
+.accessCard {
+  width: min(100%, 420px);
+  box-sizing: border-box;
+}
+
+.accessForm {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.accessInput {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-align: center;
+}
+
+.accessButton {
+  border: 0;
+  border-radius: 999px;
+  padding: 13px 18px;
+  background: #005bd3;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.accessError {
+  margin: 14px 0 0;
+  color: #c5283d;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .header {
   display: flex;
   align-items: flex-start;
