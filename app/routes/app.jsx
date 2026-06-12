@@ -156,6 +156,7 @@ export default function App() {
         </s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/courier_history")}>Historial repartidor</s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/branch_pickup")}>Recoger en sucursal</s-link>
+        <s-link href={withEmbedParams("/app/devoluciones/solicitudes/couriers")}>Repartidores</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>

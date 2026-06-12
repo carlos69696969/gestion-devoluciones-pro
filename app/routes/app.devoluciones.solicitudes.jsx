@@ -34,6 +34,7 @@ const VIEW_MODE = {
   COURIER: "courier",
   COURIER_HISTORY: "courier_history",
   BRANCH_PICKUP: "branch_pickup",
+  COURIERS: "couriers",
 };
 const COURIER_HISTORY_SINCE = new Date("2026-06-10T00:00:00-06:00");
 
@@ -271,6 +272,7 @@ function normalizeViewMode(rawValue) {
   if (value === VIEW_MODE.COURIER) return VIEW_MODE.COURIER;
   if (value === VIEW_MODE.COURIER_HISTORY) return VIEW_MODE.COURIER_HISTORY;
   if (value === VIEW_MODE.BRANCH_PICKUP) return VIEW_MODE.BRANCH_PICKUP;
+  if (value === VIEW_MODE.COURIERS) return VIEW_MODE.COURIERS;
   return VIEW_MODE.BRANCH;
 }
 
@@ -287,6 +289,7 @@ function viewModeFromPathname(pathname) {
   if (path.endsWith("/courier_history")) return VIEW_MODE.COURIER_HISTORY;
   if (path.endsWith("/repartidor")) return VIEW_MODE.COURIER;
   if (path.endsWith("/branch_pickup")) return VIEW_MODE.BRANCH_PICKUP;
+  if (path.endsWith("/couriers")) return VIEW_MODE.COURIERS;
   return "";
 }
 
@@ -1208,7 +1211,10 @@ export const loader = async ({ request }) => {
   };
 
   let rawRequests =
-    viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.COURIER_HISTORY || viewMode === VIEW_MODE.BRANCH_PICKUP
+    viewMode === VIEW_MODE.COURIER ||
+    viewMode === VIEW_MODE.COURIER_HISTORY ||
+    viewMode === VIEW_MODE.BRANCH_PICKUP ||
+    viewMode === VIEW_MODE.COURIERS
       ? []
       : await prisma.returnRequest.findMany({
           where,
@@ -2362,6 +2368,8 @@ export default function ReturnsRequests() {
           ? "Historial repartidor"
         : viewMode === VIEW_MODE.BRANCH_PICKUP
           ? "Recoger en sucursal"
+        : viewMode === VIEW_MODE.COURIERS
+          ? "Repartidores"
         : "Entrega en sucursal";
 
   return (
