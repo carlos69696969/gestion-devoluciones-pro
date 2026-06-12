@@ -2377,6 +2377,7 @@ export default function ReturnsRequests() {
   const { requests, courierOrders, couriers = [], courierActivities = [], viewMode } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
+  const location = useLocation();
   const isSubmitting = navigation.state === "submitting";
 
   const reviewRequests = requests.filter(
@@ -2563,6 +2564,7 @@ export default function ReturnsRequests() {
               couriers={couriers}
               activities={courierActivities}
               orders={courierOrders}
+              search={location.search}
             />
           )}
         </s-section>
@@ -2598,60 +2600,87 @@ function mexicoActivityDateKey(value) {
   }).format(new Date(value));
 }
 
-function CourierHistoryDirectory({ couriers, activities, orders }) {
+function CourierHistoryDirectory({ couriers, activities, orders, search }) {
   const orderByRequestId = new Map(orders.map((order) => [String(order.id || ""), order]));
-  return (
-    <div className={styles.courierHistoryDirectoryList}>
-      {couriers.map((courier) => {
-        const courierActivities = activities.filter((activity) => Number(activity.courierId) === Number(courier.id));
-        const dates = [...new Set(courierActivities.map((activity) => mexicoActivityDateKey(activity.createdAt)))].sort().reverse();
-        return (
-          <details key={courier.id} className={styles.courierHistoryDirectory}>
-            <summary className={`${styles.btn} ${styles.courierHistoryDirectorySummary}`}>
-              Historial del repartidor {courier.name}
-            </summary>
-            {dates.length ? (
-              <div className={styles.courierCalendar}>
-                {dates.map((dateKey) => {
-                  const dayActivities = courierActivities.filter(
-                    (activity) => mexicoActivityDateKey(activity.createdAt) === dateKey,
-                  );
-                  const dayOrders = [
-                    ...new Map(
-                      dayActivities
-                        .map((activity) => orderByRequestId.get(String(activity.requestId || "")))
-                        .filter(Boolean)
-                        .map((order) => [String(order.id || ""), order]),
-                    ).values(),
-                  ];
-                  return (
-                    <details key={dateKey} className={styles.courierCalendarDay}>
-                      <summary>{new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}</summary>
-                      <div className={styles.courierGrid}>
-                        {dayOrders.map((order) => (
-                          <CourierOrderCard key={order.id} request={order} showFinalAttemptBadge />
-                        ))}
-                      </div>
-                    </details>
-                  );
-                })}
-              </div>
-            ) : (
-              <p>No hay actividad registrada para este repartidor.</p>
-            )}
-          </details>
-        );
-      })}
-      <details className={styles.courierHistoryDirectory}>
-        <summary className={`${styles.btn} ${styles.btnPrimary} ${styles.courierHistoryDirectorySummary}`}>
-          Historial de todas las ordenes
-        </summary>
+  const searchParams = new URLSearchParams(search);
+  const historyView = String(searchParams.get("historyView") || "").trim();
+  const selectedCourierId = Number(searchParams.get("courierId") || 0);
+  const baseHref = "/app/devoluciones/solicitudes/courier_history";
+
+  if (historyView === "all") {
+    return (
+      <div className={styles.courierHistoryDirectoryList}>
+        <a className={styles.courierHistoryBackLink} href={baseHref}>← Regresar</a>
+        <h3>Historial de todas las ordenes</h3>
         <div className={styles.courierGrid}>
           {orders.map((request) => (
             <CourierOrderCard key={request.id} request={request} showFinalAttemptBadge />
           ))}
         </div>
-      </details>
+      </div>
+    );
+  }
+
+  if (historyView === "courier" && selectedCourierId) {
+    const courier = couriers.find((item) => Number(item.id) === selectedCourierId);
+    const courierActivities = activities.filter((activity) => Number(activity.courierId) === selectedCourierId);
+    const dates = [...new Set(courierActivities.map((activity) => mexicoActivityDateKey(activity.createdAt)))].sort().reverse();
+    return (
+      <div className={styles.courierHistoryDirectoryList}>
+        <a className={styles.courierHistoryBackLink} href={baseHref}>← Regresar</a>
+        <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
+        {dates.length ? (
+          <div className={styles.courierCalendar}>
+            {dates.map((dateKey) => {
+              const dayActivities = courierActivities.filter(
+                (activity) => mexicoActivityDateKey(activity.createdAt) === dateKey,
+              );
+              const dayOrders = [
+                ...new Map(
+                  dayActivities
+                    .map((activity) => orderByRequestId.get(String(activity.requestId || "")))
+                    .filter(Boolean)
+                    .map((order) => [String(order.id || ""), order]),
+                ).values(),
+              ];
+              return (
+                <details key={dateKey} className={styles.courierCalendarDay}>
+                  <summary>{new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}</summary>
+                  <div className={styles.courierGrid}>
+                    {dayOrders.map((order) => (
+                      <CourierOrderCard key={order.id} request={order} showFinalAttemptBadge />
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        ) : (
+          <p>No hay actividad registrada para este repartidor.</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.courierHistoryDirectoryList}>
+      {couriers.map((courier) => {
+        return (
+          <a
+            key={courier.id}
+            className={`${styles.btn} ${styles.courierHistoryDirectorySummary}`}
+            href={`${baseHref}?historyView=courier&courierId=${courier.id}`}
+          >
+              Historial del repartidor {courier.name}
+          </a>
+        );
+      })}
+      <a
+        className={`${styles.btn} ${styles.btnPrimary} ${styles.courierHistoryDirectorySummary}`}
+        href={`${baseHref}?historyView=all`}
+      >
+          Historial de todas las ordenes
+      </a>
     </div>
   );
 }

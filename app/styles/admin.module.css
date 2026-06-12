@@ -912,6 +912,7 @@
 .courierHistoryDirectorySummary {
   width: fit-content;
   list-style: none;
+  text-decoration: none;
 }
 
 .courierCalendar {
@@ -934,6 +935,14 @@
 
 .courierCalendarDay .courierGrid {
   margin-top: 12px;
+}
+
+.courierHistoryBackLink {
+  width: fit-content;
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
 }
 
 .courierHistoryDirectorySummary::-webkit-details-marker {
