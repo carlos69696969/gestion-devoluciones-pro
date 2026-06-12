@@ -701,7 +701,9 @@ function courierAttemptLabel(attempt) {
 
 function pickupRescheduleAttemptLabel(status) {
   const match = String(status || "").trim().toLowerCase().match(/^intento_fallido_(\d)$/);
-  return match ? courierAttemptLabel(match[1]) : "";
+  if (!match) return "";
+  const attempt = Number(match[1]) || 0;
+  return `${attempt} ${attempt === 1 ? "intento" : "intentos"}`;
 }
 
 function courierEventLabel(status, attempt) {
@@ -2997,7 +2999,7 @@ function RequestCard({
           </>
         ) : null}
 
-        {canRejectAfterFailedPickups ? (
+        {canRejectAfterFailedPickups && !hidePickupActions ? (
           <>
             <Form method="post" action={currentFormAction} className={styles.rejectForm}>
               <input type="hidden" name="intent" value="reject_after_failed_pickups" />
