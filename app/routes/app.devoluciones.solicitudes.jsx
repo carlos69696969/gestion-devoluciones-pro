@@ -712,10 +712,10 @@ function courierEventLabel(status, attempt) {
 function returnCourierHistoryLabel(entry, finalAttempt) {
   const kind = String(entry?.kind || "").trim().toLowerCase();
   if (kind === STATUS_APPROVED_KIND) return "";
+  if (kind.startsWith("courier_retry_") || kind === "rejected_after_attempts") return "";
   const failedAttemptMatch = kind.match(/^attempt_failed_(\d)$/);
   if (failedAttemptMatch) return `${courierAttemptLabel(failedAttemptMatch[1])} no entregado`;
   if (kind === STATUS_RECEIVED_KIND) return `${courierAttemptLabel(finalAttempt)} entregado`;
-  if (kind === "rejected_after_attempts") return `${courierAttemptLabel(finalAttempt)} rechazado`;
   return timelineLabelFromReasonEntry(entry);
 }
 
