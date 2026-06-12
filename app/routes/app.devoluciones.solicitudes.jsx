@@ -2374,6 +2374,7 @@ export default function ReturnsRequests() {
                         request={request}
                         isSubmitting={isSubmitting}
                         enableLazyMedia
+                        hidePickupActions
                       />
                     ))}
                   </div>
@@ -2548,7 +2549,13 @@ function CourierOrderCard({ request, showFinalAttemptBadge = false }) {
   );
 }
 
-function RequestCard({ request, isSubmitting, enableLazyMedia = false, hideCourierProgress = false }) {
+function RequestCard({
+  request,
+  isSubmitting,
+  enableLazyMedia = false,
+  hideCourierProgress = false,
+  hidePickupActions = false,
+}) {
   const [viewerImage, setViewerImage] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [mediaRequested, setMediaRequested] = useState(false);
@@ -2896,7 +2903,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false, hideCouri
           </Form>
         ) : null}
 
-        {canMarkReceived ? (
+        {canMarkReceived && !hidePickupActions ? (
           <Form method="post" action={currentFormAction}>
             <input type="hidden" name="intent" value="mark_received" />
             <input type="hidden" name="id" value={request.id} />
@@ -2915,7 +2922,7 @@ function RequestCard({ request, isSubmitting, enableLazyMedia = false, hideCouri
             </button>
           </Form>
         ) : null}
-        {canRegisterPickupFailedAttempt ? (
+        {canRegisterPickupFailedAttempt && !hidePickupActions ? (
           <>
             <Form
               key={`pickup-attempt-${request.id}-${new Date(request.updatedAt).toISOString()}`}
