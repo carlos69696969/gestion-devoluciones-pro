@@ -2381,6 +2381,7 @@ export default function ReturnsRequests() {
                         request={request}
                         isSubmitting={isSubmitting}
                         enableLazyMedia
+                        hideCourierProgress
                         hidePickupActions
                         showPickupRescheduleStatus
                       />
