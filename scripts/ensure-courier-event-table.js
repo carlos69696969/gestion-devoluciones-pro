@@ -19,4 +19,26 @@ await prisma.$executeRawUnsafe(`
   ON "CourierEvent"("shop", "requestId", "createdAt")
 `);
 
+await prisma.$executeRawUnsafe(`
+  CREATE TABLE IF NOT EXISTS "Courier" (
+    "id" SERIAL NOT NULL,
+    "shop" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Courier_pkey" PRIMARY KEY ("id")
+  )
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE UNIQUE INDEX IF NOT EXISTS "Courier_shop_code_key"
+  ON "Courier"("shop", "code")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "Courier_shop_createdAt_idx"
+  ON "Courier"("shop", "createdAt")
+`);
+
 await prisma.$disconnect();
