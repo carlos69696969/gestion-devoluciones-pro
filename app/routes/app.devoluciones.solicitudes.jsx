@@ -720,10 +720,22 @@ function courierEventLabel(status, attempt) {
 function courierHistoryEventLabel(event) {
   const label = courierEventLabel(event.status, event.attempt);
   if (String(event.status || "").trim().toLowerCase() !== "reintento_pendiente") return label;
-  const reprogrammedDate = new Date(event.createdAt);
-  if (!Number.isFinite(reprogrammedDate.getTime())) return label;
-  reprogrammedDate.setDate(reprogrammedDate.getDate() + 1);
+  const eventDate = new Date(event.createdAt);
+  if (!Number.isFinite(eventDate.getTime())) return label;
+  const mexicoDateParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(eventDate);
+  const mexicoDateLookup = Object.fromEntries(mexicoDateParts.map((part) => [part.type, part.value]));
+  const reprogrammedDate = new Date(Date.UTC(
+    Number(mexicoDateLookup.year),
+    Number(mexicoDateLookup.month) - 1,
+    Number(mexicoDateLookup.day) + 1,
+  ));
   const formattedDate = new Intl.DateTimeFormat("es-MX", {
+    timeZone: "UTC",
     day: "numeric",
     month: "long",
     year: "numeric",
