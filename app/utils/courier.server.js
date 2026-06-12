@@ -1141,15 +1141,6 @@ export async function markCourierOrderAsDelivered({
     attemptCount: requestRow.attemptCount,
   });
 
-  const notificationResult = await emitCourierDeliveryManualStatusNotification({
-    shopDomain,
-    requestRow,
-    status: "entregado",
-  });
-  if (!notificationResult?.ok) {
-    return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
-  }
-
   return { ok: true, requestRow, nextStatus: "entregado", attemptCount: requestRow.attemptCount };
 }
 async function sendCourierReturnRouteNotificationOnly({ requestId }) {
