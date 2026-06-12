@@ -572,6 +572,7 @@ export default function RepartidorPublicPortal() {
   const pendingOrders = effectiveCourierOrders.filter(
     (request) => !isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status),
   );
+  const pendingOrdersCount = pendingOrders.length;
   const routeOrder = routeOrders[0] || null;
   const pendingPreviewOrder = pendingOrders[0] || null;
   const visibleOrders =
@@ -734,7 +735,13 @@ export default function RepartidorPublicPortal() {
               {actionData.error}
             </p>
           ) : null}
-          <h2 className={styles.cardTitle}>Ordenes repartidor</h2>
+          <div className={styles.cardHeader}>
+            <h2 className={styles.cardTitle}>Ordenes repartidor</h2>
+            <div className={styles.counterGroup} aria-label="Resumen de ordenes pendientes">
+              <span className={styles.counterBadge}>Ordenes {pendingOrdersCount}</span>
+              <span className={styles.counterBadge}>Restantes {pendingOrdersCount}</span>
+            </div>
+          </div>
           <div className={styles.tabRow} role="tablist" aria-label="Secciones de repartidor">
             <button
               type="button"
