@@ -71,7 +71,6 @@
   border: 1px solid #dfe3e8;
   border-radius: 12px;
   background: #f9fafb;
-  cursor: pointer;
 }
 
 .confirmationListItem input[type="checkbox"] {
@@ -79,6 +78,7 @@
   height: 20px;
   flex: 0 0 20px;
   accent-color: #005bd3;
+  cursor: pointer;
 }
 
 .confirmationCheckbox {

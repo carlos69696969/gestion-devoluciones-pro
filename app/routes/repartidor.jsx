@@ -349,10 +349,20 @@ export const action = async ({ request }) => {
 
       url.searchParams.set("shop", shop);
       url.searchParams.set("tab", "pedidos");
-      url.searchParams.delete("updated");
+      url.searchParams.set("updated", String(Date.now()));
+      const updatedDailyAccess = {
+        ...dailyAccess,
+        confirmedRequestIds: Array.isArray(dailyAccess.confirmedRequestIds)
+          ? [...dailyAccess.confirmedRequestIds]
+          : [],
+        missingOrderNumbers: Array.isArray(dailyAccess.missingOrderNumbers)
+          ? [...dailyAccess.missingOrderNumbers]
+          : [],
+        deliveryConfirmationComplete: Boolean(dailyAccess.deliveryConfirmationComplete),
+      };
       return redirect(`${url.pathname}?${url.searchParams.toString()}`, {
         headers: {
-          "Set-Cookie": await courierDailyAccessCookie.serialize(dailyAccess),
+          "Set-Cookie": await courierDailyAccessCookie.serialize(updatedDailyAccess),
         },
       });
     }
@@ -700,13 +710,18 @@ export default function RepartidorPublicPortal() {
                       (deliveryOrder) => String(deliveryOrder?.id || "") === String(request?.id || ""),
                     ) + 1;
                   return (
-                    <label className={styles.confirmationListItem} key={request.id}>
+                    <div className={styles.confirmationListItem} key={request.id}>
                       <input type="hidden" name="visibleRequestIds" value={request.id} />
                       <input type="hidden" name="visibleOrderNumbers" value={request.orderNumber} />
-                      <input type="checkbox" name="confirmedRequestIds" value={request.id} />
+                      <input
+                        aria-label={`Confirmar pedido ${request.orderNumber}`}
+                        type="checkbox"
+                        name="confirmedRequestIds"
+                        value={request.id}
+                      />
                       <span className={styles.orderSequenceBadge}>{sequence}</span>
                       <strong>Pedido #{request.orderNumber}</strong>
-                    </label>
+                    </div>
                   );
                 })}
               </div>
