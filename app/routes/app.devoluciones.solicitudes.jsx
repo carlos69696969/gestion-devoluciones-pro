@@ -929,6 +929,31 @@ function formatCourierHistoryDate(value) {
   }).format(date);
 }
 
+function buildAdminCourierHistoryEvents(request) {
+  const events = request.historyEvents || [];
+  const displayEvents = [];
+
+  for (const event of events) {
+    displayEvents.push(event);
+    if (!/\bno entregado\b/i.test(String(event.label || ""))) continue;
+
+    const attemptMatch = String(event.label || "").match(/^(Primer|Segundo|Tercer) intento/i);
+    const eventDate = new Date(event.at);
+    if (!attemptMatch || !Number.isFinite(eventDate.getTime())) continue;
+
+    const reprogrammedAt = new Date(eventDate);
+    reprogrammedAt.setDate(reprogrammedAt.getDate() + 1);
+    displayEvents.push({
+      id: `${event.id}-reprogrammed`,
+      label: `${attemptMatch[1]} intento reprogramado`,
+      at: reprogrammedAt.toISOString(),
+      atMs: reprogrammedAt.getTime(),
+    });
+  }
+
+  return displayEvents;
+}
+
 function pickParentTransaction(transactions) {
   const success = transactions.filter((tx) => String(tx.status || "").toUpperCase() === "SUCCESS");
   return (
@@ -2687,12 +2712,15 @@ export default function ReturnsRequests() {
 
       {viewMode === VIEW_MODE.COURIER ? (
         <s-section heading="Ordenes repartidor">
+          <div className={styles.courierOrdersHeader}>
+            <span className={styles.courierOrdersCount}>Numero de ordenes: {courierOrders.length}</span>
+          </div>
           {courierOrders.length === 0 ? (
             <p>No hay ordenes pendientes por entregar.</p>
           ) : (
             <div className={styles.courierGrid}>
               {courierOrders.map((request) => (
-                <CourierOrderCard key={request.id} request={request} />
+                <CourierOrderCard key={request.id} request={request} adminCourierView />
               ))}
             </div>
           )}
@@ -3040,17 +3068,25 @@ function CourierOrderCard({
   sequenceNumber = 0,
   statusOverride = "",
   showFinalAttemptBadge = false,
+  adminCourierView = false,
 }) {
   const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
   const visibleStatus = statusOverride || request.status;
   const normalizedVisibleStatus = String(visibleStatus || "").trim().toLowerCase();
+  const isAdminReprogrammed = adminCourierView && normalizedVisibleStatus === "no_entregado";
+  const displayStatus = isAdminReprogrammed ? "reprogramado" : visibleStatus;
+  const displayHistoryEvents = adminCourierView
+    ? buildAdminCourierHistoryEvents(request)
+    : request.historyEvents || [];
   const attemptBadgeClass = ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
     ? normalizedVisibleStatus === "rechazada"
       ? styles.courierBadgeAttemptWarning
       : styles.courierBadgeStatusFailed
     : styles.courierBadgeAttempt;
-  const statusBadgeClass = ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
-    ? styles.courierBadgeStatusFailed
+  const statusBadgeClass = isAdminReprogrammed
+    ? styles.courierBadgeStatusReprogrammed
+    : ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
+      ? styles.courierBadgeStatusFailed
     : ["entregado", "recibido", "recibida"].includes(normalizedVisibleStatus)
       ? styles.courierBadgeStatusSuccess
       : normalizedVisibleStatus.startsWith("en_ruta")
@@ -3084,7 +3120,7 @@ function CourierOrderCard({
             </span>
           ) : null}
           <span className={`${styles.courierBadgeStatus} ${statusBadgeClass}`}>
-            {courierHistoryStatusLabel(visibleStatus)}
+            {isAdminReprogrammed ? displayStatus : courierHistoryStatusLabel(displayStatus)}
           </span>
         </div>
       </div>
@@ -3098,8 +3134,8 @@ function CourierOrderCard({
       <details className={styles.courierHistoryDetails}>
         <summary className={styles.courierHistorySummary}>Ver más ↓</summary>
         <div className={styles.courierHistoryList}>
-          {request.historyEvents?.length ? (
-            request.historyEvents.map((event) => (
+          {displayHistoryEvents.length ? (
+            displayHistoryEvents.map((event) => (
               <div key={event.id} className={styles.courierHistoryItem}>
                 <strong>{event.label}</strong>
                 <span>{formatCourierHistoryDate(event.at)}</span>

@@ -890,6 +890,31 @@
   color: #005bd3;
 }
 
+.courierBadgeStatusReprogrammed {
+  background: #fff5e6;
+  border-color: #f59e0b;
+  color: #b45309;
+}
+
+.courierOrdersHeader {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.courierOrdersCount {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 14px;
+  border: 1px solid #8eb8ff;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #005bd3;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .courierField,
 .courierAddress {
   margin: 0;
