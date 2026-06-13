@@ -126,10 +126,12 @@ model CourierActivity {
   requestId   String
   orderNumber String?
   action      String
+  routeId     String?
   createdAt   DateTime @default(now())
 
   @@index([shop, courierId, createdAt])
   @@index([shop, requestId, createdAt])
+  @@index([shop, courierId, routeId, createdAt])
 }
 
 model ReturnSettings {

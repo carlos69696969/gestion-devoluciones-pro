@@ -123,6 +123,18 @@ function courierMexicoDateKey(value) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
+async function generateUniqueCourierCode(shop) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const existing = await prisma.courier.findFirst({
+      where: { shop, code },
+      select: { id: true },
+    });
+    if (!existing) return code;
+  }
+  throw new Error("No se pudo generar un nuevo codigo unico.");
+}
+
 async function getCourierDailyAccess(request, shop) {
   const access = await courierDailyAccessCookie.parse(request.headers.get("Cookie"));
   if (
@@ -137,9 +149,9 @@ async function getCourierDailyAccess(request, shop) {
       id: Number(access.courierId),
       shop: String(shop || "").trim().toLowerCase(),
     },
-    select: { id: true, name: true },
+    select: { id: true, name: true, code: true },
   });
-  if (!courier) return null;
+  if (!courier || String(access?.accessCode || "") !== courier.code) return null;
   access.courierName = courier.name;
   return access;
 }
@@ -246,7 +258,28 @@ export const action = async ({ request }) => {
     const intent = String(formData.get("intent") || "").trim();
     const requestId = String(formData.get("requestId") || "").trim();
 
-    if (intent === "courier_daily_logout") {
+    if (intent === "courier_finish_route") {
+      const dailyAccess = await getCourierDailyAccess(request, shop);
+      if (!dailyAccess) {
+        return { ok: false, error: "Tu acceso vencio. Ingresa nuevamente tu codigo." };
+      }
+      const newCode = await generateUniqueCourierCode(shop);
+      await prisma.$transaction([
+        prisma.courier.update({
+          where: { id: Number(dailyAccess.courierId) },
+          data: { code: newCode },
+        }),
+        prisma.courierActivity.create({
+          data: {
+            shop,
+            courierId: Number(dailyAccess.courierId),
+            courierName: String(dailyAccess.courierName || ""),
+            requestId: `route:${dailyAccess.routeId}`,
+            action: "courier_route_finished",
+            routeId: String(dailyAccess.routeId || ""),
+          },
+        }),
+      ]);
       url.searchParams.set("shop", shop);
       url.searchParams.delete("updated");
       url.searchParams.delete("overrideRequestId");
@@ -276,6 +309,17 @@ export const action = async ({ request }) => {
       if (!courier) {
         return { ok: false, loginError: "El codigo ingresado no es valido." };
       }
+      const routeId = crypto.randomUUID();
+      await prisma.courierActivity.create({
+        data: {
+          shop,
+          courierId: courier.id,
+          courierName: courier.name,
+          requestId: `route:${routeId}`,
+          action: "courier_route_started",
+          routeId,
+        },
+      });
       url.searchParams.set("shop", shop);
       url.searchParams.set("tab", "pedidos");
       return redirect(`${url.pathname}?${url.searchParams.toString()}`, {
@@ -285,6 +329,8 @@ export const action = async ({ request }) => {
             courierId: courier.id,
             courierName: courier.name,
             dateKey: courierMexicoDateKey(new Date()),
+            routeId,
+            accessCode: code,
           }),
         },
       });
@@ -457,6 +503,7 @@ export const action = async ({ request }) => {
         requestId,
         orderNumber: String(formData.get("orderNumber") || "").trim() || null,
         action: intent,
+        routeId: String(dailyAccess.routeId || "") || null,
       },
     });
 
@@ -979,10 +1026,17 @@ export default function RepartidorPublicPortal() {
               {courierName ? `Repartidor: ${courierName}` : "Ordenes pendientes de entrega y devolucion."}
             </p>
           </div>
-          <Form method="post">
-            <input type="hidden" name="intent" value="courier_daily_logout" />
+          <Form
+            method="post"
+            onSubmit={(event) => {
+              if (!window.confirm("¿Estas seguro de finalizar la ruta? Tu codigo actual dejara de funcionar.")) {
+                event.preventDefault();
+              }
+            }}
+          >
+            <input type="hidden" name="intent" value="courier_finish_route" />
             <input type="hidden" name="shop" value={shop || ""} />
-            <button className={styles.logoutButton} type="submit">Cerrar sesion</button>
+            <button className={styles.logoutButton} type="submit">Finalizar ruta</button>
           </Form>
         </header>
 
