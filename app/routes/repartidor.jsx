@@ -612,6 +612,28 @@ export const loader = async ({ request }) => {
   }
 
   const overrideTargetOrder = courierOrders.find((requestRow) => String(requestRow?.id || "").trim() === overrideRequestId);
+  if (overrideTargetOrder && overrideStatus) {
+    courierOrders = courierOrders.map((requestRow) => {
+      if (String(requestRow?.id || "").trim() !== overrideRequestId) {
+        return requestRow;
+      }
+
+      const persistedStatus = String(requestRow?.status || "").trim().toLowerCase();
+      const hasFinalPersistedStatus = ["rechazada", "recibida", "reembolsada", "completada", "denegada"].includes(
+        persistedStatus,
+      );
+      if (hasFinalPersistedStatus) {
+        return requestRow;
+      }
+
+      return {
+        ...requestRow,
+        status: overrideStatus,
+        attemptCount: overrideAttemptCount || Number(requestRow?.attemptCount || 0),
+      };
+    });
+  }
+
   if (
     overrideRequestId &&
     !overrideRequestId.startsWith("pickup-") &&
