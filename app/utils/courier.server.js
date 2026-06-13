@@ -1661,18 +1661,20 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
 export async function fetchCourierOrdersByToken({ shop, accessToken }) {
   if (!shop || !accessToken) return [];
 
-  const queryCandidates = ["fulfillment_status:unfulfilled", "status:open", "status:any"];
   const courierOrdersById = new Map();
 
-  for (const queryString of queryCandidates) {
+  for (const queryString of ["fulfillment_status:unfulfilled"]) {
     const nodes = await fetchCourierOrdersByQuery({ shop, accessToken, queryString });
     const normalizationJobs = [];
     const courierOrders = nodes
       .filter((orderNode) => {
         const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
         const courierStatus = getCourierRouteStatusFromTags(orderNode?.tags);
-        const hasTrackedCourierStatus = courierStatus !== "pendiente";
-        return isCourierLocalDeliveryOrder(orderNode) && (hasTrackedCourierStatus || fulfillmentStatus !== "RESTOCKED");
+        return (
+          isCourierLocalDeliveryOrder(orderNode) &&
+          !["FULFILLED", "RESTOCKED"].includes(fulfillmentStatus) &&
+          courierStatus !== "recoger_en_sucursal"
+        );
       })
       .map((orderNode) => {
         const shipping = orderNode.shippingAddress || null;
