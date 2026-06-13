@@ -163,12 +163,6 @@ function isCourierHistoryFromToday(request) {
   return courierMexicoDateKey(historyTimestamp) === courierMexicoDateKey(new Date());
 }
 
-function isCourierScheduledTodayOrLater(request) {
-  const scheduledDate = new Date(request?.pickupDate || request?.createdAt || "");
-  if (Number.isNaN(scheduledDate.getTime())) return true;
-  return courierMexicoDateKey(scheduledDate) >= courierMexicoDateKey(new Date());
-}
-
 function getReturnFailedAttemptCount(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
   const match = normalizedStatus.match(/^intento_fallido_(\d+)$/);
@@ -823,19 +817,18 @@ export default function RepartidorPublicPortal() {
   const historyOrders = effectiveCourierOrders
     .filter((request) => isCourierHistoryStatus(request?.status) && isCourierHistoryFromToday(request))
     .sort((firstRequest, secondRequest) => courierHistoryTimestampMs(secondRequest) - courierHistoryTimestampMs(firstRequest));
-  const routeOrders = effectiveCourierOrders.filter(
-    (request) => isCourierRouteTabStatus(request?.status) && isCourierScheduledTodayOrLater(request),
-  );
+  const routeOrders = effectiveCourierOrders
+    .filter((request) => isCourierRouteTabStatus(request?.status))
+    .sort(compareCourierDisplayOrder);
   const pendingOrders = effectiveCourierOrders
     .filter((request) => !isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status))
     .sort(compareCourierDisplayOrder);
-  const pendingOrdersCount = pendingOrders.length;
-  const routeOrder = routeOrders[0] || null;
+  const activeOrdersCount = pendingOrders.length + routeOrders.length;
   const pendingPreviewOrder = pendingOrders[0] || null;
   const visibleOrders =
     activeTab === "en_ruta"
-      ? routeOrder
-        ? [routeOrder]
+      ? routeOrders.length
+        ? routeOrders
         : pendingPreviewOrder
           ? [pendingPreviewOrder]
           : []
@@ -849,7 +842,12 @@ export default function RepartidorPublicPortal() {
       : activeTab === "historial"
         ? "No hay ordenes en historial."
         : "No hay ordenes pendientes por entregar.";
-  const isReturnOrder = (request) => String(request?.courierLabel || "") === "Devolucion";
+  const isReturnOrder = (request) =>
+    String(request?.courierLabel || "")
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase() === "devolucion";
   const isRouteActionVisible = (request) => !isCourierRouteStatus(request?.status) && !isCourierHistoryStatus(request?.status);
   const isNotDeliveredStatus = (request) => String(request?.status || "").trim().toLowerCase() === "no_entregado";
   const isPickupReadyStatus = (request) => String(request?.status || "").trim().toLowerCase() === "recoger_en_sucursal";
@@ -995,8 +993,8 @@ export default function RepartidorPublicPortal() {
           <div className={styles.cardHeader}>
             <h2 className={styles.cardTitle}>Ordenes repartidor</h2>
             <div className={styles.counterGroup} aria-label="Resumen de ordenes pendientes">
-              <span className={styles.counterBadge}>Ordenes {pendingOrdersCount}</span>
-              <span className={styles.counterBadge}>Restantes {pendingOrdersCount}</span>
+              <span className={styles.counterBadge}>Ordenes {activeOrdersCount}</span>
+              <span className={styles.counterBadge}>Restantes {activeOrdersCount}</span>
             </div>
           </div>
           <div className={styles.tabRow} role="tablist" aria-label="Secciones de repartidor">
