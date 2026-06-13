@@ -1,6 +1,6 @@
 ﻿/* eslint-disable react/prop-types */
 import { useEffect, useState } from "react";
-import { Form, useActionData, useFetcher, useLoaderData, useLocation, useNavigation } from "react-router";
+import { Form, Link, useActionData, useFetcher, useLoaderData, useLocation, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -2767,7 +2767,7 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
   if (historyView === "all") {
     return (
       <div className={styles.courierHistoryDirectoryList}>
-        <a className={styles.courierHistoryBackLink} href={buildHistoryHref()}>← Regresar</a>
+        <Link className={styles.courierHistoryBackLink} to={buildHistoryHref()}>← Regresar</Link>
         <h3>Historial de todas las ordenes</h3>
         <div className={styles.courierGrid}>
           {orders.map((request) => (
@@ -2853,12 +2853,12 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
 
       return (
         <div className={styles.courierHistoryDirectoryList}>
-          <a
+          <Link
             className={styles.courierHistoryBackLink}
-            href={buildHistoryHref({ view: "courier", courierId: selectedCourierId })}
+            to={buildHistoryHref({ view: "courier", courierId: selectedCourierId })}
           >
             ← Regresar al calendario
-          </a>
+          </Link>
           <div className={styles.courierHistoryHeader}>
             <div>
               <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
@@ -2901,23 +2901,23 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
 
     return (
       <div className={styles.courierHistoryDirectoryList}>
-        <a className={styles.courierHistoryBackLink} href={buildHistoryHref()}>← Regresar</a>
+        <Link className={styles.courierHistoryBackLink} to={buildHistoryHref()}>← Regresar</Link>
         <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
         {dates.length ? (
           <div className={styles.courierCalendar}>
             {dates.map((dateKey) => {
               return (
-                <a
+                <Link
                   key={dateKey}
                   className={styles.courierCalendarDay}
-                  href={buildHistoryHref({
+                  to={buildHistoryHref({
                     view: "courier_day",
                     courierId: selectedCourierId,
                     date: dateKey,
                   })}
                 >
                   {new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}
-                </a>
+                </Link>
               );
             })}
           </div>
@@ -2932,21 +2932,21 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
     <div className={styles.courierHistoryDirectoryList}>
       {couriers.map((courier) => {
         return (
-          <a
+          <Link
             key={courier.id}
             className={`${styles.btn} ${styles.courierHistoryDirectorySummary}`}
-            href={buildHistoryHref({ view: "courier", courierId: courier.id })}
+            to={buildHistoryHref({ view: "courier", courierId: courier.id })}
           >
               Historial del repartidor {courier.name}
-          </a>
+          </Link>
         );
       })}
-      <a
+      <Link
         className={`${styles.btn} ${styles.btnPrimary} ${styles.courierHistoryDirectorySummary}`}
-        href={buildHistoryHref({ view: "all" })}
+        to={buildHistoryHref({ view: "all" })}
       >
           Historial de todas las ordenes
-      </a>
+      </Link>
     </div>
   );
 }
