@@ -866,6 +866,30 @@
   color: #1d4ed8;
 }
 
+.courierBadgeAttemptWarning {
+  background: #fff5ea;
+  border-color: #ffb86b;
+  color: #b45309;
+}
+
+.courierBadgeStatusFailed {
+  background: #fff1f1;
+  border-color: #d9364f;
+  color: #c5283d;
+}
+
+.courierBadgeStatusSuccess {
+  background: #ecfdf3;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+.courierBadgeStatusRoute {
+  background: #e9f1ff;
+  border-color: #005bd3;
+  color: #005bd3;
+}
+
 .courierField,
 .courierAddress {
   margin: 0;

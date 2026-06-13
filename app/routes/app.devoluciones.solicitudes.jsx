@@ -846,6 +846,35 @@ function courierAttemptFromHistoryEvents(historyEvents, fallbackAttempt = 0) {
   return Math.max(historyAttempt, Number(fallbackAttempt || 0));
 }
 
+function courierStatusFromActivityAction(action, fallbackStatus = "") {
+  const normalizedAction = String(action || "").trim().toLowerCase();
+  const statusByAction = {
+    courier_mark_delivered: "entregado",
+    courier_mark_not_delivered: "no_entregado",
+    courier_return_mark_received: "recibida",
+    courier_return_pickup_attempt_failed: "no_recibido",
+    courier_return_reject_after_failed_pickups: "rechazada",
+  };
+  return statusByAction[normalizedAction] || fallbackStatus;
+}
+
+function courierHistoryStatusLabel(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "no_entregado") return "no entregado";
+  if (normalized === "no_recibido") return "no recibido";
+  return getCourierStatusLabel(status);
+}
+
+function isCourierFinalActivityAction(action) {
+  return [
+    "courier_mark_delivered",
+    "courier_mark_not_delivered",
+    "courier_return_mark_received",
+    "courier_return_pickup_attempt_failed",
+    "courier_return_reject_after_failed_pickups",
+  ].includes(String(action || "").trim().toLowerCase());
+}
+
 function buildCourierHistoryEvents(request) {
   if (request.courierLabel === "Devolución") {
     const entries = parseReasonEntries(request.rejectionReason);
@@ -2775,6 +2804,20 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
       const selectedDayActivities = courierActivities.filter(
         (activity) => mexicoActivityDateKey(activity.createdAt) === selectedDate,
       );
+      const latestFinalActivityByOrderId = new Map();
+      const finalActivityAtByOrderId = new Map();
+      for (const activity of [...selectedDayActivities].sort(
+        (firstActivity, secondActivity) =>
+          new Date(firstActivity.createdAt || "").getTime() -
+          new Date(secondActivity.createdAt || "").getTime(),
+      )) {
+        const requestId = String(activity.requestId || "");
+        if (!requestId) continue;
+        if (isCourierFinalActivityAction(activity.action)) {
+          latestFinalActivityByOrderId.set(requestId, activity);
+          finalActivityAtByOrderId.set(requestId, new Date(activity.createdAt || "").getTime());
+        }
+      }
       const selectedActivityOrders = [
         ...new Map(
           selectedDayActivities
@@ -2787,30 +2830,22 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
         ? todayOrders
         : selectedActivityOrders
       ).sort(compareCourierDisplayOrder);
-      const sequenceByOrderId = new Map(
-        baseDayOrders.map((order, index) => [String(order.id || ""), index + 1]),
-      );
-      const latestActivityAtByOrderId = new Map();
-      for (const activity of selectedDayActivities) {
-        const requestId = String(activity.requestId || "");
-        const activityAt = new Date(activity.createdAt || "").getTime();
-        if (!requestId || !Number.isFinite(activityAt)) continue;
-        latestActivityAtByOrderId.set(
-          requestId,
-          Math.max(latestActivityAtByOrderId.get(requestId) || 0, activityAt),
-        );
-      }
       const selectedDayOrders = [...baseDayOrders].sort((firstOrder, secondOrder) => {
-        const firstIsFinalized = isCourierHistoryStatus(firstOrder.status);
-        const secondIsFinalized = isCourierHistoryStatus(secondOrder.status);
+        const firstId = String(firstOrder.id || "");
+        const secondId = String(secondOrder.id || "");
+        const firstIsFinalized = finalActivityAtByOrderId.has(firstId);
+        const secondIsFinalized = finalActivityAtByOrderId.has(secondId);
         if (firstIsFinalized !== secondIsFinalized) return firstIsFinalized ? 1 : -1;
         if (!firstIsFinalized) return compareCourierDisplayOrder(firstOrder, secondOrder);
 
-        const firstFinishedAt = latestActivityAtByOrderId.get(String(firstOrder.id || "")) || 0;
-        const secondFinishedAt = latestActivityAtByOrderId.get(String(secondOrder.id || "")) || 0;
+        const firstFinishedAt = finalActivityAtByOrderId.get(firstId) || 0;
+        const secondFinishedAt = finalActivityAtByOrderId.get(secondId) || 0;
         if (firstFinishedAt !== secondFinishedAt) return firstFinishedAt - secondFinishedAt;
         return compareCourierDisplayOrder(firstOrder, secondOrder);
       });
+      const sequenceByOrderId = new Map(
+        selectedDayOrders.map((order, index) => [String(order.id || ""), index + 1]),
+      );
       const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
         dateStyle: "full",
         timeZone: "UTC",
@@ -2842,9 +2877,16 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
                   request={order}
                   sequenceNumber={sequenceByOrderId.get(String(order.id || "")) || index + 1}
                   statusOverride={
-                    currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
-                      ? "pendiente"
-                      : ""
+                    latestFinalActivityByOrderId.has(String(order.id || ""))
+                      ? courierStatusFromActivityAction(
+                          latestFinalActivityByOrderId.get(String(order.id || "")).action,
+                          currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
+                            ? "pendiente"
+                            : order.status,
+                        )
+                      : currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
+                        ? "pendiente"
+                        : ""
                   }
                   showFinalAttemptBadge
                 />
@@ -3001,6 +3043,19 @@ function CourierOrderCard({
 }) {
   const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
   const visibleStatus = statusOverride || request.status;
+  const normalizedVisibleStatus = String(visibleStatus || "").trim().toLowerCase();
+  const attemptBadgeClass = ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
+    ? normalizedVisibleStatus === "rechazada"
+      ? styles.courierBadgeAttemptWarning
+      : styles.courierBadgeStatusFailed
+    : styles.courierBadgeAttempt;
+  const statusBadgeClass = ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
+    ? styles.courierBadgeStatusFailed
+    : ["entregado", "recibido", "recibida"].includes(normalizedVisibleStatus)
+      ? styles.courierBadgeStatusSuccess
+      : normalizedVisibleStatus.startsWith("en_ruta")
+        ? styles.courierBadgeStatusRoute
+        : "";
   return (
     <article
       className={`${styles.courierCard} ${
@@ -3024,11 +3079,13 @@ function CourierOrderCard({
         </div>
         <div className={styles.courierStatusGroup}>
           {showFinalAttemptBadge && finalAttempt > 0 ? (
-            <span className={`${styles.courierBadgeStatus} ${styles.courierBadgeAttempt}`}>
+            <span className={`${styles.courierBadgeStatus} ${attemptBadgeClass}`}>
               {courierAttemptCountLabel(finalAttempt)}
             </span>
           ) : null}
-          <span className={styles.courierBadgeStatus}>{getCourierStatusLabel(visibleStatus)}</span>
+          <span className={`${styles.courierBadgeStatus} ${statusBadgeClass}`}>
+            {courierHistoryStatusLabel(visibleStatus)}
+          </span>
         </div>
       </div>
       <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
