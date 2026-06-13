@@ -607,6 +607,20 @@ export const loader = async ({ request }) => {
   const deliveryConfirmationComplete =
     Boolean(dailyAccess.deliveryConfirmationComplete) ||
     (await hasCourierDeliveryConfirmation(request, dailyAccess, shop));
+  const currentRouteActivities = dailyAccess.routeId
+    ? await prisma.courierActivity.findMany({
+        where: {
+          shop,
+          courierId: Number(dailyAccess.courierId),
+          routeId: String(dailyAccess.routeId),
+          action: { notIn: ["courier_route_started", "courier_route_finished"] },
+        },
+        select: { requestId: true },
+      })
+    : [];
+  const currentRouteRequestIds = new Set(
+    currentRouteActivities.map((activity) => String(activity.requestId || "").trim()).filter(Boolean),
+  );
 
   const sessionCandidatesByShop = new Map();
   for (const sessionCandidate of allSessionCandidates || sessionCandidates || []) {
@@ -698,10 +712,20 @@ export const loader = async ({ request }) => {
     );
   }
 
+  const routeCourierOrders = courierOrders.map((requestRow) => {
+    const requestId = String(requestRow?.id || "").trim();
+    if (currentRouteRequestIds.has(requestId)) return requestRow;
+    return {
+      ...requestRow,
+      status: "pendiente",
+      courierHistoryAt: "",
+    };
+  });
+
   return {
     activeTab,
     shop: resolvedShop,
-    courierOrders,
+    courierOrders: routeCourierOrders,
     requiresDailyAccess: false,
     courierName: dailyAccess.courierName || "",
     confirmedRequestIds: Array.isArray(dailyAccess.confirmedRequestIds)
