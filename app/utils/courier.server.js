@@ -9,17 +9,13 @@ import {
 const ADMIN_API_VERSION = "2025-10";
 export const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
-  "intento_fallido_1",
-  "intento_fallido_2",
-  "intento_fallido_3",
-  "reintento_pendiente",
+  "en_ruta",
   "en_ruta_1",
   "en_ruta_2",
   "en_ruta_3",
-  "recibida",
-  "reembolsada",
-  "completada",
-  "rechazada",
+  "intento_fallido_1",
+  "intento_fallido_2",
+  "no_recibido",
 ]);
 const BRANCH_PICKUP_STATUSES = new Set([
   "por_devolver",
