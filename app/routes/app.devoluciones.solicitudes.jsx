@@ -2843,6 +2843,24 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
     const routeStarts = courierActivities.filter(
       (activity) => activity.action === "courier_route_started" && activity.routeId,
     );
+    const routeOrderIdsByRouteId = new Map();
+    for (const activity of courierActivities) {
+      if (!activity.routeId || activity.action === "courier_route_started" || activity.action === "courier_route_finished") {
+        continue;
+      }
+      const requestId = String(activity.requestId || "").trim();
+      if (!requestId || !orderByRequestId.has(requestId)) continue;
+      const current = routeOrderIdsByRouteId.get(activity.routeId) || new Set();
+      current.add(requestId);
+      routeOrderIdsByRouteId.set(activity.routeId, current);
+    }
+    const routeHistoryBlocks = routeStarts
+      .filter((activity) => (routeOrderIdsByRouteId.get(activity.routeId)?.size || 0) > 0)
+      .sort(
+        (firstActivity, secondActivity) =>
+          new Date(secondActivity.createdAt || "").getTime() -
+          new Date(firstActivity.createdAt || "").getTime(),
+      );
     const todayDateKey = mexicoActivityDateKey(new Date());
     const currentOrders = orders.filter((order) => !isCourierHistoryStatus(order.status));
     const todayActivityOrders = courierActivities
@@ -2927,7 +2945,6 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
             <div>
               <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
               <p className={styles.courierHistoryDateTitle}>{selectedDayLabel}</p>
-              {selectedRouteId ? <p className={styles.courierHistoryDateTitle}>Ruta iniciada {formatCourierHistoryDate(routeStarts.find((activity) => activity.routeId === selectedRouteId)?.createdAt)}</p> : null}
             </div>
             <div className={styles.courierHistoryCounters}>
               <span className={styles.courierHistoryCounter}>Ordenes {selectedDayOrders.length}</span>
@@ -2968,9 +2985,9 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
       <div className={styles.courierHistoryDirectoryList}>
         <Link className={styles.courierHistoryBackLink} to={buildHistoryHref()}>← Regresar</Link>
         <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
-        {dates.length || routeStarts.length ? (
+        {dates.length || routeHistoryBlocks.length ? (
           <div className={styles.courierCalendar}>
-            {routeStarts.map((activity, index) => {
+            {routeHistoryBlocks.map((activity) => {
               const dateKey = mexicoActivityDateKey(activity.createdAt);
               return (
                 <Link
@@ -2983,7 +3000,7 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
                     routeId: activity.routeId,
                   })}
                 >
-                  Ruta {routeStarts.length - index} · {new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeStyle: "short", timeZone: "America/Mexico_City" }).format(new Date(activity.createdAt))}
+                  {new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}
                 </Link>
               );
             })}
@@ -2991,7 +3008,7 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
               const hasLegacyActivities = courierActivities.some(
                 (activity) => !activity.routeId && mexicoActivityDateKey(activity.createdAt) === dateKey,
               );
-              if (!hasLegacyActivities && routeStarts.some((activity) => mexicoActivityDateKey(activity.createdAt) === dateKey)) return null;
+              if (!hasLegacyActivities && routeHistoryBlocks.some((activity) => mexicoActivityDateKey(activity.createdAt) === dateKey)) return null;
               return (
                 <Link
                   key={dateKey}
