@@ -28,7 +28,7 @@ import {
   resolveCourierPortalShop,
 } from "../utils/courier.server";
 
-const courierDailyAccessCookie = createCookie("courier_daily_access", {
+const courierDailyAccessCookie = createCookie("courier_daily_access_v2", {
   httpOnly: true,
   sameSite: "lax",
   secure: process.env.NODE_ENV === "production",
@@ -37,7 +37,7 @@ const courierDailyAccessCookie = createCookie("courier_daily_access", {
   secrets: [process.env.SHOPIFY_API_SECRET || "courier-daily-access"],
 });
 
-const courierDeliveryConfirmationCookie = createCookie("courier_delivery_confirmation", {
+const courierDeliveryConfirmationCookie = createCookie("courier_delivery_confirmation_v2", {
   httpOnly: true,
   sameSite: "lax",
   secure: process.env.NODE_ENV === "production",
@@ -113,12 +113,14 @@ function courierHistoryTimestampMs(request) {
 function courierMexicoDateKey(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) return "";
-  return new Intl.DateTimeFormat("en-CA", {
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Mexico_City",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(date);
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 async function getCourierDailyAccess(request, shop) {
