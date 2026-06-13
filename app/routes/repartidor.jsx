@@ -647,7 +647,6 @@ export default function RepartidorPublicPortal() {
                   <span className={styles.orderSequenceBadge}>{currentConfirmationSequence}</span>
                   <strong>Pedido #{currentConfirmationOrder.orderNumber}</strong>
                 </div>
-                <p>{currentConfirmationOrder.customerName}</p>
                 <Form method="post" reloadDocument className={styles.confirmationForm}>
                   <input type="hidden" name="intent" value="courier_confirm_delivery" />
                   <input type="hidden" name="shop" value={shop || ""} />
