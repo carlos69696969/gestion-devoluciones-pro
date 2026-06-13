@@ -2719,13 +2719,7 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
     return (
       <div className={styles.courierHistoryDirectoryList}>
         <a className={styles.courierHistoryBackLink} href={buildHistoryHref()}>← Regresar</a>
-        <div className={styles.courierHistoryHeader}>
-          <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
-          <div className={styles.courierHistoryCounters}>
-            <span className={styles.courierHistoryCounter}>Ordenes {todayOrders.length}</span>
-            <span className={styles.courierHistoryCounter}>Restantes {currentOrders.length}</span>
-          </div>
-        </div>
+        <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
         {dates.length ? (
           <div className={styles.courierCalendar}>
             {dates.map((dateKey) => {
