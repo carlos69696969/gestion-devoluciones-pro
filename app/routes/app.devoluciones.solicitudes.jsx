@@ -329,11 +329,17 @@ function returnRequestItemsSignature(requestRow) {
   return `${orderReference}|${itemParts.join(",")}`;
 }
 
-function returnRequestOrderReference(requestRow) {
-  return (
-    String(requestRow?.shopifyOrderId || "").trim() ||
-    String(requestRow?.orderNumber || "").trim()
-  );
+function returnRequestOrderReferences(requestRow) {
+  const references = new Set();
+  const shopifyOrderId = String(requestRow?.shopifyOrderId || "").trim();
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim();
+  const shopifyOrderNumericId = shopifyOrderId.match(/(\d+)$/)?.[1] || "";
+
+  if (shopifyOrderId) references.add(`shopify:${shopifyOrderId}`);
+  if (shopifyOrderNumericId) references.add(`shopify-numeric:${shopifyOrderNumericId}`);
+  if (orderNumber) references.add(`order-number:${orderNumber}`);
+
+  return Array.from(references);
 }
 
 function requestWasCreatedAfter(candidate, reference) {
@@ -348,16 +354,14 @@ function requestWasCreatedAfter(candidate, reference) {
 function excludePickupRequestsSupersededByBranch(requestRows) {
   const rows = Array.isArray(requestRows) ? requestRows : [];
   const latestBranchRequestBySignature = new Map();
-  const latestBranchPickupByOrder = new Map();
+  const branchPickupOrderReferences = new Set();
 
   for (const requestRow of rows) {
     const returnMethod = String(requestRow?.returnMethod || "").trim().toLowerCase();
     const status = String(requestRow?.status || "").trim().toLowerCase();
     if (BRANCH_PICKUP_STATUSES.has(status)) {
-      const orderReference = returnRequestOrderReference(requestRow);
-      const current = latestBranchPickupByOrder.get(orderReference);
-      if (orderReference && (!current || requestWasCreatedAfter(requestRow, current))) {
-        latestBranchPickupByOrder.set(orderReference, requestRow);
+      for (const orderReference of returnRequestOrderReferences(requestRow)) {
+        branchPickupOrderReferences.add(orderReference);
       }
     }
     if (returnMethod !== "pickup") {
@@ -372,8 +376,13 @@ function excludePickupRequestsSupersededByBranch(requestRows) {
   return rows.filter((requestRow) => {
     if (String(requestRow?.returnMethod || "").trim().toLowerCase() !== "pickup") return false;
     if (BRANCH_PICKUP_STATUSES.has(String(requestRow?.status || "").trim().toLowerCase())) return false;
-    const branchPickupRequest = latestBranchPickupByOrder.get(returnRequestOrderReference(requestRow));
-    if (branchPickupRequest && requestWasCreatedAfter(branchPickupRequest, requestRow)) return false;
+    if (
+      returnRequestOrderReferences(requestRow).some((orderReference) =>
+        branchPickupOrderReferences.has(orderReference),
+      )
+    ) {
+      return false;
+    }
     const branchRequest = latestBranchRequestBySignature.get(returnRequestItemsSignature(requestRow));
     return !branchRequest || !requestWasCreatedAfter(branchRequest, requestRow);
   });
