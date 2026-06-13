@@ -93,7 +93,7 @@ function getDeliveryAttemptLabel(request, activeTab) {
     ? Math.min(failedAttemptCount, 3)
     : Math.min(failedAttemptCount + 1, 3);
   if (currentAttemptNumber === 1 && isCourierRouteStatus(normalizedStatus)) return "";
-  if (activeTab === "en_ruta") {
+  if (activeTab === "pedidos" || activeTab === "en_ruta") {
     if (currentAttemptNumber === 1) return "Primer intento";
     if (currentAttemptNumber === 2) return "Segundo intento";
     return "Tercer intento";
