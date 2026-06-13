@@ -1490,7 +1490,7 @@ export const loader = async ({ request }) => {
         })
       : [];
 
-  return { requests, courierOrders, couriers, courierActivities, viewMode };
+  return { requests, courierOrders, couriers, courierActivities, viewMode, shop: session.shop };
 };
 
 export const action = async ({ request }) => {
@@ -2489,7 +2489,7 @@ function historyTimestampMs(request) {
 }
 
 export default function ReturnsRequests() {
-  const { requests, courierOrders, couriers = [], courierActivities = [], viewMode } = useLoaderData();
+  const { requests, courierOrders, couriers = [], courierActivities = [], viewMode, shop } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const location = useLocation();
@@ -2680,6 +2680,7 @@ export default function ReturnsRequests() {
               activities={courierActivities}
               orders={courierOrders}
               search={location.search}
+              shop={shop}
             />
           )}
         </s-section>
@@ -2715,7 +2716,7 @@ function mexicoActivityDateKey(value) {
   }).format(new Date(value));
 }
 
-function CourierHistoryDirectory({ couriers, activities, orders, search }) {
+function CourierHistoryDirectory({ couriers, activities, orders, search, shop }) {
   const orderByRequestId = new Map(orders.map((order) => [String(order.id || ""), order]));
   const searchParams = new URLSearchParams(search);
   const historyView = String(searchParams.get("historyView") || "").trim();
@@ -2724,6 +2725,7 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
   const baseHref = "/app/devoluciones/solicitudes/courier_history";
   const buildHistoryHref = ({ view = "", courierId = "", date = "" } = {}) => {
     const nextParams = new URLSearchParams(searchParams);
+    if (!nextParams.get("shop") && shop) nextParams.set("shop", shop);
     if (view) nextParams.set("historyView", view);
     else nextParams.delete("historyView");
     if (courierId) nextParams.set("courierId", String(courierId));

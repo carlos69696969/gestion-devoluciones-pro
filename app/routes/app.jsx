@@ -113,15 +113,15 @@ export const loader = async ({ request }) => {
   );
 
   // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "", navCounts };
+  return { apiKey: process.env.SHOPIFY_API_KEY || "", navCounts, shop: session.shop };
 };
 
 export default function App() {
-  const { apiKey, navCounts } = useLoaderData();
+  const { apiKey, navCounts, shop: sessionShop } = useLoaderData();
   const location = useLocation();
   const withCount = (label, count) => (count > 0 ? `${label} (${count})` : label);
   const navParams = new URLSearchParams(location.search || "");
-  const shop = String(navParams.get("shop") || "").trim();
+  const shop = String(navParams.get("shop") || sessionShop || "").trim();
   const host = String(navParams.get("host") || "").trim();
   const withEmbedParams = (pathname) => {
     const params = new URLSearchParams();
