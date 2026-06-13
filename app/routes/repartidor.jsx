@@ -37,6 +37,15 @@ const courierDailyAccessCookie = createCookie("courier_daily_access", {
   secrets: [process.env.SHOPIFY_API_SECRET || "courier-daily-access"],
 });
 
+const courierDeliveryConfirmationCookie = createCookie("courier_delivery_confirmation", {
+  httpOnly: true,
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  secure: process.env.NODE_ENV === "production",
+  path: "/",
+  maxAge: 60 * 60 * 26,
+  secrets: [process.env.SHOPIFY_API_SECRET || "courier-daily-access"],
+});
+
 const PICKUP_FAILED_REASON_OPTIONS = [
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨",
   "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
@@ -131,6 +140,19 @@ async function getCourierDailyAccess(request, shop) {
   if (!courier) return null;
   access.courierName = courier.name;
   return access;
+}
+
+async function hasCourierDeliveryConfirmation(request, dailyAccess, shop) {
+  const confirmation = await courierDeliveryConfirmationCookie.parse(
+    request.headers.get("Cookie"),
+  );
+  return (
+    String(confirmation?.shop || "").trim().toLowerCase() ===
+      String(shop || "").trim().toLowerCase() &&
+    String(confirmation?.dateKey || "") === courierMexicoDateKey(new Date()) &&
+    Number(confirmation?.courierId) === Number(dailyAccess?.courierId) &&
+    confirmation?.complete === true
+  );
 }
 
 function isCourierHistoryFromToday(request) {
@@ -234,11 +256,16 @@ export const action = async ({ request }) => {
       url.searchParams.delete("overrideRequestId");
       url.searchParams.delete("overrideStatus");
       url.searchParams.delete("overrideAttemptCount");
-      return redirect(`${url.pathname}?${url.searchParams.toString()}`, {
-        headers: {
-          "Set-Cookie": await courierDailyAccessCookie.serialize("", { maxAge: 0 }),
-        },
-      });
+      const headers = new Headers();
+      headers.append(
+        "Set-Cookie",
+        await courierDailyAccessCookie.serialize("", { maxAge: 0 }),
+      );
+      headers.append(
+        "Set-Cookie",
+        await courierDeliveryConfirmationCookie.serialize("", { maxAge: 0 }),
+      );
+      return redirect(`${url.pathname}?${url.searchParams.toString()}`, { headers });
     }
 
     if (intent === "courier_daily_login") {
@@ -360,11 +387,23 @@ export const action = async ({ request }) => {
           : [],
         deliveryConfirmationComplete: Boolean(dailyAccess.deliveryConfirmationComplete),
       };
-      return redirect(`${url.pathname}?${url.searchParams.toString()}`, {
-        headers: {
-          "Set-Cookie": await courierDailyAccessCookie.serialize(updatedDailyAccess),
-        },
-      });
+      const headers = new Headers();
+      headers.append(
+        "Set-Cookie",
+        await courierDailyAccessCookie.serialize(updatedDailyAccess),
+      );
+      if (updatedDailyAccess.deliveryConfirmationComplete) {
+        headers.append(
+          "Set-Cookie",
+          await courierDeliveryConfirmationCookie.serialize({
+            shop,
+            courierId: Number(dailyAccess.courierId),
+            dateKey: courierMexicoDateKey(new Date()),
+            complete: true,
+          }),
+        );
+      }
+      return redirect(`${url.pathname}?${url.searchParams.toString()}`, { headers });
     }
 
     if (
@@ -522,6 +561,9 @@ export const loader = async ({ request }) => {
         "No se encontro una sesion valida para la tienda. Verifica que la app siga instalada y que exista una sesion offline.",
     };
   }
+  const deliveryConfirmationComplete =
+    Boolean(dailyAccess.deliveryConfirmationComplete) ||
+    (await hasCourierDeliveryConfirmation(request, dailyAccess, shop));
 
   const sessionCandidatesByShop = new Map();
   for (const sessionCandidate of allSessionCandidates || sessionCandidates || []) {
@@ -603,7 +645,7 @@ export const loader = async ({ request }) => {
     missingOrderNumbers: Array.isArray(dailyAccess.missingOrderNumbers)
       ? dailyAccess.missingOrderNumbers.map((value) => String(value || ""))
       : [],
-    deliveryConfirmationComplete: Boolean(dailyAccess.deliveryConfirmationComplete),
+    deliveryConfirmationComplete,
   };
 };
 
