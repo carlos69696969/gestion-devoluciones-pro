@@ -24,6 +24,98 @@
   box-sizing: border-box;
 }
 
+.confirmationCard {
+  width: min(100%, 520px);
+  box-sizing: border-box;
+}
+
+.confirmationOrder {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid #dfe3e8;
+  border-radius: 14px;
+  background: #f9fafb;
+}
+
+.confirmationOrder p {
+  margin: 0;
+  color: #4b5563;
+}
+
+.confirmationOrderHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+}
+
+.confirmationForm {
+  display: grid;
+  gap: 14px;
+}
+
+.confirmationCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.confirmationCheckbox input {
+  width: 20px;
+  height: 20px;
+  accent-color: #005bd3;
+}
+
+.missingButton {
+  width: 100%;
+  border: 1px solid #d82c0d;
+  border-radius: 999px;
+  padding: 12px 18px;
+  background: #fff4f4;
+  color: #b42318;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.missingSummary {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid #fed7d7;
+  border-radius: 14px;
+  background: #fff7f7;
+}
+
+.missingSummary h2 {
+  margin: 0;
+  color: #b42318;
+  font-size: 18px;
+}
+
+.missingOrderList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.missingOrderList span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #fee4e2;
+  color: #b42318;
+  font-weight: 800;
+}
+
 .accessForm {
   display: grid;
   gap: 12px;

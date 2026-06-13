@@ -273,6 +273,50 @@ export const action = async ({ request }) => {
     }
 
     if (
+      [
+        "courier_confirm_delivery",
+        "courier_mark_delivery_missing",
+        "courier_finish_delivery_confirmation",
+      ].includes(intent)
+    ) {
+      const confirmedRequestIds = Array.isArray(dailyAccess.confirmedRequestIds)
+        ? dailyAccess.confirmedRequestIds.map((value) => String(value || ""))
+        : [];
+      const missingOrderNumbers = Array.isArray(dailyAccess.missingOrderNumbers)
+        ? dailyAccess.missingOrderNumbers.map((value) => String(value || ""))
+        : [];
+
+      if (intent === "courier_finish_delivery_confirmation") {
+        dailyAccess.deliveryConfirmationComplete = true;
+      } else {
+        const orderNumber = String(formData.get("orderNumber") || "").trim();
+        if (!requestId || !orderNumber) {
+          return { ok: false, confirmationError: "No se pudo identificar la orden." };
+        }
+        if (intent === "courier_confirm_delivery" && formData.get("confirmed") !== "yes") {
+          return { ok: false, confirmationError: "Marca la casilla antes de confirmar." };
+        }
+        if (!confirmedRequestIds.includes(requestId)) {
+          confirmedRequestIds.push(requestId);
+        }
+        if (intent === "courier_mark_delivery_missing" && !missingOrderNumbers.includes(orderNumber)) {
+          missingOrderNumbers.push(orderNumber);
+        }
+        dailyAccess.confirmedRequestIds = confirmedRequestIds;
+        dailyAccess.missingOrderNumbers = missingOrderNumbers;
+      }
+
+      url.searchParams.set("shop", shop);
+      url.searchParams.set("tab", "pedidos");
+      url.searchParams.delete("updated");
+      return redirect(`${url.pathname}?${url.searchParams.toString()}`, {
+        headers: {
+          "Set-Cookie": await courierDailyAccessCookie.serialize(dailyAccess),
+        },
+      });
+    }
+
+    if (
       ![
         "courier_mark_en_route",
         "courier_mark_not_delivered",
@@ -502,11 +546,27 @@ export const loader = async ({ request }) => {
     courierOrders,
     requiresDailyAccess: false,
     courierName: dailyAccess.courierName || "",
+    confirmedRequestIds: Array.isArray(dailyAccess.confirmedRequestIds)
+      ? dailyAccess.confirmedRequestIds.map((value) => String(value || ""))
+      : [],
+    missingOrderNumbers: Array.isArray(dailyAccess.missingOrderNumbers)
+      ? dailyAccess.missingOrderNumbers.map((value) => String(value || ""))
+      : [],
+    deliveryConfirmationComplete: Boolean(dailyAccess.deliveryConfirmationComplete),
   };
 };
 
 export default function RepartidorPublicPortal() {
-  const { shop, courierOrders, activeTab: initialActiveTab, requiresDailyAccess, courierName } = useLoaderData();
+  const {
+    shop,
+    courierOrders,
+    activeTab: initialActiveTab,
+    requiresDailyAccess,
+    courierName,
+    confirmedRequestIds = [],
+    missingOrderNumbers = [],
+    deliveryConfirmationComplete = false,
+  } = useLoaderData();
   const actionData = useActionData();
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
@@ -537,6 +597,99 @@ export default function RepartidorPublicPortal() {
               />
               <button className={styles.accessButton} type="submit">Entrar</button>
             </Form>
+          </section>
+        </div>
+      </main>
+    );
+  }
+  const deliveryConfirmationOrders = courierOrders
+    .filter(
+      (request) =>
+        String(request?.courierLabel || "").trim().toLowerCase() === "entrega" &&
+        !isCourierRouteTabStatus(request?.status) &&
+        !isCourierHistoryStatus(request?.status),
+    )
+    .sort(compareCourierDisplayOrder);
+  const confirmedRequestIdSet = new Set(confirmedRequestIds);
+  const unconfirmedDeliveryOrders = deliveryConfirmationOrders.filter(
+    (request) => !confirmedRequestIdSet.has(String(request?.id || "")),
+  );
+  const currentConfirmationOrder = unconfirmedDeliveryOrders.at(-1) || null;
+  const currentConfirmationSequence = currentConfirmationOrder
+    ? deliveryConfirmationOrders.findIndex(
+        (request) => String(request?.id || "") === String(currentConfirmationOrder.id || ""),
+      ) + 1
+    : 0;
+  const shouldShowMissingSummary =
+    !deliveryConfirmationComplete &&
+    !currentConfirmationOrder &&
+    missingOrderNumbers.length > 0;
+  const requiresDeliveryConfirmation =
+    !deliveryConfirmationComplete &&
+    (Boolean(currentConfirmationOrder) || shouldShowMissingSummary);
+
+  if (requiresDeliveryConfirmation) {
+    return (
+      <main className={styles.page}>
+        <div className={styles.accessContainer}>
+          <section className={`${styles.card} ${styles.confirmationCard}`}>
+            <p className={styles.eyebrow}>Cariana repartidores</p>
+            <h1 className={styles.cardTitle}>Confirma tus entregas</h1>
+            <p className={styles.subtitle}>Revisa que tengas físicamente cada pedido antes de comenzar.</p>
+
+            {actionData?.confirmationError ? (
+              <p className={styles.accessError} role="alert">{actionData.confirmationError}</p>
+            ) : null}
+
+            {currentConfirmationOrder ? (
+              <div className={styles.confirmationOrder}>
+                <div className={styles.confirmationOrderHeader}>
+                  <span className={styles.orderSequenceBadge}>{currentConfirmationSequence}</span>
+                  <strong>Pedido #{currentConfirmationOrder.orderNumber}</strong>
+                </div>
+                <p>{currentConfirmationOrder.customerName}</p>
+                <Form method="post" reloadDocument className={styles.confirmationForm}>
+                  <input type="hidden" name="intent" value="courier_confirm_delivery" />
+                  <input type="hidden" name="shop" value={shop || ""} />
+                  <input type="hidden" name="requestId" value={currentConfirmationOrder.id} />
+                  <input type="hidden" name="orderNumber" value={currentConfirmationOrder.orderNumber} />
+                  <label className={styles.confirmationCheckbox}>
+                    <input type="checkbox" name="confirmed" value="yes" required />
+                    <span>Confirmo que tengo físicamente esta entrega</span>
+                  </label>
+                  <button className={styles.accessButton} type="submit">Confirmar</button>
+                </Form>
+                <Form
+                  method="post"
+                  reloadDocument
+                  onSubmit={(event) => {
+                    if (!window.confirm("¿Estás seguro de confirmar que esta orden no está?")) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  <input type="hidden" name="intent" value="courier_mark_delivery_missing" />
+                  <input type="hidden" name="shop" value={shop || ""} />
+                  <input type="hidden" name="requestId" value={currentConfirmationOrder.id} />
+                  <input type="hidden" name="orderNumber" value={currentConfirmationOrder.orderNumber} />
+                  <button className={styles.missingButton} type="submit">No confirmada</button>
+                </Form>
+              </div>
+            ) : (
+              <div className={styles.missingSummary}>
+                <h2>Faltaron estas órdenes</h2>
+                <div className={styles.missingOrderList}>
+                  {missingOrderNumbers.map((orderNumber) => (
+                    <span key={orderNumber}>#{orderNumber}</span>
+                  ))}
+                </div>
+                <Form method="post" reloadDocument>
+                  <input type="hidden" name="intent" value="courier_finish_delivery_confirmation" />
+                  <input type="hidden" name="shop" value={shop || ""} />
+                  <button className={styles.accessButton} type="submit">Continuar al portal</button>
+                </Form>
+              </div>
+            )}
           </section>
         </div>
       </main>
