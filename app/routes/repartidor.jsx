@@ -824,11 +824,12 @@ export default function RepartidorPublicPortal() {
     .filter((request) => !isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status))
     .sort(compareCourierDisplayOrder);
   const activeOrdersCount = pendingOrders.length + routeOrders.length;
+  const routeOrder = routeOrders[0] || null;
   const pendingPreviewOrder = pendingOrders[0] || null;
   const visibleOrders =
     activeTab === "en_ruta"
-      ? routeOrders.length
-        ? routeOrders
+      ? routeOrder
+        ? [routeOrder]
         : pendingPreviewOrder
           ? [pendingPreviewOrder]
           : []
