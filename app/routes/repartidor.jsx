@@ -4,6 +4,7 @@ import prisma from "../db.server";
 import adminStyles from "../styles/admin.module.css";
 import styles from "../styles/repartidor.module.css";
 import {
+  compareCourierDisplayOrder,
   courierOrderTimestampMs,
   formatCourierAddress,
   formatCourierScheduledDate,
@@ -569,9 +570,9 @@ export default function RepartidorPublicPortal() {
   const routeOrders = effectiveCourierOrders.filter(
     (request) => isCourierRouteTabStatus(request?.status) && isCourierScheduledTodayOrLater(request),
   );
-  const pendingOrders = effectiveCourierOrders.filter(
-    (request) => !isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status),
-  );
+  const pendingOrders = effectiveCourierOrders
+    .filter((request) => !isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status))
+    .sort(compareCourierDisplayOrder);
   const pendingOrdersCount = pendingOrders.length;
   const routeOrder = routeOrders[0] || null;
   const pendingPreviewOrder = pendingOrders[0] || null;
@@ -770,7 +771,7 @@ export default function RepartidorPublicPortal() {
             <p className={styles.empty}>{emptyMessage}</p>
           ) : (
             <div className={adminStyles.courierGrid}>
-              {visibleOrders.map((request) => (
+              {visibleOrders.map((request, index) => (
                 <article
                   key={request.id}
                   className={`${adminStyles.courierCard} ${
@@ -780,15 +781,18 @@ export default function RepartidorPublicPortal() {
                   }`}
                 >
                   <div className={adminStyles.courierHeader}>
-                    <span
-                      className={
-                        request.courierLabel === "Devolucion"
-                          ? adminStyles.courierBadgeReturn
-                          : adminStyles.courierBadgeDelivery
-                      }
-                    >
-                      {request.courierLabel}
-                    </span>
+                    <div className={styles.orderBadgeGroup}>
+                      <span className={styles.orderSequenceBadge}>{index + 1}</span>
+                      <span
+                        className={
+                          request.courierLabel === "Devolucion"
+                            ? adminStyles.courierBadgeReturn
+                            : adminStyles.courierBadgeDelivery
+                        }
+                      >
+                        {request.courierLabel}
+                      </span>
+                    </div>
                     <div className={styles.statusGroup}>
                       {!isReturnOrder(request) && getDeliveryAttemptLabel(request, activeTab) ? (
                         <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>

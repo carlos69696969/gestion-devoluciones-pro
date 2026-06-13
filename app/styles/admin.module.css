@@ -830,6 +830,28 @@
   color: #6b7280;
 }
 
+.courierOrderBadgeGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.courierOrderSequence {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 26px;
+  border: 1px solid #8eb8ff;
+  border-radius: 50%;
+  background: #eaf2ff;
+  color: #005bd3;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .courierStatusGroup {
   display: flex;
   align-items: center;

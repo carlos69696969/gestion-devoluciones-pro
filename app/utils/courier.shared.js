@@ -13,6 +13,24 @@ export function courierOrderTimestampMs(request) {
   return date ? date.getTime() : 0;
 }
 
+export function compareCourierDisplayOrder(firstRequest, secondRequest) {
+  const firstLabel = String(firstRequest?.courierLabel || "").trim().toLowerCase();
+  const secondLabel = String(secondRequest?.courierLabel || "").trim().toLowerCase();
+  const firstTypeOrder = firstLabel.startsWith("entrega") ? 0 : 1;
+  const secondTypeOrder = secondLabel.startsWith("entrega") ? 0 : 1;
+  if (firstTypeOrder !== secondTypeOrder) return firstTypeOrder - secondTypeOrder;
+
+  const timestampDifference =
+    courierOrderTimestampMs(firstRequest) - courierOrderTimestampMs(secondRequest);
+  if (timestampDifference !== 0) return timestampDifference;
+
+  return String(firstRequest?.orderNumber || "").localeCompare(
+    String(secondRequest?.orderNumber || ""),
+    "es",
+    { numeric: true, sensitivity: "base" },
+  );
+}
+
 export function formatCourierScheduledDate(pickupDate) {
   const date = parseCourierDate(pickupDate);
   if (!date) return "-";

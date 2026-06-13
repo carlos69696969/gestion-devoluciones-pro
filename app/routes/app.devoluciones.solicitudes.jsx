@@ -4,7 +4,11 @@ import { Form, useActionData, useFetcher, useLoaderData, useLocation, useNavigat
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getCourierRouteStatusFromTags, isCourierHistoryStatus } from "../utils/courier.shared";
+import {
+  compareCourierDisplayOrder,
+  getCourierRouteStatusFromTags,
+  isCourierHistoryStatus,
+} from "../utils/courier.shared";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -2666,6 +2670,7 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
     ].filter(Boolean).sort().reverse();
 
     if (historyView === "courier_day" && selectedDate) {
+      const currentOrderIds = new Set(currentOrders.map((order) => String(order.id || "")));
       const selectedDayActivities = courierActivities.filter(
         (activity) => mexicoActivityDateKey(activity.createdAt) === selectedDate,
       );
@@ -2677,9 +2682,10 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
             .map((order) => [String(order.id || ""), order]),
         ).values(),
       ];
-      const selectedDayOrders = selectedDate === todayDateKey
+      const selectedDayOrders = (selectedDate === todayDateKey
         ? todayOrders
-        : selectedActivityOrders;
+        : selectedActivityOrders
+      ).sort(compareCourierDisplayOrder);
       const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
         dateStyle: "full",
         timeZone: "UTC",
@@ -2705,8 +2711,18 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
           </div>
           {selectedDayOrders.length ? (
             <div className={styles.courierGrid}>
-              {selectedDayOrders.map((order) => (
-                <CourierOrderCard key={order.id} request={order} showFinalAttemptBadge />
+              {selectedDayOrders.map((order, index) => (
+                <CourierOrderCard
+                  key={order.id}
+                  request={order}
+                  sequenceNumber={index + 1}
+                  statusOverride={
+                    currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
+                      ? "pendiente"
+                      : ""
+                  }
+                  showFinalAttemptBadge
+                />
               ))}
             </div>
           ) : (
@@ -2852,8 +2868,14 @@ function CouriersSection({ couriers, isSubmitting }) {
   );
 }
 
-function CourierOrderCard({ request, showFinalAttemptBadge = false }) {
+function CourierOrderCard({
+  request,
+  sequenceNumber = 0,
+  statusOverride = "",
+  showFinalAttemptBadge = false,
+}) {
   const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
+  const visibleStatus = statusOverride || request.status;
   return (
     <article
       className={`${styles.courierCard} ${
@@ -2861,22 +2883,27 @@ function CourierOrderCard({ request, showFinalAttemptBadge = false }) {
       }`}
     >
       <div className={styles.courierHeader}>
-        <span
-          className={
-            request.courierLabel === "Devolución"
-              ? styles.courierBadgeReturn
-              : styles.courierBadgeDelivery
-          }
-        >
-          {request.courierLabel}
-        </span>
+        <div className={styles.courierOrderBadgeGroup}>
+          {sequenceNumber > 0 ? (
+            <span className={styles.courierOrderSequence}>{sequenceNumber}</span>
+          ) : null}
+          <span
+            className={
+              request.courierLabel === "Devolución"
+                ? styles.courierBadgeReturn
+                : styles.courierBadgeDelivery
+            }
+          >
+            {request.courierLabel}
+          </span>
+        </div>
         <div className={styles.courierStatusGroup}>
           {showFinalAttemptBadge && finalAttempt > 0 ? (
             <span className={`${styles.courierBadgeStatus} ${styles.courierBadgeAttempt}`}>
               {courierAttemptLabel(finalAttempt)}
             </span>
           ) : null}
-          <span className={styles.courierBadgeStatus}>{getCourierStatusLabel(request.status)}</span>
+          <span className={styles.courierBadgeStatus}>{getCourierStatusLabel(visibleStatus)}</span>
         </div>
       </div>
       <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
