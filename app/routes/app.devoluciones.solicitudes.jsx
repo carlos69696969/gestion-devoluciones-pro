@@ -929,29 +929,57 @@ function formatCourierHistoryDate(value) {
   }).format(date);
 }
 
-function buildAdminCourierHistoryEvents(request) {
+function nextMexicoCalendarDay(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return new Date(Date.UTC(
+    Number(lookup.year),
+    Number(lookup.month) - 1,
+    Number(lookup.day) + 1,
+    12,
+  ));
+}
+
+function formatCourierRescheduledDate(value) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(value);
+}
+
+function buildAdminCourierPresentation(request) {
   const events = request.historyEvents || [];
   const displayEvents = [];
+  let scheduledDate = null;
 
   for (const event of events) {
     displayEvents.push(event);
-    if (!/\bno entregado\b/i.test(String(event.label || ""))) continue;
+    if (!/\bno (?:entregado|recibido)\b/i.test(String(event.label || ""))) continue;
 
     const attemptMatch = String(event.label || "").match(/^(Primer|Segundo|Tercer) intento/i);
-    const eventDate = new Date(event.at);
-    if (!attemptMatch || !Number.isFinite(eventDate.getTime())) continue;
+    const reprogrammedFor = nextMexicoCalendarDay(event.at);
+    if (!attemptMatch || !reprogrammedFor) continue;
 
-    const reprogrammedAt = new Date(eventDate);
-    reprogrammedAt.setDate(reprogrammedAt.getDate() + 1);
+    scheduledDate = reprogrammedFor;
     displayEvents.push({
       id: `${event.id}-reprogrammed`,
-      label: `${attemptMatch[1]} intento reprogramado`,
-      at: reprogrammedAt.toISOString(),
-      atMs: reprogrammedAt.getTime(),
+      label: `${attemptMatch[1]} intento reprogramado para el ${formatCourierRescheduledDate(reprogrammedFor)}`,
+      at: event.at,
+      atMs: parseEventMs(event.at),
     });
   }
 
-  return displayEvents;
+  return { events: displayEvents, scheduledDate };
 }
 
 function pickParentTransaction(transactions) {
@@ -3073,11 +3101,14 @@ function CourierOrderCard({
   const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
   const visibleStatus = statusOverride || request.status;
   const normalizedVisibleStatus = String(visibleStatus || "").trim().toLowerCase();
-  const isAdminReprogrammed = adminCourierView && normalizedVisibleStatus === "no_entregado";
+  const isAdminReprogrammed =
+    adminCourierView && ["no_entregado", "no_recibido"].includes(normalizedVisibleStatus);
   const displayStatus = isAdminReprogrammed ? "reprogramado" : visibleStatus;
-  const displayHistoryEvents = adminCourierView
-    ? buildAdminCourierHistoryEvents(request)
-    : request.historyEvents || [];
+  const adminCourierPresentation = adminCourierView
+    ? buildAdminCourierPresentation(request)
+    : { events: request.historyEvents || [], scheduledDate: null };
+  const displayHistoryEvents = adminCourierPresentation.events;
+  const displayedScheduledDate = adminCourierPresentation.scheduledDate || request.pickupDate;
   const attemptBadgeClass = ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
     ? normalizedVisibleStatus === "rechazada"
       ? styles.courierBadgeAttemptWarning
@@ -3127,7 +3158,7 @@ function CourierOrderCard({
       <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
       <p className={styles.courierCustomerName}>{request.customerName}</p>
       <p className={styles.courierField}>
-        <strong>Programado:</strong> {formatCourierScheduledDate(request.pickupDate)}
+        <strong>Programado:</strong> {formatCourierScheduledDate(displayedScheduledDate)}
       </p>
       <p className={styles.courierAddress}>{formatCourierAddress(request)}</p>
       <p className={styles.courierField}>{request.customerPhone || "-"}</p>
