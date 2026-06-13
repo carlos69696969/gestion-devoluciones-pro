@@ -2617,13 +2617,16 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
   const searchParams = new URLSearchParams(search);
   const historyView = String(searchParams.get("historyView") || "").trim();
   const selectedCourierId = Number(searchParams.get("courierId") || 0);
+  const selectedDate = String(searchParams.get("date") || "").trim();
   const baseHref = "/app/devoluciones/solicitudes/courier_history";
-  const buildHistoryHref = ({ view = "", courierId = "" } = {}) => {
+  const buildHistoryHref = ({ view = "", courierId = "", date = "" } = {}) => {
     const nextParams = new URLSearchParams(searchParams);
     if (view) nextParams.set("historyView", view);
     else nextParams.delete("historyView");
     if (courierId) nextParams.set("courierId", String(courierId));
     else nextParams.delete("courierId");
+    if (date) nextParams.set("date", date);
+    else nextParams.delete("date");
     return `${baseHref}?${nextParams.toString()}`;
   };
 
@@ -2641,7 +2644,7 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
     );
   }
 
-  if (historyView === "courier" && selectedCourierId) {
+  if (["courier", "courier_day"].includes(historyView) && selectedCourierId) {
     const courier = couriers.find((item) => Number(item.id) === selectedCourierId);
     const courierActivities = activities.filter((activity) => Number(activity.courierId) === selectedCourierId);
     const todayDateKey = mexicoActivityDateKey(new Date());
@@ -2661,6 +2664,58 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
         ...courierActivities.map((activity) => mexicoActivityDateKey(activity.createdAt)),
       ]),
     ].filter(Boolean).sort().reverse();
+
+    if (historyView === "courier_day" && selectedDate) {
+      const selectedDayActivities = courierActivities.filter(
+        (activity) => mexicoActivityDateKey(activity.createdAt) === selectedDate,
+      );
+      const selectedActivityOrders = [
+        ...new Map(
+          selectedDayActivities
+            .map((activity) => orderByRequestId.get(String(activity.requestId || "")))
+            .filter(Boolean)
+            .map((order) => [String(order.id || ""), order]),
+        ).values(),
+      ];
+      const selectedDayOrders = selectedDate === todayDateKey
+        ? todayOrders
+        : selectedActivityOrders;
+      const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
+        dateStyle: "full",
+        timeZone: "UTC",
+      }).format(new Date(`${selectedDate}T12:00:00Z`));
+
+      return (
+        <div className={styles.courierHistoryDirectoryList}>
+          <a
+            className={styles.courierHistoryBackLink}
+            href={buildHistoryHref({ view: "courier", courierId: selectedCourierId })}
+          >
+            ← Regresar al calendario
+          </a>
+          <div className={styles.courierHistoryHeader}>
+            <div>
+              <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
+              <p className={styles.courierHistoryDateTitle}>{selectedDayLabel}</p>
+            </div>
+            <div className={styles.courierHistoryCounters}>
+              <span className={styles.courierHistoryCounter}>Ordenes {selectedDayOrders.length}</span>
+              <span className={styles.courierHistoryCounter}>Restantes {currentOrders.length}</span>
+            </div>
+          </div>
+          {selectedDayOrders.length ? (
+            <div className={styles.courierGrid}>
+              {selectedDayOrders.map((order) => (
+                <CourierOrderCard key={order.id} request={order} showFinalAttemptBadge />
+              ))}
+            </div>
+          ) : (
+            <p>No hay ordenes registradas para este dia.</p>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div className={styles.courierHistoryDirectoryList}>
         <a className={styles.courierHistoryBackLink} href={buildHistoryHref()}>← Regresar</a>
@@ -2674,33 +2729,18 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
         {dates.length ? (
           <div className={styles.courierCalendar}>
             {dates.map((dateKey) => {
-              const dayActivities = courierActivities.filter(
-                (activity) => mexicoActivityDateKey(activity.createdAt) === dateKey,
-              );
-              const activityOrders = [
-                ...new Map(
-                  dayActivities
-                    .map((activity) => orderByRequestId.get(String(activity.requestId || "")))
-                    .filter(Boolean)
-                    .map((order) => [String(order.id || ""), order]),
-                ).values(),
-              ];
-              const dayOrders = dateKey === todayDateKey
-                ? todayOrders
-                : activityOrders;
               return (
-                <details key={dateKey} className={styles.courierCalendarDay} open={dateKey === todayDateKey}>
-                  <summary>{new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}</summary>
-                  {dayOrders.length ? (
-                    <div className={styles.courierGrid}>
-                      {dayOrders.map((order) => (
-                        <CourierOrderCard key={order.id} request={order} showFinalAttemptBadge />
-                      ))}
-                    </div>
-                  ) : (
-                    <p>No hay ordenes registradas para este dia.</p>
-                  )}
-                </details>
+                <a
+                  key={dateKey}
+                  className={styles.courierCalendarDay}
+                  href={buildHistoryHref({
+                    view: "courier_day",
+                    courierId: selectedCourierId,
+                    date: dateKey,
+                  })}
+                >
+                  {new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}
+                </a>
               );
             })}
           </div>

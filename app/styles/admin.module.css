@@ -954,20 +954,27 @@
 }
 
 .courierCalendarDay {
+  display: block;
   border: 1px solid #e1e3e5;
   border-radius: 12px;
   background: #fafbfb;
-  padding: 12px;
-}
-
-.courierCalendarDay > summary {
-  cursor: pointer;
+  color: #202223;
   font-weight: 800;
+  padding: 12px;
+  text-decoration: none;
   text-transform: capitalize;
 }
 
-.courierCalendarDay .courierGrid {
-  margin-top: 12px;
+.courierCalendarDay:hover {
+  border-color: #005bd3;
+  background: #f3f7ff;
+}
+
+.courierHistoryDateTitle {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-weight: 700;
+  text-transform: capitalize;
 }
 
 .courierHistoryBackLink {
