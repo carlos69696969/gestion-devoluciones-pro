@@ -2680,13 +2680,37 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
           selectedDayActivities
             .map((activity) => orderByRequestId.get(String(activity.requestId || "")))
             .filter(Boolean)
-            .map((order) => [String(order.id || ""), order]),
+          .map((order) => [String(order.id || ""), order]),
         ).values(),
       ];
-      const selectedDayOrders = (selectedDate === todayDateKey
+      const baseDayOrders = (selectedDate === todayDateKey
         ? todayOrders
         : selectedActivityOrders
       ).sort(compareCourierDisplayOrder);
+      const sequenceByOrderId = new Map(
+        baseDayOrders.map((order, index) => [String(order.id || ""), index + 1]),
+      );
+      const latestActivityAtByOrderId = new Map();
+      for (const activity of selectedDayActivities) {
+        const requestId = String(activity.requestId || "");
+        const activityAt = new Date(activity.createdAt || "").getTime();
+        if (!requestId || !Number.isFinite(activityAt)) continue;
+        latestActivityAtByOrderId.set(
+          requestId,
+          Math.max(latestActivityAtByOrderId.get(requestId) || 0, activityAt),
+        );
+      }
+      const selectedDayOrders = [...baseDayOrders].sort((firstOrder, secondOrder) => {
+        const firstIsFinalized = isCourierHistoryStatus(firstOrder.status);
+        const secondIsFinalized = isCourierHistoryStatus(secondOrder.status);
+        if (firstIsFinalized !== secondIsFinalized) return firstIsFinalized ? 1 : -1;
+        if (!firstIsFinalized) return compareCourierDisplayOrder(firstOrder, secondOrder);
+
+        const firstFinishedAt = latestActivityAtByOrderId.get(String(firstOrder.id || "")) || 0;
+        const secondFinishedAt = latestActivityAtByOrderId.get(String(secondOrder.id || "")) || 0;
+        if (firstFinishedAt !== secondFinishedAt) return firstFinishedAt - secondFinishedAt;
+        return compareCourierDisplayOrder(firstOrder, secondOrder);
+      });
       const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
         dateStyle: "full",
         timeZone: "UTC",
@@ -2716,7 +2740,7 @@ function CourierHistoryDirectory({ couriers, activities, orders, search }) {
                 <CourierOrderCard
                   key={order.id}
                   request={order}
-                  sequenceNumber={index + 1}
+                  sequenceNumber={sequenceByOrderId.get(String(order.id || "")) || index + 1}
                   statusOverride={
                     currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
                       ? "pendiente"
