@@ -30,7 +30,7 @@ import {
 
 const courierDailyAccessCookie = createCookie("courier_daily_access", {
   httpOnly: true,
-  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  sameSite: "lax",
   secure: process.env.NODE_ENV === "production",
   path: "/",
   maxAge: 60 * 60 * 26,
@@ -39,7 +39,7 @@ const courierDailyAccessCookie = createCookie("courier_daily_access", {
 
 const courierDeliveryConfirmationCookie = createCookie("courier_delivery_confirmation", {
   httpOnly: true,
-  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  sameSite: "lax",
   secure: process.env.NODE_ENV === "production",
   path: "/",
   maxAge: 60 * 60 * 26,
