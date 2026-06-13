@@ -54,6 +54,31 @@
 .confirmationForm {
   display: grid;
   gap: 14px;
+  margin-top: 20px;
+}
+
+.confirmationList {
+  display: grid;
+  gap: 10px;
+}
+
+.confirmationListItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid #dfe3e8;
+  border-radius: 12px;
+  background: #f9fafb;
+  cursor: pointer;
+}
+
+.confirmationListItem input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  accent-color: #005bd3;
 }
 
 .confirmationCheckbox {

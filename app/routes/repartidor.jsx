@@ -274,6 +274,7 @@ export const action = async ({ request }) => {
 
     if (
       [
+        "courier_confirm_delivery_list",
         "courier_confirm_delivery",
         "courier_mark_delivery_missing",
         "courier_finish_delivery_confirmation",
@@ -286,7 +287,47 @@ export const action = async ({ request }) => {
         ? dailyAccess.missingOrderNumbers.map((value) => String(value || ""))
         : [];
 
-      if (intent === "courier_finish_delivery_confirmation") {
+      if (intent === "courier_confirm_delivery_list") {
+        const visibleRequestIds = formData
+          .getAll("visibleRequestIds")
+          .map((value) => String(value || "").trim())
+          .filter(Boolean);
+        const selectedRequestIds = formData
+          .getAll("confirmedRequestIds")
+          .map((value) => String(value || "").trim())
+          .filter(Boolean);
+        const visibleOrderNumbers = formData
+          .getAll("visibleOrderNumbers")
+          .map((value) => String(value || "").trim());
+
+        if (!visibleRequestIds.length) {
+          return { ok: false, confirmationError: "No se encontraron entregas para confirmar." };
+        }
+
+        for (const selectedRequestId of selectedRequestIds) {
+          if (
+            visibleRequestIds.includes(selectedRequestId) &&
+            !confirmedRequestIds.includes(selectedRequestId)
+          ) {
+            confirmedRequestIds.push(selectedRequestId);
+          }
+        }
+
+        dailyAccess.confirmedRequestIds = confirmedRequestIds;
+        const missingRequestIds = visibleRequestIds.filter(
+          (visibleRequestId) => !selectedRequestIds.includes(visibleRequestId),
+        );
+        dailyAccess.deliveryConfirmationComplete = missingRequestIds.length === 0;
+        if (missingRequestIds.length === 0) {
+          dailyAccess.missingOrderNumbers = [];
+        } else {
+          dailyAccess.missingOrderNumbers = visibleRequestIds
+            .map((visibleRequestId, index) =>
+              missingRequestIds.includes(visibleRequestId) ? visibleOrderNumbers[index] : "",
+            )
+            .filter(Boolean);
+        }
+      } else if (intent === "courier_finish_delivery_confirmation") {
         dailyAccess.deliveryConfirmationComplete = true;
       } else {
         const orderNumber = String(formData.get("orderNumber") || "").trim();
@@ -614,19 +655,14 @@ export default function RepartidorPublicPortal() {
   const unconfirmedDeliveryOrders = deliveryConfirmationOrders.filter(
     (request) => !confirmedRequestIdSet.has(String(request?.id || "")),
   );
-  const currentConfirmationOrder = unconfirmedDeliveryOrders.at(-1) || null;
-  const currentConfirmationSequence = currentConfirmationOrder
-    ? deliveryConfirmationOrders.findIndex(
-        (request) => String(request?.id || "") === String(currentConfirmationOrder.id || ""),
-      ) + 1
-    : 0;
-  const shouldShowMissingSummary =
-    !deliveryConfirmationComplete &&
-    !currentConfirmationOrder &&
-    missingOrderNumbers.length > 0;
+  const isSecondConfirmationPass =
+    missingOrderNumbers.length > 0 && unconfirmedDeliveryOrders.length > 0;
+  const confirmationOrders = (
+    isSecondConfirmationPass ? unconfirmedDeliveryOrders : deliveryConfirmationOrders
+  ).slice().reverse();
   const requiresDeliveryConfirmation =
     !deliveryConfirmationComplete &&
-    (Boolean(currentConfirmationOrder) || shouldShowMissingSummary);
+    confirmationOrders.length > 0;
 
   if (requiresDeliveryConfirmation) {
     return (
@@ -635,60 +671,47 @@ export default function RepartidorPublicPortal() {
           <section className={`${styles.card} ${styles.confirmationCard}`}>
             <p className={styles.eyebrow}>Cariana repartidores</p>
             <h1 className={styles.cardTitle}>Confirma tus entregas</h1>
-            <p className={styles.subtitle}>Revisa que tengas físicamente cada pedido antes de comenzar.</p>
+            <p className={styles.subtitle}>
+              {isSecondConfirmationPass
+                ? "Te faltan estas órdenes por confirmar. Revisa que sí las tengas."
+                : "Revisa que tengas físicamente cada pedido antes de comenzar."}
+            </p>
 
             {actionData?.confirmationError ? (
               <p className={styles.accessError} role="alert">{actionData.confirmationError}</p>
             ) : null}
 
-            {currentConfirmationOrder ? (
-              <div className={styles.confirmationOrder}>
-                <div className={styles.confirmationOrderHeader}>
-                  <span className={styles.orderSequenceBadge}>{currentConfirmationSequence}</span>
-                  <strong>Pedido #{currentConfirmationOrder.orderNumber}</strong>
-                </div>
-                <Form method="post" reloadDocument className={styles.confirmationForm}>
-                  <input type="hidden" name="intent" value="courier_confirm_delivery" />
-                  <input type="hidden" name="shop" value={shop || ""} />
-                  <input type="hidden" name="requestId" value={currentConfirmationOrder.id} />
-                  <input type="hidden" name="orderNumber" value={currentConfirmationOrder.orderNumber} />
-                  <label className={styles.confirmationCheckbox}>
-                    <input type="checkbox" name="confirmed" value="yes" required />
-                    <span>Confirmo que tengo físicamente esta entrega</span>
-                  </label>
-                  <button className={styles.accessButton} type="submit">Confirmar</button>
-                </Form>
-                <Form
-                  method="post"
-                  reloadDocument
-                  onSubmit={(event) => {
-                    if (!window.confirm("¿Estás seguro de confirmar que esta orden no está?")) {
-                      event.preventDefault();
-                    }
-                  }}
-                >
-                  <input type="hidden" name="intent" value="courier_mark_delivery_missing" />
-                  <input type="hidden" name="shop" value={shop || ""} />
-                  <input type="hidden" name="requestId" value={currentConfirmationOrder.id} />
-                  <input type="hidden" name="orderNumber" value={currentConfirmationOrder.orderNumber} />
-                  <button className={styles.missingButton} type="submit">No confirmada</button>
-                </Form>
+            <Form
+              method="post"
+              reloadDocument
+              className={styles.confirmationForm}
+              onSubmit={(event) => {
+                if (!window.confirm("¿Estás seguro de confirmar las órdenes marcadas?")) {
+                  event.preventDefault();
+                }
+              }}
+            >
+              <input type="hidden" name="intent" value="courier_confirm_delivery_list" />
+              <input type="hidden" name="shop" value={shop || ""} />
+              <div className={styles.confirmationList}>
+                {confirmationOrders.map((request) => {
+                  const sequence =
+                    deliveryConfirmationOrders.findIndex(
+                      (deliveryOrder) => String(deliveryOrder?.id || "") === String(request?.id || ""),
+                    ) + 1;
+                  return (
+                    <label className={styles.confirmationListItem} key={request.id}>
+                      <input type="hidden" name="visibleRequestIds" value={request.id} />
+                      <input type="hidden" name="visibleOrderNumbers" value={request.orderNumber} />
+                      <input type="checkbox" name="confirmedRequestIds" value={request.id} />
+                      <span className={styles.orderSequenceBadge}>{sequence}</span>
+                      <strong>Pedido #{request.orderNumber}</strong>
+                    </label>
+                  );
+                })}
               </div>
-            ) : (
-              <div className={styles.missingSummary}>
-                <h2>Faltaron estas órdenes</h2>
-                <div className={styles.missingOrderList}>
-                  {missingOrderNumbers.map((orderNumber) => (
-                    <span key={orderNumber}>#{orderNumber}</span>
-                  ))}
-                </div>
-                <Form method="post" reloadDocument>
-                  <input type="hidden" name="intent" value="courier_finish_delivery_confirmation" />
-                  <input type="hidden" name="shop" value={shop || ""} />
-                  <button className={styles.accessButton} type="submit">Continuar al portal</button>
-                </Form>
-              </div>
-            )}
+              <button className={styles.accessButton} type="submit">Confirmar</button>
+            </Form>
           </section>
         </div>
       </main>
