@@ -316,7 +316,40 @@ function returnRequestItemsSignature(requestRow) {
   const itemParts = (requestRow?.items || [])
     .map((item) => `${itemKeyFromRecord(item)}:${Math.max(1, Number(item?.quantity || 1))}`)
     .sort();
-  return `${String(requestRow?.orderNumber || "").trim()}|${itemParts.join(",")}`;
+  if (!itemParts.length) return `request:${requestRow?.id || ""}`;
+  const orderReference =
+    String(requestRow?.shopifyOrderId || "").trim() ||
+    String(requestRow?.orderNumber || "").trim();
+  return `${orderReference}|${itemParts.join(",")}`;
+}
+
+function requestWasCreatedAfter(candidate, reference) {
+  const candidateCreatedAt = new Date(candidate?.createdAt || 0).getTime();
+  const referenceCreatedAt = new Date(reference?.createdAt || 0).getTime();
+  if (candidateCreatedAt !== referenceCreatedAt) {
+    return candidateCreatedAt > referenceCreatedAt;
+  }
+  return Number(candidate?.id || 0) > Number(reference?.id || 0);
+}
+
+function excludePickupRequestsSupersededByBranch(requestRows) {
+  const rows = Array.isArray(requestRows) ? requestRows : [];
+  const latestBranchRequestBySignature = new Map();
+
+  for (const requestRow of rows) {
+    if (String(requestRow?.returnMethod || "").trim().toLowerCase() === "pickup") continue;
+    const signature = returnRequestItemsSignature(requestRow);
+    const current = latestBranchRequestBySignature.get(signature);
+    if (!current || requestWasCreatedAfter(requestRow, current)) {
+      latestBranchRequestBySignature.set(signature, requestRow);
+    }
+  }
+
+  return rows.filter((requestRow) => {
+    if (String(requestRow?.returnMethod || "").trim().toLowerCase() !== "pickup") return false;
+    const branchRequest = latestBranchRequestBySignature.get(returnRequestItemsSignature(requestRow));
+    return !branchRequest || !requestWasCreatedAfter(branchRequest, requestRow);
+  });
 }
 
 function formatVariantSummary(variantNode) {
@@ -2255,18 +2288,26 @@ async function fetchCourierHistoryOrders(admin) {
 }
 
 async function fetchPickupCourierHistoryOrders(shop) {
-  const requests = await prisma.returnRequest.findMany({
+  const requestRows = await prisma.returnRequest.findMany({
     where: {
       shop,
-      returnMethod: "pickup",
-      status: { in: ["recibida", "rechazada"] },
-      updatedAt: { gte: COURIER_HISTORY_SINCE },
+      OR: [
+        {
+          returnMethod: "pickup",
+          status: { in: ["recibida", "rechazada"] },
+          updatedAt: { gte: COURIER_HISTORY_SINCE },
+        },
+        {
+          returnMethod: { not: "pickup" },
+        },
+      ],
     },
+    include: { items: true },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    take: 500,
+    take: 1000,
   });
 
-  return requests.map((requestRow) => ({
+  return excludePickupRequestsSupersededByBranch(requestRows).map((requestRow) => ({
     id: `pickup-${requestRow.id}`,
     orderNumber: String(requestRow.orderNumber || "").replace("#", ""),
     customerName: String(requestRow.customerName || "Cliente").trim(),
@@ -2286,15 +2327,24 @@ async function fetchPickupCourierHistoryOrders(shop) {
 }
 
 async function fetchPickupCourierOrders(shop) {
-  const pickupOrders = await prisma.returnRequest.findMany({
+  const requestRows = await prisma.returnRequest.findMany({
     where: {
       shop,
-      returnMethod: "pickup",
-      status: { in: Array.from(METHOD_QUEUE_STATUSES) },
+      OR: [
+        {
+          returnMethod: "pickup",
+          status: { in: Array.from(METHOD_QUEUE_STATUSES) },
+        },
+        {
+          returnMethod: { not: "pickup" },
+        },
+      ],
     },
     select: {
       id: true,
+      shopifyOrderId: true,
       orderNumber: true,
+      returnMethod: true,
       customerName: true,
       customerPhone: true,
       pickupDate: true,
@@ -2318,10 +2368,10 @@ async function fetchPickupCourierOrders(shop) {
       },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 500,
+    take: 1000,
   });
 
-  return pickupOrders
+  return excludePickupRequestsSupersededByBranch(requestRows)
     .map((requestRow) => ({
     id: `pickup-${requestRow.id}`,
     orderNumber: String(requestRow.orderNumber || "").replace("#", ""),

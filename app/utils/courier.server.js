@@ -42,6 +42,56 @@ function normalizeShop(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function returnItemKey(item) {
+  const lineItemId = String(item?.lineItemId || "").trim();
+  if (lineItemId) return `line:${lineItemId}`;
+  const variantId = String(item?.variantId || "").trim();
+  if (variantId) return `variant:${variantId}`;
+  const productId = String(item?.productId || "").trim();
+  if (productId) return `product:${productId}`;
+  return `title:${String(item?.title || "").trim().toLowerCase()}`;
+}
+
+function returnRequestItemsSignature(requestRow) {
+  const itemParts = (requestRow?.items || [])
+    .map((item) => `${returnItemKey(item)}:${Math.max(1, Number(item?.quantity || 1))}`)
+    .sort();
+  if (!itemParts.length) return `request:${requestRow?.id || ""}`;
+  const orderReference =
+    String(requestRow?.shopifyOrderId || "").trim() ||
+    String(requestRow?.orderNumber || "").trim();
+  return `${orderReference}|${itemParts.join(",")}`;
+}
+
+function requestWasCreatedAfter(candidate, reference) {
+  const candidateCreatedAt = new Date(candidate?.createdAt || 0).getTime();
+  const referenceCreatedAt = new Date(reference?.createdAt || 0).getTime();
+  if (candidateCreatedAt !== referenceCreatedAt) {
+    return candidateCreatedAt > referenceCreatedAt;
+  }
+  return Number(candidate?.id || 0) > Number(reference?.id || 0);
+}
+
+function excludePickupRequestsSupersededByBranch(requestRows) {
+  const rows = Array.isArray(requestRows) ? requestRows : [];
+  const latestBranchRequestBySignature = new Map();
+
+  for (const requestRow of rows) {
+    if (String(requestRow?.returnMethod || "").trim().toLowerCase() === "pickup") continue;
+    const signature = returnRequestItemsSignature(requestRow);
+    const current = latestBranchRequestBySignature.get(signature);
+    if (!current || requestWasCreatedAfter(requestRow, current)) {
+      latestBranchRequestBySignature.set(signature, requestRow);
+    }
+  }
+
+  return rows.filter((requestRow) => {
+    if (String(requestRow?.returnMethod || "").trim().toLowerCase() !== "pickup") return false;
+    const branchRequest = latestBranchRequestBySignature.get(returnRequestItemsSignature(requestRow));
+    return !branchRequest || !requestWasCreatedAfter(branchRequest, requestRow);
+  });
+}
+
 function normalizeDeliveryAttemptCount(value, fallback = 0) {
   const parsed = Number(value || 0);
   if (!Number.isFinite(parsed)) return fallback;
@@ -1685,15 +1735,24 @@ export async function fetchCourierOrdersForShop({ shop, sessionCandidates }) {
 export async function fetchPickupCourierOrders(shop) {
   if (!shop) return [];
 
-  const pickupOrders = await prisma.returnRequest.findMany({
+  const requestRows = await prisma.returnRequest.findMany({
     where: {
       shop,
-      returnMethod: "pickup",
-      status: { in: Array.from(METHOD_QUEUE_STATUSES) },
+      OR: [
+        {
+          returnMethod: "pickup",
+          status: { in: Array.from(METHOD_QUEUE_STATUSES) },
+        },
+        {
+          returnMethod: { not: "pickup" },
+        },
+      ],
     },
     select: {
       id: true,
+      shopifyOrderId: true,
       orderNumber: true,
+      returnMethod: true,
       customerName: true,
       customerPhone: true,
       pickupDate: true,
@@ -1716,10 +1775,11 @@ export async function fetchPickupCourierOrders(shop) {
         },
       },
     },
-    orderBy: [{ pickupDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
-    take: 250,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 1000,
   });
 
+  const pickupOrders = excludePickupRequestsSupersededByBranch(requestRows);
   const courierOrders = pickupOrders.map((requestRow) => ({
     id: `pickup-${requestRow.id}`,
     orderNumber: String(requestRow.orderNumber || "").replace("#", ""),
