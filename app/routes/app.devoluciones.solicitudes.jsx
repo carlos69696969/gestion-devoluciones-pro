@@ -776,6 +776,12 @@ function courierAttemptLabel(attempt) {
   return "Intento";
 }
 
+function courierAttemptCountLabel(attempt) {
+  const attemptNumber = Number(attempt || 0);
+  if (attemptNumber <= 0) return "";
+  return attemptNumber === 1 ? "1 intento" : `${attemptNumber} intentos`;
+}
+
 function pickupRescheduleAttemptLabel(status) {
   const match = String(status || "").trim().toLowerCase().match(/^intento_fallido_(\d)$/);
   if (!match) return "";
@@ -3017,7 +3023,7 @@ function CourierOrderCard({
         <div className={styles.courierStatusGroup}>
           {showFinalAttemptBadge && finalAttempt > 0 ? (
             <span className={`${styles.courierBadgeStatus} ${styles.courierBadgeAttempt}`}>
-              {courierAttemptLabel(finalAttempt)}
+              {courierAttemptCountLabel(finalAttempt)}
             </span>
           ) : null}
           <span className={styles.courierBadgeStatus}>{getCourierStatusLabel(visibleStatus)}</span>
