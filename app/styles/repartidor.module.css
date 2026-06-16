@@ -29,10 +29,6 @@
   box-sizing: border-box;
 }
 
-.confirmationWarning {
-  color: #d72c0d;
-}
-
 .confirmationOrder {
   display: grid;
   gap: 16px;
@@ -211,6 +207,10 @@
   color: #6d7175;
   font-size: 15px;
   line-height: 1.45;
+}
+
+.subtitle.confirmationWarning {
+  color: #d72c0d;
 }
 
 .shopBadge {
