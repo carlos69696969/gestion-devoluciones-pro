@@ -1747,7 +1747,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
   for (const queryString of ["fulfillment_status:unfulfilled", "status:open"]) {
     const nodes = await fetchCourierOrdersByQuery({ shop, accessToken, queryString });
     const normalizationJobs = [];
-    const courierOrders = nodes
+    const courierOrders = await Promise.all(nodes
       .filter((orderNode) => {
         const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
         const courierStatus = getCourierRouteStatusFromTags(orderNode?.tags);
@@ -1757,12 +1757,22 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
           courierStatus !== "recoger_en_sucursal"
         );
       })
-      .map((orderNode) => {
+      .map(async (orderNode) => {
         const shipping = orderNode.shippingAddress || null;
         const billing = orderNode.billingAddress || null;
         const courierTags = Array.isArray(orderNode?.tags) ? orderNode.tags : [];
         const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
         const isShopifyDelivered = fulfillmentStatus === "FULFILLED";
+        const orderNumber = String(orderNode.name || "").replace("#", "");
+        const tagAttemptCount = getCourierDeliveryAttemptCountFromTags(orderNode.tags);
+        const failedAttemptCount = isShopifyDelivered
+          ? 0
+          : await getMaxCourierFailedDeliveryAttempt({
+              shopDomain: shop,
+              requestId: orderNode.id,
+              orderNumber,
+            });
+        const attemptCount = Math.max(tagAttemptCount, failedAttemptCount);
         const deliveredAt = (orderNode?.fulfillments || [])
           .map((fulfillment) => String(fulfillment?.deliveredAt || "").trim())
           .filter(Boolean)
@@ -1795,7 +1805,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
         }
         return {
           id: orderNode.id,
-          orderNumber: String(orderNode.name || "").replace("#", ""),
+          orderNumber,
           customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
           customerEmail: "",
           customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
@@ -1810,10 +1820,10 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
           updatedAt: orderNode.updatedAt || orderNode.createdAt,
           courierHistoryAt: isShopifyDelivered ? deliveredAt : orderNode.updatedAt || "",
           status: isShopifyDelivered ? "entregado" : getCourierRouteStatusFromTags(orderNode.tags),
-          attemptCount: getCourierDeliveryAttemptCountFromTags(orderNode.tags),
+          attemptCount,
           courierLabel: "Entrega",
         };
-      });
+      }));
 
     if (normalizationJobs.length > 0) {
       await Promise.allSettled(normalizationJobs);
