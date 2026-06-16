@@ -744,6 +744,23 @@ export const loader = async ({ request }) => {
     );
   }
 
+  courierOrders = courierOrders.map((requestRow) => {
+    const normalizedStatus = String(requestRow?.status || "").trim().toLowerCase();
+    const normalizedLabel = String(requestRow?.courierLabel || "").trim().toLowerCase();
+    if (
+      normalizedLabel === "entrega" &&
+      normalizedStatus === "no_entregado" &&
+      !isCourierHistoryFromToday(requestRow)
+    ) {
+      return {
+        ...requestRow,
+        status: "pendiente",
+        courierHistoryAt: "",
+      };
+    }
+    return requestRow;
+  });
+
   if (dailyAccess.routeId && courierOrders.length) {
     const assignedRequestIds = new Set(
       currentRouteActivities.map((activity) => String(activity.requestId || "").trim()).filter(Boolean),
