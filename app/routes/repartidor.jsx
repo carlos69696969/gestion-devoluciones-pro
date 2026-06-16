@@ -886,7 +886,7 @@ export default function RepartidorPublicPortal() {
           <section className={`${styles.card} ${styles.confirmationCard}`}>
             <p className={styles.eyebrow}>Cariana repartidores</p>
             <h1 className={styles.cardTitle}>Confirma tus entregas</h1>
-            <p className={styles.subtitle}>
+            <p className={`${styles.subtitle} ${isSecondConfirmationPass ? styles.confirmationWarning : ""}`}>
               {isSecondConfirmationPass
                 ? "Te faltan estas órdenes por confirmar. Revisa que sí las tengas."
                 : "Revisa que tengas físicamente cada pedido antes de comenzar."}

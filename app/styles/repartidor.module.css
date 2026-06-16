@@ -29,6 +29,10 @@
   box-sizing: border-box;
 }
 
+.confirmationWarning {
+  color: #d72c0d;
+}
+
 .confirmationOrder {
   display: grid;
   gap: 16px;
