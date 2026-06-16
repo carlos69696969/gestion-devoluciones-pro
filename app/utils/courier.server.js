@@ -249,6 +249,58 @@ async function recordCourierDeliveryEvent({
   }
 }
 
+async function getMaxCourierDeliveryAttemptFromEvents({
+  shopDomain,
+  requestId,
+  orderNumber,
+  statuses = [],
+}) {
+  const shop = normalizeShop(shopDomain);
+  const cleanRequestId = String(requestId || "").trim();
+  const cleanOrderNumber = String(orderNumber || "").replace(/^#/, "").trim();
+  const cleanStatuses = (Array.isArray(statuses) ? statuses : [])
+    .map((status) => String(status || "").trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!shop || (!cleanRequestId && !cleanOrderNumber)) return 0;
+
+  const references = [];
+  if (cleanRequestId) references.push({ requestId: cleanRequestId });
+  if (cleanOrderNumber) references.push({ orderNumber: cleanOrderNumber });
+
+  const where = {
+    shop,
+    OR: references,
+  };
+  if (cleanStatuses.length) {
+    where.status = { in: cleanStatuses };
+  }
+
+  try {
+    const events = await prisma.courierEvent.findMany({
+      where,
+      select: { attempt: true },
+    });
+
+    return events.reduce((maxAttempt, event) => {
+      const attempt = Math.max(0, Number(event?.attempt || 0) || 0);
+      return Math.max(maxAttempt, attempt);
+    }, 0);
+  } catch (error) {
+    console.error("Courier event attempts are not available yet", error);
+    return 0;
+  }
+}
+
+async function getMaxCourierFailedDeliveryAttempt({ shopDomain, requestId, orderNumber }) {
+  return getMaxCourierDeliveryAttemptFromEvents({
+    shopDomain,
+    requestId,
+    orderNumber,
+    statuses: ["no_entregado", "recoger_en_sucursal"],
+  });
+}
+
 const COURIER_STATUS_TAGS = [
   "en ruta",
   "en ruta 2",
@@ -879,15 +931,24 @@ async function emitCourierDeliveryManualStatusNotification({ shopDomain, request
         }),
       });
 
-      if (response.ok) {
+      const responsePayload = await response.json().catch(() => null);
+      const totalRecipients = Number(responsePayload?.result?.total || 0) || 0;
+      const sentRecipients = Number(responsePayload?.result?.sent || 0) || 0;
+
+      if (response.ok && totalRecipients > 0 && sentRecipients > 0) {
         return { ok: true };
       }
 
-      const detail = await response.text().catch(() => "");
       lastFailure = {
         endpoint: endpoint.url,
         status: response.status,
-        detail: String(detail || "").slice(0, 300),
+        detail: String(
+          responsePayload?.error ||
+            responsePayload?.detail ||
+            (response.ok && totalRecipients <= 0 ? "No hay dispositivos activos para recibir la notificacion." : "") ||
+            (response.ok && sentRecipients <= 0 ? "La notificacion no fue entregada a ningun dispositivo." : "") ||
+            "No se pudo enviar la notificacion.",
+        ).slice(0, 300),
       };
     } catch (error) {
       lastFailure = {
@@ -942,8 +1003,18 @@ export async function markCourierOrderAsEnRoute({
   }
 
   const currentStep = getCourierRouteStep(currentStatus);
-  const previousAttemptCount = normalizeDeliveryAttemptCount(currentAttemptCount, 0);
-  const nextStep = currentStep ? currentStep + 1 : Math.min(previousAttemptCount + 1, 3);
+  const previousFailedAttemptCount = await getMaxCourierFailedDeliveryAttempt({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber,
+  });
+  const previousAttemptCount = Math.max(
+    normalizeDeliveryAttemptCount(currentAttemptCount, 0),
+    previousFailedAttemptCount,
+  );
+  const nextStep = currentStep
+    ? Math.max(currentStep + 1, Math.min(previousFailedAttemptCount + 1, 3))
+    : Math.min(previousAttemptCount + 1, 3);
   if (nextStep > 3) {
     return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
   }
@@ -1015,7 +1086,25 @@ export async function markCourierOrderAsNotDelivered({
     return { ok: false, error: "Accion no valida." };
   }
 
-  const nextAttemptCount = Math.max(1, normalizeDeliveryAttemptCount(currentAttemptCount, 1));
+  const currentRouteStep = getCourierRouteStep(currentStatus);
+  const previousFailedAttemptCount = await getMaxCourierFailedDeliveryAttempt({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber,
+  });
+  const inferredAttemptFromHistory =
+    currentRouteStep && previousFailedAttemptCount >= currentRouteStep
+      ? previousFailedAttemptCount + 1
+      : previousFailedAttemptCount;
+  const nextAttemptCount = Math.min(
+    Math.max(
+      1,
+      normalizeDeliveryAttemptCount(currentAttemptCount, currentRouteStep || 1),
+      currentRouteStep,
+      inferredAttemptFromHistory,
+    ),
+    3,
+  );
   const nextStatus = nextAttemptCount >= 3 ? "recoger_en_sucursal" : "no_entregado";
   const statusTag = nextAttemptCount >= 3 ? "recoger en sucursal" : "no entregado";
   const requestRow = {
