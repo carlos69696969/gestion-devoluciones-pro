@@ -942,12 +942,8 @@ export async function markCourierOrderAsEnRoute({
   }
 
   const currentStep = getCourierRouteStep(currentStatus);
-  const isRetryPending = String(currentStatus || "").trim().toLowerCase() === "reintento_pendiente";
-  const nextStep = currentStep
-    ? currentStep + 1
-    : isRetryPending
-      ? Math.min(normalizeDeliveryAttemptCount(currentAttemptCount, 0) + 1, 3)
-      : 1;
+  const previousAttemptCount = normalizeDeliveryAttemptCount(currentAttemptCount, 0);
+  const nextStep = currentStep ? currentStep + 1 : Math.min(previousAttemptCount + 1, 3);
   if (nextStep > 3) {
     return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
   }

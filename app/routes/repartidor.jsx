@@ -968,6 +968,11 @@ export default function RepartidorPublicPortal() {
   const pendingOrders = effectiveCourierOrders
     .filter((request) => !isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status))
     .sort(compareCourierDisplayOrder);
+  const sequenceByOrderId = new Map(
+    [...pendingOrders, ...routeOrders, ...historyOrders]
+      .sort(compareCourierDisplayOrder)
+      .map((request, index) => [String(request?.id || ""), index + 1]),
+  );
   const activeOrdersCount = pendingOrders.length + routeOrders.length;
   const dailyOrdersCount = activeOrdersCount + historyOrders.length;
   const routeOrder = routeOrders[0] || null;
@@ -1190,7 +1195,9 @@ export default function RepartidorPublicPortal() {
                 >
                   <div className={adminStyles.courierHeader}>
                     <div className={styles.orderBadgeGroup}>
-                      <span className={styles.orderSequenceBadge}>{index + 1}</span>
+                      <span className={styles.orderSequenceBadge}>
+                        {sequenceByOrderId.get(String(request?.id || "")) || index + 1}
+                      </span>
                       <span
                         className={
                           request.courierLabel === "Devolucion"
