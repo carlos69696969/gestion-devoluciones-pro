@@ -176,7 +176,14 @@ function isCourierHistoryFromToday(request) {
 }
 
 function isCourierWorkableForCurrentRoute(request) {
-  return !isCourierHistoryStatus(request?.status);
+  const normalizedStatus = String(request?.status || "").trim().toLowerCase();
+  if (normalizedStatus === "no_entregado") return true;
+  return !isCourierHistoryStatus(normalizedStatus);
+}
+
+function shouldResetAssignedOrderForCurrentRoute(request, routeAction) {
+  const normalizedStatus = String(request?.status || "").trim().toLowerCase();
+  return routeAction === "courier_route_order_assigned" && normalizedStatus === "no_entregado";
 }
 
 function getReturnFailedAttemptCount(request) {
@@ -658,12 +665,26 @@ export const loader = async ({ request }) => {
           routeId: String(dailyAccess.routeId),
           action: { notIn: ["courier_route_started", "courier_route_finished"] },
         },
-        select: { requestId: true },
+        select: { requestId: true, action: true },
       })
     : [];
   const currentRouteRequestIds = new Set(
     currentRouteActivities.map((activity) => String(activity.requestId || "").trim()).filter(Boolean),
   );
+  const currentRouteActionByRequestId = new Map(
+    currentRouteActivities
+      .map((activity) => [
+        String(activity.requestId || "").trim(),
+        String(activity.action || "").trim(),
+      ])
+      .filter(([requestId]) => requestId),
+  );
+  for (const activity of currentRouteActivities) {
+    const activityRequestId = String(activity.requestId || "").trim();
+    const activityAction = String(activity.action || "").trim();
+    if (!activityRequestId || activityAction === "courier_route_order_assigned") continue;
+    currentRouteActionByRequestId.set(activityRequestId, activityAction);
+  }
 
   const sessionCandidatesByShop = new Map();
   for (const sessionCandidate of allSessionCandidates || sessionCandidates || []) {
@@ -801,7 +822,17 @@ export const loader = async ({ request }) => {
 
   const routeCourierOrders = courierOrders.map((requestRow) => {
     const requestId = String(requestRow?.id || "").trim();
-    if (currentRouteRequestIds.has(requestId)) return requestRow;
+    if (currentRouteRequestIds.has(requestId)) {
+      const routeAction = currentRouteActionByRequestId.get(requestId);
+      if (shouldResetAssignedOrderForCurrentRoute(requestRow, routeAction)) {
+        return {
+          ...requestRow,
+          status: "pendiente",
+          courierHistoryAt: "",
+        };
+      }
+      return requestRow;
+    }
     if (!isCourierWorkableForCurrentRoute(requestRow)) return null;
     return {
       ...requestRow,
