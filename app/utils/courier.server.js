@@ -1739,6 +1739,115 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
   return payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || [];
 }
 
+async function fetchCourierOrdersByIds({ shop, accessToken, orderIds }) {
+  const cleanOrderIds = Array.from(
+    new Set((Array.isArray(orderIds) ? orderIds : []).map((id) => String(id || "").trim()).filter(Boolean)),
+  );
+  if (!shop || !accessToken || !cleanOrderIds.length) return [];
+
+  const response = await fetch(`https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": accessToken,
+    },
+    body: JSON.stringify({
+      query: `#graphql
+        query CourierOrdersByIds($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Order {
+              id
+              name
+              createdAt
+              updatedAt
+              displayFulfillmentStatus
+              fulfillments(first: 20) {
+                deliveredAt
+              }
+              shippingAddress {
+                name
+                phone
+                address1
+                address2
+                city
+                province
+                zip
+                country
+              }
+              billingAddress {
+                name
+                phone
+              }
+              customAttributes {
+                key
+                value
+              }
+              tags
+              shippingLines(first: 5) {
+                nodes {
+                  title
+                  code
+                  deliveryCategory
+                }
+              }
+            }
+          }
+        }`,
+      variables: { ids: cleanOrderIds },
+    }),
+  });
+
+  const payload = await response.json();
+  if (!response.ok || payload?.errors?.length) {
+    throw new Error(payload?.errors?.[0]?.message || `Error consultando Shopify Admin API (${response.status}).`);
+  }
+
+  return (payload?.data?.nodes || []).filter(Boolean);
+}
+
+async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
+  const shipping = orderNode.shippingAddress || null;
+  const billing = orderNode.billingAddress || null;
+  const courierTags = Array.isArray(orderNode?.tags) ? orderNode.tags : [];
+  const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
+  const isShopifyDelivered = fulfillmentStatus === "FULFILLED";
+  const orderNumber = String(orderNode.name || "").replace("#", "");
+  const tagAttemptCount = getCourierDeliveryAttemptCountFromTags(orderNode.tags);
+  const failedAttemptCount = isShopifyDelivered
+    ? 0
+    : await getMaxCourierFailedDeliveryAttempt({
+        shopDomain: shop,
+        requestId: orderNode.id,
+        orderNumber,
+      });
+  const attemptCount = Math.max(tagAttemptCount, failedAttemptCount);
+  const deliveredAt =
+    (orderNode?.fulfillments || [])
+      .map((fulfillment) => String(fulfillment?.deliveredAt || "").trim())
+      .filter(Boolean)
+      .sort((firstDate, secondDate) => new Date(secondDate).getTime() - new Date(firstDate).getTime())[0] || "";
+  return {
+    id: orderNode.id,
+    orderNumber,
+    customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
+    customerEmail: "",
+    customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
+    pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
+    pickupAddress: String(shipping?.address1 || "").trim(),
+    pickupNeighborhood: String(shipping?.address2 || "").trim(),
+    pickupCity: String(shipping?.city || "").trim(),
+    pickupState: String(shipping?.province || "").trim(),
+    pickupPostalCode: String(shipping?.zip || "").trim(),
+    pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
+    createdAt: orderNode.createdAt,
+    updatedAt: orderNode.updatedAt || orderNode.createdAt,
+    courierHistoryAt: isShopifyDelivered ? deliveredAt : orderNode.updatedAt || "",
+    status: isShopifyDelivered ? "entregado" : getCourierRouteStatusFromTags(orderNode.tags),
+    attemptCount,
+    courierLabel: "Entrega",
+  };
+}
+
 export async function fetchCourierOrdersByToken({ shop, accessToken }) {
   if (!shop || !accessToken) return [];
 
@@ -1758,25 +1867,9 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
         );
       })
       .map(async (orderNode) => {
-        const shipping = orderNode.shippingAddress || null;
-        const billing = orderNode.billingAddress || null;
         const courierTags = Array.isArray(orderNode?.tags) ? orderNode.tags : [];
         const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
         const isShopifyDelivered = fulfillmentStatus === "FULFILLED";
-        const orderNumber = String(orderNode.name || "").replace("#", "");
-        const tagAttemptCount = getCourierDeliveryAttemptCountFromTags(orderNode.tags);
-        const failedAttemptCount = isShopifyDelivered
-          ? 0
-          : await getMaxCourierFailedDeliveryAttempt({
-              shopDomain: shop,
-              requestId: orderNode.id,
-              orderNumber,
-            });
-        const attemptCount = Math.max(tagAttemptCount, failedAttemptCount);
-        const deliveredAt = (orderNode?.fulfillments || [])
-          .map((fulfillment) => String(fulfillment?.deliveredAt || "").trim())
-          .filter(Boolean)
-          .sort((firstDate, secondDate) => new Date(secondDate).getTime() - new Date(firstDate).getTime())[0] || "";
         const preferredTag = isShopifyDelivered ? "entregado" : getPreferredCourierStatusTag(courierTags);
         if (preferredTag) {
           const normalizedCourierTags = Array.from(
@@ -1803,26 +1896,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
             );
           }
         }
-        return {
-          id: orderNode.id,
-          orderNumber,
-          customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
-          customerEmail: "",
-          customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
-          pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
-          pickupAddress: String(shipping?.address1 || "").trim(),
-          pickupNeighborhood: String(shipping?.address2 || "").trim(),
-          pickupCity: String(shipping?.city || "").trim(),
-          pickupState: String(shipping?.province || "").trim(),
-          pickupPostalCode: String(shipping?.zip || "").trim(),
-          pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
-          createdAt: orderNode.createdAt,
-          updatedAt: orderNode.updatedAt || orderNode.createdAt,
-          courierHistoryAt: isShopifyDelivered ? deliveredAt : orderNode.updatedAt || "",
-          status: isShopifyDelivered ? "entregado" : getCourierRouteStatusFromTags(orderNode.tags),
-          attemptCount,
-          courierLabel: "Entrega",
-        };
+        return mapShopifyOrderNodeToCourierOrder({ shop, orderNode });
       }));
 
     if (normalizationJobs.length > 0) {
@@ -1838,6 +1912,31 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
   }
 
   return Array.from(courierOrdersById.values());
+}
+
+export async function fetchCourierOrdersByIdsForShop({ shop, sessionCandidates, orderIds }) {
+  const candidates = Array.isArray(sessionCandidates) ? sessionCandidates : [];
+  const cleanOrderIds = Array.from(
+    new Set((Array.isArray(orderIds) ? orderIds : []).map((id) => String(id || "").trim()).filter(Boolean)),
+  );
+  if (!shop || !cleanOrderIds.length) return [];
+
+  let lastError = null;
+  for (const sessionCandidate of candidates) {
+    try {
+      const accessToken = String(sessionCandidate?.accessToken || "").trim();
+      if (!accessToken) continue;
+      const nodes = await fetchCourierOrdersByIds({ shop, accessToken, orderIds: cleanOrderIds });
+      return Promise.all(nodes.map((orderNode) => mapShopifyOrderNodeToCourierOrder({ shop, orderNode })));
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    console.error("Failed to fetch courier route orders by id", lastError);
+  }
+  return [];
 }
 
 export async function fetchCourierOrdersForShop({ shop, sessionCandidates }) {

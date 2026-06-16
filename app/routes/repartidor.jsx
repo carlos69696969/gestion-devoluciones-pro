@@ -14,6 +14,7 @@ import {
   isCourierRouteTabStatus,
 } from "../utils/courier.shared";
 import {
+  fetchCourierOrdersByIdsForShop,
   fetchCourierOrdersForShop,
   fetchPickupCourierOrders,
   markCourierOrderAsDelivered,
@@ -816,6 +817,30 @@ export const loader = async ({ request }) => {
       });
       for (const requestRow of unassignedOrders) {
         currentRouteRequestIds.add(String(requestRow.id || "").trim());
+      }
+    }
+  }
+
+  if (dailyAccess.routeId && currentRouteRequestIds.size) {
+    const loadedRequestIds = new Set(
+      courierOrders.map((requestRow) => String(requestRow?.id || "").trim()).filter(Boolean),
+    );
+    const missingDeliveryRequestIds = Array.from(currentRouteRequestIds).filter(
+      (requestId) =>
+        requestId &&
+        !requestId.startsWith("pickup-") &&
+        !loadedRequestIds.has(requestId),
+    );
+    if (missingDeliveryRequestIds.length) {
+      const recoveredOrders = await fetchCourierOrdersByIdsForShop({
+        shop: resolvedShop,
+        sessionCandidates: sessionCandidatesByShop.get(resolvedShop) || sessionCandidates,
+        orderIds: missingDeliveryRequestIds,
+      });
+      if (recoveredOrders.length) {
+        courierOrders = [...courierOrders, ...recoveredOrders].sort(
+          (a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
+        );
       }
     }
   }
