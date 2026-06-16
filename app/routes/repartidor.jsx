@@ -175,6 +175,10 @@ function isCourierHistoryFromToday(request) {
   return courierMexicoDateKey(historyTimestamp) === courierMexicoDateKey(new Date());
 }
 
+function isCourierWorkableForCurrentRoute(request) {
+  return !isCourierHistoryStatus(request?.status);
+}
+
 function getReturnFailedAttemptCount(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
   const match = normalizedStatus.match(/^intento_fallido_(\d+)$/);
@@ -322,17 +326,24 @@ export const action = async ({ request }) => {
       });
       url.searchParams.set("shop", shop);
       url.searchParams.set("tab", "pedidos");
+      const headers = new Headers();
+      headers.append(
+        "Set-Cookie",
+        await courierDailyAccessCookie.serialize({
+          shop,
+          courierId: courier.id,
+          courierName: courier.name,
+          dateKey: courierMexicoDateKey(new Date()),
+          routeId,
+          accessCode: code,
+        }),
+      );
+      headers.append(
+        "Set-Cookie",
+        await courierDeliveryConfirmationCookie.serialize("", { maxAge: 0 }),
+      );
       return redirect(`${url.pathname}?${url.searchParams.toString()}`, {
-        headers: {
-          "Set-Cookie": await courierDailyAccessCookie.serialize({
-            shop,
-            courierId: courier.id,
-            courierName: courier.name,
-            dateKey: courierMexicoDateKey(new Date()),
-            routeId,
-            accessCode: code,
-          }),
-        },
+        headers,
       });
     }
 
@@ -766,7 +777,9 @@ export const loader = async ({ request }) => {
       currentRouteActivities.map((activity) => String(activity.requestId || "").trim()).filter(Boolean),
     );
     const unassignedOrders = courierOrders.filter(
-      (requestRow) => !assignedRequestIds.has(String(requestRow?.id || "").trim()),
+      (requestRow) =>
+        isCourierWorkableForCurrentRoute(requestRow) &&
+        !assignedRequestIds.has(String(requestRow?.id || "").trim()),
     );
     if (unassignedOrders.length) {
       await prisma.courierActivity.createMany({
@@ -789,12 +802,13 @@ export const loader = async ({ request }) => {
   const routeCourierOrders = courierOrders.map((requestRow) => {
     const requestId = String(requestRow?.id || "").trim();
     if (currentRouteRequestIds.has(requestId)) return requestRow;
+    if (!isCourierWorkableForCurrentRoute(requestRow)) return null;
     return {
       ...requestRow,
       status: "pendiente",
       courierHistoryAt: "",
     };
-  });
+  }).filter(Boolean);
 
   return {
     activeTab,
