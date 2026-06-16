@@ -1659,7 +1659,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
 
   const courierOrdersById = new Map();
 
-  for (const queryString of ["fulfillment_status:unfulfilled"]) {
+  for (const queryString of ["fulfillment_status:unfulfilled", "status:open"]) {
     const nodes = await fetchCourierOrdersByQuery({ shop, accessToken, queryString });
     const normalizationJobs = [];
     const courierOrders = nodes
