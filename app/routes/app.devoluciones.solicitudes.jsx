@@ -2854,13 +2854,25 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
       current.add(requestId);
       routeOrderIdsByRouteId.set(activity.routeId, current);
     }
-    const routeHistoryBlocks = routeStarts
+    const uniqueRouteHistoryBlocks = [];
+    const routeHistorySignatures = new Set();
+    for (const activity of routeStarts
       .filter((activity) => (routeOrderIdsByRouteId.get(activity.routeId)?.size || 0) > 0)
       .sort(
         (firstActivity, secondActivity) =>
           new Date(secondActivity.createdAt || "").getTime() -
           new Date(firstActivity.createdAt || "").getTime(),
-      );
+      )) {
+      const dateKey = mexicoActivityDateKey(activity.createdAt);
+      const orderSignature = Array.from(routeOrderIdsByRouteId.get(activity.routeId) || [])
+        .sort()
+        .join("|");
+      const routeSignature = `${dateKey}:${orderSignature}`;
+      if (routeHistorySignatures.has(routeSignature)) continue;
+      routeHistorySignatures.add(routeSignature);
+      uniqueRouteHistoryBlocks.push(activity);
+    }
+    const routeHistoryBlocks = uniqueRouteHistoryBlocks;
     const todayDateKey = mexicoActivityDateKey(new Date());
     const currentOrders = orders.filter((order) => !isCourierHistoryStatus(order.status));
     const todayActivityOrders = courierActivities
