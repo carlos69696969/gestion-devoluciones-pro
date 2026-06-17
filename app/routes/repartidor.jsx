@@ -973,11 +973,14 @@ export default function RepartidorPublicPortal() {
   const activeOrdersCount = pendingOrders.length + routeOrders.length;
   const dailyOrdersCount = activeOrdersCount + historyOrders.length;
   const routeOrder = routeOrders[0] || null;
+  const pendingPreviewOrder = pendingOrders[0] || null;
   const visibleOrders =
     activeTab === "en_ruta"
       ? routeOrder
         ? [routeOrder]
-        : []
+        : pendingPreviewOrder
+          ? [pendingPreviewOrder]
+          : []
       : activeTab === "historial"
         ? historyOrders
         : pendingOrders;
