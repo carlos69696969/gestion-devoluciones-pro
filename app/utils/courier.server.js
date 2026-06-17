@@ -1272,6 +1272,17 @@ export async function markCourierOrderAsDelivered({
     return { ok: false, error: "Accion no valida." };
   }
 
+  const previousAttemptCount = await getMaxCourierDeliveryAttemptFromEvents({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber,
+    statuses: ["en_ruta_1", "en_ruta_2", "en_ruta_3", "no_entregado", "recoger_en_sucursal"],
+  });
+  const deliveredAttemptCount = Math.max(
+    1,
+    normalizeDeliveryAttemptCount(currentAttemptCount, 1),
+    previousAttemptCount,
+  );
   const requestRow = {
     shop: shopDomain,
     shopifyOrderId: orderGid,
@@ -1280,7 +1291,7 @@ export async function markCourierOrderAsDelivered({
     customerEmail: String(customerEmail || "").trim(),
     customerPhone: String(customerPhone || "-").trim() || "-",
     status: "entregado",
-    attemptCount: Math.max(1, normalizeDeliveryAttemptCount(currentAttemptCount, 1)),
+    attemptCount: deliveredAttemptCount,
   };
 
   try {
