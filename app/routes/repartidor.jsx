@@ -70,7 +70,7 @@ function getDeliveryAttemptLabel(request, activeTab) {
   if (!failedAttemptCount) return "";
 
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
-  if (["no_entregado", "recoger_en_sucursal"].includes(normalizedStatus)) {
+  if (["entregado", "no_entregado", "recoger_en_sucursal"].includes(normalizedStatus)) {
     return failedAttemptCount === 1 ? "1 intento" : `${failedAttemptCount} intentos`;
   }
 
