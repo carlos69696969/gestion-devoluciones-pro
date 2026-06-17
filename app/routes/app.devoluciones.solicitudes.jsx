@@ -3487,7 +3487,8 @@ function CourierOrderCard({
   const visibleStatus = statusOverride || request.status;
   const normalizedVisibleStatus = String(visibleStatus || "").trim().toLowerCase();
   const isAdminReprogrammed =
-    adminCourierView && ["no_entregado", "no_recibido"].includes(normalizedVisibleStatus);
+    adminCourierView &&
+    ["no_entregado", "no_recibido", "reintento_pendiente"].includes(normalizedVisibleStatus);
   const displayStatus = isAdminReprogrammed ? "reprogramado" : visibleStatus;
   const adminCourierPresentation = adminCourierView
     ? buildAdminCourierPresentation(request)
