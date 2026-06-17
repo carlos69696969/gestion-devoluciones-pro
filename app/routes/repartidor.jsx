@@ -854,7 +854,6 @@ export const loader = async ({ request }) => {
     const unassignedOrders = courierOrders.filter(
       (requestRow) =>
         isCourierWorkableForCurrentRoute(requestRow) &&
-        !isCourierHistoryStatus(requestRow?.status) &&
         !assignedRequestIds.has(String(requestRow?.id || "").trim()),
     );
     if (unassignedOrders.length) {
@@ -912,7 +911,6 @@ export const loader = async ({ request }) => {
       }
       return requestRow;
     }
-    if (isCourierHistoryStatus(requestRow?.status)) return null;
     if (!isCourierWorkableForCurrentRoute(requestRow)) return null;
     return {
       ...requestRow,
