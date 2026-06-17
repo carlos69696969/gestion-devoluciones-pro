@@ -2938,7 +2938,9 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
         return compareCourierDisplayOrder(firstOrder, secondOrder);
       });
       const sequenceByOrderId = new Map(
-        selectedDayOrders.map((order, index) => [String(order.id || ""), index + 1]),
+        [...baseDayOrders]
+          .sort(compareCourierDisplayOrder)
+          .map((order, index) => [String(order.id || ""), index + 1]),
       );
       const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
         dateStyle: "full",
