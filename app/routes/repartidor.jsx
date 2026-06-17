@@ -225,12 +225,27 @@ function isCourierHistoryFromToday(request) {
 function isCourierWorkableForCurrentRoute(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
   if (normalizedStatus === "no_entregado") return true;
+  if (
+    String(request?.courierLabel || "").trim().toLowerCase() === "devolucion" &&
+    ["reintento_pendiente", "intento_fallido_1", "intento_fallido_2", "no_recibido"].includes(normalizedStatus)
+  ) {
+    return true;
+  }
   return !isCourierHistoryStatus(normalizedStatus);
 }
 
 function shouldResetAssignedOrderForCurrentRoute(request, routeAction) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
-  return routeAction === "courier_route_order_assigned" && normalizedStatus === "no_entregado";
+  return (
+    routeAction === "courier_route_order_assigned" &&
+    [
+      "no_entregado",
+      "reintento_pendiente",
+      "intento_fallido_1",
+      "intento_fallido_2",
+      "no_recibido",
+    ].includes(normalizedStatus)
+  );
 }
 
 function getReturnFailedAttemptCount(request) {
@@ -981,9 +996,10 @@ export const loader = async ({ request }) => {
     const unassignedReturnIds = courierOrders
       .filter((requestRow) => {
         const requestId = String(requestRow?.id || "").trim();
+        const status = String(requestRow?.status || "").trim().toLowerCase();
         return (
           requestId.startsWith("pickup-") &&
-          String(requestRow?.status || "").trim().toLowerCase() === "reintento_pendiente" &&
+          ["reintento_pendiente", "intento_fallido_1", "intento_fallido_2", "no_recibido"].includes(status) &&
           !currentRouteRequestIds.has(requestId)
         );
       })
@@ -993,7 +1009,9 @@ export const loader = async ({ request }) => {
           where: {
             shop,
             requestId: { in: unassignedReturnIds },
-            action: "courier_return_retry_pickup",
+            action: {
+              in: ["courier_return_retry_pickup", "courier_return_pickup_attempt_failed"],
+            },
             createdAt: { lte: currentRouteStartedAt },
           },
           select: { requestId: true },
@@ -1007,7 +1025,7 @@ export const loader = async ({ request }) => {
       const status = String(requestRow?.status || "").trim().toLowerCase();
       return (
         requestId.startsWith("pickup-") &&
-        status === "reintento_pendiente" &&
+        ["reintento_pendiente", "intento_fallido_1", "intento_fallido_2", "no_recibido"].includes(status) &&
         !currentRouteRequestIds.has(requestId) &&
         retriedBeforeRouteIds.has(requestId)
       );
