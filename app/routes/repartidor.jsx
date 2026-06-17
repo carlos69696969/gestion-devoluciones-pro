@@ -86,6 +86,64 @@ function getDeliveryAttemptLabel(request, activeTab) {
   return currentAttemptNumber === 1 ? "1 intento" : `${currentAttemptNumber} intentos`;
 }
 
+function courierAttemptLabel(attempt) {
+  const attemptNumber = Math.min(Math.max(Number(attempt || 0), 1), 3);
+  if (attemptNumber === 1) return "Primer intento";
+  if (attemptNumber === 2) return "Segundo intento";
+  return "Tercer intento";
+}
+
+function courierSnapshotEventLabel(event) {
+  const normalizedStatus = String(event?.status || "").trim().toLowerCase();
+  const attemptLabel = courierAttemptLabel(event?.attempt);
+  if (normalizedStatus === "en_ruta" || normalizedStatus.startsWith("en_ruta_")) return `${attemptLabel} en ruta`;
+  if (normalizedStatus === "no_entregado") return `${attemptLabel} no entregado`;
+  if (normalizedStatus === "reintento_pendiente") return `${attemptLabel} reprogramado`;
+  if (normalizedStatus === "recoger_en_sucursal") return "Enviado a recoger en sucursal";
+  if (normalizedStatus === "entregado") return `${attemptLabel} entregado`;
+  return normalizedStatus.replace(/_/g, " ");
+}
+
+function parseSnapshotReasonEntries(rawValue) {
+  const text = String(rawValue || "").trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed?.entries)) return parsed.entries.filter(Boolean);
+  } catch {
+    return [{ kind: "legacy", reason: text, at: "" }];
+  }
+  return [{ kind: "legacy", reason: text, at: "" }];
+}
+
+function buildPickupSnapshotHistoryEvents(order) {
+  const entries = parseSnapshotReasonEntries(order?.rejectionReason);
+  const finalAttempt = Math.max(
+    1,
+    entries.reduce((maxAttempt, entry) => {
+      const match = String(entry?.kind || "").toLowerCase().match(/^(?:courier_en_route_|courier_retry_|attempt_failed_)(\d)$/);
+      return match ? Math.max(maxAttempt, Number(match[1]) || 0) : maxAttempt;
+    }, 0),
+  );
+  return entries
+    .map((entry, index) => {
+      const kind = String(entry?.kind || "").trim().toLowerCase();
+      let label = "";
+      const failedAttemptMatch = kind.match(/^attempt_failed_(\d)$/);
+      const enRouteAttemptMatch = kind.match(/^courier_en_route_(\d)$/);
+      if (failedAttemptMatch) label = `${courierAttemptLabel(failedAttemptMatch[1])} no recibido`;
+      if (enRouteAttemptMatch) label = `${courierAttemptLabel(enRouteAttemptMatch[1])} en ruta`;
+      if (kind === "status_received") label = `${courierAttemptLabel(finalAttempt)} recibido`;
+      return {
+        id: `${kind || "pickup-event"}-${entry?.at || index}-${index}`,
+        label,
+        at: entry?.at || order?.updatedAt || order?.createdAt || "",
+      };
+    })
+    .filter((event) => event.label && event.at)
+    .sort((firstEvent, secondEvent) => new Date(firstEvent.at).getTime() - new Date(secondEvent.at).getTime());
+}
+
 function courierHistoryTimestampMs(request) {
   const courierHistoryAtMs = new Date(request?.courierHistoryAt || "").getTime();
   if (Number.isFinite(courierHistoryAtMs)) return courierHistoryAtMs;
@@ -309,6 +367,26 @@ export const action = async ({ request }) => {
       const pickupOrders = pickupRequestIds.size
         ? (await fetchPickupCourierOrders(shop)).filter((order) => pickupRequestIds.has(String(order.id || "")))
         : [];
+      let deliveryHistoryEvents = [];
+      if (deliveryRequestIds.length) {
+        try {
+          deliveryHistoryEvents = await prisma.courierEvent.findMany({
+            where: {
+              shop,
+              requestId: { in: deliveryRequestIds },
+            },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          });
+        } catch (error) {
+          console.error("Courier event history is not available yet", error);
+        }
+      }
+      const deliveryHistoryByRequestId = new Map();
+      for (const event of deliveryHistoryEvents) {
+        const current = deliveryHistoryByRequestId.get(event.requestId) || [];
+        current.push(event);
+        deliveryHistoryByRequestId.set(event.requestId, current);
+      }
       const fetchedOrderById = new Map(
         [...deliveryOrders, ...pickupOrders].map((order) => [String(order.id || ""), order]),
       );
@@ -316,11 +394,19 @@ export const action = async ({ request }) => {
         .map((id, index) => {
           const activity = latestActivityByRequestId.get(id);
           const fetchedOrder = fetchedOrderById.get(id) || buildSnapshotFallbackOrder(id, activity, index);
+          const historyEvents = id.startsWith("pickup-")
+            ? buildPickupSnapshotHistoryEvents(fetchedOrder)
+            : (deliveryHistoryByRequestId.get(id) || []).map((event) => ({
+                id: `delivery-event-${event.id}`,
+                label: courierSnapshotEventLabel(event),
+                at: event.createdAt,
+              }));
           return {
             ...fetchedOrder,
             id,
             orderNumber: fetchedOrder.orderNumber || activity?.orderNumber || id,
             status: courierStatusFromSnapshotAction(activity?.action, fetchedOrder.status),
+            historyEvents,
             sequenceNumber: 0,
           };
         })

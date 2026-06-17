@@ -2939,11 +2939,20 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
       const selectedSnapshot = selectedRouteId ? snapshotByRouteId.get(selectedRouteId) : null;
       if (selectedSnapshot) {
         const selectedSnapshotOrders = (Array.isArray(selectedSnapshot.orders) ? selectedSnapshot.orders : [])
-          .map((order, index) => ({
-            ...order,
-            id: String(order?.id || ""),
-            sequenceNumber: Number(order?.sequenceNumber || index + 1),
-          }))
+          .map((order, index) => {
+            const id = String(order?.id || "");
+            const sourceOrder = orderByRequestId.get(id) || {};
+            const historyEvents = Array.isArray(order?.historyEvents) && order.historyEvents.length
+              ? order.historyEvents
+              : sourceOrder.historyEvents || [];
+            return {
+              ...sourceOrder,
+              ...order,
+              id,
+              historyEvents,
+              sequenceNumber: Number(order?.sequenceNumber || index + 1),
+            };
+          })
           .sort((firstOrder, secondOrder) => Number(firstOrder.sequenceNumber || 0) - Number(secondOrder.sequenceNumber || 0));
         const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
           dateStyle: "full",
