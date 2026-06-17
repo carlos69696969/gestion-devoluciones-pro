@@ -3495,7 +3495,10 @@ function CourierOrderCard({
     : { events: request.historyEvents || [], scheduledDate: null };
   const displayHistoryEvents = adminCourierPresentation.events;
   const displayHistoryItems = buildCourierHistoryDisplayItems(displayHistoryEvents, request);
-  const displayedScheduledDate = adminCourierPresentation.scheduledDate || request.pickupDate;
+  const displayedScheduledDate =
+    request.courierLabel === "Devolución"
+      ? request.pickupDate
+      : adminCourierPresentation.scheduledDate || request.pickupDate;
   const attemptBadgeClass = ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
     ? normalizedVisibleStatus === "rechazada"
       ? styles.courierBadgeAttemptWarning
