@@ -222,7 +222,6 @@ function isCourierHistoryFromToday(request) {
 
 function isCourierWorkableForCurrentRoute(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
-  if (normalizedStatus === "no_entregado") return true;
   return !isCourierHistoryStatus(normalizedStatus);
 }
 
