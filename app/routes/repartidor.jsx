@@ -301,6 +301,7 @@ export const action = async ({ request }) => {
   const { default: prisma } = await import("../db.server");
   const {
     fetchCourierOrdersByIdsForShop,
+    fetchCourierOrdersForShop,
     fetchPickupCourierOrders,
     markCourierOrderAsDelivered,
     markCourierOrderAsEnRoute,
@@ -491,15 +492,37 @@ export const action = async ({ request }) => {
         return { ok: false, loginError: "El codigo ingresado no es valido." };
       }
       const routeId = crypto.randomUUID();
-      await prisma.courierActivity.create({
-        data: {
-          shop,
-          courierId: courier.id,
-          courierName: courier.name,
-          requestId: `route:${routeId}`,
-          action: "courier_route_started",
-          routeId,
-        },
+      const sessionCandidatesForRoute = portalShop.sessionCandidates || portalShop.allSessionCandidates || [];
+      const [deliveryResult, pickupResult] = await Promise.allSettled([
+        fetchCourierOrdersForShop({ shop, sessionCandidates: sessionCandidatesForRoute }),
+        fetchPickupCourierOrders(shop),
+      ]);
+      const routeOrders = [
+        ...(deliveryResult.status === "fulfilled" ? deliveryResult.value : []),
+        ...(pickupResult.status === "fulfilled" ? pickupResult.value : []),
+      ]
+        .filter(isCourierWorkableForCurrentRoute)
+        .sort((firstOrder, secondOrder) => courierOrderTimestampMs(firstOrder) - courierOrderTimestampMs(secondOrder));
+      await prisma.courierActivity.createMany({
+        data: [
+          {
+            shop,
+            courierId: courier.id,
+            courierName: courier.name,
+            requestId: `route:${routeId}`,
+            action: "courier_route_started",
+            routeId,
+          },
+          ...routeOrders.map((order) => ({
+            shop,
+            courierId: courier.id,
+            courierName: courier.name,
+            requestId: String(order.id || ""),
+            orderNumber: String(order.orderNumber || "").trim() || null,
+            action: "courier_route_order_assigned",
+            routeId,
+          })),
+        ],
       });
       url.searchParams.set("shop", shop);
       url.searchParams.set("tab", "pedidos");
@@ -940,35 +963,6 @@ export const loader = async ({ request }) => {
     return requestRow;
   });
 
-  if (dailyAccess.routeId && courierOrders.length) {
-    const assignedRequestIds = new Set(
-      currentRouteActivities.map((activity) => String(activity.requestId || "").trim()).filter(Boolean),
-    );
-    const unassignedOrders = courierOrders.filter(
-      (requestRow) =>
-        isCourierWorkableForCurrentRoute(requestRow) &&
-        !assignedRequestIds.has(String(requestRow?.id || "").trim()),
-    );
-    if (unassignedOrders.length) {
-      await prisma.courierActivity.createMany({
-        data: unassignedOrders.map((requestRow) => ({
-          shop,
-          courierId: Number(dailyAccess.courierId),
-          courierName: String(dailyAccess.courierName || ""),
-          requestId: String(requestRow.id || ""),
-          orderNumber: String(requestRow.orderNumber || "").trim() || null,
-          action: "courier_route_order_assigned",
-          routeId: String(dailyAccess.routeId),
-        })),
-      });
-      for (const requestRow of unassignedOrders) {
-        const requestId = String(requestRow.id || "").trim();
-        currentRouteRequestIds.add(requestId);
-        currentRouteActionByRequestId.set(requestId, "courier_route_order_assigned");
-      }
-    }
-  }
-
   if (dailyAccess.routeId && currentRouteRequestIds.size) {
     const loadedRequestIds = new Set(
       courierOrders.map((requestRow) => String(requestRow?.id || "").trim()).filter(Boolean),
@@ -1006,12 +1000,7 @@ export const loader = async ({ request }) => {
       }
       return requestRow;
     }
-    if (!isCourierWorkableForCurrentRoute(requestRow)) return null;
-    return {
-      ...requestRow,
-      status: "pendiente",
-      courierHistoryAt: "",
-    };
+    return null;
   }).filter(Boolean);
 
   return {
