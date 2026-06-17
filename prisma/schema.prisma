@@ -134,6 +134,24 @@ model CourierActivity {
   @@index([shop, courierId, routeId, createdAt])
 }
 
+model CourierRouteSnapshot {
+  id             Int      @id @default(autoincrement())
+  shop           String
+  courierId      Int
+  courierName    String
+  routeId        String
+  dateKey        String
+  startedAt      DateTime?
+  finishedAt     DateTime @default(now())
+  orders         Json
+  remainingCount Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  @@unique([shop, routeId])
+  @@index([shop, courierId, finishedAt])
+  @@index([shop, courierId, dateKey])
+}
+
 model ReturnSettings {
   id                  Int      @id @default(autoincrement())
   shop                String   @unique

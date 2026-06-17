@@ -1572,7 +1572,23 @@ export const loader = async ({ request }) => {
         })
       : [];
 
-  return { requests, courierOrders, couriers, courierActivities, viewMode, shop: session.shop };
+  const courierRouteSnapshots =
+    viewMode === VIEW_MODE.COURIER_HISTORY
+      ? await prisma.courierRouteSnapshot.findMany({
+          where: { shop: session.shop },
+          orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
+        })
+      : [];
+
+  return {
+    requests,
+    courierOrders,
+    couriers,
+    courierActivities,
+    courierRouteSnapshots,
+    viewMode,
+    shop: session.shop,
+  };
 };
 
 export const action = async ({ request }) => {
@@ -2571,7 +2587,15 @@ function historyTimestampMs(request) {
 }
 
 export default function ReturnsRequests() {
-  const { requests, courierOrders, couriers = [], courierActivities = [], viewMode, shop } = useLoaderData();
+  const {
+    requests,
+    courierOrders,
+    couriers = [],
+    courierActivities = [],
+    courierRouteSnapshots = [],
+    viewMode,
+    shop,
+  } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const location = useLocation();
@@ -2763,6 +2787,7 @@ export default function ReturnsRequests() {
             <CourierHistoryDirectory
               couriers={couriers}
               activities={courierActivities}
+              snapshots={courierRouteSnapshots}
               orders={courierOrders}
               search={location.search}
               shop={shop}
@@ -2801,7 +2826,7 @@ function mexicoActivityDateKey(value) {
   }).format(new Date(value));
 }
 
-function CourierHistoryDirectory({ couriers, activities, orders, search, shop }) {
+function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders, search, shop }) {
   const orderByRequestId = new Map(orders.map((order) => [String(order.id || ""), order]));
   const searchParams = new URLSearchParams(search);
   const historyView = String(searchParams.get("historyView") || "").trim();
@@ -2840,6 +2865,10 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
   if (["courier", "courier_day"].includes(historyView) && selectedCourierId) {
     const courier = couriers.find((item) => Number(item.id) === selectedCourierId);
     const courierActivities = activities.filter((activity) => Number(activity.courierId) === selectedCourierId);
+    const courierSnapshots = snapshots.filter((snapshot) => Number(snapshot.courierId) === selectedCourierId);
+    const snapshotByRouteId = new Map(
+      courierSnapshots.map((snapshot) => [String(snapshot.routeId || "").trim(), snapshot]),
+    );
     const routeStarts = courierActivities.filter(
       (activity) => activity.action === "courier_route_started" && activity.routeId,
     );
@@ -2872,7 +2901,21 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
       routeHistorySignatures.add(routeSignature);
       uniqueRouteHistoryBlocks.push(activity);
     }
-    const routeHistoryBlocks = uniqueRouteHistoryBlocks;
+    const snapshotRouteHistoryBlocks = courierSnapshots
+      .filter((snapshot) => String(snapshot.routeId || "").trim() && Array.isArray(snapshot.orders) && snapshot.orders.length)
+      .map((snapshot) => ({
+        ...snapshot,
+        createdAt: snapshot.finishedAt || snapshot.createdAt,
+        isSnapshot: true,
+      }));
+    const routeHistoryBlocks = [
+      ...snapshotRouteHistoryBlocks,
+      ...uniqueRouteHistoryBlocks.filter((activity) => !snapshotByRouteId.has(String(activity.routeId || "").trim())),
+    ].sort(
+      (firstItem, secondItem) =>
+        new Date(secondItem.createdAt || secondItem.finishedAt || "").getTime() -
+        new Date(firstItem.createdAt || firstItem.finishedAt || "").getTime(),
+    );
     const todayDateKey = mexicoActivityDateKey(new Date());
     const currentOrders = orders.filter((order) => !isCourierHistoryStatus(order.status));
     const todayActivityOrders = courierActivities
@@ -2887,11 +2930,63 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
     const dates = [
       ...new Set([
         todayDateKey,
+        ...courierSnapshots.map((snapshot) => snapshot.dateKey || mexicoActivityDateKey(snapshot.finishedAt)),
         ...courierActivities.map((activity) => mexicoActivityDateKey(activity.createdAt)),
       ]),
     ].filter(Boolean).sort().reverse();
 
     if (historyView === "courier_day" && selectedDate) {
+      const selectedSnapshot = selectedRouteId ? snapshotByRouteId.get(selectedRouteId) : null;
+      if (selectedSnapshot) {
+        const selectedSnapshotOrders = (Array.isArray(selectedSnapshot.orders) ? selectedSnapshot.orders : [])
+          .map((order, index) => ({
+            ...order,
+            id: String(order?.id || ""),
+            sequenceNumber: Number(order?.sequenceNumber || index + 1),
+          }))
+          .sort((firstOrder, secondOrder) => Number(firstOrder.sequenceNumber || 0) - Number(secondOrder.sequenceNumber || 0));
+        const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
+          dateStyle: "full",
+          timeZone: "UTC",
+        }).format(new Date(`${selectedDate}T12:00:00Z`));
+
+        return (
+          <div className={styles.courierHistoryDirectoryList}>
+            <Link
+              className={styles.courierHistoryBackLink}
+              to={buildHistoryHref({ view: "courier", courierId: selectedCourierId })}
+            >
+              ← Regresar al calendario
+            </Link>
+            <div className={styles.courierHistoryHeader}>
+              <div>
+                <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
+                <p className={styles.courierHistoryDateTitle}>{selectedDayLabel}</p>
+              </div>
+              <div className={styles.courierHistoryCounters}>
+                <span className={styles.courierHistoryCounter}>Ordenes {selectedSnapshotOrders.length}</span>
+                <span className={styles.courierHistoryCounter}>
+                  Restantes {Number(selectedSnapshot.remainingCount || 0)}
+                </span>
+              </div>
+            </div>
+            {selectedSnapshotOrders.length ? (
+              <div className={styles.courierGrid}>
+                {selectedSnapshotOrders.map((order, index) => (
+                  <CourierOrderCard
+                    key={`${selectedSnapshot.routeId}:${order.id || index}`}
+                    request={order}
+                    sequenceNumber={Number(order.sequenceNumber || index + 1)}
+                    showFinalAttemptBadge
+                  />
+                ))}
+              </div>
+            ) : (
+              <p>No hay ordenes registradas para este dia.</p>
+            )}
+          </div>
+        );
+      }
       const currentOrderIds = new Set(currentOrders.map((order) => String(order.id || "")));
       const selectedDayActivities = courierActivities.filter((activity) => {
         if (mexicoActivityDateKey(activity.createdAt) !== selectedDate) return false;
@@ -3002,10 +3097,10 @@ function CourierHistoryDirectory({ couriers, activities, orders, search, shop })
         {dates.length || routeHistoryBlocks.length ? (
           <div className={styles.courierCalendar}>
             {routeHistoryBlocks.map((activity) => {
-              const dateKey = mexicoActivityDateKey(activity.createdAt);
+              const dateKey = activity.dateKey || mexicoActivityDateKey(activity.createdAt || activity.finishedAt);
               return (
                 <Link
-                  key={activity.routeId}
+                  key={`${activity.isSnapshot ? "snapshot" : "activity"}:${activity.routeId}`}
                   className={styles.courierCalendarDay}
                   to={buildHistoryHref({
                     view: "courier_day",

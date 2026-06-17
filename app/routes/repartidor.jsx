@@ -198,9 +198,50 @@ function getReturnRetryAttemptLabel(request) {
   return "tercer intento";
 }
 
+function getCourierSnapshotDateKey(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function courierStatusFromSnapshotAction(action, fallbackStatus = "pendiente") {
+  const normalizedAction = String(action || "").trim();
+  if (normalizedAction === "courier_mark_delivered" || normalizedAction === "courier_return_mark_received") {
+    return "entregado";
+  }
+  if (normalizedAction === "courier_mark_not_delivered") return "no_entregado";
+  if (normalizedAction === "courier_retry_delivery" || normalizedAction === "courier_return_for_retry") {
+    return "reintento_pendiente";
+  }
+  return fallbackStatus || "pendiente";
+}
+
+function buildSnapshotFallbackOrder(requestId, activity, index = 0) {
+  return {
+    id: requestId,
+    orderNumber: activity?.orderNumber || requestId,
+    customerName: "",
+    customerPhone: "",
+    address: "",
+    pickupDate: "",
+    status: courierStatusFromSnapshotAction(activity?.action, "pendiente"),
+    attemptCount: 0,
+    courierLabel: String(requestId || "").startsWith("pickup-") ? "Devolucion" : "Entrega",
+    historyEvents: [],
+    sequenceNumber: index + 1,
+  };
+}
+
 export const action = async ({ request }) => {
   const { default: prisma } = await import("../db.server");
   const {
+    fetchCourierOrdersByIdsForShop,
+    fetchPickupCourierOrders,
     markCourierOrderAsDelivered,
     markCourierOrderAsEnRoute,
     markCourierOrderAsNotDelivered,
@@ -225,8 +266,89 @@ export const action = async ({ request }) => {
       if (!dailyAccess) {
         return { ok: false, error: "Tu acceso vencio. Ingresa nuevamente tu codigo." };
       }
+      const routeId = String(dailyAccess.routeId || "");
+      const finishedAt = new Date();
+      const routeActivities = routeId
+        ? await prisma.courierActivity.findMany({
+            where: {
+              shop,
+              courierId: Number(dailyAccess.courierId),
+              routeId,
+            },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          })
+        : [];
+      const routeStartedAt =
+        routeActivities.find((activity) => activity.action === "courier_route_started")?.createdAt || null;
+      const orderActivities = routeActivities.filter((activity) => {
+        const activityRequestId = String(activity.requestId || "").trim();
+        return (
+          activityRequestId &&
+          !activityRequestId.startsWith("route:") &&
+          activity.action !== "courier_route_started" &&
+          activity.action !== "courier_route_finished"
+        );
+      });
+      const requestIds = [
+        ...new Set(orderActivities.map((activity) => String(activity.requestId || "").trim()).filter(Boolean)),
+      ];
+      const latestActivityByRequestId = new Map();
+      for (const activity of orderActivities) {
+        latestActivityByRequestId.set(String(activity.requestId || "").trim(), activity);
+      }
+      const deliveryRequestIds = requestIds.filter((id) => !id.startsWith("pickup-"));
+      const pickupRequestIds = new Set(requestIds.filter((id) => id.startsWith("pickup-")));
+      const sessionCandidatesForSnapshot = portalShop.sessionCandidates || portalShop.allSessionCandidates || [];
+      const deliveryOrders = deliveryRequestIds.length
+        ? await fetchCourierOrdersByIdsForShop({
+            shop,
+            sessionCandidates: sessionCandidatesForSnapshot,
+            orderIds: deliveryRequestIds,
+          })
+        : [];
+      const pickupOrders = pickupRequestIds.size
+        ? (await fetchPickupCourierOrders(shop)).filter((order) => pickupRequestIds.has(String(order.id || "")))
+        : [];
+      const fetchedOrderById = new Map(
+        [...deliveryOrders, ...pickupOrders].map((order) => [String(order.id || ""), order]),
+      );
+      const snapshotOrders = requestIds
+        .map((id, index) => {
+          const activity = latestActivityByRequestId.get(id);
+          const fetchedOrder = fetchedOrderById.get(id) || buildSnapshotFallbackOrder(id, activity, index);
+          return {
+            ...fetchedOrder,
+            id,
+            orderNumber: fetchedOrder.orderNumber || activity?.orderNumber || id,
+            status: courierStatusFromSnapshotAction(activity?.action, fetchedOrder.status),
+            sequenceNumber: 0,
+          };
+        })
+        .sort(compareCourierDisplayOrder)
+        .map((order, index) => ({ ...order, sequenceNumber: index + 1 }));
+      const remainingCount = snapshotOrders.filter((order) => !isCourierHistoryStatus(order.status)).length;
+      const snapshotData =
+        routeId && snapshotOrders.length
+          ? {
+              shop,
+              courierId: Number(dailyAccess.courierId),
+              courierName: String(dailyAccess.courierName || ""),
+              routeId,
+              dateKey: getCourierSnapshotDateKey(finishedAt),
+              startedAt: routeStartedAt,
+              finishedAt,
+              orders: snapshotOrders,
+              remainingCount,
+            }
+          : null;
+      const existingSnapshot = snapshotData
+        ? await prisma.courierRouteSnapshot.findUnique({
+            where: { shop_routeId: { shop, routeId } },
+            select: { id: true },
+          })
+        : null;
       const newCode = await generateUniqueCourierCode(shop);
-      await prisma.$transaction([
+      const transactionSteps = [
         prisma.courier.update({
           where: { id: Number(dailyAccess.courierId) },
           data: { code: newCode },
@@ -241,7 +363,11 @@ export const action = async ({ request }) => {
             routeId: String(dailyAccess.routeId || ""),
           },
         }),
-      ]);
+      ];
+      if (snapshotData && !existingSnapshot) {
+        transactionSteps.push(prisma.courierRouteSnapshot.create({ data: snapshotData }));
+      }
+      await prisma.$transaction(transactionSteps);
       url.searchParams.set("shop", shop);
       url.searchParams.delete("updated");
       url.searchParams.delete("overrideRequestId");

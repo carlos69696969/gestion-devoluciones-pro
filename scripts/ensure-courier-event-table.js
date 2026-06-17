@@ -76,4 +76,41 @@ await prisma.$executeRawUnsafe(`
   ON "CourierActivity"("shop", "courierId", "routeId", "createdAt")
 `);
 
+await prisma.$executeRawUnsafe(`
+  CREATE TABLE IF NOT EXISTS "CourierRouteSnapshot" (
+    "id" SERIAL NOT NULL,
+    "shop" TEXT NOT NULL,
+    "courierId" INTEGER NOT NULL,
+    "courierName" TEXT NOT NULL,
+    "routeId" TEXT NOT NULL,
+    "dateKey" TEXT NOT NULL,
+    "startedAt" TIMESTAMP(3),
+    "finishedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "orders" JSONB NOT NULL,
+    "remainingCount" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "CourierRouteSnapshot_pkey" PRIMARY KEY ("id")
+  )
+`);
+
+await prisma.$executeRawUnsafe(`
+  ALTER TABLE "CourierRouteSnapshot"
+  ADD COLUMN IF NOT EXISTS "remainingCount" INTEGER NOT NULL DEFAULT 0
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE UNIQUE INDEX IF NOT EXISTS "CourierRouteSnapshot_shop_routeId_key"
+  ON "CourierRouteSnapshot"("shop", "routeId")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "CourierRouteSnapshot_shop_courierId_finishedAt_idx"
+  ON "CourierRouteSnapshot"("shop", "courierId", "finishedAt")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "CourierRouteSnapshot_shop_courierId_dateKey_idx"
+  ON "CourierRouteSnapshot"("shop", "courierId", "dateKey")
+`);
+
 await prisma.$disconnect();
