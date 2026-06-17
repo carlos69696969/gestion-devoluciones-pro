@@ -581,7 +581,7 @@ export const action = async ({ request }) => {
           .map((value) => String(value || "").trim());
 
         if (!visibleRequestIds.length) {
-          return { ok: false, confirmationError: "No se encontraron entregas para confirmar." };
+          return { ok: false, confirmationError: "No se encontraron ordenes para confirmar." };
         }
 
         for (const selectedRequestId of selectedRequestIds) {
@@ -1065,22 +1065,21 @@ export default function RepartidorPublicPortal() {
       </main>
     );
   }
-  const deliveryConfirmationOrders = courierOrders
+  const routeConfirmationOrders = courierOrders
     .filter(
       (request) =>
-        String(request?.courierLabel || "").trim().toLowerCase() === "entrega" &&
         !isCourierRouteTabStatus(request?.status) &&
         !isCourierHistoryStatus(request?.status),
     )
     .sort(compareCourierDisplayOrder);
   const confirmedRequestIdSet = new Set(confirmedRequestIds);
-  const unconfirmedDeliveryOrders = deliveryConfirmationOrders.filter(
+  const unconfirmedRouteOrders = routeConfirmationOrders.filter(
     (request) => !confirmedRequestIdSet.has(String(request?.id || "")),
   );
   const isSecondConfirmationPass =
-    missingOrderNumbers.length > 0 && unconfirmedDeliveryOrders.length > 0;
+    missingOrderNumbers.length > 0 && unconfirmedRouteOrders.length > 0;
   const confirmationOrders = (
-    isSecondConfirmationPass ? unconfirmedDeliveryOrders : deliveryConfirmationOrders
+    isSecondConfirmationPass ? unconfirmedRouteOrders : routeConfirmationOrders
   ).slice().reverse();
   const requiresDeliveryConfirmation =
     !deliveryConfirmationComplete &&
@@ -1092,7 +1091,7 @@ export default function RepartidorPublicPortal() {
         <div className={styles.accessContainer}>
           <section className={`${styles.card} ${styles.confirmationCard}`}>
             <p className={styles.eyebrow}>Cariana repartidores</p>
-            <h1 className={styles.cardTitle}>Confirma tus entregas</h1>
+            <h1 className={styles.cardTitle}>Confirma tus ordenes</h1>
             <p className={`${styles.subtitle} ${isSecondConfirmationPass ? styles.confirmationWarning : ""}`}>
               {isSecondConfirmationPass
                 ? "Te faltan estas órdenes por confirmar. Revisa que sí las tengas."
@@ -1118,9 +1117,13 @@ export default function RepartidorPublicPortal() {
               <div className={styles.confirmationList}>
                 {confirmationOrders.map((request) => {
                   const sequence =
-                    deliveryConfirmationOrders.findIndex(
-                      (deliveryOrder) => String(deliveryOrder?.id || "") === String(request?.id || ""),
+                    routeConfirmationOrders.findIndex(
+                      (routeOrder) => String(routeOrder?.id || "") === String(request?.id || ""),
                     ) + 1;
+                  const orderType =
+                    String(request?.courierLabel || "").trim().toLowerCase() === "devolucion"
+                      ? "Devolucion"
+                      : "Entrega";
                   return (
                     <div className={styles.confirmationListItem} key={request.id}>
                       <input type="hidden" name="visibleRequestIds" value={request.id} />
@@ -1132,7 +1135,7 @@ export default function RepartidorPublicPortal() {
                         value={request.id}
                       />
                       <span className={styles.orderSequenceBadge}>{sequence}</span>
-                      <strong>Pedido #{request.orderNumber}</strong>
+                      <strong>{orderType} #{request.orderNumber}</strong>
                     </div>
                   );
                 })}
