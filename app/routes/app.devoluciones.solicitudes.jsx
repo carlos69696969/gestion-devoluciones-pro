@@ -3215,6 +3215,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
       });
       const latestFinalActivityByOrderId = new Map();
       const finalActivityAtByOrderId = new Map();
+      const latestRouteActivityByOrderId = new Map();
       for (const activity of [...selectedDayActivities].sort(
         (firstActivity, secondActivity) =>
           new Date(firstActivity.createdAt || "").getTime() -
@@ -3222,6 +3223,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
       )) {
         const requestId = String(activity.requestId || "");
         if (!requestId) continue;
+        latestRouteActivityByOrderId.set(requestId, activity);
         if (isCourierFinalActivityAction(activity.action)) {
           latestFinalActivityByOrderId.set(requestId, activity);
           finalActivityAtByOrderId.set(requestId, new Date(activity.createdAt || "").getTime());
@@ -3257,6 +3259,10 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           .sort(compareCourierDisplayOrder)
           .map((order, index) => [String(order.id || ""), index + 1]),
       );
+      const remainingOrdersCount = selectedDayOrders.filter((order) => {
+        const latestActivity = latestRouteActivityByOrderId.get(String(order.id || ""));
+        return !latestActivity || !isCourierFinalActivityAction(latestActivity.action);
+      }).length;
       const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
         dateStyle: "full",
         timeZone: "UTC",
@@ -3277,7 +3283,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
             </div>
             <div className={styles.courierHistoryCounters}>
               <span className={styles.courierHistoryCounter}>Ordenes {selectedDayOrders.length}</span>
-              <span className={styles.courierHistoryCounter}>Restantes {currentOrders.length}</span>
+              <span className={styles.courierHistoryCounter}>Restantes {remainingOrdersCount}</span>
             </div>
           </div>
           {selectedDayOrders.length ? (
@@ -3288,7 +3294,9 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                   request={order}
                   sequenceNumber={sequenceByOrderId.get(String(order.id || "")) || index + 1}
                   statusOverride={
-                    courierHistoryPendingStatusOverride(order) ||
+                    latestRouteActivityByOrderId.get(String(order.id || ""))?.action === "courier_route_order_assigned"
+                      ? "pendiente"
+                      : courierHistoryPendingStatusOverride(order) ||
                     (latestFinalActivityByOrderId.has(String(order.id || ""))
                       ? courierStatusFromActivityAction(
                           latestFinalActivityByOrderId.get(String(order.id || "")).action,
