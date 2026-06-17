@@ -222,6 +222,7 @@ function isCourierHistoryFromToday(request) {
 
 function isCourierWorkableForCurrentRoute(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
+  if (normalizedStatus === "no_entregado") return true;
   return !isCourierHistoryStatus(normalizedStatus);
 }
 
@@ -954,7 +955,9 @@ export const loader = async ({ request }) => {
         })),
       });
       for (const requestRow of unassignedOrders) {
-        currentRouteRequestIds.add(String(requestRow.id || "").trim());
+        const requestId = String(requestRow.id || "").trim();
+        currentRouteRequestIds.add(requestId);
+        currentRouteActionByRequestId.set(requestId, "courier_route_order_assigned");
       }
     }
   }
