@@ -2965,7 +2965,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         <h3>Historial de todas las ordenes</h3>
         <div className={styles.courierGrid}>
           {orders.map((request) => (
-            <CourierOrderCard key={request.id} request={request} showFinalAttemptBadge />
+            <CourierOrderCard key={request.id} request={request} showFinalAttemptBadge adminCourierView />
           ))}
         </div>
       </div>
