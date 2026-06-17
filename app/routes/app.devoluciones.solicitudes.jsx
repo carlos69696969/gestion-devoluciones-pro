@@ -846,6 +846,80 @@ function courierAttemptFromHistoryEvents(historyEvents, fallbackAttempt = 0) {
   return Math.max(historyAttempt, Number(fallbackAttempt || 0));
 }
 
+function courierAttemptFromHistoryLabel(label) {
+  const match = String(label || "").match(/^(Primer|Segundo|Tercer) intento/i);
+  if (!match) return 0;
+  const attemptLabel = match[1].toLowerCase();
+  if (attemptLabel === "primer") return 1;
+  if (attemptLabel === "segundo") return 2;
+  return 3;
+}
+
+function courierAttemptHeading(attempt) {
+  const attemptNumber = Number(attempt || 0);
+  if (attemptNumber === 1) return "Primer intento";
+  if (attemptNumber === 2) return "Segundo intento";
+  if (attemptNumber === 3) return "Tercer intento";
+  return "";
+}
+
+function courierActivityAttempt(action) {
+  const normalizedAction = String(action || "").trim().toLowerCase();
+  if (normalizedAction === "courier_retry_delivery" || normalizedAction === "courier_return_for_retry") return 0;
+  const routeMatch = normalizedAction.match(/^courier_return_(?:en_route|retry)_(\d)$/);
+  if (routeMatch) return Number(routeMatch[1]) || 0;
+  const attemptMatch = normalizedAction.match(/_(\d)$/);
+  if (attemptMatch) return Number(attemptMatch[1]) || 0;
+  return 0;
+}
+
+function activityCourierNameForEvent(event, activities = [], fallbackCourierName = "") {
+  const eventAttempt = courierAttemptFromHistoryLabel(event?.label);
+  const eventMs = parseEventMs(event?.at);
+  const sameAttemptActivities = activities.filter((activity) => {
+    const activityAttempt = courierActivityAttempt(activity.action);
+    return !eventAttempt || !activityAttempt || activityAttempt === eventAttempt;
+  });
+  const candidates = sameAttemptActivities.length ? sameAttemptActivities : activities;
+  const sortedCandidates = [...candidates].sort(
+    (firstActivity, secondActivity) =>
+      Math.abs(parseEventMs(firstActivity.createdAt) - eventMs) -
+      Math.abs(parseEventMs(secondActivity.createdAt) - eventMs),
+  );
+  return String(sortedCandidates[0]?.courierName || fallbackCourierName || "").trim();
+}
+
+function enrichCourierHistoryEvents({ events, request, activitiesByRequestId }) {
+  const requestId = String(request?.id || "").trim();
+  const fallbackCourierName = String(request?.courierName || request?.assignedCourierName || "").trim();
+  const activities = activitiesByRequestId?.get(requestId) || [];
+  return (events || []).map((event) => ({
+    ...event,
+    courierName: String(event?.courierName || "").trim() ||
+      activityCourierNameForEvent(event, activities, fallbackCourierName),
+  }));
+}
+
+function buildCourierHistoryDisplayItems(events, request) {
+  const items = [];
+  const shownAttemptKeys = new Set();
+  for (const event of events || []) {
+    const attempt = courierAttemptFromHistoryLabel(event?.label);
+    if (attempt && !shownAttemptKeys.has(attempt)) {
+      shownAttemptKeys.add(attempt);
+      const heading = courierAttemptHeading(attempt);
+      const courierName = String(event?.courierName || request?.courierName || request?.assignedCourierName || "").trim();
+      items.push({
+        id: `attempt-heading-${attempt}-${event.id}`,
+        type: "heading",
+        label: courierName ? `${heading} repartidor ${courierName}` : `${heading} repartidor`,
+      });
+    }
+    items.push({ ...event, type: "event" });
+  }
+  return items;
+}
+
 function courierStatusFromActivityAction(action, fallbackStatus = "") {
   const normalizedAction = String(action || "").trim().toLowerCase();
   const statusByAction = {
@@ -1484,6 +1558,27 @@ export const loader = async ({ request }) => {
     current.push(event);
     deliveryHistoryByRequestId.set(event.requestId, current);
   }
+  const courierRequestIds = courierOrdersRaw
+    .map((requestRow) => String(requestRow.id || "").trim())
+    .filter(Boolean);
+  const courierActivitiesForCards =
+    courierRequestIds.length
+      ? await prisma.courierActivity.findMany({
+          where: {
+            shop: session.shop,
+            requestId: { in: courierRequestIds },
+          },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        })
+      : [];
+  const courierActivitiesByRequestId = new Map();
+  for (const activity of courierActivitiesForCards) {
+    const requestId = String(activity.requestId || "").trim();
+    if (!requestId) continue;
+    const current = courierActivitiesByRequestId.get(requestId) || [];
+    current.push(activity);
+    courierActivitiesByRequestId.set(requestId, current);
+  }
 
   const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
   const imagesByOrder = shouldLoadImages
@@ -1543,13 +1638,20 @@ export const loader = async ({ request }) => {
   });
 
   const courierOrders = courierOrdersRaw
-    .map((requestRow) => ({
-      ...requestRow,
-      historyEvents: buildCourierHistoryEvents({
+    .map((requestRow) => {
+      const historyEvents = buildCourierHistoryEvents({
         ...requestRow,
         persistedHistoryEvents: deliveryHistoryByRequestId.get(String(requestRow.id || "").trim()) || [],
-      }),
-    }))
+      });
+      return {
+        ...requestRow,
+        historyEvents: enrichCourierHistoryEvents({
+          events: historyEvents,
+          request: requestRow,
+          activitiesByRequestId: courierActivitiesByRequestId,
+        }),
+      };
+    })
     .sort((a, b) =>
       viewMode === VIEW_MODE.COURIER_HISTORY
         ? courierOrderTimestampMs(b) - courierOrderTimestampMs(a)
@@ -2828,6 +2930,14 @@ function mexicoActivityDateKey(value) {
 
 function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders, search, shop }) {
   const orderByRequestId = new Map(orders.map((order) => [String(order.id || ""), order]));
+  const activitiesByRequestId = new Map();
+  for (const activity of activities || []) {
+    const requestId = String(activity.requestId || "").trim();
+    if (!requestId || requestId.startsWith("route:")) continue;
+    const current = activitiesByRequestId.get(requestId) || [];
+    current.push(activity);
+    activitiesByRequestId.set(requestId, current);
+  }
   const searchParams = new URLSearchParams(search);
   const historyView = String(searchParams.get("historyView") || "").trim();
   const selectedCourierId = Number(searchParams.get("courierId") || 0);
@@ -2945,11 +3055,19 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
             const historyEvents = Array.isArray(order?.historyEvents) && order.historyEvents.length
               ? order.historyEvents
               : sourceOrder.historyEvents || [];
-            return {
+            const orderWithCourierName = {
               ...sourceOrder,
               ...order,
+              courierName: String(order?.courierName || selectedSnapshot.courierName || sourceOrder.courierName || "").trim(),
+            };
+            return {
+              ...orderWithCourierName,
               id,
-              historyEvents,
+              historyEvents: enrichCourierHistoryEvents({
+                events: historyEvents,
+                request: orderWithCourierName,
+                activitiesByRequestId,
+              }),
               sequenceNumber: Number(order?.sequenceNumber || index + 1),
             };
           })
@@ -3273,6 +3391,7 @@ function CourierOrderCard({
     ? buildAdminCourierPresentation(request)
     : { events: request.historyEvents || [], scheduledDate: null };
   const displayHistoryEvents = adminCourierPresentation.events;
+  const displayHistoryItems = buildCourierHistoryDisplayItems(displayHistoryEvents, request);
   const displayedScheduledDate = adminCourierPresentation.scheduledDate || request.pickupDate;
   const attemptBadgeClass = ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
     ? normalizedVisibleStatus === "rechazada"
@@ -3330,13 +3449,19 @@ function CourierOrderCard({
       <details className={styles.courierHistoryDetails}>
         <summary className={styles.courierHistorySummary}>Ver más ↓</summary>
         <div className={styles.courierHistoryList}>
-          {displayHistoryEvents.length ? (
-            displayHistoryEvents.map((event) => (
-              <div key={event.id} className={styles.courierHistoryItem}>
-                <strong>{event.label}</strong>
-                <span>{formatCourierHistoryDate(event.at)}</span>
-              </div>
-            ))
+          {displayHistoryItems.length ? (
+            displayHistoryItems.map((item) =>
+              item.type === "heading" ? (
+                <div key={item.id} className={styles.courierHistoryAttemptHeader}>
+                  <strong>{item.label}</strong>
+                </div>
+              ) : (
+                <div key={item.id} className={styles.courierHistoryItem}>
+                  <strong>{item.label}</strong>
+                  <span>{formatCourierHistoryDate(item.at)}</span>
+                </div>
+              ),
+            )
           ) : (
             <div className={styles.courierHistoryItem}>
               <strong>Sin acciones registradas todavía</strong>

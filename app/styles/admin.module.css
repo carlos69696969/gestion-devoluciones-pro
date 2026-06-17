@@ -964,6 +964,15 @@
   font-size: 13px;
 }
 
+.courierHistoryAttemptHeader {
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 8px 10px;
+  color: #1d4ed8;
+  font-size: 13px;
+}
+
 .courierHistoryItem span {
   color: #6b7280;
   white-space: nowrap;

@@ -117,6 +117,7 @@ function parseSnapshotReasonEntries(rawValue) {
 }
 
 function buildPickupSnapshotHistoryEvents(order) {
+  const courierName = String(order?.courierName || "").trim();
   const entries = parseSnapshotReasonEntries(order?.rejectionReason);
   const finalAttempt = Math.max(
     1,
@@ -138,6 +139,7 @@ function buildPickupSnapshotHistoryEvents(order) {
         id: `${kind || "pickup-event"}-${entry?.at || index}-${index}`,
         label,
         at: entry?.at || order?.updatedAt || order?.createdAt || "",
+        courierName,
       };
     })
     .filter((event) => event.label && event.at)
@@ -395,15 +397,20 @@ export const action = async ({ request }) => {
           const activity = latestActivityByRequestId.get(id);
           const fetchedOrder = fetchedOrderById.get(id) || buildSnapshotFallbackOrder(id, activity, index);
           const historyEvents = id.startsWith("pickup-")
-            ? buildPickupSnapshotHistoryEvents(fetchedOrder)
+            ? buildPickupSnapshotHistoryEvents({
+                ...fetchedOrder,
+                courierName: String(dailyAccess.courierName || ""),
+              })
             : (deliveryHistoryByRequestId.get(id) || []).map((event) => ({
                 id: `delivery-event-${event.id}`,
                 label: courierSnapshotEventLabel(event),
                 at: event.createdAt,
+                courierName: String(dailyAccess.courierName || ""),
               }));
           return {
             ...fetchedOrder,
             id,
+            courierName: String(dailyAccess.courierName || ""),
             orderNumber: fetchedOrder.orderNumber || activity?.orderNumber || id,
             status: courierStatusFromSnapshotAction(activity?.action, fetchedOrder.status),
             historyEvents,
