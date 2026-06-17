@@ -978,17 +978,38 @@ export const loader = async ({ request }) => {
   });
 
   if (dailyAccess.routeId && currentRouteStartedAt) {
-    const routeStartedAtMs = new Date(currentRouteStartedAt).getTime();
+    const unassignedReturnIds = courierOrders
+      .filter((requestRow) => {
+        const requestId = String(requestRow?.id || "").trim();
+        return (
+          requestId.startsWith("pickup-") &&
+          String(requestRow?.status || "").trim().toLowerCase() === "reintento_pendiente" &&
+          !currentRouteRequestIds.has(requestId)
+        );
+      })
+      .map((requestRow) => String(requestRow.id || "").trim());
+    const retryActivities = unassignedReturnIds.length
+      ? await prisma.courierActivity.findMany({
+          where: {
+            shop,
+            requestId: { in: unassignedReturnIds },
+            action: "courier_return_retry_pickup",
+            createdAt: { lte: currentRouteStartedAt },
+          },
+          select: { requestId: true },
+        })
+      : [];
+    const retriedBeforeRouteIds = new Set(
+      retryActivities.map((activity) => String(activity.requestId || "").trim()),
+    );
     const legacyUnassignedReturns = courierOrders.filter((requestRow) => {
       const requestId = String(requestRow?.id || "").trim();
       const status = String(requestRow?.status || "").trim().toLowerCase();
-      const updatedAtMs = new Date(requestRow?.updatedAt || requestRow?.createdAt || 0).getTime();
       return (
         requestId.startsWith("pickup-") &&
         status === "reintento_pendiente" &&
         !currentRouteRequestIds.has(requestId) &&
-        Number.isFinite(updatedAtMs) &&
-        updatedAtMs <= routeStartedAtMs
+        retriedBeforeRouteIds.has(requestId)
       );
     });
     if (legacyUnassignedReturns.length) {
