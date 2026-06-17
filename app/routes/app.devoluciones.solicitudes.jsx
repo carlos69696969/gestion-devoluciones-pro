@@ -1546,6 +1546,10 @@ export const loader = async ({ request }) => {
                   ...requestRow,
                   courierLabel: "Entrega",
                 })),
+                ...(await fetchBranchPickupCourierOrders(admin)).map((requestRow) => ({
+                  ...requestRow,
+                  courierLabel: "Entrega",
+                })),
                 ...(await fetchPickupCourierHistoryOrders(session.shop)).map((requestRow) => ({
                   ...requestRow,
                   courierLabel: "Devolución",
@@ -2949,7 +2953,37 @@ function mexicoActivityDateKey(value) {
   }).format(new Date(value));
 }
 
+function courierHistoryOrderLocation(order) {
+  const status = String(order?.status || "").trim().toLowerCase();
+  if (status === "recoger_en_sucursal") return "Recoger en sucursal";
+  if (["entregado", "recibido", "recibida"].includes(status)) return "Historial repartidor";
+  if (["reembolsada", "completada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"].includes(status)) {
+    return "Historial";
+  }
+  return "Ordenes repartidor";
+}
+
+function courierHistoryOrderUpdatedMs(order) {
+  const historyEventMs = (order?.historyEvents || []).reduce(
+    (latestMs, event) => Math.max(latestMs, parseEventMs(event?.at)),
+    0,
+  );
+  return Math.max(
+    historyEventMs,
+    parseEventMs(order?.updatedAt),
+    parseEventMs(order?.createdAt),
+    courierOrderTimestampMs(order),
+  );
+}
+
+function isCourierCompletedHistoryOrder(order) {
+  return ["entregado", "recibido", "recibida"].includes(
+    String(order?.status || "").trim().toLowerCase(),
+  );
+}
+
 function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders, search, shop }) {
+  const [orderSearch, setOrderSearch] = useState("");
   const orderByRequestId = new Map(orders.map((order) => [String(order.id || ""), order]));
   const activitiesByRequestId = new Map();
   for (const activity of activities || []) {
@@ -2980,20 +3014,50 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
   };
 
   if (historyView === "all") {
+    const normalizedSearch = String(orderSearch || "").replace(/^#/, "").trim().toLowerCase();
+    const completedOrders = orders
+      .filter(isCourierCompletedHistoryOrder)
+      .sort((firstOrder, secondOrder) => courierHistoryOrderUpdatedMs(secondOrder) - courierHistoryOrderUpdatedMs(firstOrder));
+    const searchResults = normalizedSearch
+      ? orders.filter((order) =>
+          String(order?.orderNumber || "").replace(/^#/, "").trim().toLowerCase().includes(normalizedSearch),
+        )
+      : [];
+    const visibleOrders = normalizedSearch ? searchResults : completedOrders;
     return (
       <div className={styles.courierHistoryDirectoryList}>
         <Link className={styles.courierHistoryBackLink} to={buildHistoryHref()}>← Regresar</Link>
         <h3>Historial de todas las ordenes</h3>
+        <label className={styles.courierHistorySearch}>
+          <span aria-hidden="true">⌕</span>
+          <input
+            type="search"
+            value={orderSearch}
+            onChange={(event) => setOrderSearch(event.target.value)}
+            placeholder="Buscar por numero de orden"
+            aria-label="Buscar por numero de orden"
+          />
+        </label>
         <div className={styles.courierGrid}>
-          {orders.map((request) => (
-            <CourierOrderCard
-              key={request.id}
-              request={request}
-              statusOverride={courierHistoryPendingStatusOverride(request)}
-              showFinalAttemptBadge
-              adminCourierView
-            />
-          ))}
+          {visibleOrders.length ? (
+            visibleOrders.map((request) => (
+              <div key={request.id} className={styles.courierHistorySearchResult}>
+                {normalizedSearch ? (
+                  <div className={styles.courierHistoryLocation}>
+                    Seccion: <strong>{courierHistoryOrderLocation(request)}</strong>
+                  </div>
+                ) : null}
+                <CourierOrderCard
+                  request={request}
+                  statusOverride={courierHistoryPendingStatusOverride(request)}
+                  showFinalAttemptBadge
+                  adminCourierView
+                />
+              </div>
+            ))
+          ) : (
+            <p>{normalizedSearch ? "No se encontro una orden con ese numero." : "No hay ordenes entregadas o devoluciones recibidas."}</p>
+          )}
         </div>
       </div>
     );

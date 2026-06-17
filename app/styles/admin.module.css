@@ -989,6 +989,41 @@
   gap: 12px;
 }
 
+.courierHistorySearch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 420px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px 10px;
+  color: #475569;
+}
+
+.courierHistorySearch input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #111827;
+  font: inherit;
+}
+
+.courierHistorySearchResult {
+  display: grid;
+  gap: 6px;
+}
+
+.courierHistoryLocation {
+  width: fit-content;
+  border-radius: 6px;
+  background: #eef2ff;
+  padding: 5px 8px;
+  color: #3730a3;
+  font-size: 12px;
+}
+
 .courierHistoryHeader {
   display: flex;
   align-items: flex-start;
