@@ -581,37 +581,6 @@ export const action = async ({ request }) => {
         ? "historial"
         : "en_ruta";
 
-    if (intent === "courier_mark_not_delivered" || intent === "courier_mark_delivered") {
-      const nextPending = await fetchNextPendingCourierOrder({
-        shop,
-        sessionCandidates: portalShop.sessionCandidates,
-        allSessionCandidates: portalShop.allSessionCandidates,
-        excludeRequestId: requestId,
-      });
-
-      if (nextPending?.order) {
-        const nextRouteResult = await markCourierOrderAsEnRoute({
-          shopDomain: nextPending.shop,
-          requestId: String(nextPending.order.id || ""),
-          orderNumber: String(nextPending.order.orderNumber || ""),
-          customerName: String(nextPending.order.customerName || ""),
-          customerEmail: String(nextPending.order.customerEmail || ""),
-          customerPhone: String(nextPending.order.customerPhone || ""),
-          currentStatus: String(nextPending.order.status || ""),
-          currentAttemptCount: String(nextPending.order.attemptCount || 0),
-        });
-
-        if (nextRouteResult?.ok) {
-          nextOverrideRequestId = String(nextPending.order.id || "");
-          nextOverrideStatus = String(nextRouteResult.nextStatus || "en_ruta");
-          nextOverrideAttemptCount = String(nextRouteResult.attemptCount || nextPending.order.attemptCount || 1);
-          if (nextPending.shop) {
-            url.searchParams.set("shop", nextPending.shop);
-          }
-        }
-      }
-    }
-
     url.searchParams.set("tab", nextTab);
     url.searchParams.set("overrideRequestId", nextOverrideRequestId);
     url.searchParams.set("overrideStatus", nextOverrideStatus);
@@ -1046,14 +1015,11 @@ export default function RepartidorPublicPortal() {
   const activeOrdersCount = pendingOrders.length + routeOrders.length;
   const dailyOrdersCount = activeOrdersCount + historyOrders.length;
   const routeOrder = routeOrders[0] || null;
-  const pendingPreviewOrder = pendingOrders[0] || null;
   const visibleOrders =
     activeTab === "en_ruta"
       ? routeOrder
         ? [routeOrder]
-        : pendingPreviewOrder
-          ? [pendingPreviewOrder]
-          : []
+        : []
       : activeTab === "historial"
         ? historyOrders
         : pendingOrders;
