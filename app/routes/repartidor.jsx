@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { createCookie, Form, redirect, useActionData, useLoaderData, useSearchParams } from "react-router";
-import prisma from "../db.server";
 import adminStyles from "../styles/admin.module.css";
 import styles from "../styles/repartidor.module.css";
 import {
@@ -13,21 +12,6 @@ import {
   isCourierRouteStatus,
   isCourierRouteTabStatus,
 } from "../utils/courier.shared";
-import {
-  fetchCourierOrdersByIdsForShop,
-  fetchCourierOrdersForShop,
-  fetchPickupCourierOrders,
-  markCourierOrderAsDelivered,
-  markCourierOrderAsEnRoute,
-  markCourierOrderAsNotDelivered,
-  markCourierOrderForRetry,
-  markCourierOrderReadyForBranchPickup,
-  markCourierReturnAsReceived,
-  markCourierReturnForRetry,
-  markCourierReturnPickupAttemptFailed,
-  rejectCourierReturnAfterFailedPickups,
-  resolveCourierPortalShop,
-} from "../utils/courier.server";
 
 const courierDailyAccessCookie = createCookie("courier_daily_access_v2", {
   httpOnly: true,
@@ -125,6 +109,7 @@ function courierMexicoDateKey(value) {
 }
 
 async function generateUniqueCourierCode(shop) {
+  const { default: prisma } = await import("../db.server");
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const existing = await prisma.courier.findFirst({
@@ -137,6 +122,7 @@ async function generateUniqueCourierCode(shop) {
 }
 
 async function getCourierDailyAccess(request, shop) {
+  const { default: prisma } = await import("../db.server");
   const access = await courierDailyAccessCookie.parse(request.headers.get("Cookie"));
   if (
     String(access?.shop || "").trim().toLowerCase() !== String(shop || "").trim().toLowerCase() ||
@@ -212,55 +198,19 @@ function getReturnRetryAttemptLabel(request) {
   return "tercer intento";
 }
 
-async function fetchNextPendingCourierOrder({ shop, sessionCandidates, allSessionCandidates, excludeRequestId }) {
-  if (!shop || !sessionCandidates?.length) return null;
-
-  const sessionCandidatesByShop = new Map();
-  for (const sessionCandidate of allSessionCandidates || sessionCandidates || []) {
-    const candidateShop = String(sessionCandidate?.shop || "").trim().toLowerCase();
-    if (!candidateShop) continue;
-    const current = sessionCandidatesByShop.get(candidateShop) || [];
-    current.push(sessionCandidate);
-    sessionCandidatesByShop.set(candidateShop, current);
-  }
-
-  const shopCandidates = [
-    shop,
-    ...Array.from(sessionCandidatesByShop.keys()).filter((candidate) => candidate !== shop),
-  ].filter(Boolean);
-
-  for (const shopCandidate of shopCandidates) {
-    const candidateSessions = sessionCandidatesByShop.get(shopCandidate) || [];
-    if (!candidateSessions.length) continue;
-
-    const [deliveryResult, pickupResult] = await Promise.allSettled([
-      fetchCourierOrdersForShop({ shop: shopCandidate, sessionCandidates: candidateSessions }),
-      fetchPickupCourierOrders(shopCandidate),
-    ]);
-
-    const deliveryOrders = deliveryResult.status === "fulfilled" ? deliveryResult.value : [];
-    const pickupOrders = pickupResult.status === "fulfilled" ? pickupResult.value : [];
-    const pendingOrder = [...deliveryOrders, ...pickupOrders]
-      .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b))
-      .find((requestRow) => {
-        const requestRowId = String(requestRow?.id || "").trim();
-        return (
-          requestRowId &&
-          requestRowId !== excludeRequestId &&
-          !isCourierRouteTabStatus(requestRow?.status) &&
-          !isCourierHistoryStatus(requestRow?.status)
-        );
-      });
-
-    if (pendingOrder) {
-      return { shop: shopCandidate, order: pendingOrder };
-    }
-  }
-
-  return null;
-}
-
 export const action = async ({ request }) => {
+  const { default: prisma } = await import("../db.server");
+  const {
+    markCourierOrderAsDelivered,
+    markCourierOrderAsEnRoute,
+    markCourierOrderAsNotDelivered,
+    markCourierOrderForRetry,
+    markCourierReturnAsReceived,
+    markCourierReturnForRetry,
+    markCourierReturnPickupAttemptFailed,
+    rejectCourierReturnAfterFailedPickups,
+    resolveCourierPortalShop,
+  } = await import("../utils/courier.server");
   try {
     const url = new URL(request.url);
     const formData = await request.formData();
@@ -596,6 +546,14 @@ export const action = async ({ request }) => {
   }
 };
 export const loader = async ({ request }) => {
+  const { default: prisma } = await import("../db.server");
+  const {
+    fetchCourierOrdersByIdsForShop,
+    fetchCourierOrdersForShop,
+    fetchPickupCourierOrders,
+    markCourierOrderReadyForBranchPickup,
+    resolveCourierPortalShop,
+  } = await import("../utils/courier.server");
   const url = new URL(request.url);
   const { shop, sessionCandidates, allSessionCandidates } = await resolveCourierPortalShop(request);
   const requestedTab = String(url.searchParams.get("tab") || "pedidos").trim().toLowerCase();
