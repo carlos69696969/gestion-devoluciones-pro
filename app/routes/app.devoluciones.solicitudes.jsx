@@ -939,6 +939,27 @@ function courierHistoryStatusLabel(status) {
   return getCourierStatusLabel(status);
 }
 
+function hasCourierReprogrammedHistoryEvent(historyEvents = []) {
+  return (historyEvents || []).some((event) =>
+    /\bintento reprogramado\b/i.test(String(event?.label || "")),
+  );
+}
+
+function courierHistoryPendingStatusOverride(order) {
+  const normalizedStatus = String(order?.status || "").trim().toLowerCase();
+  const normalizedCurrentStatus = String(order?.currentStatus || "").trim().toLowerCase();
+  if (
+    ["no_entregado", "no_recibido"].includes(normalizedStatus) &&
+    (
+      normalizedCurrentStatus === "reintento_pendiente" ||
+      hasCourierReprogrammedHistoryEvent(order?.historyEvents)
+    )
+  ) {
+    return "pendiente";
+  }
+  return "";
+}
+
 function isCourierFinalActivityAction(action) {
   return [
     "courier_mark_delivered",
@@ -2965,7 +2986,13 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         <h3>Historial de todas las ordenes</h3>
         <div className={styles.courierGrid}>
           {orders.map((request) => (
-            <CourierOrderCard key={request.id} request={request} showFinalAttemptBadge adminCourierView />
+            <CourierOrderCard
+              key={request.id}
+              request={request}
+              statusOverride={courierHistoryPendingStatusOverride(request)}
+              showFinalAttemptBadge
+              adminCourierView
+            />
           ))}
         </div>
       </div>
@@ -3059,6 +3086,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
               ...sourceOrder,
               ...order,
               courierName: String(order?.courierName || selectedSnapshot.courierName || sourceOrder.courierName || "").trim(),
+              currentStatus: sourceOrder.status || order.currentStatus || order.status,
             };
             return {
               ...orderWithCourierName,
@@ -3104,6 +3132,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                     key={`${selectedSnapshot.routeId}:${order.id || index}`}
                     request={order}
                     sequenceNumber={Number(order.sequenceNumber || index + 1)}
+                    statusOverride={courierHistoryPendingStatusOverride(order)}
                     showFinalAttemptBadge
                   />
                 ))}
@@ -3195,7 +3224,8 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                   request={order}
                   sequenceNumber={sequenceByOrderId.get(String(order.id || "")) || index + 1}
                   statusOverride={
-                    latestFinalActivityByOrderId.has(String(order.id || ""))
+                    courierHistoryPendingStatusOverride(order) ||
+                    (latestFinalActivityByOrderId.has(String(order.id || ""))
                       ? courierStatusFromActivityAction(
                           latestFinalActivityByOrderId.get(String(order.id || "")).action,
                           currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
@@ -3204,7 +3234,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                         )
                       : currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
                         ? "pendiente"
-                        : ""
+                        : "")
                   }
                   showFinalAttemptBadge
                 />
