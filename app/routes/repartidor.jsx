@@ -838,6 +838,20 @@ export const loader = async ({ request }) => {
         select: { requestId: true, action: true },
       })
     : [];
+  const currentRouteStartedAt = dailyAccess.routeId
+    ? (
+        await prisma.courierActivity.findFirst({
+          where: {
+            shop,
+            courierId: Number(dailyAccess.courierId),
+            routeId: String(dailyAccess.routeId),
+            action: "courier_route_started",
+          },
+          select: { createdAt: true },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        })
+      )?.createdAt || null
+    : null;
   const currentRouteRequestIds = new Set(
     currentRouteActivities.map((activity) => String(activity.requestId || "").trim()).filter(Boolean),
   );
@@ -962,6 +976,40 @@ export const loader = async ({ request }) => {
     }
     return requestRow;
   });
+
+  if (dailyAccess.routeId && currentRouteStartedAt) {
+    const routeStartedAtMs = new Date(currentRouteStartedAt).getTime();
+    const legacyUnassignedReturns = courierOrders.filter((requestRow) => {
+      const requestId = String(requestRow?.id || "").trim();
+      const status = String(requestRow?.status || "").trim().toLowerCase();
+      const updatedAtMs = new Date(requestRow?.updatedAt || requestRow?.createdAt || 0).getTime();
+      return (
+        requestId.startsWith("pickup-") &&
+        status === "reintento_pendiente" &&
+        !currentRouteRequestIds.has(requestId) &&
+        Number.isFinite(updatedAtMs) &&
+        updatedAtMs <= routeStartedAtMs
+      );
+    });
+    if (legacyUnassignedReturns.length) {
+      await prisma.courierActivity.createMany({
+        data: legacyUnassignedReturns.map((requestRow) => ({
+          shop,
+          courierId: Number(dailyAccess.courierId),
+          courierName: String(dailyAccess.courierName || ""),
+          requestId: String(requestRow.id || ""),
+          orderNumber: String(requestRow.orderNumber || "").trim() || null,
+          action: "courier_route_order_assigned",
+          routeId: String(dailyAccess.routeId),
+        })),
+      });
+      for (const requestRow of legacyUnassignedReturns) {
+        const requestId = String(requestRow.id || "").trim();
+        currentRouteRequestIds.add(requestId);
+        currentRouteActionByRequestId.set(requestId, "courier_route_order_assigned");
+      }
+    }
+  }
 
   if (dailyAccess.routeId && currentRouteRequestIds.size) {
     const loadedRequestIds = new Set(
@@ -1169,11 +1217,22 @@ export default function RepartidorPublicPortal() {
   const historyOrders = effectiveCourierOrders
     .filter((request) => isCourierHistoryStatus(request?.status) && isCourierHistoryFromToday(request))
     .sort((firstRequest, secondRequest) => courierHistoryTimestampMs(secondRequest) - courierHistoryTimestampMs(firstRequest));
+  const isPendingReturnRetry = (request) =>
+    String(request?.courierLabel || "")
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase() === "devolucion" &&
+    String(request?.status || "").trim().toLowerCase() === "reintento_pendiente";
   const routeOrders = effectiveCourierOrders
-    .filter((request) => isCourierRouteTabStatus(request?.status))
+    .filter((request) => isCourierRouteTabStatus(request?.status) && !isPendingReturnRetry(request))
     .sort(compareCourierDisplayOrder);
   const pendingOrders = effectiveCourierOrders
-    .filter((request) => !isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status))
+    .filter(
+      (request) =>
+        isPendingReturnRetry(request) ||
+        (!isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status)),
+    )
     .sort(compareCourierDisplayOrder);
   const sequenceByOrderId = new Map(
     [...pendingOrders, ...routeOrders, ...historyOrders]
