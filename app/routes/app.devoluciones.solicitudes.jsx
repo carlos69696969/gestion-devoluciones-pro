@@ -1033,6 +1033,7 @@ function buildCourierHistoryEvents(request) {
         label: returnCourierHistoryLabel(entry, finalAttempt),
         at: entry.at,
         atMs: parseEventMs(entry.at),
+        note: entry.reason || "",
       }))
       .filter((entry) => entry.label && entry.atMs)
       .sort((a, b) => a.atMs - b.atMs);
@@ -1108,13 +1109,18 @@ function buildAdminCourierPresentation(request) {
     if (!/\bno (?:entregado|recibido)\b/i.test(String(event.label || ""))) continue;
 
     const attemptMatch = String(event.label || "").match(/^(Primer|Segundo|Tercer) intento/i);
-    const reprogrammedFor = nextMexicoCalendarDay(event.at);
-    if (!attemptMatch || !reprogrammedFor) continue;
+    if (!attemptMatch) continue;
+    const persistedDateMatch = String(event.note || "").match(/Reprogramado para el ([^.\n]+)/i);
+    const persistedDateLabel = String(persistedDateMatch?.[1] || "").trim();
+    const reprogrammedFor = persistedDateLabel ? null : nextMexicoCalendarDay(event.at);
+    const reprogrammedDateLabel =
+      persistedDateLabel || (reprogrammedFor ? formatCourierRescheduledDate(reprogrammedFor) : "");
+    if (!reprogrammedDateLabel) continue;
 
-    scheduledDate = reprogrammedFor;
+    scheduledDate = reprogrammedFor || scheduledDate;
     displayEvents.push({
       id: `${event.id}-reprogrammed`,
-      label: `${attemptMatch[1]} intento reprogramado para el ${formatCourierRescheduledDate(reprogrammedFor)}`,
+      label: `${attemptMatch[1]} intento reprogramado para el ${reprogrammedDateLabel}`,
       at: event.at,
       atMs: parseEventMs(event.at),
     });
