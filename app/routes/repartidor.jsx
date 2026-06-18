@@ -265,6 +265,20 @@ function getReturnFailedAttemptLabel(request) {
   return failedAttemptCount === 1 ? "1 intento" : `${failedAttemptCount} intentos`;
 }
 
+function getReturnFinalAttemptCount(request) {
+  const historyAttemptCount = parseSnapshotReasonEntries(request?.rejectionReason).reduce((maxAttempt, entry) => {
+    const match = String(entry?.kind || "")
+      .trim()
+      .toLowerCase()
+      .match(/^(?:courier_en_route_|courier_retry_|attempt_failed_)(\d)$/);
+    return match ? Math.max(maxAttempt, Number(match[1]) || 0) : maxAttempt;
+  }, 0);
+  return Math.min(
+    Math.max(Number(request?.attemptCount || 0), historyAttemptCount, 1),
+    3,
+  );
+}
+
 function getReturnRetryAttemptLabel(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
   const routeAttemptMatch = normalizedStatus.match(/^en_ruta_(\d+)$/);
@@ -1557,9 +1571,9 @@ export default function RepartidorPublicPortal() {
                         <>
                           {isReturnOrder(request) &&
                           String(request.status || "").trim().toLowerCase() === "recibida" &&
-                          Number(request.attemptCount || 0) >= 2 ? (
+                          getReturnFinalAttemptCount(request) >= 2 ? (
                             <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
-                              {`${Number(request.attemptCount)} intentos`}
+                              {`${getReturnFinalAttemptCount(request)} intentos`}
                             </span>
                           ) : null}
                           {isReturnOrder(request) && getReturnRetryAttemptLabel(request) ? (
