@@ -782,6 +782,38 @@ function courierAttemptCountLabel(attempt) {
   return attemptNumber === 1 ? "1 intento" : `${attemptNumber} intentos`;
 }
 
+function getReturnFailedAttemptCountFromReason(rawValue) {
+  return parseReasonEntries(rawValue).reduce((maxAttempt, entry) => {
+    const match = String(entry?.kind || "").trim().toLowerCase().match(/^attempt_failed_(\d)$/);
+    return match ? Math.max(maxAttempt, Number(match[1]) || 0) : maxAttempt;
+  }, 0);
+}
+
+function returnRetryAttemptNumber(request, status) {
+  const normalized = String(status || request?.status || "").trim().toLowerCase();
+  const routeAttemptMatch = normalized.match(/^en_ruta_(\d)$/);
+  if (routeAttemptMatch) return Math.min(Math.max(Number(routeAttemptMatch[1]) || 1, 1), 3);
+  if (normalized !== "reintento_pendiente") return 0;
+  const failedAttemptCount = Math.max(
+    Number(request?.attemptCount || 0),
+    getReturnFailedAttemptCountFromReason(request?.rejectionReason),
+    1,
+  );
+  return Math.min(failedAttemptCount + 1, 3);
+}
+
+function courierAttemptBadgeLabel(attempt) {
+  return courierAttemptLabel(attempt).toLowerCase();
+}
+
+function isReturnCourierLabel(value) {
+  return String(value || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase() === "devolucion";
+}
+
 function pickupRescheduleAttemptLabel(status) {
   const match = String(status || "").trim().toLowerCase().match(/^intento_fallido_(\d)$/);
   if (!match) return "";
@@ -936,6 +968,7 @@ function courierHistoryStatusLabel(status) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "no_entregado") return "no entregado";
   if (normalized === "no_recibido") return "no recibido";
+  if (normalized === "reintento_pendiente") return "reprogramado";
   return getCourierStatusLabel(status);
 }
 
@@ -971,7 +1004,7 @@ function isCourierFinalActivityAction(action) {
 }
 
 function buildCourierHistoryEvents(request) {
-  if (request.courierLabel === "Devolución") {
+  if (isReturnCourierLabel(request.courierLabel)) {
     const entries = parseReasonEntries(request.rejectionReason);
     const finalAttempt = Math.max(
       1,
@@ -1664,15 +1697,19 @@ export const loader = async ({ request }) => {
 
   const courierOrders = courierOrdersRaw
     .map((requestRow) => {
+      const attemptCount = isReturnCourierLabel(requestRow.courierLabel)
+        ? Math.max(Number(requestRow.attemptCount || 0), getReturnFailedAttemptCountFromReason(requestRow.rejectionReason))
+        : requestRow.attemptCount;
+      const requestWithAttemptCount = { ...requestRow, attemptCount };
       const historyEvents = buildCourierHistoryEvents({
-        ...requestRow,
+        ...requestWithAttemptCount,
         persistedHistoryEvents: deliveryHistoryByRequestId.get(String(requestRow.id || "").trim()) || [],
       });
       return {
-        ...requestRow,
+        ...requestWithAttemptCount,
         historyEvents: enrichCourierHistoryEvents({
           events: historyEvents,
-          request: requestRow,
+          request: requestWithAttemptCount,
           activitiesByRequestId: courierActivitiesByRequestId,
         }),
       };
@@ -3490,6 +3527,10 @@ function CourierOrderCard({
     adminCourierView &&
     ["no_entregado", "no_recibido", "reintento_pendiente"].includes(normalizedVisibleStatus);
   const displayStatus = isAdminReprogrammed ? "reprogramado" : visibleStatus;
+  const retryAttemptNumber =
+    isReturnCourierLabel(request.courierLabel) ? returnRetryAttemptNumber(request, normalizedVisibleStatus) : 0;
+  const showReturnRetryAttemptBadge =
+    adminCourierView && retryAttemptNumber >= 2 && !showFinalAttemptBadge;
   const adminCourierPresentation = adminCourierView
     ? buildAdminCourierPresentation(request)
     : { events: request.historyEvents || [], scheduledDate: null };
@@ -3516,7 +3557,7 @@ function CourierOrderCard({
   return (
     <article
       className={`${styles.courierCard} ${
-        request.courierLabel === "Devolución" ? styles.courierCardReturn : styles.courierCardDelivery
+        isReturnCourierLabel(request.courierLabel) ? styles.courierCardReturn : styles.courierCardDelivery
       }`}
     >
       <div className={styles.courierHeader}>
@@ -3526,7 +3567,7 @@ function CourierOrderCard({
           ) : null}
           <span
             className={
-              request.courierLabel === "Devolución"
+              isReturnCourierLabel(request.courierLabel)
                 ? styles.courierBadgeReturn
                 : styles.courierBadgeDelivery
             }
@@ -3538,6 +3579,11 @@ function CourierOrderCard({
           {showFinalAttemptBadge && finalAttempt > 0 ? (
             <span className={`${styles.courierBadgeStatus} ${attemptBadgeClass}`}>
               {courierAttemptCountLabel(finalAttempt)}
+            </span>
+          ) : null}
+          {showReturnRetryAttemptBadge ? (
+            <span className={`${styles.courierBadgeStatus} ${styles.courierBadgeAttempt}`}>
+              {courierAttemptBadgeLabel(retryAttemptNumber)}
             </span>
           ) : null}
           <span className={`${styles.courierBadgeStatus} ${statusBadgeClass}`}>

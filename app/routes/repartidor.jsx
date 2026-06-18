@@ -252,6 +252,11 @@ function getReturnFailedAttemptCount(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
   const match = normalizedStatus.match(/^intento_fallido_(\d+)$/);
   if (match) return Math.max(1, Number(match[1]) || 1);
+  const historyAttemptCount = parseSnapshotReasonEntries(request?.rejectionReason).reduce((maxAttempt, entry) => {
+    const failedAttemptMatch = String(entry?.kind || "").trim().toLowerCase().match(/^attempt_failed_(\d)$/);
+    return failedAttemptMatch ? Math.max(maxAttempt, Number(failedAttemptMatch[1]) || 0) : maxAttempt;
+  }, 0);
+  if (historyAttemptCount > 0) return historyAttemptCount;
   return normalizedStatus === "rechazada" ? Math.max(3, Number(request?.attemptCount || 0)) : 0;
 }
 
@@ -266,7 +271,12 @@ function getReturnRetryAttemptLabel(request) {
   if (normalizedStatus !== "reintento_pendiente" && !normalizedStatus.startsWith("en_ruta_")) return "";
   const routeAttemptMatch = normalizedStatus.match(/^en_ruta_(\d+)$/);
   const routeAttemptNumber = routeAttemptMatch ? Number(routeAttemptMatch[1]) || 1 : 0;
-  const nextAttemptNumber = Math.min(Math.max(Number(request?.attemptCount || 0) + 1, 1), 3);
+  const failedAttemptCount = Math.max(
+    Number(request?.attemptCount || 0),
+    getReturnFailedAttemptCount(request),
+    normalizedStatus === "reintento_pendiente" ? 1 : 0,
+  );
+  const nextAttemptNumber = Math.min(Math.max(failedAttemptCount + 1, 1), 3);
   const attemptNumber = routeAttemptNumber || nextAttemptNumber;
   if (attemptNumber === 1) return "primer intento";
   if (attemptNumber === 2) return "segundo intento";
