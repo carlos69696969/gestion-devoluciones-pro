@@ -1110,6 +1110,7 @@ function buildAdminCourierPresentation(request) {
 
     const attemptMatch = String(event.label || "").match(/^(Primer|Segundo|Tercer) intento/i);
     if (!attemptMatch) continue;
+    if (attemptMatch[1].toLowerCase() === "tercer") continue;
     const persistedIsoDate = String(event.note || "").match(/scheduled_date:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
     const persistedDateMatch = String(event.note || "").match(/Reprogramado para el ([^.\n]+)/i);
     const persistedDateLabel = persistedIsoDate
