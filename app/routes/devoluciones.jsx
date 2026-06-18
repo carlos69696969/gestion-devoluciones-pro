@@ -387,17 +387,36 @@ function addDays(date, days) {
   return copy;
 }
 
-function startOfLocalDay(date) {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
+function mexicoCalendarDateKey(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${lookup.year}-${lookup.month}-${lookup.day}`;
 }
 
-function toDateInputValue(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function addCalendarDays(dateKey, days) {
+  const match = String(dateKey || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + Number(days || 0)));
+  return date.toISOString().slice(0, 10);
+}
+
+function formatCalendarDateKey(dateKey) {
+  const match = String(dateKey || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "";
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "numeric",
+    year: "numeric",
+  }).format(date);
 }
 
 function toMXN(value) {
@@ -1523,15 +1542,15 @@ export const action = async ({ request }) => {
   }
 
   if (payload.returnMethod === "pickup" && String(payload.pickupDate || "").trim()) {
-    const selectedDate = new Date(`${payload.pickupDate}T00:00:00`);
-    const minimumPickupDate = addDays(startOfLocalDay(new Date()), 1);
-    if (Number.isFinite(selectedDate.getTime()) && selectedDate.getTime() < minimumPickupDate.getTime()) {
+    const selectedDateKey = String(payload.pickupDate || "").trim();
+    const minimumPickupDateKey = addCalendarDays(mexicoCalendarDateKey(), 1);
+    if (selectedDateKey < minimumPickupDateKey) {
       return {
         ok: false,
-        error: `Elige una fecha de recoleccion a partir del ${minimumPickupDate.toLocaleDateString("es-MX")}.`,
+        error: `Elige una fecha de recoleccion a partir del ${formatCalendarDateKey(minimumPickupDateKey)}.`,
       };
     }
-    if (Number.isFinite(selectedDate.getTime()) && selectedDate.getTime() > limitDate.getTime()) {
+    if (selectedDateKey > limitDate.toISOString().slice(0, 10)) {
       return {
         ok: false,
         error: `Esa fecha sobrepasa el tiempo de devolucion. Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`,
@@ -2093,8 +2112,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     [order.deliveredAt, order.createdAt, settings.returnWindowDays],
   );
   const limitDateISO = useMemo(() => limitDateObj.toISOString().slice(0, 10), [limitDateObj]);
-  const minimumPickupDateObj = useMemo(() => addDays(startOfLocalDay(new Date()), 1), []);
-  const minimumPickupDateISO = useMemo(() => toDateInputValue(minimumPickupDateObj), [minimumPickupDateObj]);
+  const minimumPickupDateISO = useMemo(() => addCalendarDays(mexicoCalendarDateKey(), 1), []);
   const [step, setStep] = useState(1);
   const [submitLocked, setSubmitLocked] = useState(false);
   const [clientError, setClientError] = useState("");
@@ -2230,11 +2248,11 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
         if (missing) return `Completa: ${missing[1]}.`;
 
         if (String(pickup.pickupDate || "").trim()) {
-          const selectedDate = new Date(`${pickup.pickupDate}T00:00:00`);
-          if (Number.isFinite(selectedDate.getTime()) && selectedDate.getTime() < minimumPickupDateObj.getTime()) {
-            return `Elige una fecha de recoleccion a partir del ${minimumPickupDateObj.toLocaleDateString("es-MX")}.`;
+          const selectedDateKey = String(pickup.pickupDate || "").trim();
+          if (selectedDateKey < minimumPickupDateISO) {
+            return `Elige una fecha de recoleccion a partir del ${formatCalendarDateKey(minimumPickupDateISO)}.`;
           }
-          if (Number.isFinite(selectedDate.getTime()) && selectedDate.getTime() > limitDateObj.getTime()) {
+          if (selectedDateKey > limitDateISO) {
             return `Esa fecha sobrepasa el tiempo de devolucion. Fecha limite: ${limitDateObj.toLocaleDateString("es-MX")}.`;
           }
         }
