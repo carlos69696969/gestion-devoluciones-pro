@@ -1974,9 +1974,12 @@ export async function fetchCourierOrdersForShop({ shop, sessionCandidates }) {
   return [];
 }
 
-export async function fetchPickupCourierOrders(shop) {
+export async function fetchPickupCourierOrders(shop, routeRequestIds = []) {
   if (!shop) return [];
 
+  const routePickupIds = (Array.isArray(routeRequestIds) ? routeRequestIds : [])
+    .map((requestId) => Number(String(requestId || "").replace(/^pickup-/, "")))
+    .filter((requestId) => Number.isFinite(requestId) && requestId > 0);
   const requestRows = await prisma.returnRequest.findMany({
     where: {
       shop,
@@ -1991,6 +1994,7 @@ export async function fetchPickupCourierOrders(shop) {
         {
           status: { in: Array.from(BRANCH_PICKUP_STATUSES) },
         },
+        ...(routePickupIds.length ? [{ id: { in: routePickupIds } }] : []),
       ],
     },
     select: {

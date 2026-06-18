@@ -891,6 +891,9 @@ export const loader = async ({ request }) => {
       ])
       .filter(([requestId]) => requestId),
   );
+  const currentRoutePickupRequestIds = Array.from(currentRouteRequestIds).filter((requestId) =>
+    requestId.startsWith("pickup-"),
+  );
   for (const activity of currentRouteActivities) {
     const activityRequestId = String(activity.requestId || "").trim();
     const activityAction = String(activity.action || "").trim();
@@ -921,7 +924,7 @@ export const loader = async ({ request }) => {
 
     const [deliveryResult, pickupResult] = await Promise.allSettled([
       fetchCourierOrdersForShop({ shop: shopCandidate, sessionCandidates: candidateSessions }),
-      fetchPickupCourierOrders(shopCandidate),
+      fetchPickupCourierOrders(shopCandidate, currentRoutePickupRequestIds),
     ]);
 
     const deliveryOrders = deliveryResult.status === "fulfilled" ? deliveryResult.value : [];
