@@ -216,6 +216,52 @@ function formatPickupDateForMessage(rawValue) {
   }).format(date);
 }
 
+function nextCourierDeliveryDate(rawValue) {
+  const match = String(rawValue || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const date = match
+    ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+    : new Date(rawValue);
+  if (!Number.isFinite(date.getTime())) return "";
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function courierDeliveryDate(rawValue) {
+  const match = String(rawValue || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  const date = new Date(rawValue);
+  return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : "";
+}
+
+function courierDeliveryDateFromEventNote(note) {
+  return String(note || "").match(/scheduled_date:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
+}
+
+async function getLatestCourierDeliveryDate({ shopDomain, requestId, orderNumber, fallbackDate }) {
+  const shop = normalizeShop(shopDomain);
+  const cleanRequestId = String(requestId || "").trim();
+  const cleanOrderNumber = String(orderNumber || "").replace(/^#/, "").trim();
+  const references = [];
+  if (cleanRequestId) references.push({ requestId: cleanRequestId });
+  if (cleanOrderNumber) references.push({ orderNumber: cleanOrderNumber });
+
+  if (shop && references.length) {
+    try {
+      const event = await prisma.courierEvent.findFirst({
+        where: { shop, OR: references, status: "reintento_pendiente" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { note: true },
+      });
+      const persistedDate = courierDeliveryDateFromEventNote(event?.note);
+      if (persistedDate) return persistedDate;
+    } catch (error) {
+      console.error("Courier scheduled delivery date is not available yet", error);
+    }
+  }
+
+  return courierDeliveryDate(fallbackDate);
+}
+
 function getDeliveryAttemptTag(attemptCount) {
   const safeAttemptCount = Math.min(Math.max(Number(attemptCount || 0), 1), 3);
   return `intento entrega ${safeAttemptCount}`;
@@ -1138,6 +1184,14 @@ export async function markCourierOrderAsNotDelivered({
     orderNumber: requestRow.orderNumber,
     status: nextStatus,
     attemptCount: nextAttemptCount,
+    note: `scheduled_date:${nextCourierDeliveryDate(
+      await getLatestCourierDeliveryDate({
+        shopDomain,
+        requestId: orderGid,
+        orderNumber: requestRow.orderNumber,
+        fallbackDate: new Date().toISOString(),
+      }),
+    )}`,
   });
 
   const notificationResult = await emitCourierDeliveryManualStatusNotification({
@@ -1835,6 +1889,12 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
         orderNumber,
       });
   const attemptCount = Math.max(tagAttemptCount, failedAttemptCount);
+  const scheduledDate = await getLatestCourierDeliveryDate({
+    shopDomain: shop,
+    requestId: orderNode.id,
+    orderNumber,
+    fallbackDate: getCourierScheduledDate(orderNode) || nextCourierDeliveryDate(orderNode.createdAt),
+  });
   const deliveredAt =
     (orderNode?.fulfillments || [])
       .map((fulfillment) => String(fulfillment?.deliveredAt || "").trim())
@@ -1846,7 +1906,7 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
     customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
     customerEmail: "",
     customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
-    pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
+    pickupDate: scheduledDate,
     pickupAddress: String(shipping?.address1 || "").trim(),
     pickupNeighborhood: String(shipping?.address2 || "").trim(),
     pickupCity: String(shipping?.city || "").trim(),

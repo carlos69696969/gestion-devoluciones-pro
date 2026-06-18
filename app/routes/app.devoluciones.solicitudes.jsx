@@ -1110,9 +1110,16 @@ function buildAdminCourierPresentation(request) {
 
     const attemptMatch = String(event.label || "").match(/^(Primer|Segundo|Tercer) intento/i);
     if (!attemptMatch) continue;
+    const persistedIsoDate = String(event.note || "").match(/scheduled_date:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
     const persistedDateMatch = String(event.note || "").match(/Reprogramado para el ([^.\n]+)/i);
-    const persistedDateLabel = String(persistedDateMatch?.[1] || "").trim();
-    const reprogrammedFor = persistedDateLabel ? null : nextMexicoCalendarDay(event.at);
+    const persistedDateLabel = persistedIsoDate
+      ? formatCourierRescheduledDate(new Date(`${persistedIsoDate}T12:00:00Z`))
+      : String(persistedDateMatch?.[1] || "").trim();
+    const reprogrammedFor = persistedIsoDate
+      ? new Date(`${persistedIsoDate}T12:00:00Z`)
+      : persistedDateLabel
+        ? null
+        : nextMexicoCalendarDay(event.at);
     const reprogrammedDateLabel =
       persistedDateLabel || (reprogrammedFor ? formatCourierRescheduledDate(reprogrammedFor) : "");
     if (!reprogrammedDateLabel) continue;
@@ -2335,6 +2342,15 @@ function getCourierScheduledDate(orderNode) {
   return candidate;
 }
 
+function getInitialCourierScheduledDate(orderNode) {
+  const configuredDate = getCourierScheduledDate(orderNode);
+  if (configuredDate) return configuredDate;
+  const createdAt = new Date(orderNode?.createdAt);
+  if (!Number.isFinite(createdAt.getTime())) return String(orderNode?.createdAt || "");
+  createdAt.setUTCDate(createdAt.getUTCDate() + 1);
+  return createdAt.toISOString().slice(0, 10);
+}
+
 function parseCourierDate(value) {
   const raw = String(value || "").trim();
   if (!raw) return null;
@@ -2433,7 +2449,7 @@ async function fetchCourierOrders(admin) {
         orderNumber: String(orderNode.name || "").replace("#", ""),
         customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
         customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
-        pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
+        pickupDate: getInitialCourierScheduledDate(orderNode),
         pickupAddress: String(shipping?.address1 || "").trim(),
         pickupNeighborhood: String(shipping?.address2 || "").trim(),
         pickupCity: String(shipping?.city || "").trim(),
@@ -2516,7 +2532,7 @@ async function fetchBranchPickupCourierOrders(admin) {
         orderNumber: String(orderNode.name || "").replace("#", ""),
         customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
         customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
-        pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
+        pickupDate: getInitialCourierScheduledDate(orderNode),
         pickupAddress: String(shipping?.address1 || "").trim(),
         pickupNeighborhood: String(shipping?.address2 || "").trim(),
         pickupCity: String(shipping?.city || "").trim(),
@@ -2596,7 +2612,7 @@ async function fetchCourierHistoryOrders(admin) {
         orderNumber: String(orderNode.name || "").replace("#", ""),
         customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
         customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
-        pickupDate: getCourierScheduledDate(orderNode) || String(orderNode.createdAt || ""),
+        pickupDate: getInitialCourierScheduledDate(orderNode),
         pickupAddress: String(shipping?.address1 || "").trim(),
         pickupNeighborhood: String(shipping?.address2 || "").trim(),
         pickupCity: String(shipping?.city || "").trim(),
