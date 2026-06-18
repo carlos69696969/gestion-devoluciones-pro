@@ -983,6 +983,7 @@ function courierResultStatusFromHistoryEvents(historyEvents = []) {
   for (const event of events) {
     const label = String(event?.label || "").trim().toLowerCase();
     if (/\bno (?:recibido|entregado)\b/.test(label)) return "no_recibido";
+    if (/\bentregado\b/.test(label)) return "entregado";
     if (/\brecibido\b/.test(label)) return "recibida";
     if (/\brechazad[ao]\b/.test(label)) return "rechazada";
   }
@@ -3030,6 +3031,13 @@ function courierHistoryOrderLocation(order) {
   const status = String(order?.status || "").trim().toLowerCase();
   if (status === "recoger_en_sucursal") return "Recoger en sucursal";
   if (["entregado", "recibido", "recibida"].includes(status)) return "Historial repartidor";
+  if (
+    isReturnCourierLabel(order?.courierLabel) &&
+    status === "rechazada" &&
+    getReturnFailedAttemptCountFromReason(order?.rejectionReason) >= 3
+  ) {
+    return "Historial repartidor";
+  }
   if (["reembolsada", "completada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"].includes(status)) {
     return "Historial";
   }
@@ -3050,8 +3058,12 @@ function courierHistoryOrderUpdatedMs(order) {
 }
 
 function isCourierCompletedHistoryOrder(order) {
-  return ["entregado", "recibido", "recibida"].includes(
-    String(order?.status || "").trim().toLowerCase(),
+  const status = String(order?.status || "").trim().toLowerCase();
+  if (["entregado", "recibido", "recibida"].includes(status)) return true;
+  return (
+    isReturnCourierLabel(order?.courierLabel) &&
+    status === "rechazada" &&
+    getReturnFailedAttemptCountFromReason(order?.rejectionReason) >= 3
   );
 }
 
