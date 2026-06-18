@@ -281,7 +281,7 @@ function getReturnRetryAttemptLabel(request) {
     normalizedStatus.startsWith("en_ruta_");
   if (!canShowRetryAttempt || (!routeAttemptNumber && failedAttemptCount <= 0)) return "";
   const nextAttemptNumber = Math.min(Math.max(failedAttemptCount + 1, 1), 3);
-  const attemptNumber = routeAttemptNumber || nextAttemptNumber;
+  const attemptNumber = Math.max(routeAttemptNumber, nextAttemptNumber);
   if (attemptNumber === 1) return "primer intento";
   if (attemptNumber === 2) return "segundo intento";
   return "tercer intento";

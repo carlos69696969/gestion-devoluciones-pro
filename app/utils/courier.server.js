@@ -1441,16 +1441,18 @@ function isCourierReturnRouteLikeStatus(status) {
   return normalized === "en_ruta" || normalized.startsWith("en_ruta_");
 }
 
-function getCourierReturnFailedAttemptStatus(status) {
+function getCourierReturnFailedAttemptStatus(status, rejectionReason = "") {
   const normalized = String(status || "").trim().toLowerCase();
-  if (normalized === "aprobada" || normalized === "en_ruta" || normalized === "en_ruta_1") {
-    return "intento_fallido_1";
-  }
-  if (normalized === "intento_fallido_1" || normalized === "en_ruta_2") {
-    return "intento_fallido_2";
-  }
-  if (normalized === "intento_fallido_2" || normalized === "en_ruta_3") {
-    return "intento_fallido_3";
+  const routeStep = getCourierRouteStep(normalized);
+  const failedAttemptCount = getReturnFailedAttemptCount(rejectionReason);
+  const nextAttempt = Math.max(
+    normalized === "intento_fallido_1" ? 2 : 0,
+    normalized === "intento_fallido_2" ? 3 : 0,
+    routeStep,
+    failedAttemptCount + 1,
+  );
+  if (normalized === "aprobada" || normalized === "en_ruta" || normalized.startsWith("en_ruta_") || normalized.startsWith("intento_fallido_")) {
+    return nextAttempt >= 1 && nextAttempt <= 3 ? `intento_fallido_${nextAttempt}` : "";
   }
   return "";
 }
@@ -1534,7 +1536,7 @@ export async function markCourierReturnPickupAttemptFailed({ requestId, rejectio
 
   const requestRow = lookup.requestRow;
   const currentStatus = String(requestRow.status || "").trim().toLowerCase();
-  const nextStatus = getCourierReturnFailedAttemptStatus(currentStatus);
+  const nextStatus = getCourierReturnFailedAttemptStatus(currentStatus, requestRow.rejectionReason);
   if (!nextStatus) {
     return { ok: false, error: "Ya no puedes registrar mas intentos fallidos para esta devolucion." };
   }
