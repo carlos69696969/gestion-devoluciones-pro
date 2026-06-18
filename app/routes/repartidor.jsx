@@ -268,7 +268,6 @@ function getReturnFailedAttemptLabel(request) {
 
 function getReturnRetryAttemptLabel(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
-  if (normalizedStatus !== "reintento_pendiente" && !normalizedStatus.startsWith("en_ruta_")) return "";
   const routeAttemptMatch = normalizedStatus.match(/^en_ruta_(\d+)$/);
   const routeAttemptNumber = routeAttemptMatch ? Number(routeAttemptMatch[1]) || 1 : 0;
   const failedAttemptCount = Math.max(
@@ -276,6 +275,11 @@ function getReturnRetryAttemptLabel(request) {
     getReturnFailedAttemptCount(request),
     normalizedStatus === "reintento_pendiente" ? 1 : 0,
   );
+  const canShowRetryAttempt =
+    normalizedStatus === "reintento_pendiente" ||
+    normalizedStatus === "pendiente" ||
+    normalizedStatus.startsWith("en_ruta_");
+  if (!canShowRetryAttempt || (!routeAttemptNumber && failedAttemptCount <= 0)) return "";
   const nextAttemptNumber = Math.min(Math.max(failedAttemptCount + 1, 1), 3);
   const attemptNumber = routeAttemptNumber || nextAttemptNumber;
   if (attemptNumber === 1) return "primer intento";
@@ -1556,7 +1560,7 @@ export default function RepartidorPublicPortal() {
                               {`${Number(request.attemptCount)} intentos`}
                             </span>
                           ) : null}
-                          {isReturnRetryPendingStatus(request) || isReturnRetryRouteStatus(request) ? (
+                          {isReturnOrder(request) && getReturnRetryAttemptLabel(request) ? (
                             <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
                               {getReturnRetryAttemptLabel(request)}
                             </span>
