@@ -3539,7 +3539,15 @@ function CourierOrderCard({
     adminCourierView &&
     !showFinalAttemptBadge &&
     ["no_entregado", "no_recibido", "reintento_pendiente"].includes(normalizedVisibleStatus);
-  const displayStatus = isAdminReprogrammed ? "reprogramado" : visibleStatus;
+  const isAdminPendingReturn =
+    adminCourierView &&
+    isReturnCourierLabel(request.courierLabel) &&
+    normalizedVisibleStatus === "aprobada";
+  const displayStatus = isAdminReprogrammed
+    ? "reprogramado"
+    : isAdminPendingReturn
+      ? "pendiente"
+      : visibleStatus;
   const retryAttemptNumber =
     isReturnCourierLabel(request.courierLabel) ? returnRetryAttemptNumber(request, normalizedVisibleStatus) : 0;
   const showReturnRetryAttemptBadge =
