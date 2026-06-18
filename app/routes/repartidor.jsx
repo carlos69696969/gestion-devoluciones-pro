@@ -283,7 +283,7 @@ function getReturnRetryAttemptLabel(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
   const routeAttemptMatch = normalizedStatus.match(/^en_ruta_(\d+)$/);
   const routeAttemptNumber = routeAttemptMatch ? Number(routeAttemptMatch[1]) || 1 : 0;
-  if (routeAttemptNumber === 1) return "primer intento";
+  if (routeAttemptNumber === 1) return "";
   if (routeAttemptNumber === 2) return "segundo intento";
   if (routeAttemptNumber >= 3) return "tercer intento";
   const failedAttemptCount = Math.max(
