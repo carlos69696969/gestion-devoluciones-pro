@@ -41,8 +41,7 @@ const SECOND_PICKUP_FAILED_WARNING =
   "⚠️ Nota importante: Si mañana no logramos localizarte en tu domicilio por tercera ocasión, tu devolución será cancelada. 📦❌";
 
 function getFailedPickupMessage(request, rejectionReason) {
-  const normalizedStatus = String(request?.status || "").trim().toLowerCase();
-  if (normalizedStatus !== "en_ruta_2") return rejectionReason;
+  if (getReturnRetryAttemptLabel(request) !== "segundo intento") return rejectionReason;
   return `${rejectionReason}\n\n${SECOND_PICKUP_FAILED_WARNING}`;
 }
 
@@ -1419,7 +1418,7 @@ export default function RepartidorPublicPortal() {
       <input
         type="hidden"
         name="intent"
-        value={String(request.status || "").toLowerCase() === "en_ruta_3"
+        value={getReturnRetryAttemptLabel(request) === "tercer intento"
           ? "courier_return_reject_after_failed_pickups"
           : "courier_return_pickup_attempt_failed"}
       />
@@ -1746,7 +1745,7 @@ export default function RepartidorPublicPortal() {
               Selecciona un mensaje completo
             </h2>
             <div className={styles.reasonOptionList}>
-              {(String(failedPickupRequest.status || "").toLowerCase() === "en_ruta_3"
+              {(getReturnRetryAttemptLabel(failedPickupRequest) === "tercer intento"
                 ? [FINAL_PICKUP_REJECTION_REASON]
                 : PICKUP_FAILED_REASON_OPTIONS
               ).map((option, index) => (
