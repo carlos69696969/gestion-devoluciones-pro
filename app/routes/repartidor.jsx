@@ -775,6 +775,7 @@ export const action = async ({ request }) => {
       customerPhone: String(formData.get("customerPhone") || "").trim(),
       currentStatus: String(formData.get("currentStatus") || "").trim(),
       currentAttemptCount: String(formData.get("currentAttemptCount") || "").trim(),
+      currentScheduledDate: String(formData.get("currentScheduledDate") || "").trim(),
       rejectionReason: String(formData.get("rejectionReason") || "").trim(),
     });
     if (!result.ok) {
@@ -1413,6 +1414,7 @@ export default function RepartidorPublicPortal() {
       <input type="hidden" name="customerPhone" value={String(request.customerPhone || "")} />
       <input type="hidden" name="currentStatus" value={String(request.status || "")} />
       <input type="hidden" name="currentAttemptCount" value={String(request.attemptCount || 0)} />
+      <input type="hidden" name="currentScheduledDate" value={String(request.pickupDate || "")} />
       <button type="submit" className={buttonClassName}>
         {buttonLabel}
       </button>

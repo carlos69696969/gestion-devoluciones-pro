@@ -248,7 +248,12 @@ async function getLatestCourierDeliveryDate({ shopDomain, requestId, orderNumber
   if (shop && references.length) {
     try {
       const event = await prisma.courierEvent.findFirst({
-        where: { shop, OR: references, status: "reintento_pendiente" },
+        where: {
+          shop,
+          OR: references,
+          status: { in: ["no_entregado", "reintento_pendiente"] },
+          note: { contains: "scheduled_date:" },
+        },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         select: { note: true },
       });
@@ -1122,6 +1127,7 @@ export async function markCourierOrderAsNotDelivered({
   customerPhone,
   currentStatus,
   currentAttemptCount,
+  currentScheduledDate,
 }) {
   const isPickupRequest = String(requestId || "").startsWith("pickup-");
   if (isPickupRequest) {
@@ -1189,7 +1195,7 @@ export async function markCourierOrderAsNotDelivered({
         shopDomain,
         requestId: orderGid,
         orderNumber: requestRow.orderNumber,
-        fallbackDate: new Date().toISOString(),
+        fallbackDate: currentScheduledDate || new Date().toISOString(),
       }),
     )}`,
   });
