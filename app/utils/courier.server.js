@@ -1409,7 +1409,7 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
   }
 
   const currentStep = getCourierRouteStep(requestRow.status);
-  const failedAttemptStep = normalizedStatus === "reintento_pendiente" ? getReturnFailedAttemptCount(requestRow.rejectionReason) : 0;
+  const failedAttemptStep = getReturnFailedAttemptCount(requestRow.rejectionReason);
   const nextStep = currentStep ? currentStep + 1 : Math.min(Math.max(failedAttemptStep + 1, 1), 3);
   if (nextStep > 3) {
     return { ok: false, error: "Esta orden ya alcanzo el maximo de 3 avisos en ruta." };
@@ -1433,7 +1433,7 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
     routeStep: nextStep,
   });
 
-  return { ok: true, requestRow, nextStatus, routeStep: nextStep };
+  return { ok: true, requestRow, nextStatus, routeStep: nextStep, attemptCount: nextStep };
 }
 
 function isCourierReturnRouteLikeStatus(status) {
