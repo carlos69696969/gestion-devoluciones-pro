@@ -283,6 +283,9 @@ function getReturnRetryAttemptLabel(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
   const routeAttemptMatch = normalizedStatus.match(/^en_ruta_(\d+)$/);
   const routeAttemptNumber = routeAttemptMatch ? Number(routeAttemptMatch[1]) || 1 : 0;
+  if (routeAttemptNumber === 1) return "primer intento";
+  if (routeAttemptNumber === 2) return "segundo intento";
+  if (routeAttemptNumber >= 3) return "tercer intento";
   const failedAttemptCount = Math.max(
     Number(request?.attemptCount || 0),
     getReturnFailedAttemptCount(request),
@@ -290,13 +293,11 @@ function getReturnRetryAttemptLabel(request) {
   );
   const canShowRetryAttempt =
     normalizedStatus === "reintento_pendiente" ||
-    normalizedStatus === "pendiente" ||
-    normalizedStatus.startsWith("en_ruta_");
-  if (!canShowRetryAttempt || (!routeAttemptNumber && failedAttemptCount <= 0)) return "";
+    normalizedStatus === "pendiente";
+  if (!canShowRetryAttempt || failedAttemptCount <= 0) return "";
   const nextAttemptNumber = Math.min(Math.max(failedAttemptCount + 1, 1), 3);
-  const attemptNumber = Math.max(routeAttemptNumber, nextAttemptNumber);
-  if (attemptNumber === 1) return "primer intento";
-  if (attemptNumber === 2) return "segundo intento";
+  if (nextAttemptNumber === 1) return "primer intento";
+  if (nextAttemptNumber === 2) return "segundo intento";
   return "tercer intento";
 }
 
