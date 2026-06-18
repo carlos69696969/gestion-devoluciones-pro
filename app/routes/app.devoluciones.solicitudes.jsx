@@ -978,9 +978,22 @@ function hasCourierReprogrammedHistoryEvent(historyEvents = []) {
   );
 }
 
+function courierResultStatusFromHistoryEvents(historyEvents = []) {
+  const events = [...(historyEvents || [])].reverse();
+  for (const event of events) {
+    const label = String(event?.label || "").trim().toLowerCase();
+    if (/\bno (?:recibido|entregado)\b/.test(label)) return "no_recibido";
+    if (/\brecibido\b/.test(label)) return "recibida";
+    if (/\brechazad[ao]\b/.test(label)) return "rechazada";
+  }
+  return "";
+}
+
 function courierHistoryPendingStatusOverride(order) {
   const normalizedStatus = String(order?.status || "").trim().toLowerCase();
   const normalizedCurrentStatus = String(order?.currentStatus || "").trim().toLowerCase();
+  const historyResultStatus = courierResultStatusFromHistoryEvents(order?.historyEvents);
+  if (historyResultStatus) return historyResultStatus;
   if (
     ["no_entregado", "no_recibido"].includes(normalizedStatus) &&
     (
@@ -3333,8 +3346,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                   statusOverride={
                     latestRouteActivityByOrderId.get(String(order.id || ""))?.action === "courier_route_order_assigned"
                       ? "pendiente"
-                      : courierHistoryPendingStatusOverride(order) ||
-                    (latestFinalActivityByOrderId.has(String(order.id || ""))
+                      : latestFinalActivityByOrderId.has(String(order.id || ""))
                       ? courierStatusFromActivityAction(
                           latestFinalActivityByOrderId.get(String(order.id || "")).action,
                           currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
@@ -3343,7 +3355,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                         )
                       : currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
                         ? "pendiente"
-                        : "")
+                        : courierHistoryPendingStatusOverride(order)
                   }
                   showFinalAttemptBadge
                 />
@@ -3525,6 +3537,7 @@ function CourierOrderCard({
   const normalizedVisibleStatus = String(visibleStatus || "").trim().toLowerCase();
   const isAdminReprogrammed =
     adminCourierView &&
+    !showFinalAttemptBadge &&
     ["no_entregado", "no_recibido", "reintento_pendiente"].includes(normalizedVisibleStatus);
   const displayStatus = isAdminReprogrammed ? "reprogramado" : visibleStatus;
   const retryAttemptNumber =
