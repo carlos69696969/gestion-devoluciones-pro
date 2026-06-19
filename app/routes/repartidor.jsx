@@ -901,11 +901,25 @@ export const loader = async ({ request }) => {
   } = await import("../utils/courier.server");
   const url = new URL(request.url);
   const { shop, sessionCandidates, allSessionCandidates } = await resolveCourierPortalShop(request);
+  const freshAccess = String(url.searchParams.get("acceso") || "").trim().toLowerCase() === "nuevo";
   const requestedTab = String(url.searchParams.get("tab") || "pedidos").trim().toLowerCase();
   const activeTab = ["pedidos", "en_ruta", "historial"].includes(requestedTab) ? requestedTab : "pedidos";
   const overrideRequestId = String(url.searchParams.get("overrideRequestId") || "").trim();
   const overrideStatus = String(url.searchParams.get("overrideStatus") || "").trim().toLowerCase();
   const overrideAttemptCount = Math.max(0, Number(url.searchParams.get("overrideAttemptCount") || "0"));
+
+  if (freshAccess) {
+    url.searchParams.delete("acceso");
+    url.searchParams.delete("tab");
+    url.searchParams.delete("updated");
+    url.searchParams.delete("overrideRequestId");
+    url.searchParams.delete("overrideStatus");
+    url.searchParams.delete("overrideAttemptCount");
+    const headers = new Headers();
+    headers.append("Set-Cookie", await courierDailyAccessCookie.serialize("", { maxAge: 0 }));
+    headers.append("Set-Cookie", await courierDeliveryConfirmationCookie.serialize("", { maxAge: 0 }));
+    return redirect(`${url.pathname}?${url.searchParams.toString()}`, { headers });
+  }
 
   const dailyAccess = shop ? await getCourierDailyAccess(request, shop) : null;
   if (dailyAccess?.transferred) {
