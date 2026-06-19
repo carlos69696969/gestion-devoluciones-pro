@@ -3346,7 +3346,8 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
       );
       const remainingOrdersCount = selectedDayOrders.filter((order) => {
         const latestActivity = latestRouteActivityByOrderId.get(String(order.id || ""));
-        return !latestActivity || !isCourierFinalActivityAction(latestActivity.action);
+        const status = String(order?.status || "").trim().toLowerCase();
+        return status !== "recoger_en_sucursal" && (!latestActivity || !isCourierFinalActivityAction(latestActivity.action));
       }).length;
       const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
         dateStyle: "full",
