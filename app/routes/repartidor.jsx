@@ -1,5 +1,13 @@
-import { useState } from "react";
-import { createCookie, Form, redirect, useActionData, useLoaderData, useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
+import {
+  createCookie,
+  Form,
+  redirect,
+  useActionData,
+  useLoaderData,
+  useRevalidator,
+  useSearchParams,
+} from "react-router";
 import adminStyles from "../styles/admin.module.css";
 import styles from "../styles/repartidor.module.css";
 import {
@@ -1265,9 +1273,24 @@ export default function RepartidorPublicPortal() {
     deliveryConfirmationComplete = false,
   } = useLoaderData();
   const actionData = useActionData();
+  const revalidator = useRevalidator();
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
   const [failedPickupRequest, setFailedPickupRequest] = useState(null);
+  useEffect(() => {
+    if (requiresDailyAccess || routeTransferred) return undefined;
+    const refreshTransferStatus = () => {
+      if (document.visibilityState === "visible" && revalidator.state === "idle") {
+        revalidator.revalidate();
+      }
+    };
+    const intervalId = window.setInterval(refreshTransferStatus, 3000);
+    window.addEventListener("focus", refreshTransferStatus);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshTransferStatus);
+    };
+  }, [requiresDailyAccess, revalidator, routeTransferred]);
   if (routeTransferred) {
     return (
       <main className={styles.page}>
