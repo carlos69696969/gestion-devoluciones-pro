@@ -1748,13 +1748,35 @@ export const loader = async ({ request }) => {
         : courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
     );
 
-  const couriers =
+  let couriers =
     viewMode === VIEW_MODE.COURIERS || viewMode === VIEW_MODE.COURIER_HISTORY
       ? await prisma.courier.findMany({
           where: { shop: session.shop },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         })
       : [];
+  if (viewMode === VIEW_MODE.COURIERS && couriers.length) {
+    const transferEvents = await prisma.courierActivity.findMany({
+      where: {
+        shop: session.shop,
+        courierId: { in: couriers.map((courier) => courier.id) },
+        action: { startsWith: "courier_route_transferred_from:" },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    const originalNameByCourierId = new Map();
+    for (const event of transferEvents) {
+      if (originalNameByCourierId.has(event.courierId)) continue;
+      originalNameByCourierId.set(
+        event.courierId,
+        String(event.action || "").replace("courier_route_transferred_from:", "").trim(),
+      );
+    }
+    couriers = couriers.map((courier) => ({
+      ...courier,
+      name: originalNameByCourierId.get(courier.id) || courier.name,
+    }));
+  }
 
   const courierActivities =
     viewMode === VIEW_MODE.COURIER_HISTORY
@@ -1861,25 +1883,41 @@ export const action = async ({ request }) => {
       return { ok: false, error: "La ultima ruta de este repartidor ya fue finalizada." };
     }
 
+    const previousTransfer = await prisma.courierActivity.findFirst({
+      where: {
+        shop: session.shop,
+        courierId,
+        action: { startsWith: "courier_route_transferred_from:" },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    const originalCourierName = previousTransfer
+      ? String(previousTransfer.action || "").replace("courier_route_transferred_from:", "").trim()
+      : courier.name;
+
     await prisma.$transaction([
-      prisma.courier.update({
-        where: { id: courierId },
-        data: { name: newCourierName },
-      }),
+      ...(courier.name !== originalCourierName
+        ? [
+            prisma.courier.update({
+              where: { id: courierId },
+              data: { name: originalCourierName },
+            }),
+          ]
+        : []),
       prisma.courierActivity.create({
         data: {
           shop: session.shop,
           courierId,
           courierName: newCourierName,
           requestId: `route:${latestRouteStart.routeId}`,
-          action: `courier_route_transferred_from:${courier.name}`,
+          action: `courier_route_transferred_from:${originalCourierName}`,
           routeId: latestRouteStart.routeId,
         },
       }),
     ]);
     return {
       ok: true,
-      message: `Ruta transferida de ${courier.name} a ${newCourierName}.`,
+      message: `Ruta transferida de ${originalCourierName} a ${newCourierName}.`,
     };
   }
 

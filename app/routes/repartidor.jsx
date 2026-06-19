@@ -202,28 +202,32 @@ async function getCourierDailyAccess(request, shop) {
     select: { id: true, name: true, code: true },
   });
   if (!courier || String(access?.accessCode || "") !== courier.code) return null;
-  if (String(access?.courierName || "").trim() !== String(courier.name || "").trim()) {
-    const transfer = access?.routeId
-      ? await prisma.courierActivity.findFirst({
-          where: {
-            shop,
-            courierId: courier.id,
-            routeId: String(access.routeId),
-            action: { startsWith: "courier_route_transferred_from:" },
-          },
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        })
-      : null;
-    if (transfer) {
+  const transfer = access?.routeId
+    ? await prisma.courierActivity.findFirst({
+        where: {
+          shop,
+          courierId: courier.id,
+          routeId: String(access.routeId),
+          action: { startsWith: "courier_route_transferred_from:" },
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      })
+    : null;
+  const originalCourierName = transfer
+    ? String(transfer.action || "").replace("courier_route_transferred_from:", "").trim() || courier.name
+    : courier.name;
+  if (transfer) {
+    const transferredOperatorName = String(transfer.courierName || "").trim();
+    if (String(access?.operatorName || "").trim() !== transferredOperatorName) {
       return {
         ...access,
         transferred: true,
-        previousCourierName: String(access.courierName || ""),
-        newCourierName: courier.name,
+        previousCourierName: originalCourierName,
+        newCourierName: transferredOperatorName,
       };
     }
   }
-  access.courierName = courier.name;
+  access.courierName = originalCourierName;
   return access;
 }
 
@@ -582,6 +586,9 @@ export const action = async ({ request }) => {
           })
         : null;
       const resumedTransfer = latestTransfer?.routeId && !transferredRouteFinished ? latestTransfer : null;
+      const originalCourierName = resumedTransfer
+        ? String(resumedTransfer.action || "").replace("courier_route_transferred_from:", "").trim() || courier.name
+        : courier.name;
       const routeId = resumedTransfer?.routeId || crypto.randomUUID();
       const sessionCandidatesForRoute = portalShop.sessionCandidates || portalShop.allSessionCandidates || [];
       if (resumedTransfer) {
@@ -589,7 +596,7 @@ export const action = async ({ request }) => {
           data: {
             shop,
             courierId: courier.id,
-            courierName: courier.name,
+            courierName: String(resumedTransfer.courierName || "").trim() || courier.name,
             requestId: `route:${routeId}`,
             action: "courier_route_transfer_accepted",
             routeId,
@@ -636,14 +643,18 @@ export const action = async ({ request }) => {
         await dailyAccessCookie.serialize({
           shop,
           courierId: courier.id,
-          courierName: courier.name,
+          courierName: originalCourierName,
+          operatorName: resumedTransfer
+            ? String(resumedTransfer.courierName || "").trim()
+            : originalCourierName,
           dateKey: courierMexicoDateKey(new Date()),
           routeId,
           accessCode: code,
           transferredFromName: resumedTransfer
             ? String(resumedTransfer.action || "").replace("courier_route_transferred_from:", "")
             : "",
-          deliveryConfirmationComplete: Boolean(resumedTransfer),
+          transferredToName: resumedTransfer ? String(resumedTransfer.courierName || "").trim() : "",
+          deliveryConfirmationComplete: false,
         }),
       );
       headers.append(
@@ -1216,6 +1227,7 @@ export const loader = async ({ request }) => {
     requiresDailyAccess: false,
     courierName: dailyAccess.courierName || "",
     transferredFromName: dailyAccess.transferredFromName || "",
+    transferredToName: dailyAccess.transferredToName || "",
     confirmedRequestIds: Array.isArray(dailyAccess.confirmedRequestIds)
       ? dailyAccess.confirmedRequestIds.map((value) => String(value || ""))
       : [],
@@ -1234,6 +1246,7 @@ export default function RepartidorPublicPortal() {
     requiresDailyAccess,
     courierName,
     transferredFromName = "",
+    transferredToName = "",
     routeTransferred = false,
     previousCourierName = "",
     newCourierName = "",
@@ -1296,8 +1309,9 @@ export default function RepartidorPublicPortal() {
     .filter(
       (request) =>
         String(request?.courierLabel || "").trim().toLowerCase() === "entrega" &&
-        !isCourierRouteTabStatus(request?.status) &&
-        !isCourierHistoryStatus(request?.status),
+        !isCourierHistoryStatus(request?.status) &&
+        String(request?.status || "").trim().toLowerCase() !== "recoger_en_sucursal" &&
+        (Boolean(transferredFromName) || !isCourierRouteTabStatus(request?.status)),
     )
     .sort(compareCourierDisplayOrder);
   const confirmedRequestIdSet = new Set(confirmedRequestIds);
@@ -1576,7 +1590,7 @@ export default function RepartidorPublicPortal() {
             </p>
             {transferredFromName ? (
               <p className={styles.subtitle}>
-                Ruta iniciada por {transferredFromName}. Ruta traspasada a {courierName}.
+                Ruta transferida a: {transferredToName}
               </p>
             ) : null}
           </div>
