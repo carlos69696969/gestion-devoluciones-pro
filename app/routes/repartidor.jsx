@@ -297,18 +297,8 @@ function isCourierWorkableForCurrentRoute(request) {
   return !isCourierHistoryStatus(normalizedStatus);
 }
 
-function shouldResetAssignedOrderForCurrentRoute(request, routeAction) {
-  const normalizedStatus = String(request?.status || "").trim().toLowerCase();
-  return (
-    routeAction === "courier_route_order_assigned" &&
-    [
-      "no_entregado",
-      "reintento_pendiente",
-      "intento_fallido_1",
-      "intento_fallido_2",
-      "no_recibido",
-    ].includes(normalizedStatus)
-  );
+function shouldResetAssignedOrderForCurrentRoute(routeAction) {
+  return routeAction === "courier_route_order_assigned";
 }
 
 function getReturnFailedAttemptCount(request) {
@@ -1242,7 +1232,7 @@ export const loader = async ({ request }) => {
     const requestId = String(requestRow?.id || "").trim();
     if (currentRouteRequestIds.has(requestId)) {
       const routeAction = currentRouteActionByRequestId.get(requestId);
-      if (shouldResetAssignedOrderForCurrentRoute(requestRow, routeAction)) {
+      if (shouldResetAssignedOrderForCurrentRoute(routeAction)) {
         return {
           ...requestRow,
           status: "pendiente",
