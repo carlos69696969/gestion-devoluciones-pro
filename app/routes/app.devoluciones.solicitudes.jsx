@@ -3685,7 +3685,6 @@ function CouriersSection({ couriers, isSubmitting }) {
   const [code, setCode] = useState("");
   const [transferCourierId, setTransferCourierId] = useState(null);
   const [transferName, setTransferName] = useState("");
-  const [transferReadyId, setTransferReadyId] = useState(null);
 
   const generateCode = () => {
     setCode(String(Math.floor(100000 + Math.random() * 900000)));
@@ -3766,7 +3765,6 @@ function CouriersSection({ couriers, isSubmitting }) {
                     onClick={() => {
                       setTransferCourierId(courier.id);
                       setTransferName("");
-                      setTransferReadyId(null);
                     }}
                   >
                     Transferir ruta
@@ -3795,38 +3793,23 @@ function CouriersSection({ couriers, isSubmitting }) {
                         className={styles.input}
                         name="newCourierName"
                         value={transferName}
-                        onChange={(event) => {
-                          setTransferName(event.target.value);
-                          setTransferReadyId(null);
-                        }}
+                        onChange={(event) => setTransferName(event.target.value)}
                         required
                       />
                     </label>
                     <div className={styles.courierDirectoryActions}>
-                      {transferReadyId === courier.id ? (
-                        <button
-                          className={`${styles.btn} ${styles.btnPrimary}`}
-                          type="submit"
-                          disabled={isSubmitting}
-                        >
-                          Confirmar traspaso
-                        </button>
-                      ) : (
-                        <button
-                          className={`${styles.btn} ${styles.btnPrimary}`}
-                          type="button"
-                          disabled={!transferName.trim()}
-                          onClick={() => setTransferReadyId(courier.id)}
-                        >
-                          Listo
-                        </button>
-                      )}
+                      <button
+                        className={`${styles.btn} ${styles.btnPrimary}`}
+                        type="submit"
+                        disabled={isSubmitting || !transferName.trim()}
+                      >
+                        Listo
+                      </button>
                       <button
                         className={styles.btn}
                         type="button"
                         onClick={() => {
                           setTransferCourierId(null);
-                          setTransferReadyId(null);
                         }}
                       >
                         Cancelar
