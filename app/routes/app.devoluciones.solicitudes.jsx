@@ -1673,6 +1673,27 @@ export const loader = async ({ request }) => {
     current.push(activity);
     courierActivitiesByRequestId.set(requestId, current);
   }
+  const courierRouteIdsForCards = [
+    ...new Set(
+      courierActivitiesForCards
+        .map((activity) => String(activity.routeId || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  const transferActivitiesForCards = courierRouteIdsForCards.length
+    ? await prisma.courierActivity.findMany({
+        where: {
+          shop: session.shop,
+          routeId: { in: courierRouteIdsForCards },
+          action: { startsWith: "courier_route_transferred_from:" },
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      })
+    : [];
+  const transferActivityByRouteId = new Map();
+  for (const activity of transferActivitiesForCards) {
+    transferActivityByRouteId.set(String(activity.routeId || "").trim(), activity);
+  }
 
   const shouldLoadImages = shouldLoadOrderCatalogImages(viewMode);
   const imagesByOrder = shouldLoadImages
@@ -1737,6 +1758,19 @@ export const loader = async ({ request }) => {
         ? Math.max(Number(requestRow.attemptCount || 0), getReturnFailedAttemptCountFromReason(requestRow.rejectionReason))
         : requestRow.attemptCount;
       const requestWithAttemptCount = { ...requestRow, attemptCount };
+      const requestActivities = courierActivitiesByRequestId.get(String(requestRow.id || "").trim()) || [];
+      const requestRouteId = String(
+        [...requestActivities].reverse().find((activity) => String(activity.routeId || "").trim())?.routeId || "",
+      ).trim();
+      const transferActivity = transferActivityByRouteId.get(requestRouteId);
+      const transferAtMs = transferActivity ? new Date(transferActivity.createdAt || "").getTime() : 0;
+      const handledAfterTransfer =
+        transferActivity &&
+        requestActivities.some(
+          (activity) =>
+            String(activity.routeId || "").trim() === requestRouteId &&
+            new Date(activity.createdAt || "").getTime() >= transferAtMs,
+        );
       const historyEvents = buildCourierHistoryEvents({
         ...requestWithAttemptCount,
         persistedHistoryEvents: deliveryHistoryByRequestId.get(String(requestRow.id || "").trim()) || [],
@@ -1748,6 +1782,12 @@ export const loader = async ({ request }) => {
           request: requestWithAttemptCount,
           activitiesByRequestId: courierActivitiesByRequestId,
         }),
+        ...(handledAfterTransfer
+          ? {
+              transferredCourierName: String(transferActivity.courierName || "").trim(),
+              routeTransferredAt: transferActivity.createdAt,
+            }
+          : {}),
       };
     })
     .sort((a, b) =>
