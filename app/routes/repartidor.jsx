@@ -202,7 +202,7 @@ async function getCourierDailyAccess(request, shop) {
     select: { id: true, name: true, code: true },
   });
   if (!courier || String(access?.accessCode || "") !== courier.code) return null;
-  const transfer = access?.routeId
+  const routeTransfer = access?.routeId
     ? await prisma.courierActivity.findFirst({
         where: {
           shop,
@@ -213,6 +213,16 @@ async function getCourierDailyAccess(request, shop) {
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       })
     : null;
+  const transfer =
+    routeTransfer ||
+    (await prisma.courierActivity.findFirst({
+      where: {
+        shop,
+        courierId: courier.id,
+        action: { startsWith: "courier_route_transferred_from:" },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    }));
   const originalCourierName = transfer
     ? String(transfer.action || "").replace("courier_route_transferred_from:", "").trim() || courier.name
     : courier.name;
