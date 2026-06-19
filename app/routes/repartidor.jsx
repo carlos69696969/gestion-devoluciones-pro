@@ -221,7 +221,7 @@ async function getCourierDailyAccess(request, shop) {
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       })
     : null;
-  const transfer =
+  const latestTransfer =
     routeTransfer ||
     (await prisma.courierActivity.findFirst({
       where: {
@@ -231,6 +231,18 @@ async function getCourierDailyAccess(request, shop) {
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     }));
+  const transferFinished = latestTransfer?.routeId
+    ? await prisma.courierActivity.findFirst({
+        where: {
+          shop,
+          courierId: courier.id,
+          routeId: latestTransfer.routeId,
+          action: "courier_route_finished",
+        },
+        select: { id: true },
+      })
+    : null;
+  const transfer = transferFinished ? null : latestTransfer;
   const originalCourierName = transfer
     ? String(transfer.action || "").replace("courier_route_transferred_from:", "").trim() || courier.name
     : courier.name;
