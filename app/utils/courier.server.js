@@ -2039,20 +2039,25 @@ export async function fetchCourierOrdersByIdsForShop({ shop, sessionCandidates, 
 export async function fetchCourierOrdersForShop({ shop, sessionCandidates }) {
   const candidates = Array.isArray(sessionCandidates) ? sessionCandidates : [];
   let lastError = null;
+  const courierOrdersById = new Map();
 
   for (const sessionCandidate of candidates) {
     try {
       const accessToken = String(sessionCandidate?.accessToken || "").trim();
       if (!accessToken) continue;
       const courierOrders = await fetchCourierOrdersByToken({ shop, accessToken });
-      if (courierOrders.length > 0) {
-        return courierOrders;
+      for (const courierOrder of courierOrders) {
+        const orderId = String(courierOrder?.id || "").trim();
+        if (orderId) courierOrdersById.set(orderId, courierOrder);
       }
     } catch (error) {
       lastError = error;
     }
   }
 
+  if (courierOrdersById.size > 0) {
+    return Array.from(courierOrdersById.values());
+  }
   if (lastError) throw lastError;
   return [];
 }
