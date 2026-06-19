@@ -1002,6 +1002,7 @@ export const loader = async ({ request }) => {
           action: { notIn: ["courier_route_started", "courier_route_finished"] },
         },
         select: { requestId: true, action: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       })
     : [];
   const currentRouteStartedAt = dailyAccess.routeId
