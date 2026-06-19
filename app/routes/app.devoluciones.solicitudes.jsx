@@ -1902,9 +1902,6 @@ export const action = async ({ request }) => {
       select: { id: true, name: true },
     });
     if (!courier) return { ok: false, error: "No se encontro el repartidor." };
-    if (courier.name.toLowerCase() === newCourierName.toLowerCase()) {
-      return { ok: false, error: "Escribe un nombre diferente para transferir la ruta." };
-    }
 
     const latestRouteStart = await prisma.courierActivity.findFirst({
       where: {
@@ -1942,6 +1939,9 @@ export const action = async ({ request }) => {
     const originalCourierName = previousTransfer
       ? String(previousTransfer.action || "").replace("courier_route_transferred_from:", "").trim()
       : courier.name;
+    if (originalCourierName.toLowerCase() === newCourierName.toLowerCase()) {
+      return { ok: false, error: "Escribe un nombre diferente para transferir la ruta." };
+    }
 
     await prisma.$transaction([
       ...(courier.name !== originalCourierName
@@ -3747,6 +3747,7 @@ function CouriersSection({ couriers, isSubmitting }) {
                 <div className={styles.courierDirectoryActions}>
                   <Form
                     method="post"
+                    action="/app/devoluciones/solicitudes/couriers"
                     onSubmit={(event) => {
                       if (!window.confirm(`¿Deseas dar de baja a ${courier.name}?`)) {
                         event.preventDefault();
@@ -3774,6 +3775,7 @@ function CouriersSection({ couriers, isSubmitting }) {
                 {transferCourierId === courier.id ? (
                   <Form
                     method="post"
+                    action="/app/devoluciones/solicitudes/couriers"
                     className={styles.courierTransferForm}
                     onSubmit={(event) => {
                       if (
