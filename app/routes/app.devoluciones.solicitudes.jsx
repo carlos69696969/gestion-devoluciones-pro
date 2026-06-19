@@ -1,5 +1,5 @@
 ﻿/* eslint-disable react/prop-types */
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Form, Link, useActionData, useFetcher, useLoaderData, useLocation, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -1755,7 +1755,7 @@ export const loader = async ({ request }) => {
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         })
       : [];
-  if (viewMode === VIEW_MODE.COURIERS && couriers.length) {
+  if ([VIEW_MODE.COURIERS, VIEW_MODE.COURIER_HISTORY].includes(viewMode) && couriers.length) {
     const transferEvents = await prisma.courierActivity.findMany({
       where: {
         shop: session.shop,
@@ -3261,6 +3261,20 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
   if (["courier", "courier_day"].includes(historyView) && selectedCourierId) {
     const courier = couriers.find((item) => Number(item.id) === selectedCourierId);
     const courierActivities = activities.filter((activity) => Number(activity.courierId) === selectedCourierId);
+    const transferActivities = courierActivities
+      .filter((activity) => String(activity.action || "").startsWith("courier_route_transferred_from:"))
+      .sort(
+        (firstActivity, secondActivity) =>
+          new Date(firstActivity.createdAt || "").getTime() -
+          new Date(secondActivity.createdAt || "").getTime(),
+      );
+    const transferActivityForRoute = (routeId, dateKey) =>
+      transferActivities.find((activity) => {
+        if (routeId && String(activity.routeId || "") !== String(routeId)) return false;
+        return mexicoActivityDateKey(activity.createdAt) === dateKey;
+      });
+    const transferLabel = (activity) =>
+      activity ? `Ruta traspasada a ${String(activity.courierName || "").trim()}` : "";
     const courierSnapshots = snapshots.filter((snapshot) => Number(snapshot.courierId) === selectedCourierId);
     const snapshotByRouteId = new Map(
       courierSnapshots.map((snapshot) => [String(snapshot.routeId || "").trim(), snapshot]),
@@ -3334,6 +3348,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
     if (historyView === "courier_day" && selectedDate) {
       const selectedSnapshot = selectedRouteId ? snapshotByRouteId.get(selectedRouteId) : null;
       if (selectedSnapshot) {
+        const selectedTransferActivity = transferActivityForRoute(selectedRouteId, selectedDate);
         const selectedSnapshotOrders = (Array.isArray(selectedSnapshot.orders) ? selectedSnapshot.orders : [])
           .map((order, index) => {
             const id = String(order?.id || "");
@@ -3359,6 +3374,19 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
             };
           })
           .sort((firstOrder, secondOrder) => Number(firstOrder.sequenceNumber || 0) - Number(secondOrder.sequenceNumber || 0));
+        const completedBeforeTransfer = selectedTransferActivity
+          ? new Set(
+              courierActivities
+                .filter(
+                  (activity) =>
+                    String(activity.routeId || "") === String(selectedRouteId) &&
+                    new Date(activity.createdAt || "").getTime() <
+                      new Date(selectedTransferActivity.createdAt || "").getTime() &&
+                    isCourierFinalActivityAction(activity.action),
+                )
+                .map((activity) => String(activity.requestId || "")),
+            ).size
+          : 0;
         const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
           dateStyle: "full",
           timeZone: "UTC",
@@ -3387,14 +3415,25 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
             {selectedSnapshotOrders.length ? (
               <div className={styles.courierGrid}>
                 {selectedSnapshotOrders.map((order, index) => (
-                  <CourierOrderCard
-                    key={`${selectedSnapshot.routeId}:${order.id || index}`}
-                    request={order}
-                    sequenceNumber={Number(order.sequenceNumber || index + 1)}
-                    statusOverride={courierHistoryPendingStatusOverride(order)}
-                    showFinalAttemptBadge
-                  />
+                  <Fragment key={`${selectedSnapshot.routeId}:${order.id || index}`}>
+                    {selectedTransferActivity && index === completedBeforeTransfer ? (
+                      <div className={styles.courierHistoryLocation}>
+                        <strong>{transferLabel(selectedTransferActivity)}</strong>
+                      </div>
+                    ) : null}
+                    <CourierOrderCard
+                      request={order}
+                      sequenceNumber={Number(order.sequenceNumber || index + 1)}
+                      statusOverride={courierHistoryPendingStatusOverride(order)}
+                      showFinalAttemptBadge
+                    />
+                  </Fragment>
                 ))}
+                {selectedTransferActivity && completedBeforeTransfer >= selectedSnapshotOrders.length ? (
+                  <div className={styles.courierHistoryLocation}>
+                    <strong>{transferLabel(selectedTransferActivity)}</strong>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p>No hay ordenes registradas para este dia.</p>
@@ -3403,6 +3442,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         );
       }
       const currentOrderIds = new Set(currentOrders.map((order) => String(order.id || "")));
+      const selectedTransferActivity = transferActivityForRoute(selectedRouteId, selectedDate);
       const selectedDayActivities = courierActivities.filter((activity) => {
         if (mexicoActivityDateKey(activity.createdAt) !== selectedDate) return false;
         if (selectedRouteId) return activity.routeId === selectedRouteId;
@@ -3454,6 +3494,18 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           .sort(compareCourierDisplayOrder)
           .map((order, index) => [String(order.id || ""), index + 1]),
       );
+      const completedBeforeTransfer = selectedTransferActivity
+        ? new Set(
+            selectedDayActivities
+              .filter(
+                (activity) =>
+                  new Date(activity.createdAt || "").getTime() <
+                    new Date(selectedTransferActivity.createdAt || "").getTime() &&
+                  isCourierFinalActivityAction(activity.action),
+              )
+              .map((activity) => String(activity.requestId || "")),
+          ).size
+        : 0;
       const remainingOrdersCount = selectedDayOrders.filter((order) => {
         const latestActivity = latestRouteActivityByOrderId.get(String(order.id || ""));
         const status = String(order?.status || "").trim().toLowerCase();
@@ -3485,27 +3537,38 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           {selectedDayOrders.length ? (
             <div className={styles.courierGrid}>
               {selectedDayOrders.map((order, index) => (
-                <CourierOrderCard
-                  key={order.id}
-                  request={order}
-                  sequenceNumber={sequenceByOrderId.get(String(order.id || "")) || index + 1}
-                  statusOverride={
-                    latestRouteActivityByOrderId.get(String(order.id || ""))?.action === "courier_route_order_assigned"
-                      ? "pendiente"
-                      : latestFinalActivityByOrderId.has(String(order.id || ""))
-                      ? courierStatusFromActivityAction(
-                          latestFinalActivityByOrderId.get(String(order.id || "")).action,
-                          currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
-                            ? "pendiente"
-                            : order.status,
-                        )
-                      : currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
+                <Fragment key={order.id}>
+                  {selectedTransferActivity && index === completedBeforeTransfer ? (
+                    <div className={styles.courierHistoryLocation}>
+                      <strong>{transferLabel(selectedTransferActivity)}</strong>
+                    </div>
+                  ) : null}
+                  <CourierOrderCard
+                    request={order}
+                    sequenceNumber={sequenceByOrderId.get(String(order.id || "")) || index + 1}
+                    statusOverride={
+                      latestRouteActivityByOrderId.get(String(order.id || ""))?.action === "courier_route_order_assigned"
                         ? "pendiente"
-                        : courierHistoryPendingStatusOverride(order)
-                  }
-                  showFinalAttemptBadge
-                />
+                        : latestFinalActivityByOrderId.has(String(order.id || ""))
+                        ? courierStatusFromActivityAction(
+                            latestFinalActivityByOrderId.get(String(order.id || "")).action,
+                            currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
+                              ? "pendiente"
+                              : order.status,
+                          )
+                        : currentOrderIds.has(String(order.id || "")) && !isCourierRouteStatus(order.status)
+                          ? "pendiente"
+                          : courierHistoryPendingStatusOverride(order)
+                    }
+                    showFinalAttemptBadge
+                  />
+                </Fragment>
               ))}
+              {selectedTransferActivity && completedBeforeTransfer >= selectedDayOrders.length ? (
+                <div className={styles.courierHistoryLocation}>
+                  <strong>{transferLabel(selectedTransferActivity)}</strong>
+                </div>
+              ) : null}
             </div>
           ) : (
             <p>No hay ordenes registradas para este dia.</p>
@@ -3522,6 +3585,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           <div className={styles.courierCalendar}>
             {routeHistoryBlocks.map((activity) => {
               const dateKey = activity.dateKey || mexicoActivityDateKey(activity.createdAt || activity.finishedAt);
+              const routeTransferActivity = transferActivityForRoute(activity.routeId, dateKey);
               return (
                 <Link
                   key={`${activity.isSnapshot ? "snapshot" : "activity"}:${activity.routeId}`}
@@ -3534,10 +3598,12 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                   })}
                 >
                   {new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}
+                  {routeTransferActivity ? " · Ruta traspasada" : ""}
                 </Link>
               );
             })}
             {dates.map((dateKey) => {
+              const dateTransferActivity = transferActivityForRoute("", dateKey);
               const hasLegacyActivities = courierActivities.some(
                 (activity) => !activity.routeId && mexicoActivityDateKey(activity.createdAt) === dateKey,
               );
@@ -3553,6 +3619,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                   })}
                 >
                   {new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}
+                  {dateTransferActivity ? " · Ruta traspasada" : ""}
                 </Link>
               );
             })}
