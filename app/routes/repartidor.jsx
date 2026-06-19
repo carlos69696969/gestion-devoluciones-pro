@@ -1270,6 +1270,9 @@ export const loader = async ({ request }) => {
     }
   }
 
+  const routeSequenceByRequestId = new Map(
+    Array.from(currentRouteRequestIds).map((requestId, index) => [requestId, index + 1]),
+  );
   const routeCourierOrders = courierOrders.map((requestRow) => {
     const requestId = String(requestRow?.id || "").trim();
     if (currentRouteRequestIds.has(requestId)) {
@@ -1279,9 +1282,13 @@ export const loader = async ({ request }) => {
           ...requestRow,
           status: "pendiente",
           courierHistoryAt: "",
+          sequenceNumber: routeSequenceByRequestId.get(requestId) || 0,
         };
       }
-      return requestRow;
+      return {
+        ...requestRow,
+        sequenceNumber: routeSequenceByRequestId.get(requestId) || 0,
+      };
     }
     return null;
   }).filter(Boolean);
@@ -1510,8 +1517,10 @@ export default function RepartidorPublicPortal() {
     .sort(compareCourierDisplayOrder);
   const sequenceByOrderId = new Map(
     [...pendingOrders, ...routeOrders, ...historyOrders]
-      .sort(compareCourierDisplayOrder)
-      .map((request, index) => [String(request?.id || ""), index + 1]),
+      .map((request, index) => [
+        String(request?.id || ""),
+        Number(request?.sequenceNumber || 0) || index + 1,
+      ]),
   );
   const activeOrdersCount = pendingOrders.length + routeOrders.length;
   const dailyOrdersCount = activeOrdersCount + historyOrders.length;
