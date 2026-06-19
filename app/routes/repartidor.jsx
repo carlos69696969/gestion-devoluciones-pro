@@ -1252,6 +1252,22 @@ export const loader = async ({ request }) => {
         );
       }
     }
+    const loadedPickupRequestIds = new Set(
+      courierOrders
+        .map((requestRow) => String(requestRow?.id || "").trim())
+        .filter((requestId) => requestId.startsWith("pickup-")),
+    );
+    const missingPickupRequestIds = Array.from(currentRouteRequestIds).filter(
+      (requestId) => requestId.startsWith("pickup-") && !loadedPickupRequestIds.has(requestId),
+    );
+    if (missingPickupRequestIds.length) {
+      const recoveredPickupOrders = await fetchPickupCourierOrders(resolvedShop, missingPickupRequestIds);
+      if (recoveredPickupOrders.length) {
+        courierOrders = [...courierOrders, ...recoveredPickupOrders].sort(
+          (a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
+        );
+      }
+    }
   }
 
   const routeCourierOrders = courierOrders.map((requestRow) => {
