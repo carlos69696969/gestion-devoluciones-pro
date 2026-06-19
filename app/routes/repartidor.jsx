@@ -236,7 +236,11 @@ async function getCourierDailyAccess(request, shop) {
     : courier.name;
   if (transfer) {
     const transferredOperatorName = String(transfer.courierName || "").trim();
-    if (String(access?.operatorName || "").trim() !== transferredOperatorName) {
+    const sessionTransferredToName = String(access?.transferredToName || "").trim();
+    const sessionIsTransferredOperator =
+      sessionTransferredToName &&
+      sessionTransferredToName.toLowerCase() === transferredOperatorName.toLowerCase();
+    if (!sessionIsTransferredOperator) {
       return {
         ...access,
         transferred: true,
