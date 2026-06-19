@@ -1147,6 +1147,31 @@ export const loader = async ({ request }) => {
     return requestRow;
   });
 
+  if (dailyAccess.routeId && currentRouteStartedAt && !dailyAccess.transferredFromName) {
+    const unassignedCurrentOrders = courierOrders.filter((requestRow) => {
+      const requestId = String(requestRow?.id || "").trim();
+      return requestId && !currentRouteRequestIds.has(requestId) && isCourierWorkableForCurrentRoute(requestRow);
+    });
+    if (unassignedCurrentOrders.length) {
+      await prisma.courierActivity.createMany({
+        data: unassignedCurrentOrders.map((requestRow) => ({
+          shop,
+          courierId: Number(dailyAccess.courierId),
+          courierName: String(dailyAccess.courierName || ""),
+          requestId: String(requestRow.id || ""),
+          orderNumber: String(requestRow.orderNumber || "").trim() || null,
+          action: "courier_route_order_assigned",
+          routeId: String(dailyAccess.routeId),
+        })),
+      });
+      for (const requestRow of unassignedCurrentOrders) {
+        const requestId = String(requestRow.id || "").trim();
+        currentRouteRequestIds.add(requestId);
+        currentRouteActionByRequestId.set(requestId, "courier_route_order_assigned");
+      }
+    }
+  }
+
   if (dailyAccess.routeId && currentRouteStartedAt) {
     const unassignedReturnIds = courierOrders
       .filter((requestRow) => {
