@@ -13,23 +13,26 @@ import {
   isCourierRouteTabStatus,
 } from "../utils/courier.shared";
 
-const courierDailyAccessCookie = createCookie("courier_daily_access_v2", {
-  httpOnly: true,
-  sameSite: "lax",
-  secure: process.env.NODE_ENV === "production",
-  path: "/",
-  maxAge: 60 * 60 * 26,
-  secrets: [process.env.SHOPIFY_API_SECRET || "courier-daily-access"],
-});
+function courierPortalSessionId(request) {
+  const value = new URL(request.url).searchParams.get("sesion") || "default";
+  return String(value).trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 48) || "default";
+}
 
-const courierDeliveryConfirmationCookie = createCookie("courier_delivery_confirmation_v2", {
-  httpOnly: true,
-  sameSite: "lax",
-  secure: process.env.NODE_ENV === "production",
-  path: "/",
-  maxAge: 60 * 60 * 26,
-  secrets: [process.env.SHOPIFY_API_SECRET || "courier-daily-access"],
-});
+function courierPortalCookies(request) {
+  const sessionId = courierPortalSessionId(request);
+  const options = {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 26,
+    secrets: [process.env.SHOPIFY_API_SECRET || "courier-daily-access"],
+  };
+  return {
+    dailyAccessCookie: createCookie(`courier_daily_access_v2_${sessionId}`, options),
+    deliveryConfirmationCookie: createCookie(`courier_delivery_confirmation_v2_${sessionId}`, options),
+  };
+}
 
 const PICKUP_FAILED_REASON_OPTIONS = [
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨",
@@ -182,7 +185,8 @@ async function generateUniqueCourierCode(shop) {
 
 async function getCourierDailyAccess(request, shop) {
   const { default: prisma } = await import("../db.server");
-  const access = await courierDailyAccessCookie.parse(request.headers.get("Cookie"));
+  const { dailyAccessCookie } = courierPortalCookies(request);
+  const access = await dailyAccessCookie.parse(request.headers.get("Cookie"));
   if (
     String(access?.shop || "").trim().toLowerCase() !== String(shop || "").trim().toLowerCase() ||
     String(access?.dateKey || "") !== courierMexicoDateKey(new Date()) ||
@@ -224,7 +228,8 @@ async function getCourierDailyAccess(request, shop) {
 }
 
 async function hasCourierDeliveryConfirmation(request, dailyAccess, shop) {
-  const confirmation = await courierDeliveryConfirmationCookie.parse(
+  const { deliveryConfirmationCookie } = courierPortalCookies(request);
+  const confirmation = await deliveryConfirmationCookie.parse(
     request.headers.get("Cookie"),
   );
   return (
@@ -379,6 +384,7 @@ export const action = async ({ request }) => {
   } = await import("../utils/courier.server");
   try {
     const url = new URL(request.url);
+    const { dailyAccessCookie, deliveryConfirmationCookie } = courierPortalCookies(request);
     const formData = await request.formData();
     const formShop = String(formData.get("shop") || "").trim().toLowerCase();
     const portalShop = await resolveCourierPortalShop(request);
@@ -534,11 +540,11 @@ export const action = async ({ request }) => {
       const headers = new Headers();
       headers.append(
         "Set-Cookie",
-        await courierDailyAccessCookie.serialize("", { maxAge: 0 }),
+        await dailyAccessCookie.serialize("", { maxAge: 0 }),
       );
       headers.append(
         "Set-Cookie",
-        await courierDeliveryConfirmationCookie.serialize("", { maxAge: 0 }),
+        await deliveryConfirmationCookie.serialize("", { maxAge: 0 }),
       );
       return redirect(`${url.pathname}?${url.searchParams.toString()}`, { headers });
     }
@@ -627,7 +633,7 @@ export const action = async ({ request }) => {
       const headers = new Headers();
       headers.append(
         "Set-Cookie",
-        await courierDailyAccessCookie.serialize({
+        await dailyAccessCookie.serialize({
           shop,
           courierId: courier.id,
           courierName: courier.name,
@@ -642,7 +648,7 @@ export const action = async ({ request }) => {
       );
       headers.append(
         "Set-Cookie",
-        await courierDeliveryConfirmationCookie.serialize("", { maxAge: 0 }),
+        await deliveryConfirmationCookie.serialize("", { maxAge: 0 }),
       );
       return redirect(`${url.pathname}?${url.searchParams.toString()}`, {
         headers,
@@ -777,12 +783,12 @@ export const action = async ({ request }) => {
       const headers = new Headers();
       headers.append(
         "Set-Cookie",
-        await courierDailyAccessCookie.serialize(updatedDailyAccess),
+        await dailyAccessCookie.serialize(updatedDailyAccess),
       );
       if (updatedDailyAccess.deliveryConfirmationComplete) {
         headers.append(
           "Set-Cookie",
-          await courierDeliveryConfirmationCookie.serialize({
+          await deliveryConfirmationCookie.serialize({
             shop,
             courierId: Number(dailyAccess.courierId),
             dateKey: courierMexicoDateKey(new Date()),
@@ -909,16 +915,14 @@ export const loader = async ({ request }) => {
   const overrideAttemptCount = Math.max(0, Number(url.searchParams.get("overrideAttemptCount") || "0"));
 
   if (freshAccess) {
+    url.searchParams.set("sesion", crypto.randomUUID());
     url.searchParams.delete("acceso");
     url.searchParams.delete("tab");
     url.searchParams.delete("updated");
     url.searchParams.delete("overrideRequestId");
     url.searchParams.delete("overrideStatus");
     url.searchParams.delete("overrideAttemptCount");
-    const headers = new Headers();
-    headers.append("Set-Cookie", await courierDailyAccessCookie.serialize("", { maxAge: 0 }));
-    headers.append("Set-Cookie", await courierDeliveryConfirmationCookie.serialize("", { maxAge: 0 }));
-    return redirect(`${url.pathname}?${url.searchParams.toString()}`, { headers });
+    return redirect(`${url.pathname}?${url.searchParams.toString()}`);
   }
 
   const dailyAccess = shop ? await getCourierDailyAccess(request, shop) : null;
