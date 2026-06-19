@@ -3681,10 +3681,18 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
 }
 
 function CouriersSection({ couriers, isSubmitting }) {
+  const transferFetcher = useFetcher();
   const [showForm, setShowForm] = useState(false);
   const [code, setCode] = useState("");
   const [transferCourierId, setTransferCourierId] = useState(null);
   const [transferName, setTransferName] = useState("");
+  const isTransferSubmitting = transferFetcher.state !== "idle";
+
+  useEffect(() => {
+    if (!transferFetcher.data?.ok) return;
+    setTransferCourierId(null);
+    setTransferName("");
+  }, [transferFetcher.data]);
 
   const generateCode = () => {
     setCode(String(Math.floor(100000 + Math.random() * 900000)));
@@ -3771,9 +3779,8 @@ function CouriersSection({ couriers, isSubmitting }) {
                   </button>
                 </div>
                 {transferCourierId === courier.id ? (
-                  <Form
+                  <transferFetcher.Form
                     method="post"
-                    action="/app/devoluciones/solicitudes/couriers"
                     className={styles.courierTransferForm}
                     onSubmit={(event) => {
                       if (
@@ -3801,9 +3808,9 @@ function CouriersSection({ couriers, isSubmitting }) {
                       <button
                         className={`${styles.btn} ${styles.btnPrimary}`}
                         type="submit"
-                        disabled={isSubmitting || !transferName.trim()}
+                        disabled={isSubmitting || isTransferSubmitting || !transferName.trim()}
                       >
-                        Listo
+                        {isTransferSubmitting ? "Transfiriendo..." : "Listo"}
                       </button>
                       <button
                         className={styles.btn}
@@ -3815,12 +3822,18 @@ function CouriersSection({ couriers, isSubmitting }) {
                         Cancelar
                       </button>
                     </div>
-                  </Form>
+                  </transferFetcher.Form>
                 ) : null}
               </div>
             </details>
           ))}
         </div>
+        {transferFetcher.data?.error ? (
+          <p className={styles.errorMsg}>{transferFetcher.data.error}</p>
+        ) : null}
+        {transferFetcher.data?.message ? (
+          <p className={styles.successMsg}>{transferFetcher.data.message}</p>
+        ) : null}
       </div>
     </s-section>
   );
