@@ -233,6 +233,23 @@ function courierDeliveryDate(rawValue) {
   return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : "";
 }
 
+function initialCourierDeliveryDate(rawValue) {
+  const date = new Date(rawValue);
+  if (!Number.isFinite(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return new Date(Date.UTC(
+    Number(lookup.year),
+    Number(lookup.month) - 1,
+    Number(lookup.day) + 1,
+  )).toISOString().slice(0, 10);
+}
+
 function courierDeliveryDateFromEventNote(note) {
   return String(note || "").match(/scheduled_date:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
 }
@@ -1899,7 +1916,7 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
     shopDomain: shop,
     requestId: orderNode.id,
     orderNumber,
-    fallbackDate: getCourierScheduledDate(orderNode) || nextCourierDeliveryDate(orderNode.createdAt),
+    fallbackDate: getCourierScheduledDate(orderNode) || initialCourierDeliveryDate(orderNode.createdAt),
   });
   const deliveredAt =
     (orderNode?.fulfillments || [])
