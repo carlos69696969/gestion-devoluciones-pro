@@ -3131,7 +3131,12 @@ export default function ReturnsRequests() {
           ) : (
             <div className={styles.courierGrid}>
               {courierOrders.map((request) => (
-                <CourierOrderCard key={request.id} request={request} adminCourierView />
+                <CourierOrderCard
+                  key={request.id}
+                  request={request}
+                  adminCourierView
+                  hideTransferredCourierBadge
+                />
               ))}
             </div>
           )}
@@ -3842,6 +3847,7 @@ function CourierOrderCard({
   statusOverride = "",
   showFinalAttemptBadge = false,
   adminCourierView = false,
+  hideTransferredCourierBadge = false,
 }) {
   const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
   const visibleStatus = statusOverride || request.status;
@@ -3906,7 +3912,7 @@ function CourierOrderCard({
           >
             {request.courierLabel}
           </span>
-          {request.transferredCourierName ? (
+          {request.transferredCourierName && !hideTransferredCourierBadge ? (
             <span className={styles.courierBadgeAttempt}>
               Ruta traspasada a {request.transferredCourierName}
             </span>
