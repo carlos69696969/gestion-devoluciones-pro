@@ -198,6 +198,27 @@ async function getCourierDailyAccess(request, shop) {
     select: { id: true, name: true, code: true },
   });
   if (!courier || String(access?.accessCode || "") !== courier.code) return null;
+  if (String(access?.courierName || "").trim() !== String(courier.name || "").trim()) {
+    const transfer = access?.routeId
+      ? await prisma.courierActivity.findFirst({
+          where: {
+            shop,
+            courierId: courier.id,
+            routeId: String(access.routeId),
+            action: { startsWith: "courier_route_transferred_from:" },
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        })
+      : null;
+    if (transfer) {
+      return {
+        ...access,
+        transferred: true,
+        previousCourierName: String(access.courierName || ""),
+        newCourierName: courier.name,
+      };
+    }
+  }
   access.courierName = courier.name;
   return access;
 }
@@ -367,7 +388,7 @@ export const action = async ({ request }) => {
 
     if (intent === "courier_finish_route") {
       const dailyAccess = await getCourierDailyAccess(request, shop);
-      if (!dailyAccess) {
+      if (!dailyAccess || dailyAccess.transferred) {
         return { ok: false, error: "Tu acceso vencio. Ingresa nuevamente tu codigo." };
       }
       const routeId = String(dailyAccess.routeId || "");
@@ -534,39 +555,73 @@ export const action = async ({ request }) => {
       if (!courier) {
         return { ok: false, loginError: "El codigo ingresado no es valido." };
       }
-      const routeId = crypto.randomUUID();
+      const latestTransfer = await prisma.courierActivity.findFirst({
+        where: {
+          shop,
+          courierId: courier.id,
+          action: { startsWith: "courier_route_transferred_from:" },
+          routeId: { not: null },
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      });
+      const transferredRouteFinished = latestTransfer?.routeId
+        ? await prisma.courierActivity.findFirst({
+            where: {
+              shop,
+              courierId: courier.id,
+              routeId: latestTransfer.routeId,
+              action: "courier_route_finished",
+            },
+            select: { id: true },
+          })
+        : null;
+      const resumedTransfer = latestTransfer?.routeId && !transferredRouteFinished ? latestTransfer : null;
+      const routeId = resumedTransfer?.routeId || crypto.randomUUID();
       const sessionCandidatesForRoute = portalShop.sessionCandidates || portalShop.allSessionCandidates || [];
-      const [deliveryResult, pickupResult] = await Promise.allSettled([
-        fetchCourierOrdersForShop({ shop, sessionCandidates: sessionCandidatesForRoute }),
-        fetchPickupCourierOrders(shop),
-      ]);
-      const routeOrders = [
-        ...(deliveryResult.status === "fulfilled" ? deliveryResult.value : []),
-        ...(pickupResult.status === "fulfilled" ? pickupResult.value : []),
-      ]
-        .filter(isCourierWorkableForCurrentRoute)
-        .sort((firstOrder, secondOrder) => courierOrderTimestampMs(firstOrder) - courierOrderTimestampMs(secondOrder));
-      await prisma.courierActivity.createMany({
-        data: [
-          {
+      if (resumedTransfer) {
+        await prisma.courierActivity.create({
+          data: {
             shop,
             courierId: courier.id,
             courierName: courier.name,
             requestId: `route:${routeId}`,
-            action: "courier_route_started",
+            action: "courier_route_transfer_accepted",
             routeId,
           },
-          ...routeOrders.map((order) => ({
-            shop,
-            courierId: courier.id,
-            courierName: courier.name,
-            requestId: String(order.id || ""),
-            orderNumber: String(order.orderNumber || "").trim() || null,
-            action: "courier_route_order_assigned",
-            routeId,
-          })),
-        ],
-      });
+        });
+      } else {
+        const [deliveryResult, pickupResult] = await Promise.allSettled([
+          fetchCourierOrdersForShop({ shop, sessionCandidates: sessionCandidatesForRoute }),
+          fetchPickupCourierOrders(shop),
+        ]);
+        const routeOrders = [
+          ...(deliveryResult.status === "fulfilled" ? deliveryResult.value : []),
+          ...(pickupResult.status === "fulfilled" ? pickupResult.value : []),
+        ]
+          .filter(isCourierWorkableForCurrentRoute)
+          .sort((firstOrder, secondOrder) => courierOrderTimestampMs(firstOrder) - courierOrderTimestampMs(secondOrder));
+        await prisma.courierActivity.createMany({
+          data: [
+            {
+              shop,
+              courierId: courier.id,
+              courierName: courier.name,
+              requestId: `route:${routeId}`,
+              action: "courier_route_started",
+              routeId,
+            },
+            ...routeOrders.map((order) => ({
+              shop,
+              courierId: courier.id,
+              courierName: courier.name,
+              requestId: String(order.id || ""),
+              orderNumber: String(order.orderNumber || "").trim() || null,
+              action: "courier_route_order_assigned",
+              routeId,
+            })),
+          ],
+        });
+      }
       url.searchParams.set("shop", shop);
       url.searchParams.set("tab", "pedidos");
       const headers = new Headers();
@@ -579,6 +634,10 @@ export const action = async ({ request }) => {
           dateKey: courierMexicoDateKey(new Date()),
           routeId,
           accessCode: code,
+          transferredFromName: resumedTransfer
+            ? String(resumedTransfer.action || "").replace("courier_route_transferred_from:", "")
+            : "",
+          deliveryConfirmationComplete: Boolean(resumedTransfer),
         }),
       );
       headers.append(
@@ -591,7 +650,7 @@ export const action = async ({ request }) => {
     }
 
     const dailyAccess = await getCourierDailyAccess(request, shop);
-    if (!dailyAccess) {
+    if (!dailyAccess || dailyAccess.transferred) {
       return { ok: false, error: "Tu acceso diario vencio. Ingresa nuevamente tu codigo." };
     }
 
@@ -849,6 +908,16 @@ export const loader = async ({ request }) => {
   const overrideAttemptCount = Math.max(0, Number(url.searchParams.get("overrideAttemptCount") || "0"));
 
   const dailyAccess = shop ? await getCourierDailyAccess(request, shop) : null;
+  if (dailyAccess?.transferred) {
+    return {
+      activeTab,
+      shop: shop || "",
+      courierOrders: [],
+      routeTransferred: true,
+      previousCourierName: dailyAccess.previousCourierName || "",
+      newCourierName: dailyAccess.newCourierName || "",
+    };
+  }
   if (!dailyAccess) {
     return {
       activeTab,
@@ -1128,6 +1197,7 @@ export const loader = async ({ request }) => {
     courierOrders: routeCourierOrders,
     requiresDailyAccess: false,
     courierName: dailyAccess.courierName || "",
+    transferredFromName: dailyAccess.transferredFromName || "",
     confirmedRequestIds: Array.isArray(dailyAccess.confirmedRequestIds)
       ? dailyAccess.confirmedRequestIds.map((value) => String(value || ""))
       : [],
@@ -1145,6 +1215,10 @@ export default function RepartidorPublicPortal() {
     activeTab: initialActiveTab,
     requiresDailyAccess,
     courierName,
+    transferredFromName = "",
+    routeTransferred = false,
+    previousCourierName = "",
+    newCourierName = "",
     confirmedRequestIds = [],
     missingOrderNumbers = [],
     deliveryConfirmationComplete = false,
@@ -1153,6 +1227,22 @@ export default function RepartidorPublicPortal() {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
   const [failedPickupRequest, setFailedPickupRequest] = useState(null);
+  if (routeTransferred) {
+    return (
+      <main className={styles.page}>
+        <div className={styles.accessContainer}>
+          <section className={`${styles.card} ${styles.accessCard}`}>
+            <p className={styles.eyebrow}>Portal del repartidor</p>
+            <h1 className={styles.cardTitle}>Ruta traspasada</h1>
+            <p className={styles.subtitle}>
+              Espera que el repartidor {newCourierName} finalice la ruta.
+            </p>
+            {previousCourierName ? <p className={styles.subtitle}>Repartidor anterior: {previousCourierName}</p> : null}
+          </section>
+        </div>
+      </main>
+    );
+  }
   if (requiresDailyAccess) {
     return (
       <main className={styles.page}>
@@ -1466,6 +1556,11 @@ export default function RepartidorPublicPortal() {
             <p className={styles.subtitle}>
               {courierName ? `Repartidor: ${courierName}` : "Ordenes pendientes de entrega y devolucion."}
             </p>
+            {transferredFromName ? (
+              <p className={styles.subtitle}>
+                Ruta iniciada por {transferredFromName}. Ruta traspasada a {courierName}.
+              </p>
+            ) : null}
           </div>
           <Form
             method="post"

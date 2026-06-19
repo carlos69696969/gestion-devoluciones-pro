@@ -1821,6 +1821,68 @@ export const action = async ({ request }) => {
     return { ok: true, message: "Repartidor dado de baja correctamente." };
   }
 
+  if (intent === "transfer_courier_route") {
+    const courierId = Number(formData.get("courierId") || 0);
+    const newCourierName = String(formData.get("newCourierName") || "").trim();
+    if (!courierId) return { ok: false, error: "Repartidor invalido." };
+    if (!newCourierName) return { ok: false, error: "Escribe el nombre del nuevo repartidor." };
+
+    const courier = await prisma.courier.findFirst({
+      where: { id: courierId, shop: session.shop },
+      select: { id: true, name: true },
+    });
+    if (!courier) return { ok: false, error: "No se encontro el repartidor." };
+    if (courier.name.toLowerCase() === newCourierName.toLowerCase()) {
+      return { ok: false, error: "Escribe un nombre diferente para transferir la ruta." };
+    }
+
+    const latestRouteStart = await prisma.courierActivity.findFirst({
+      where: {
+        shop: session.shop,
+        courierId,
+        action: "courier_route_started",
+        routeId: { not: null },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    if (!latestRouteStart?.routeId) {
+      return { ok: false, error: "Este repartidor no tiene una ruta activa para transferir." };
+    }
+    const finishedRoute = await prisma.courierActivity.findFirst({
+      where: {
+        shop: session.shop,
+        courierId,
+        routeId: latestRouteStart.routeId,
+        action: "courier_route_finished",
+      },
+      select: { id: true },
+    });
+    if (finishedRoute) {
+      return { ok: false, error: "La ultima ruta de este repartidor ya fue finalizada." };
+    }
+
+    await prisma.$transaction([
+      prisma.courier.update({
+        where: { id: courierId },
+        data: { name: newCourierName },
+      }),
+      prisma.courierActivity.create({
+        data: {
+          shop: session.shop,
+          courierId,
+          courierName: newCourierName,
+          requestId: `route:${latestRouteStart.routeId}`,
+          action: `courier_route_transferred_from:${courier.name}`,
+          routeId: latestRouteStart.routeId,
+        },
+      }),
+    ]);
+    return {
+      ok: true,
+      message: `Ruta transferida de ${courier.name} a ${newCourierName}.`,
+    };
+  }
+
   if (intent === "load_request_media") {
     if (!id) return { ok: false, intent, error: "Solicitud invalida." };
     const mediaRequestRow = await prisma.returnRequest.findFirst({
@@ -3490,6 +3552,9 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
 function CouriersSection({ couriers, isSubmitting }) {
   const [showForm, setShowForm] = useState(false);
   const [code, setCode] = useState("");
+  const [transferCourierId, setTransferCourierId] = useState(null);
+  const [transferName, setTransferName] = useState("");
+  const [transferReadyId, setTransferReadyId] = useState(null);
 
   const generateCode = () => {
     setCode(String(Math.floor(100000 + Math.random() * 900000)));
@@ -3548,20 +3613,94 @@ function CouriersSection({ couriers, isSubmitting }) {
               </summary>
               <div className={styles.courierDirectoryCode}>
                 <div>Codigo unico: <strong>{courier.code}</strong></div>
-                <Form
-                  method="post"
-                  onSubmit={(event) => {
-                    if (!window.confirm(`¿Deseas dar de baja a ${courier.name}?`)) {
-                      event.preventDefault();
-                    }
-                  }}
-                >
-                  <input type="hidden" name="intent" value="delete_courier" />
-                  <input type="hidden" name="courierId" value={courier.id} />
-                  <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
-                    Dar de baja
+                <div className={styles.courierDirectoryActions}>
+                  <Form
+                    method="post"
+                    onSubmit={(event) => {
+                      if (!window.confirm(`¿Deseas dar de baja a ${courier.name}?`)) {
+                        event.preventDefault();
+                      }
+                    }}
+                  >
+                    <input type="hidden" name="intent" value="delete_courier" />
+                    <input type="hidden" name="courierId" value={courier.id} />
+                    <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
+                      Dar de baja
+                    </button>
+                  </Form>
+                  <button
+                    className={styles.btn}
+                    type="button"
+                    onClick={() => {
+                      setTransferCourierId(courier.id);
+                      setTransferName("");
+                      setTransferReadyId(null);
+                    }}
+                  >
+                    Transferir ruta
                   </button>
-                </Form>
+                </div>
+                {transferCourierId === courier.id ? (
+                  <Form
+                    method="post"
+                    className={styles.courierTransferForm}
+                    onSubmit={(event) => {
+                      if (
+                        !window.confirm(
+                          `¿Confirmas transferir la ruta de ${courier.name} a ${transferName.trim()}?`,
+                        )
+                      ) {
+                        event.preventDefault();
+                      }
+                    }}
+                  >
+                    <input type="hidden" name="intent" value="transfer_courier_route" />
+                    <input type="hidden" name="courierId" value={courier.id} />
+                    <label className={styles.label}>
+                      Nombre del nuevo repartidor
+                      <input
+                        className={styles.input}
+                        name="newCourierName"
+                        value={transferName}
+                        onChange={(event) => {
+                          setTransferName(event.target.value);
+                          setTransferReadyId(null);
+                        }}
+                        required
+                      />
+                    </label>
+                    <div className={styles.courierDirectoryActions}>
+                      {transferReadyId === courier.id ? (
+                        <button
+                          className={`${styles.btn} ${styles.btnPrimary}`}
+                          type="submit"
+                          disabled={isSubmitting}
+                        >
+                          Confirmar traspaso
+                        </button>
+                      ) : (
+                        <button
+                          className={`${styles.btn} ${styles.btnPrimary}`}
+                          type="button"
+                          disabled={!transferName.trim()}
+                          onClick={() => setTransferReadyId(courier.id)}
+                        >
+                          Listo
+                        </button>
+                      )}
+                      <button
+                        className={styles.btn}
+                        type="button"
+                        onClick={() => {
+                          setTransferCourierId(null);
+                          setTransferReadyId(null);
+                        }}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </Form>
+                ) : null}
               </div>
             </details>
           ))}

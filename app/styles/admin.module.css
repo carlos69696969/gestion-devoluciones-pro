@@ -1169,6 +1169,19 @@
   width: fit-content;
 }
 
+.courierDirectoryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.courierTransferForm {
+  width: min(100%, 460px) !important;
+  display: grid;
+  gap: 12px;
+}
+
 @media (max-width: 720px) {
   .grid2 { grid-template-columns: 1fr; }
   .statusForm .select { width: 100%; }
