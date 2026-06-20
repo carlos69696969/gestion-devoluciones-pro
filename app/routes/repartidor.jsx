@@ -1020,7 +1020,9 @@ export const loader = async ({ request }) => {
       )?.createdAt || null
     : null;
   const currentRouteRequestIds = new Set(
-    currentRouteActivities.map((activity) => String(activity.requestId || "").trim()).filter(Boolean),
+    currentRouteActivities
+      .map((activity) => String(activity.requestId || "").trim())
+      .filter((requestId) => requestId && !requestId.startsWith("route:")),
   );
   const currentRouteActionByRequestId = new Map(
     currentRouteActivities
@@ -1270,8 +1272,20 @@ export const loader = async ({ request }) => {
     }
   }
 
+  const assignedRouteRequestIds = [
+    ...new Set(
+      currentRouteActivities
+        .filter((activity) => String(activity.action || "").trim() === "courier_route_order_assigned")
+        .map((activity) => String(activity.requestId || "").trim())
+        .filter((requestId) => requestId && !requestId.startsWith("route:")),
+    ),
+  ];
+  const routeSequenceIds = [
+    ...assignedRouteRequestIds,
+    ...Array.from(currentRouteRequestIds).filter((requestId) => !assignedRouteRequestIds.includes(requestId)),
+  ];
   const routeSequenceByRequestId = new Map(
-    Array.from(currentRouteRequestIds).map((requestId, index) => [requestId, index + 1]),
+    routeSequenceIds.map((requestId, index) => [requestId, index + 1]),
   );
   const routeCourierOrders = courierOrders.map((requestRow) => {
     const requestId = String(requestRow?.id || "").trim();
