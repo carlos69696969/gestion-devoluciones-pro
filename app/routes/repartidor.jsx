@@ -1530,11 +1530,9 @@ export default function RepartidorPublicPortal() {
     )
     .sort(compareCourierDisplayOrder);
   const sequenceByOrderId = new Map(
-    [...pendingOrders, ...routeOrders, ...historyOrders]
-      .map((request, index) => [
-        String(request?.id || ""),
-        Number(request?.sequenceNumber || 0) || index + 1,
-      ]),
+    [...effectiveCourierOrders]
+      .sort(compareCourierDisplayOrder)
+      .map((request, index) => [String(request?.id || ""), index + 1]),
   );
   const activeOrdersCount = pendingOrders.length + routeOrders.length;
   const dailyOrdersCount = activeOrdersCount + historyOrders.length;
