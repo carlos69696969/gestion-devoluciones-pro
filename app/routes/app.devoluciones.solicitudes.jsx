@@ -3853,7 +3853,14 @@ function CourierOrderCard({
   const isAdminReprogrammed =
     adminCourierView &&
     !showFinalAttemptBadge &&
-    ["no_entregado", "no_recibido", "reintento_pendiente"].includes(normalizedVisibleStatus);
+    [
+      "no_entregado",
+      "no_recibido",
+      "reintento_pendiente",
+      "intento_fallido_1",
+      "intento_fallido_2",
+      "intento_fallido_3",
+    ].includes(normalizedVisibleStatus);
   const isAdminPendingReturn =
     adminCourierView &&
     isReturnCourierLabel(request.courierLabel) &&
