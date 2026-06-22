@@ -497,7 +497,9 @@ export const action = async ({ request }) => {
           })
         : [];
       const pickupOrders = pickupRequestIds.size
-        ? (await fetchPickupCourierOrders(shop)).filter((order) => pickupRequestIds.has(String(order.id || "")))
+        ? (await fetchPickupCourierOrders(shop, Array.from(pickupRequestIds))).filter((order) =>
+            pickupRequestIds.has(String(order.id || "")),
+          )
         : [];
       let deliveryHistoryEvents = [];
       if (deliveryRequestIds.length) {
