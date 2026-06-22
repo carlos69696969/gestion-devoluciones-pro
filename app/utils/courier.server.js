@@ -2019,17 +2019,27 @@ export async function fetchCourierOrdersByIdsForShop({ shop, sessionCandidates, 
   if (!shop || !cleanOrderIds.length) return [];
 
   let lastError = null;
+  const courierOrdersById = new Map();
   for (const sessionCandidate of candidates) {
     try {
       const accessToken = String(sessionCandidate?.accessToken || "").trim();
       if (!accessToken) continue;
       const nodes = await fetchCourierOrdersByIds({ shop, accessToken, orderIds: cleanOrderIds });
-      return Promise.all(nodes.map((orderNode) => mapShopifyOrderNodeToCourierOrder({ shop, orderNode })));
+      const courierOrders = await Promise.all(
+        nodes.map((orderNode) => mapShopifyOrderNodeToCourierOrder({ shop, orderNode })),
+      );
+      for (const courierOrder of courierOrders) {
+        const orderId = String(courierOrder?.id || "").trim();
+        if (orderId) courierOrdersById.set(orderId, courierOrder);
+      }
     } catch (error) {
       lastError = error;
     }
   }
 
+  if (courierOrdersById.size > 0) {
+    return Array.from(courierOrdersById.values());
+  }
   if (lastError) {
     console.error("Failed to fetch courier route orders by id", lastError);
   }
