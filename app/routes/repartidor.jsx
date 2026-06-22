@@ -1333,6 +1333,21 @@ export const loader = async ({ request }) => {
   );
   const routeCourierOrders = courierOrders.map((requestRow) => {
     const requestId = String(requestRow?.id || "").trim();
+    if (!dailyAccess.transferredFromName && isCourierWorkableForCurrentRoute(requestRow)) {
+      const routeAction = currentRouteActionByRequestId.get(requestId);
+      if (shouldResetAssignedOrderForCurrentRoute(routeAction)) {
+        return {
+          ...requestRow,
+          status: "pendiente",
+          courierHistoryAt: "",
+          sequenceNumber: routeSequenceByRequestId.get(requestId) || 0,
+        };
+      }
+      return {
+        ...requestRow,
+        sequenceNumber: routeSequenceByRequestId.get(requestId) || 0,
+      };
+    }
     if (currentRouteRequestIds.has(requestId)) {
       const routeAction = currentRouteActionByRequestId.get(requestId);
       if (shouldResetAssignedOrderForCurrentRoute(routeAction)) {
