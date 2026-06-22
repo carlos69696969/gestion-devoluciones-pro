@@ -706,6 +706,7 @@ export const action = async ({ request }) => {
             : "",
           transferredToName: resumedTransfer ? String(resumedTransfer.courierName || "").trim() : "",
           deliveryConfirmationComplete: false,
+          returnConfirmationComplete: !resumedTransfer,
         }),
       );
       headers.append(
@@ -728,6 +729,7 @@ export const action = async ({ request }) => {
         "courier_confirm_delivery",
         "courier_mark_delivery_missing",
         "courier_finish_delivery_confirmation",
+        "courier_confirm_return_list",
       ].includes(intent)
     ) {
       const confirmedRequestIds = Array.isArray(dailyAccess.confirmedRequestIds)
@@ -737,7 +739,30 @@ export const action = async ({ request }) => {
         ? dailyAccess.missingOrderNumbers.map((value) => String(value || ""))
         : [];
 
-      if (intent === "courier_confirm_delivery_list") {
+      if (intent === "courier_confirm_return_list") {
+        const visibleRequestIds = formData
+          .getAll("visibleRequestIds")
+          .map((value) => String(value || "").trim())
+          .filter(Boolean);
+        const selectedRequestIds = formData
+          .getAll("confirmedRequestIds")
+          .map((value) => String(value || "").trim())
+          .filter(Boolean);
+        const missingRequestIds = visibleRequestIds.filter(
+          (visibleRequestId) => !selectedRequestIds.includes(visibleRequestId),
+        );
+        if (!visibleRequestIds.length) {
+          return { ok: false, confirmationError: "No se encontraron devoluciones para confirmar." };
+        }
+        if (missingRequestIds.length) {
+          return {
+            ok: false,
+            confirmationError: "Confirma todas las devoluciones que recibiste fisicamente.",
+          };
+        }
+        dailyAccess.confirmedReturnRequestIds = selectedRequestIds;
+        dailyAccess.returnConfirmationComplete = true;
+      } else if (intent === "courier_confirm_delivery_list") {
         const visibleRequestIds = formData
           .getAll("visibleRequestIds")
           .map((value) => String(value || "").trim())
@@ -843,6 +868,7 @@ export const action = async ({ request }) => {
           ? [...dailyAccess.missingOrderNumbers]
           : [],
         deliveryConfirmationComplete: Boolean(dailyAccess.deliveryConfirmationComplete),
+        returnConfirmationComplete: Boolean(dailyAccess.returnConfirmationComplete),
       };
       const headers = new Headers();
       headers.append(
@@ -1369,6 +1395,16 @@ export const loader = async ({ request }) => {
     }
     return null;
   }).filter(Boolean);
+  const receivedTransferReturnOrders = dailyAccess.transferredFromName
+    ? routeCourierOrders.filter((requestRow) => {
+        const requestId = String(requestRow?.id || "").trim();
+        const courierLabel = String(requestRow?.courierLabel || "").trim().toLowerCase();
+        return (
+          courierLabel === "devolucion" &&
+          currentRouteActionByRequestId.get(requestId) === "courier_return_mark_received"
+        );
+      })
+    : [];
 
   return {
     activeTab,
@@ -1385,6 +1421,9 @@ export const loader = async ({ request }) => {
       ? dailyAccess.missingOrderNumbers.map((value) => String(value || ""))
       : [],
     deliveryConfirmationComplete,
+    returnConfirmationComplete:
+      Boolean(dailyAccess.returnConfirmationComplete) || receivedTransferReturnOrders.length === 0,
+    receivedTransferReturnOrders,
   };
 };
 
@@ -1403,6 +1442,8 @@ export default function RepartidorPublicPortal() {
     confirmedRequestIds = [],
     missingOrderNumbers = [],
     deliveryConfirmationComplete = false,
+    returnConfirmationComplete = false,
+    receivedTransferReturnOrders = [],
   } = useLoaderData();
   const actionData = useActionData();
   const revalidator = useRevalidator();
@@ -1544,6 +1585,57 @@ export default function RepartidorPublicPortal() {
                 })}
               </div>
               <button className={styles.accessButton} type="submit">Confirmar</button>
+            </Form>
+          </section>
+        </div>
+      </main>
+    );
+  }
+  const requiresReturnConfirmation =
+    !returnConfirmationComplete &&
+    receivedTransferReturnOrders.length > 0;
+
+  if (requiresReturnConfirmation) {
+    return (
+      <main className={styles.page}>
+        <div className={styles.accessContainer}>
+          <section className={`${styles.card} ${styles.confirmationCard}`}>
+            <p className={styles.eyebrow}>Cariana repartidores</p>
+            <h1 className={styles.cardTitle}>Confirma tus devoluciones</h1>
+            <p className={styles.subtitle}>
+              Confirma que recibiste fisicamente las devoluciones recogidas por el repartidor anterior.
+            </p>
+            {actionData?.confirmationError ? (
+              <p className={styles.accessError} role="alert">{actionData.confirmationError}</p>
+            ) : null}
+            <Form
+              method="post"
+              reloadDocument
+              className={styles.confirmationForm}
+              onSubmit={(event) => {
+                if (!window.confirm("¿Confirmas que recibiste todas estas devoluciones?")) {
+                  event.preventDefault();
+                }
+              }}
+            >
+              <input type="hidden" name="intent" value="courier_confirm_return_list" />
+              <input type="hidden" name="shop" value={shop || ""} />
+              <div className={styles.confirmationList}>
+                {receivedTransferReturnOrders.map((request, index) => (
+                  <div className={styles.confirmationListItem} key={request.id}>
+                    <input type="hidden" name="visibleRequestIds" value={request.id} />
+                    <input
+                      aria-label={`Confirmar devolucion ${request.orderNumber}`}
+                      type="checkbox"
+                      name="confirmedRequestIds"
+                      value={request.id}
+                    />
+                    <span className={styles.orderSequenceBadge}>{index + 1}</span>
+                    <strong>Devolucion #{request.orderNumber}</strong>
+                  </div>
+                ))}
+              </div>
+              <button className={styles.accessButton} type="submit">Confirmar devoluciones</button>
             </Form>
           </section>
         </div>
