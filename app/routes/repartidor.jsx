@@ -684,6 +684,10 @@ export const action = async ({ request }) => {
       }
       url.searchParams.set("shop", shop);
       url.searchParams.set("tab", "pedidos");
+      url.searchParams.delete("updated");
+      url.searchParams.delete("overrideRequestId");
+      url.searchParams.delete("overrideStatus");
+      url.searchParams.delete("overrideAttemptCount");
       const headers = new Headers();
       headers.append(
         "Set-Cookie",
@@ -1552,11 +1556,14 @@ export default function RepartidorPublicPortal() {
   const effectiveCourierOrders = courierOrders.map((request) =>
     (() => {
       const isOverrideTarget = overrideRequestId && String(request?.id || "").trim() === overrideRequestId;
+      const currentRouteAction = currentRouteActionByRequestId.get(String(request?.id || "").trim());
+      const hasCurrentRouteAction =
+        currentRouteAction && currentRouteAction !== "courier_route_order_assigned";
       const persistedStatus = String(request?.status || "").trim().toLowerCase();
       const hasFinalPersistedStatus = ["rechazada", "recibida", "reembolsada", "completada", "denegada"].includes(
         persistedStatus,
       );
-      const canApplyOverride = isOverrideTarget && !hasFinalPersistedStatus;
+      const canApplyOverride = isOverrideTarget && hasCurrentRouteAction && !hasFinalPersistedStatus;
       const attemptCount = canApplyOverride
         ? overrideAttemptCount || Number(request?.attemptCount || 0)
         : Number(request?.attemptCount || 0);
