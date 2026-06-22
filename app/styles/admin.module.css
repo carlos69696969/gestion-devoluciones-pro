@@ -1169,6 +1169,35 @@
   width: fit-content;
 }
 
+.courierBranchReturnPanel {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #c9cccf;
+  border-radius: 12px;
+  background: #f6f6f7;
+}
+
+.courierBranchReturnPanel h4 {
+  margin: 0;
+}
+
+.courierBranchReturnList {
+  display: grid;
+  gap: 8px;
+}
+
+.courierBranchReturnItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #d2d5d8;
+  border-radius: 10px;
+  background: #fff;
+}
+
 .courierDirectoryActions {
   display: flex;
   flex-wrap: wrap;

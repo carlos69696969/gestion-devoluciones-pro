@@ -3230,8 +3230,20 @@ function isCourierCompletedHistoryOrder(order) {
   );
 }
 
+function isCourierBranchReturnOrder(order, routeAction = "") {
+  const normalizedAction = String(routeAction || "").trim().toLowerCase();
+  if (normalizedAction) {
+    return ["courier_mark_not_delivered", "courier_return_mark_received"].includes(normalizedAction);
+  }
+  const status = String(order?.status || order?.currentStatus || "").trim().toLowerCase();
+  return isReturnCourierLabel(order?.courierLabel)
+    ? ["entregado", "recibido", "recibida"].includes(status)
+    : ["no_entregado", "no entregado"].includes(status);
+}
+
 function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders, search, shop }) {
   const [orderSearch, setOrderSearch] = useState("");
+  const [showBranchReturnOrders, setShowBranchReturnOrders] = useState(false);
   const orderByRequestId = new Map(orders.map((order) => [String(order.id || ""), order]));
   const activitiesByRequestId = new Map();
   for (const activity of activities || []) {
@@ -3246,6 +3258,9 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
   const selectedCourierId = Number(searchParams.get("courierId") || 0);
   const selectedDate = String(searchParams.get("date") || "").trim();
   const selectedRouteId = String(searchParams.get("routeId") || "").trim();
+  useEffect(() => {
+    setShowBranchReturnOrders(false);
+  }, [selectedCourierId, selectedDate, selectedRouteId]);
   const baseHref = "/app/devoluciones/solicitudes/courier_history";
   const buildHistoryHref = ({ view = "", courierId = "", date = "", routeId = "" } = {}) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -3446,6 +3461,9 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           dateStyle: "full",
           timeZone: "UTC",
         }).format(new Date(`${selectedDate}T12:00:00Z`));
+        const branchReturnOrders = selectedSnapshotOrders.filter((order) =>
+          isCourierBranchReturnOrder(order),
+        );
 
         return (
           <div className={styles.courierHistoryDirectoryList}>
@@ -3461,12 +3479,34 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                 <p className={styles.courierHistoryDateTitle}>{selectedDayLabel}</p>
               </div>
               <div className={styles.courierHistoryCounters}>
+                {branchReturnOrders.length ? (
+                  <button
+                    className={`${styles.btn} ${styles.btnPrimary}`}
+                    type="button"
+                    onClick={() => setShowBranchReturnOrders((current) => !current)}
+                  >
+                    Regresar a sucursal
+                  </button>
+                ) : null}
                 <span className={styles.courierHistoryCounter}>Ordenes {selectedSnapshotOrders.length}</span>
                 <span className={styles.courierHistoryCounter}>
                   Restantes {Number(selectedSnapshot.remainingCount || 0)}
                 </span>
               </div>
             </div>
+            {showBranchReturnOrders && branchReturnOrders.length ? (
+              <div className={styles.courierBranchReturnPanel}>
+                <h4>Paquetes para regresar a sucursal</h4>
+                <div className={styles.courierBranchReturnList}>
+                  {branchReturnOrders.map((order) => (
+                    <div className={styles.courierBranchReturnItem} key={`branch-return:${order.id}`}>
+                      <strong>{isReturnCourierLabel(order.courierLabel) ? "Devolución" : "Entrega"} #{order.orderNumber}</strong>
+                      <span>{order.customerName || "Cliente"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {selectedSnapshotOrders.length ? (
               <div className={styles.courierGrid}>
                 {selectedSnapshotOrders.map((order, index) => (
@@ -3549,6 +3589,12 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         dateStyle: "full",
         timeZone: "UTC",
       }).format(new Date(`${selectedDate}T12:00:00Z`));
+      const branchReturnOrders = selectedDayOrders.filter((order) =>
+        isCourierBranchReturnOrder(
+          order,
+          latestRouteActivityByOrderId.get(String(order.id || ""))?.action,
+        ),
+      );
 
       return (
         <div className={styles.courierHistoryDirectoryList}>
@@ -3564,10 +3610,32 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
               <p className={styles.courierHistoryDateTitle}>{selectedDayLabel}</p>
             </div>
             <div className={styles.courierHistoryCounters}>
+              {branchReturnOrders.length ? (
+                <button
+                  className={`${styles.btn} ${styles.btnPrimary}`}
+                  type="button"
+                  onClick={() => setShowBranchReturnOrders((current) => !current)}
+                >
+                  Regresar a sucursal
+                </button>
+              ) : null}
               <span className={styles.courierHistoryCounter}>Ordenes {selectedDayOrders.length}</span>
               <span className={styles.courierHistoryCounter}>Restantes {remainingOrdersCount}</span>
             </div>
           </div>
+          {showBranchReturnOrders && branchReturnOrders.length ? (
+            <div className={styles.courierBranchReturnPanel}>
+              <h4>Paquetes para regresar a sucursal</h4>
+              <div className={styles.courierBranchReturnList}>
+                {branchReturnOrders.map((order) => (
+                  <div className={styles.courierBranchReturnItem} key={`branch-return:${order.id}`}>
+                    <strong>{isReturnCourierLabel(order.courierLabel) ? "Devolución" : "Entrega"} #{order.orderNumber}</strong>
+                    <span>{order.customerName || "Cliente"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {selectedDayOrders.length ? (
             <div className={styles.courierGrid}>
               {selectedDayOrders.map((order, index) => (
