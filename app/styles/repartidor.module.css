@@ -29,6 +29,13 @@
   box-sizing: border-box;
 }
 
+.confirmationContainer {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+}
+
 .confirmationOrder {
   display: grid;
   gap: 16px;

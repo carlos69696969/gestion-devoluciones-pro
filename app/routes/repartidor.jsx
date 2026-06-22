@@ -1874,7 +1874,11 @@ export default function RepartidorPublicPortal() {
   };
   return (
     <main className={styles.page}>
-      <div className={styles.container}>
+      <div
+        className={`${styles.container} ${
+          showBranchReturnConfirmation ? styles.confirmationContainer : ""
+        }`}
+      >
         {!showBranchReturnConfirmation ? (
           <header className={styles.header}>
           <div>
