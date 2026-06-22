@@ -3541,9 +3541,9 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         routeSequenceOrders.map((order, index) => [String(order.id || ""), index + 1]),
       );
       const remainingOrdersCount = selectedDayOrders.filter((order) => {
-        const latestActivity = latestRouteActivityByOrderId.get(String(order.id || ""));
+        const orderId = String(order.id || "");
         const status = String(order?.status || "").trim().toLowerCase();
-        return status !== "recoger_en_sucursal" && (!latestActivity || !isCourierFinalActivityAction(latestActivity.action));
+        return status !== "recoger_en_sucursal" && !latestFinalActivityByOrderId.has(orderId);
       }).length;
       const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
         dateStyle: "full",
