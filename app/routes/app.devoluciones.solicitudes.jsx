@@ -3523,12 +3523,12 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         ? todayOrders
         : selectedActivityOrders
       ).sort(compareCourierDisplayOrder);
-      const selectedDayOrders = [...baseDayOrders].sort((firstOrder, secondOrder) => {
+      const routeSequenceOrders = [...baseDayOrders].sort((firstOrder, secondOrder) => {
         const firstId = String(firstOrder.id || "");
         const secondId = String(secondOrder.id || "");
         const firstIsFinalized = finalActivityAtByOrderId.has(firstId);
         const secondIsFinalized = finalActivityAtByOrderId.has(secondId);
-        if (firstIsFinalized !== secondIsFinalized) return firstIsFinalized ? 1 : -1;
+        if (firstIsFinalized !== secondIsFinalized) return firstIsFinalized ? -1 : 1;
         if (!firstIsFinalized) return compareCourierDisplayOrder(firstOrder, secondOrder);
 
         const firstFinishedAt = finalActivityAtByOrderId.get(firstId) || 0;
@@ -3536,10 +3536,9 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         if (firstFinishedAt !== secondFinishedAt) return firstFinishedAt - secondFinishedAt;
         return compareCourierDisplayOrder(firstOrder, secondOrder);
       });
+      const selectedDayOrders = [...routeSequenceOrders];
       const sequenceByOrderId = new Map(
-        [...baseDayOrders]
-          .sort(compareCourierDisplayOrder)
-          .map((order, index) => [String(order.id || ""), index + 1]),
+        routeSequenceOrders.map((order, index) => [String(order.id || ""), index + 1]),
       );
       const remainingOrdersCount = selectedDayOrders.filter((order) => {
         const latestActivity = latestRouteActivityByOrderId.get(String(order.id || ""));

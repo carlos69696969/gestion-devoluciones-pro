@@ -301,6 +301,16 @@ function shouldResetAssignedOrderForCurrentRoute(routeAction) {
   return routeAction === "courier_route_order_assigned";
 }
 
+function isCourierFinalRouteAction(action) {
+  return [
+    "courier_mark_delivered",
+    "courier_mark_not_delivered",
+    "courier_return_mark_received",
+    "courier_return_pickup_attempt_failed",
+    "courier_return_reject_after_failed_pickups",
+  ].includes(String(action || "").trim().toLowerCase());
+}
+
 function getReturnFailedAttemptCount(request) {
   const normalizedStatus = String(request?.status || "").trim().toLowerCase();
   const match = normalizedStatus.match(/^intento_fallido_(\d+)$/);
@@ -516,7 +526,20 @@ export const action = async ({ request }) => {
             sequenceNumber: 0,
           };
         })
-        .sort(compareCourierDisplayOrder)
+        .sort((firstOrder, secondOrder) => {
+          const firstActivity = latestActivityByRequestId.get(String(firstOrder.id || ""));
+          const secondActivity = latestActivityByRequestId.get(String(secondOrder.id || ""));
+          const firstFinalized = isCourierFinalRouteAction(firstActivity?.action);
+          const secondFinalized = isCourierFinalRouteAction(secondActivity?.action);
+          if (firstFinalized !== secondFinalized) return firstFinalized ? -1 : 1;
+          if (firstFinalized && secondFinalized) {
+            const timestampDifference =
+              new Date(firstActivity?.createdAt || "").getTime() -
+              new Date(secondActivity?.createdAt || "").getTime();
+            if (timestampDifference !== 0) return timestampDifference;
+          }
+          return compareCourierDisplayOrder(firstOrder, secondOrder);
+        })
         .map((order, index) => ({ ...order, sequenceNumber: index + 1 }));
       const remainingCount = snapshotOrders.filter((order) => !isCourierHistoryStatus(order.status)).length;
       const snapshotData =
@@ -1003,7 +1026,7 @@ export const loader = async ({ request }) => {
           routeId: String(dailyAccess.routeId),
           action: { notIn: ["courier_route_started", "courier_route_finished"] },
         },
-        select: { requestId: true, action: true },
+        select: { requestId: true, action: true, createdAt: true },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       })
     : [];
@@ -1282,9 +1305,28 @@ export const loader = async ({ request }) => {
         .filter((requestId) => requestId && !requestId.startsWith("route:")),
     ),
   ];
+  const finalizedRouteRequestIds = [
+    ...new Map(
+      currentRouteActivities
+        .filter((activity) => isCourierFinalRouteAction(activity.action))
+        .map((activity) => [String(activity.requestId || "").trim(), activity]),
+    ).entries(),
+  ]
+    .filter(([requestId]) => requestId && !requestId.startsWith("route:"))
+    .sort(
+      ([, firstActivity], [, secondActivity]) =>
+        new Date(firstActivity.createdAt || "").getTime() -
+        new Date(secondActivity.createdAt || "").getTime(),
+    )
+    .map(([requestId]) => requestId);
   const routeSequenceIds = [
-    ...assignedRouteRequestIds,
-    ...Array.from(currentRouteRequestIds).filter((requestId) => !assignedRouteRequestIds.includes(requestId)),
+    ...finalizedRouteRequestIds,
+    ...assignedRouteRequestIds.filter((requestId) => !finalizedRouteRequestIds.includes(requestId)),
+    ...Array.from(currentRouteRequestIds).filter(
+      (requestId) =>
+        !finalizedRouteRequestIds.includes(requestId) &&
+        !assignedRouteRequestIds.includes(requestId),
+    ),
   ];
   const routeSequenceByRequestId = new Map(
     routeSequenceIds.map((requestId, index) => [requestId, index + 1]),
@@ -1513,7 +1555,7 @@ export default function RepartidorPublicPortal() {
   );
   const historyOrders = effectiveCourierOrders
     .filter((request) => isCourierHistoryStatus(request?.status) && isCourierHistoryFromToday(request))
-    .sort((firstRequest, secondRequest) => courierHistoryTimestampMs(secondRequest) - courierHistoryTimestampMs(firstRequest));
+    .sort((firstRequest, secondRequest) => Number(firstRequest.sequenceNumber || 0) - Number(secondRequest.sequenceNumber || 0));
   const isPendingReturnRetry = (request) =>
     String(request?.courierLabel || "")
       .trim()
@@ -1523,18 +1565,19 @@ export default function RepartidorPublicPortal() {
     String(request?.status || "").trim().toLowerCase() === "reintento_pendiente";
   const routeOrders = effectiveCourierOrders
     .filter((request) => isCourierRouteTabStatus(request?.status) && !isPendingReturnRetry(request))
-    .sort(compareCourierDisplayOrder);
+    .sort((firstRequest, secondRequest) => Number(firstRequest.sequenceNumber || 0) - Number(secondRequest.sequenceNumber || 0));
   const pendingOrders = effectiveCourierOrders
     .filter(
       (request) =>
         isPendingReturnRetry(request) ||
         (!isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status)),
     )
-    .sort(compareCourierDisplayOrder);
+    .sort((firstRequest, secondRequest) => Number(firstRequest.sequenceNumber || 0) - Number(secondRequest.sequenceNumber || 0));
   const sequenceByOrderId = new Map(
-    [...effectiveCourierOrders]
-      .sort(compareCourierDisplayOrder)
-      .map((request, index) => [String(request?.id || ""), index + 1]),
+    effectiveCourierOrders.map((request, index) => [
+      String(request?.id || ""),
+      Number(request?.sequenceNumber || 0) || index + 1,
+    ]),
   );
   const activeOrdersCount = pendingOrders.length + routeOrders.length;
   const dailyOrdersCount = activeOrdersCount + historyOrders.length;
