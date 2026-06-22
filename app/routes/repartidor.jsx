@@ -1875,7 +1875,8 @@ export default function RepartidorPublicPortal() {
   return (
     <main className={styles.page}>
       <div className={styles.container}>
-        <header className={styles.header}>
+        {!showBranchReturnConfirmation ? (
+          <header className={styles.header}>
           <div>
             <h1 className={styles.title}>Cariana repartidores</h1>
             <p className={styles.subtitle}>
@@ -1909,7 +1910,8 @@ export default function RepartidorPublicPortal() {
               <button className={styles.logoutButton} type="submit">Finalizar ruta</button>
             </Form>
           )}
-        </header>
+          </header>
+        ) : null}
 
         {showBranchReturnConfirmation ? (
           <section className={`${styles.card} ${styles.confirmationCard}`}>
@@ -1958,7 +1960,8 @@ export default function RepartidorPublicPortal() {
           </section>
         ) : null}
 
-        <section className={styles.card}>
+        {!showBranchReturnConfirmation ? (
+          <section className={styles.card}>
           {actionData?.ok === false && actionData?.error ? (
             <p className={styles.empty} role="alert" aria-live="polite">
               {actionData.error}
@@ -2227,7 +2230,8 @@ export default function RepartidorPublicPortal() {
               ))}
             </div>
           )}
-        </section>
+          </section>
+        ) : null}
       </div>
       {failedPickupRequest ? (
         <div className={styles.modalBackdrop} role="presentation" onClick={() => setFailedPickupRequest(null)}>
