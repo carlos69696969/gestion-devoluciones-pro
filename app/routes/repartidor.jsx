@@ -741,28 +741,30 @@ export const action = async ({ request }) => {
           (visibleRequestId) => !selectedRequestIds.includes(visibleRequestId),
         );
         dailyAccess.deliveryConfirmationComplete = missingRequestIds.length === 0;
-        if (selectedRequestIds.length && dailyAccess.routeId) {
+        const requestIdsToAssign =
+          missingRequestIds.length === 0 ? visibleRequestIds : selectedRequestIds;
+        if (requestIdsToAssign.length && dailyAccess.routeId) {
           const existingAssignments = await prisma.courierActivity.findMany({
             where: {
               shop,
               courierId: Number(dailyAccess.courierId),
               routeId: String(dailyAccess.routeId),
-              requestId: { in: selectedRequestIds },
+              requestId: { in: requestIdsToAssign },
             },
             select: { requestId: true },
           });
           const assignedRequestIds = new Set(
             existingAssignments.map((activity) => String(activity.requestId || "").trim()),
           );
-          const assignments = selectedRequestIds
-            .map((selectedRequestId) => {
-              if (assignedRequestIds.has(selectedRequestId)) return null;
-              const visibleIndex = visibleRequestIds.indexOf(selectedRequestId);
+          const assignments = requestIdsToAssign
+            .map((requestIdToAssign) => {
+              if (assignedRequestIds.has(requestIdToAssign)) return null;
+              const visibleIndex = visibleRequestIds.indexOf(requestIdToAssign);
               return {
                 shop,
                 courierId: Number(dailyAccess.courierId),
                 courierName: String(dailyAccess.courierName || ""),
-                requestId: selectedRequestId,
+                requestId: requestIdToAssign,
                 orderNumber: String(visibleOrderNumbers[visibleIndex] || "").trim() || null,
                 action: "courier_route_order_assigned",
                 routeId: String(dailyAccess.routeId),
