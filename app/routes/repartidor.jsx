@@ -465,6 +465,27 @@ export const action = async ({ request }) => {
       for (const activity of orderActivities) {
         latestActivityByRequestId.set(String(activity.requestId || "").trim(), activity);
       }
+      const branchReturnRequestIds = [...latestActivityByRequestId.entries()]
+        .filter(([, activity]) =>
+          ["courier_mark_not_delivered", "courier_return_mark_received"].includes(
+            String(activity?.action || "").trim(),
+          ),
+        )
+        .map(([activityRequestId]) => activityRequestId);
+      const confirmedBranchReturnIds = formData
+        .getAll("confirmedBranchReturnIds")
+        .map((value) => String(value || "").trim())
+        .filter(Boolean);
+      if (
+        branchReturnRequestIds.some(
+          (activityRequestId) => !confirmedBranchReturnIds.includes(activityRequestId),
+        )
+      ) {
+        return {
+          ok: false,
+          error: "Confirma que entregaste en sucursal todos los paquetes que llevas.",
+        };
+      }
       const deliveryRequestIds = requestIds.filter((id) => !id.startsWith("pickup-"));
       const pickupRequestIds = new Set(requestIds.filter((id) => id.startsWith("pickup-")));
       const sessionCandidatesForSnapshot = portalShop.sessionCandidates || portalShop.allSessionCandidates || [];
@@ -1371,11 +1392,13 @@ export const loader = async ({ request }) => {
           status: "pendiente",
           courierHistoryAt: "",
           sequenceNumber: routeSequenceByRequestId.get(requestId) || 0,
+          currentRouteAction: routeAction || "",
         };
       }
       return {
         ...requestRow,
         sequenceNumber: routeSequenceByRequestId.get(requestId) || 0,
+        currentRouteAction: routeAction || "",
       };
     }
     if (currentRouteRequestIds.has(requestId)) {
@@ -1386,11 +1409,13 @@ export const loader = async ({ request }) => {
           status: "pendiente",
           courierHistoryAt: "",
           sequenceNumber: routeSequenceByRequestId.get(requestId) || 0,
+          currentRouteAction: routeAction || "",
         };
       }
       return {
         ...requestRow,
         sequenceNumber: routeSequenceByRequestId.get(requestId) || 0,
+        currentRouteAction: routeAction || "",
       };
     }
     return null;
@@ -1450,6 +1475,7 @@ export default function RepartidorPublicPortal() {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
   const [failedPickupRequest, setFailedPickupRequest] = useState(null);
+  const [showBranchReturnConfirmation, setShowBranchReturnConfirmation] = useState(false);
   useEffect(() => {
     if (requiresDailyAccess || routeTransferred) return undefined;
     const refreshTransferStatus = () => {
@@ -1690,6 +1716,15 @@ export default function RepartidorPublicPortal() {
       Number(request?.sequenceNumber || 0) || index + 1,
     ]),
   );
+  const branchReturnOrders = effectiveCourierOrders
+    .filter((request) => {
+      const action = String(request?.currentRouteAction || "").trim();
+      return ["courier_mark_not_delivered", "courier_return_mark_received"].includes(action);
+    })
+    .sort(
+      (firstRequest, secondRequest) =>
+        Number(firstRequest.sequenceNumber || 0) - Number(secondRequest.sequenceNumber || 0),
+    );
   const activeOrdersCount = pendingOrders.length + routeOrders.length;
   const dailyOrdersCount = activeOrdersCount + historyOrders.length;
   const routeOrder = routeOrders[0] || null;
@@ -1852,19 +1887,76 @@ export default function RepartidorPublicPortal() {
               </p>
             ) : null}
           </div>
-          <Form
-            method="post"
-            onSubmit={(event) => {
-              if (!window.confirm("¿Estas seguro de finalizar la ruta? Tu codigo actual dejara de funcionar.")) {
-                event.preventDefault();
-              }
-            }}
-          >
-            <input type="hidden" name="intent" value="courier_finish_route" />
-            <input type="hidden" name="shop" value={shop || ""} />
-            <button className={styles.logoutButton} type="submit">Finalizar ruta</button>
-          </Form>
+          {branchReturnOrders.length ? (
+            <button
+              className={styles.logoutButton}
+              type="button"
+              onClick={() => setShowBranchReturnConfirmation(true)}
+            >
+              Finalizar ruta
+            </button>
+          ) : (
+            <Form
+              method="post"
+              onSubmit={(event) => {
+                if (!window.confirm("¿Estas seguro de finalizar la ruta? Tu codigo actual dejara de funcionar.")) {
+                  event.preventDefault();
+                }
+              }}
+            >
+              <input type="hidden" name="intent" value="courier_finish_route" />
+              <input type="hidden" name="shop" value={shop || ""} />
+              <button className={styles.logoutButton} type="submit">Finalizar ruta</button>
+            </Form>
+          )}
         </header>
+
+        {showBranchReturnConfirmation ? (
+          <section className={`${styles.card} ${styles.confirmationCard}`}>
+            <h2 className={styles.cardTitle}>Confirma que entregaste estos pedidos en sucursal</h2>
+            <p className={styles.subtitle}>
+              Marca todos los paquetes que entregaste fisicamente en la sucursal de Cariana.
+            </p>
+            <Form
+              method="post"
+              className={styles.confirmationForm}
+              onSubmit={(event) => {
+                if (!window.confirm("¿Confirmas que entregaste todos estos paquetes y deseas finalizar la ruta?")) {
+                  event.preventDefault();
+                }
+              }}
+            >
+              <input type="hidden" name="intent" value="courier_finish_route" />
+              <input type="hidden" name="shop" value={shop || ""} />
+              <div className={styles.confirmationList}>
+                {branchReturnOrders.map((request, index) => (
+                  <div className={styles.confirmationListItem} key={request.id}>
+                    <input
+                      aria-label={`Confirmar paquete ${request.orderNumber}`}
+                      type="checkbox"
+                      name="confirmedBranchReturnIds"
+                      value={request.id}
+                    />
+                    <span className={styles.orderSequenceBadge}>{index + 1}</span>
+                    <strong>
+                      {isReturnOrder(request) ? "Devolucion" : "Entrega"} #{request.orderNumber}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+              <div className={styles.actionRow}>
+                <button className={styles.accessButton} type="submit">Finalizar ruta</button>
+                <button
+                  className={styles.actionButton}
+                  type="button"
+                  onClick={() => setShowBranchReturnConfirmation(false)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </Form>
+          </section>
+        ) : null}
 
         <section className={styles.card}>
           {actionData?.ok === false && actionData?.error ? (
