@@ -1961,13 +1961,16 @@ export default function RepartidorPublicPortal() {
                     .getAll("confirmedBranchReturnIds")
                     .map((value) => String(value || "").trim()),
                 );
-                const missingRequest = branchReturnOrders.find(
+                const missingRequests = branchReturnOrders.filter(
                   (request) => !confirmedRequestIds.has(String(request.id || "").trim()),
                 );
-                if (missingRequest) {
+                if (missingRequests.length) {
                   event.preventDefault();
+                  const missingOrderNumbers = missingRequests
+                    .map((request) => `#${request.orderNumber}`)
+                    .join(", ");
                   setBranchReturnConfirmationError(
-                    `Te faltó confirmar el pedido #${missingRequest.orderNumber}. Confirma que lo tengas físicamente para continuar.`,
+                    `Te faltó confirmar ${missingRequests.length === 1 ? "el pedido" : "los pedidos"} ${missingOrderNumbers}. Confirma que los tengas físicamente para continuar.`,
                   );
                   return;
                 }
