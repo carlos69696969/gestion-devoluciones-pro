@@ -39,6 +39,7 @@ const RETURN_EVENT_BY_INTENT = {
   courier_return_mark_received: "return_picked_up",
   courier_return_pickup_attempt_failed: "return_pickup_scheduled",
   courier_return_reject_after_failed_pickups: "return_rejected",
+  courier_route_return_reprogrammed: "return_pickup_reprogrammed",
 };
 
 function normalizeShop(value) {
@@ -214,6 +215,35 @@ function formatPickupDateForMessage(rawValue) {
     year: "numeric",
     timeZone: "UTC",
   }).format(date);
+}
+
+function getTomorrowCourierDate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const date = new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)));
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatCourierNotificationDate(rawValue) {
+  const match = String(rawValue || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return String(rawValue || "").trim();
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const month = String(values.month || "").trim();
+  const capitalizedMonth = month ? `${month.charAt(0).toUpperCase()}${month.slice(1)}` : "";
+  return `${values.day}/${capitalizedMonth}/${values.year}`;
 }
 
 function nextCourierDeliveryDate(rawValue) {
@@ -942,7 +972,14 @@ async function addShopifyOrderTag({ shopDomain, shopifyOrderId, tag }) {
     addTags: [tag],
   });
 }
-async function emitCourierDeliveryManualStatusNotification({ shopDomain, requestRow, status, routeStep = null }) {
+async function emitCourierDeliveryManualStatusNotification({
+  shopDomain,
+  requestRow,
+  status,
+  routeStep = null,
+  rescheduledDate = "",
+  rescheduledDateLabel = "",
+}) {
   if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
     return { ok: false, error: "No se pudo preparar la notificacion." };
   }
@@ -996,6 +1033,8 @@ async function emitCourierDeliveryManualStatusNotification({ shopDomain, request
           attemptCount,
           branchAddress: branchDetails.branchAddress || null,
           branchHours: branchDetails.branchHours || null,
+          rescheduledDate: rescheduledDate || null,
+          rescheduledDateLabel: rescheduledDateLabel || null,
           routeStep,
         }),
       });
@@ -1294,6 +1333,74 @@ export async function markCourierOrderForRetry({
     nextStatus,
     attemptCount: currentAttempt,
   };
+}
+
+export async function reprogramCourierDeliveryForNextRoute({
+  shopDomain,
+  requestId,
+  orderNumber,
+  customerName,
+  customerEmail,
+  customerPhone,
+  currentAttemptCount,
+  rescheduledDate = getTomorrowCourierDate(),
+}) {
+  const orderGid = String(requestId || "").trim();
+  if (!shopDomain || !orderGid) {
+    return { ok: false, error: "Accion no valida." };
+  }
+
+  const attemptCount = normalizeDeliveryAttemptCount(currentAttemptCount, 0);
+  const rescheduledDateLabel = formatCourierNotificationDate(rescheduledDate);
+  const requestRow = {
+    shop: shopDomain,
+    shopifyOrderId: orderGid,
+    orderNumber: String(orderNumber || "").trim() || orderGid.replace(/^gid:\/\/shopify\/Order\//, ""),
+    customerName: String(customerName || "Cliente").trim(),
+    customerEmail: String(customerEmail || "").trim(),
+    customerPhone: String(customerPhone || "-").trim() || "-",
+    status: "reintento_pendiente",
+    attemptCount,
+  };
+
+  try {
+    await replaceCourierOrderStatusTag({
+      shopDomain,
+      shopifyOrderId: orderGid,
+      statusTag: "reintentar entrega",
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || error || "No se pudo reprogramar la entrega en Shopify."),
+    };
+  }
+
+  await recordCourierDeliveryEvent({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber: requestRow.orderNumber,
+    status: "reintento_pendiente",
+    attemptCount,
+    note: `scheduled_date:${rescheduledDate}`,
+  });
+
+  const notificationResult = await emitCourierDeliveryManualStatusNotification({
+    shopDomain,
+    requestRow,
+    status: "order_rescheduled",
+    rescheduledDate,
+    rescheduledDateLabel,
+  });
+  if (!notificationResult?.ok) {
+    console.error("Failed to send route delivery reschedule notification", {
+      shopDomain,
+      orderNumber: requestRow.orderNumber,
+      error: notificationResult?.error || "No se pudo enviar la notificacion.",
+    });
+  }
+
+  return { ok: true, requestRow, nextStatus: "reintento_pendiente", attemptCount, rescheduledDate };
 }
 
 export async function markCourierOrderReadyForBranchPickup({ shopDomain, requestId, orderNumber = "" }) {
@@ -1673,6 +1780,48 @@ export async function markCourierReturnForRetry({ requestId }) {
     requestRow,
     nextStatus: "reintento_pendiente",
     attemptCount: getReturnFailedAttemptCount(requestRow.rejectionReason),
+  };
+}
+
+export async function reprogramCourierReturnForNextRoute({
+  requestId,
+  rescheduledDate = getTomorrowCourierDate(),
+}) {
+  const lookup = await getCourierReturnRequestForAction(requestId);
+  if (!lookup.ok) return lookup;
+
+  const requestRow = lookup.requestRow;
+  const rescheduledDateLabel = formatCourierNotificationDate(rescheduledDate);
+  const orderNumber = String(requestRow.orderNumber || "").replace(/^#/, "").trim() || "****";
+  const message =
+    `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, tu devolución ha sido reprogramado para mañana (fecha) ${rescheduledDateLabel}.\n` +
+    "Agradecemos tu comprensión y por confiar  siempre en Cariana . ✨";
+
+  await prisma.returnRequest.update({
+    where: { id: requestRow.id },
+    data: {
+      status: "reintento_pendiente",
+      pickupDate: rescheduledDate,
+      rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+        kind: "courier_route_reprogrammed",
+        reason: `Reprogramado para el ${rescheduledDateLabel}.`,
+      }),
+    },
+  });
+
+  await emitCourierReturnActionNotification({
+    shopDomain: requestRow.shop,
+    requestRow,
+    intent: "courier_route_return_reprogrammed",
+    note: message,
+  });
+
+  return {
+    ok: true,
+    requestRow,
+    nextStatus: "reintento_pendiente",
+    attemptCount: Math.max(0, getReturnFailedAttemptCount(requestRow.rejectionReason)),
+    rescheduledDate,
   };
 }
 

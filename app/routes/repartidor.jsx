@@ -64,7 +64,7 @@ export const headers = () => ({
 function getCourierStatusLabel(status) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "pendiente") return "pendiente";
-  if (normalized === "reintento_pendiente") return "pendiente";
+  if (normalized === "reintento_pendiente") return "reprogramado";
   return getCourierRouteStatusLabel(status);
 }
 
@@ -418,6 +418,8 @@ export const action = async ({ request }) => {
     markCourierReturnForRetry,
     markCourierReturnPickupAttemptFailed,
     rejectCourierReturnAfterFailedPickups,
+    reprogramCourierDeliveryForNextRoute,
+    reprogramCourierReturnForNextRoute,
     resolveCourierPortalShop,
   } = await import("../utils/courier.server");
   try {
@@ -524,6 +526,65 @@ export const action = async ({ request }) => {
       const fetchedOrderById = new Map(
         [...deliveryOrders, ...pickupOrders].map((order) => [String(order.id || ""), order]),
       );
+      const reprogrammedByRequestId = new Map();
+      const reprogrammedActivityRows = [];
+      for (const id of requestIds) {
+        const fetchedOrder = fetchedOrderById.get(id);
+        const activity = latestActivityByRequestId.get(id);
+        const currentStatus = String(
+          fetchedOrder?.status || courierStatusFromSnapshotAction(activity?.action, "pendiente"),
+        )
+          .trim()
+          .toLowerCase();
+        if (isCourierHistoryStatus(currentStatus)) continue;
+
+        const result = id.startsWith("pickup-")
+          ? await reprogramCourierReturnForNextRoute({ requestId: id })
+          : await reprogramCourierDeliveryForNextRoute({
+              shopDomain: shop,
+              requestId: id,
+              orderNumber: fetchedOrder?.orderNumber || activity?.orderNumber || "",
+              customerName: fetchedOrder?.customerName || "",
+              customerEmail: fetchedOrder?.customerEmail || "",
+              customerPhone: fetchedOrder?.customerPhone || "",
+              currentAttemptCount: fetchedOrder?.attemptCount || 0,
+            });
+
+        if (!result?.ok) {
+          console.error("Failed to reprogram remaining courier order on route finish", {
+            shop,
+            requestId: id,
+            error: result?.error || "unknown",
+          });
+          continue;
+        }
+
+        reprogrammedByRequestId.set(id, {
+          status: result.nextStatus || "reintento_pendiente",
+          attemptCount: result.attemptCount || fetchedOrder?.attemptCount || 0,
+          pickupDate: result.rescheduledDate || fetchedOrder?.pickupDate || "",
+        });
+        reprogrammedActivityRows.push({
+          shop,
+          courierId: Number(dailyAccess.courierId),
+          courierName: String(dailyAccess.courierName || ""),
+          requestId: id,
+          orderNumber: String(fetchedOrder?.orderNumber || activity?.orderNumber || "").trim() || null,
+          action: id.startsWith("pickup-")
+            ? "courier_route_return_reprogrammed"
+            : "courier_route_delivery_reprogrammed",
+          routeId: String(dailyAccess.routeId || "") || null,
+        });
+      }
+      for (const [id, reprogrammedOrder] of reprogrammedByRequestId.entries()) {
+        const fetchedOrder = fetchedOrderById.get(id);
+        if (fetchedOrder) {
+          fetchedOrderById.set(id, {
+            ...fetchedOrder,
+            ...reprogrammedOrder,
+          });
+        }
+      }
       const snapshotTransferredToName = String(dailyAccess.transferredToName || "").trim();
       const snapshotTransferredAtMs = new Date(dailyAccess.transferredAt || 0).getTime();
       const markSnapshotEventTransfer = (event) => {
@@ -622,6 +683,9 @@ export const action = async ({ request }) => {
       ];
       if (snapshotData && !existingSnapshot) {
         transactionSteps.push(prisma.courierRouteSnapshot.create({ data: snapshotData }));
+      }
+      if (reprogrammedActivityRows.length) {
+        transactionSteps.push(prisma.courierActivity.createMany({ data: reprogrammedActivityRows }));
       }
       await prisma.$transaction(transactionSteps);
       url.searchParams.set("shop", shop);
