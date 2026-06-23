@@ -896,6 +896,12 @@
   color: #b45309;
 }
 
+.courierBadgeStatusTimeReprogrammed {
+  background: #fff1f1;
+  border-color: #d9364f;
+  color: #c5283d;
+}
+
 .courierOrdersHeader {
   display: flex;
   justify-content: flex-end;

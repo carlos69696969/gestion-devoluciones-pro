@@ -863,6 +863,12 @@ function returnCourierHistoryLabel(entry, finalAttempt) {
   const kind = String(entry?.kind || "").trim().toLowerCase();
   if (kind === STATUS_APPROVED_KIND) return "";
   if (kind.startsWith("courier_retry_") || kind === "rejected_after_attempts") return "";
+  if (kind === "courier_route_time_reprogrammed") {
+    const dateLabel = String(entry?.reason || "").match(/Reprogramado para el ([^.\n]+)/i)?.[1] || "";
+    return dateLabel
+      ? `Reprogramada por falta de tiempo para el ${dateLabel}`
+      : "Reprogramada por falta de tiempo";
+  }
   const failedAttemptMatch = kind.match(/^attempt_failed_(\d)$/);
   if (failedAttemptMatch) return `${courierAttemptLabel(failedAttemptMatch[1])} no entregado`;
   if (kind === STATUS_RECEIVED_KIND) return `${courierAttemptLabel(finalAttempt)} entregado`;
@@ -1136,6 +1142,21 @@ function buildAdminCourierPresentation(request) {
   let scheduledDate = null;
 
   for (const event of events) {
+    const routeTimeIsoDate = String(event.note || "").match(/route_time_rescheduled:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
+    if (routeTimeIsoDate || String(event.label || "").trim().toLowerCase() === "reprogramada por falta de tiempo") {
+      const reprogrammedFor = routeTimeIsoDate ? new Date(`${routeTimeIsoDate}T12:00:00Z`) : null;
+      const reprogrammedDateLabel = reprogrammedFor ? formatCourierRescheduledDate(reprogrammedFor) : "";
+      if (reprogrammedFor) scheduledDate = reprogrammedFor;
+      displayEvents.push({
+        ...event,
+        label: reprogrammedDateLabel
+          ? `Reprogramada por falta de tiempo para el ${reprogrammedDateLabel}`
+          : "Reprogramada por falta de tiempo",
+        routeTimeRescheduled: true,
+      });
+      continue;
+    }
+
     displayEvents.push(event);
     if (!/\bno (?:entregado|recibido)\b/i.test(String(event.label || ""))) continue;
 
@@ -3967,12 +3988,17 @@ function CourierOrderCard({
       : visibleStatus;
   const retryAttemptNumber =
     isReturnCourierLabel(request.courierLabel) ? returnRetryAttemptNumber(request, normalizedVisibleStatus) : 0;
-  const showReturnRetryAttemptBadge =
-    adminCourierView && retryAttemptNumber >= 2 && !showFinalAttemptBadge;
+  const showReturnRetryAttemptBadge = false;
   const adminCourierPresentation = adminCourierView
     ? buildAdminCourierPresentation(request)
     : { events: request.historyEvents || [], scheduledDate: null };
   const displayHistoryEvents = adminCourierPresentation.events;
+  const isRouteTimeReprogrammed = displayHistoryEvents.some(
+    (event) =>
+      Boolean(event?.routeTimeRescheduled) ||
+      /falta de tiempo/i.test(String(event?.label || "")) ||
+      /route_time_rescheduled/i.test(String(event?.note || "")),
+  );
   const displayHistoryItems = buildCourierHistoryDisplayItems(displayHistoryEvents, request);
   const displayedScheduledDate =
     request.courierLabel === "Devolución"
@@ -3984,7 +4010,9 @@ function CourierOrderCard({
       : styles.courierBadgeStatusFailed
     : styles.courierBadgeAttempt;
   const statusBadgeClass = isAdminReprogrammed
-    ? styles.courierBadgeStatusReprogrammed
+    ? isRouteTimeReprogrammed
+      ? styles.courierBadgeStatusTimeReprogrammed
+      : styles.courierBadgeStatusReprogrammed
     : ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
       ? styles.courierBadgeStatusFailed
     : ["entregado", "recibido", "recibida"].includes(normalizedVisibleStatus)

@@ -256,6 +256,11 @@ function nextCourierDeliveryDate(rawValue) {
   return date.toISOString().slice(0, 10);
 }
 
+function nextCourierRouteRescheduleDate(rawValue) {
+  const fromCurrentSchedule = nextCourierDeliveryDate(rawValue);
+  return fromCurrentSchedule || getTomorrowCourierDate();
+}
+
 function courierDeliveryDate(rawValue) {
   const match = String(rawValue || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (match) return `${match[1]}-${match[2]}-${match[3]}`;
@@ -1343,7 +1348,8 @@ export async function reprogramCourierDeliveryForNextRoute({
   customerEmail,
   customerPhone,
   currentAttemptCount,
-  rescheduledDate = getTomorrowCourierDate(),
+  currentScheduledDate = "",
+  rescheduledDate = nextCourierRouteRescheduleDate(currentScheduledDate),
 }) {
   const orderGid = String(requestId || "").trim();
   if (!shopDomain || !orderGid) {
@@ -1382,7 +1388,7 @@ export async function reprogramCourierDeliveryForNextRoute({
     orderNumber: requestRow.orderNumber,
     status: "reintento_pendiente",
     attemptCount,
-    note: `scheduled_date:${rescheduledDate}`,
+    note: `route_time_rescheduled:${rescheduledDate}`,
   });
 
   const notificationResult = await emitCourierDeliveryManualStatusNotification({
@@ -1785,13 +1791,14 @@ export async function markCourierReturnForRetry({ requestId }) {
 
 export async function reprogramCourierReturnForNextRoute({
   requestId,
-  rescheduledDate = getTomorrowCourierDate(),
+  rescheduledDate = "",
 }) {
   const lookup = await getCourierReturnRequestForAction(requestId);
   if (!lookup.ok) return lookup;
 
   const requestRow = lookup.requestRow;
-  const rescheduledDateLabel = formatCourierNotificationDate(rescheduledDate);
+  const nextRescheduledDate = rescheduledDate || nextCourierRouteRescheduleDate(requestRow.pickupDate);
+  const rescheduledDateLabel = formatCourierNotificationDate(nextRescheduledDate);
   const orderNumber = String(requestRow.orderNumber || "").replace(/^#/, "").trim() || "****";
   const message =
     `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, tu devolución ha sido reprogramado para mañana (fecha) ${rescheduledDateLabel}.\n` +
@@ -1801,9 +1808,9 @@ export async function reprogramCourierReturnForNextRoute({
     where: { id: requestRow.id },
     data: {
       status: "reintento_pendiente",
-      pickupDate: rescheduledDate,
+      pickupDate: nextRescheduledDate,
       rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
-        kind: "courier_route_reprogrammed",
+        kind: "courier_route_time_reprogrammed",
         reason: `Reprogramado para el ${rescheduledDateLabel}.`,
       }),
     },
@@ -1821,7 +1828,7 @@ export async function reprogramCourierReturnForNextRoute({
     requestRow,
     nextStatus: "reintento_pendiente",
     attemptCount: Math.max(0, getReturnFailedAttemptCount(requestRow.rejectionReason)),
-    rescheduledDate,
+    rescheduledDate: nextRescheduledDate,
   };
 }
 

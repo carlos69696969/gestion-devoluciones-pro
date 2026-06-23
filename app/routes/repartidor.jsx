@@ -560,6 +560,7 @@ export const action = async ({ request }) => {
               customerEmail: fetchedOrder?.customerEmail || "",
               customerPhone: fetchedOrder?.customerPhone || "",
               currentAttemptCount: fetchedOrder?.attemptCount || 0,
+              currentScheduledDate: fetchedOrder?.pickupDate || "",
             });
 
         if (!result?.ok) {
