@@ -728,6 +728,7 @@ export const action = async ({ request }) => {
             ? String(resumedTransfer.action || "").replace("courier_route_transferred_from:", "")
             : "",
           transferredToName: resumedTransfer ? String(resumedTransfer.courierName || "").trim() : "",
+          transferredAt: resumedTransfer?.createdAt || null,
           deliveryConfirmationComplete: false,
           returnConfirmationComplete: !resumedTransfer,
         }),
@@ -1110,6 +1111,7 @@ export const loader = async ({ request }) => {
       ])
       .filter(([requestId]) => requestId),
   );
+  const currentRouteActivityByRequestId = new Map();
   const currentRoutePickupRequestIds = Array.from(currentRouteRequestIds).filter((requestId) =>
     requestId.startsWith("pickup-"),
   );
@@ -1118,6 +1120,7 @@ export const loader = async ({ request }) => {
     const activityAction = String(activity.action || "").trim();
     if (!activityRequestId || activityAction === "courier_route_order_assigned") continue;
     currentRouteActionByRequestId.set(activityRequestId, activityAction);
+    currentRouteActivityByRequestId.set(activityRequestId, activity);
   }
 
   const sessionCandidatesByShop = new Map();
@@ -1426,9 +1429,23 @@ export const loader = async ({ request }) => {
     ? routeCourierOrders.filter((requestRow) => {
         const requestId = String(requestRow?.id || "").trim();
         const courierLabel = String(requestRow?.courierLabel || "").trim().toLowerCase();
+        const receivedActivity = currentRouteActivityByRequestId.get(requestId);
+        const transferActivity =
+          currentRouteActivities.find((activity) =>
+            String(activity?.action || "").startsWith("courier_route_transferred_from:"),
+          ) || null;
+        const transferredAtMs = new Date(
+          dailyAccess.transferredAt || transferActivity?.createdAt || 0,
+        ).getTime();
+        const receivedAtMs = new Date(receivedActivity?.createdAt || 0).getTime();
         return (
           courierLabel === "devolucion" &&
-          currentRouteActionByRequestId.get(requestId) === "courier_return_mark_received"
+          currentRouteActionByRequestId.get(requestId) === "courier_return_mark_received" &&
+          Number.isFinite(transferredAtMs) &&
+          transferredAtMs > 0 &&
+          Number.isFinite(receivedAtMs) &&
+          receivedAtMs > 0 &&
+          receivedAtMs < transferredAtMs
         );
       })
     : [];
