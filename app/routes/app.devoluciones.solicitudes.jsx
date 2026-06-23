@@ -941,12 +941,14 @@ function buildCourierHistoryDisplayItems(events, request) {
       shownAttemptKeys.add(attempt);
       const heading = courierAttemptHeading(attempt);
       const courierName = String(event?.courierName || request?.courierName || request?.assignedCourierName || "").trim();
-      const transferredCourierName = String(request?.transferredCourierName || "").trim();
+      const transferredCourierName = String(
+        event?.transferredCourierName || request?.transferredCourierName || "",
+      ).trim();
       const routeTransferredAtMs = parseEventMs(request?.routeTransferredAt);
       const wasHandledAfterTransfer =
         transferredCourierName &&
-        routeTransferredAtMs &&
-        parseEventMs(event?.at) >= routeTransferredAtMs;
+        (Boolean(event?.transferredCourierName) ||
+          (routeTransferredAtMs && parseEventMs(event?.at) >= routeTransferredAtMs));
       items.push({
         id: `attempt-heading-${attempt}-${event.id}`,
         type: "heading",

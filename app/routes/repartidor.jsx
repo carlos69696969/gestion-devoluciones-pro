@@ -524,11 +524,29 @@ export const action = async ({ request }) => {
       const fetchedOrderById = new Map(
         [...deliveryOrders, ...pickupOrders].map((order) => [String(order.id || ""), order]),
       );
+      const snapshotTransferredToName = String(dailyAccess.transferredToName || "").trim();
+      const snapshotTransferredAtMs = new Date(dailyAccess.transferredAt || 0).getTime();
+      const markSnapshotEventTransfer = (event) => {
+        const eventMs = new Date(event?.at || 0).getTime();
+        if (
+          !snapshotTransferredToName ||
+          !Number.isFinite(snapshotTransferredAtMs) ||
+          snapshotTransferredAtMs <= 0 ||
+          !Number.isFinite(eventMs) ||
+          eventMs < snapshotTransferredAtMs
+        ) {
+          return event;
+        }
+        return {
+          ...event,
+          transferredCourierName: snapshotTransferredToName,
+        };
+      };
       const snapshotOrders = requestIds
         .map((id, index) => {
           const activity = latestActivityByRequestId.get(id);
           const fetchedOrder = fetchedOrderById.get(id) || buildSnapshotFallbackOrder(id, activity, index);
-          const historyEvents = id.startsWith("pickup-")
+          const historyEvents = (id.startsWith("pickup-")
             ? buildPickupSnapshotHistoryEvents({
                 ...fetchedOrder,
                 courierName: String(dailyAccess.courierName || ""),
@@ -538,7 +556,7 @@ export const action = async ({ request }) => {
                 label: courierSnapshotEventLabel(event),
                 at: event.createdAt,
                 courierName: String(dailyAccess.courierName || ""),
-              }));
+              }))).map(markSnapshotEventTransfer);
           return {
             ...fetchedOrder,
             id,
