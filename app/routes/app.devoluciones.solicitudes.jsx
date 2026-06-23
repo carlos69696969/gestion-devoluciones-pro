@@ -905,7 +905,7 @@ function courierActivityAttempt(action) {
   return 0;
 }
 
-function activityCourierNameForEvent(event, activities = [], fallbackCourierName = "") {
+function activityForCourierHistoryEvent(event, activities = []) {
   const eventAttempt = courierAttemptFromHistoryLabel(event?.label);
   const eventMs = parseEventMs(event?.at);
   const sameAttemptActivities = activities.filter((activity) => {
@@ -918,10 +918,27 @@ function activityCourierNameForEvent(event, activities = [], fallbackCourierName
       Math.abs(parseEventMs(firstActivity.createdAt) - eventMs) -
       Math.abs(parseEventMs(secondActivity.createdAt) - eventMs),
   );
-  return String(sortedCandidates[0]?.courierName || fallbackCourierName || "").trim();
+  return sortedCandidates[0] || null;
 }
 
-function enrichCourierHistoryEvents({ events, request, activitiesByRequestId }) {
+function activityCourierNameForEvent(event, activities = [], fallbackCourierName = "") {
+  const activity = activityForCourierHistoryEvent(event, activities);
+  return String(activity?.courierName || fallbackCourierName || "").trim();
+}
+
+function transferredCourierNameForEvent(event, activities = [], transferActivityByRouteId) {
+  const activity = activityForCourierHistoryEvent(event, activities);
+  const routeId = String(activity?.routeId || "").trim();
+  if (!routeId) return "";
+  const transferActivity = transferActivityByRouteId?.get(routeId);
+  if (!transferActivity) return "";
+  const activityMs = parseEventMs(activity?.createdAt);
+  const transferMs = parseEventMs(transferActivity?.createdAt);
+  if (!activityMs || !transferMs || activityMs < transferMs) return "";
+  return String(transferActivity?.courierName || "").trim();
+}
+
+function enrichCourierHistoryEvents({ events, request, activitiesByRequestId, transferActivityByRouteId }) {
   const requestId = String(request?.id || "").trim();
   const fallbackCourierName = String(request?.courierName || request?.assignedCourierName || "").trim();
   const activities = activitiesByRequestId?.get(requestId) || [];
@@ -929,6 +946,8 @@ function enrichCourierHistoryEvents({ events, request, activitiesByRequestId }) 
     ...event,
     courierName: String(event?.courierName || "").trim() ||
       activityCourierNameForEvent(event, activities, fallbackCourierName),
+    transferredCourierName: String(event?.transferredCourierName || "").trim() ||
+      transferredCourierNameForEvent(event, activities, transferActivityByRouteId),
   }));
 }
 
@@ -1783,6 +1802,7 @@ export const loader = async ({ request }) => {
           events: historyEvents,
           request: requestWithAttemptCount,
           activitiesByRequestId: courierActivitiesByRequestId,
+          transferActivityByRouteId,
         }),
         ...(handledAfterTransfer
           ? {
@@ -3339,6 +3359,9 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           new Date(firstActivity.createdAt || "").getTime() -
           new Date(secondActivity.createdAt || "").getTime(),
       );
+    const transferActivityByRouteIdForHistory = new Map(
+      transferActivities.map((activity) => [String(activity.routeId || "").trim(), activity]),
+    );
     const transferActivityForRoute = (routeId, dateKey) =>
       transferActivities.find((activity) => {
         if (routeId && String(activity.routeId || "") !== String(routeId)) return false;
@@ -3454,6 +3477,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                 events: historyEvents,
                 request: orderWithCourierName,
                 activitiesByRequestId,
+                transferActivityByRouteId: transferActivityByRouteIdForHistory,
               }),
               sequenceNumber: Number(order?.sequenceNumber || index + 1),
             };
