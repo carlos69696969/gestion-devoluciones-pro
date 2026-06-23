@@ -49,6 +49,7 @@ const METHOD_QUEUE_STATUSES = new Set([
   "en_ruta_1",
   "en_ruta_2",
   "en_ruta_3",
+  "reintento_pendiente",
   "intento_fallido_1",
   "intento_fallido_2",
   "no_recibido",

@@ -382,7 +382,12 @@ function courierStatusFromSnapshotAction(action, fallbackStatus = "pendiente") {
     return "entregado";
   }
   if (normalizedAction === "courier_mark_not_delivered") return "no_entregado";
-  if (normalizedAction === "courier_retry_delivery" || normalizedAction === "courier_return_for_retry") {
+  if (
+    normalizedAction === "courier_retry_delivery" ||
+    normalizedAction === "courier_return_for_retry" ||
+    normalizedAction === "courier_route_delivery_reprogrammed" ||
+    normalizedAction === "courier_route_return_reprogrammed"
+  ) {
     return "reintento_pendiente";
   }
   return fallbackStatus || "pendiente";
@@ -467,27 +472,10 @@ export const action = async ({ request }) => {
       for (const activity of orderActivities) {
         latestActivityByRequestId.set(String(activity.requestId || "").trim(), activity);
       }
-      const branchReturnRequestIds = [...latestActivityByRequestId.entries()]
-        .filter(([, activity]) =>
-          ["courier_mark_not_delivered", "courier_return_mark_received"].includes(
-            String(activity?.action || "").trim(),
-          ),
-        )
-        .map(([activityRequestId]) => activityRequestId);
       const confirmedBranchReturnIds = formData
         .getAll("confirmedBranchReturnIds")
         .map((value) => String(value || "").trim())
         .filter(Boolean);
-      if (
-        branchReturnRequestIds.some(
-          (activityRequestId) => !confirmedBranchReturnIds.includes(activityRequestId),
-        )
-      ) {
-        return {
-          ok: false,
-          error: "Confirma que entregaste en sucursal todos los paquetes que llevas.",
-        };
-      }
       const deliveryRequestIds = requestIds.filter((id) => !id.startsWith("pickup-"));
       const pickupRequestIds = new Set(requestIds.filter((id) => id.startsWith("pickup-")));
       const sessionCandidatesForSnapshot = portalShop.sessionCandidates || portalShop.allSessionCandidates || [];
@@ -526,7 +514,31 @@ export const action = async ({ request }) => {
       const fetchedOrderById = new Map(
         [...deliveryOrders, ...pickupOrders].map((order) => [String(order.id || ""), order]),
       );
+      const branchReturnRequestIds = requestIds.filter((id) => {
+        const activity = latestActivityByRequestId.get(id);
+        const action = String(activity?.action || "").trim();
+        if (action === "courier_mark_not_delivered" || action === "courier_return_mark_received") return true;
+        if (id.startsWith("pickup-")) return false;
+        const fetchedOrder = fetchedOrderById.get(id);
+        const currentStatus = String(
+          fetchedOrder?.status || courierStatusFromSnapshotAction(action, "pendiente"),
+        )
+          .trim()
+          .toLowerCase();
+        return !isCourierHistoryStatus(currentStatus);
+      });
+      if (
+        branchReturnRequestIds.some(
+          (activityRequestId) => !confirmedBranchReturnIds.includes(activityRequestId),
+        )
+      ) {
+        return {
+          ok: false,
+          error: "Confirma que entregaste en sucursal todos los paquetes que llevas.",
+        };
+      }
       const reprogrammedByRequestId = new Map();
+      const reprogrammedActivityByRequestId = new Map();
       const reprogrammedActivityRows = [];
       for (const id of requestIds) {
         const fetchedOrder = fetchedOrderById.get(id);
@@ -564,7 +576,7 @@ export const action = async ({ request }) => {
           attemptCount: result.attemptCount || fetchedOrder?.attemptCount || 0,
           pickupDate: result.rescheduledDate || fetchedOrder?.pickupDate || "",
         });
-        reprogrammedActivityRows.push({
+        const reprogrammedActivity = {
           shop,
           courierId: Number(dailyAccess.courierId),
           courierName: String(dailyAccess.courierName || ""),
@@ -574,7 +586,10 @@ export const action = async ({ request }) => {
             ? "courier_route_return_reprogrammed"
             : "courier_route_delivery_reprogrammed",
           routeId: String(dailyAccess.routeId || "") || null,
-        });
+          createdAt: finishedAt,
+        };
+        reprogrammedActivityByRequestId.set(id, reprogrammedActivity);
+        reprogrammedActivityRows.push(reprogrammedActivity);
       }
       for (const [id, reprogrammedOrder] of reprogrammedByRequestId.entries()) {
         const fetchedOrder = fetchedOrderById.get(id);
@@ -605,7 +620,7 @@ export const action = async ({ request }) => {
       };
       const snapshotOrders = requestIds
         .map((id, index) => {
-          const activity = latestActivityByRequestId.get(id);
+          const activity = reprogrammedActivityByRequestId.get(id) || latestActivityByRequestId.get(id);
           const fetchedOrder = fetchedOrderById.get(id) || buildSnapshotFallbackOrder(id, activity, index);
           const historyEvents = (id.startsWith("pickup-")
             ? buildPickupSnapshotHistoryEvents({
@@ -1821,7 +1836,8 @@ export default function RepartidorPublicPortal() {
   const branchReturnOrders = effectiveCourierOrders
     .filter((request) => {
       const action = String(request?.currentRouteAction || "").trim();
-      return ["courier_mark_not_delivered", "courier_return_mark_received"].includes(action);
+      if (["courier_mark_not_delivered", "courier_return_mark_received"].includes(action)) return true;
+      return !isReturnOrder(request) && !isCourierHistoryStatus(request?.status);
     })
     .sort(
       (firstRequest, secondRequest) =>
