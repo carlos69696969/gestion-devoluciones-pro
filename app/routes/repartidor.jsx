@@ -1495,6 +1495,7 @@ export default function RepartidorPublicPortal() {
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
   const [failedPickupRequest, setFailedPickupRequest] = useState(null);
   const [showBranchReturnConfirmation, setShowBranchReturnConfirmation] = useState(false);
+  const [branchReturnConfirmationError, setBranchReturnConfirmationError] = useState("");
   useEffect(() => {
     if (requiresDailyAccess || routeTransferred) return undefined;
     const refreshTransferStatus = () => {
@@ -1915,7 +1916,10 @@ export default function RepartidorPublicPortal() {
             <button
               className={styles.logoutButton}
               type="button"
-              onClick={() => setShowBranchReturnConfirmation(true)}
+              onClick={() => {
+                setBranchReturnConfirmationError("");
+                setShowBranchReturnConfirmation(true);
+              }}
             >
               Finalizar ruta
             </button>
@@ -1942,10 +1946,32 @@ export default function RepartidorPublicPortal() {
             <p className={styles.subtitle}>
               Marca todos los paquetes que entregaste fisicamente en la sucursal de Cariana.
             </p>
+            {branchReturnConfirmationError || actionData?.error ? (
+              <p className={styles.accessError} role="alert" aria-live="polite">
+                {branchReturnConfirmationError || actionData.error}
+              </p>
+            ) : null}
             <Form
               method="post"
               className={styles.confirmationForm}
               onSubmit={(event) => {
+                const formData = new FormData(event.currentTarget);
+                const confirmedRequestIds = new Set(
+                  formData
+                    .getAll("confirmedBranchReturnIds")
+                    .map((value) => String(value || "").trim()),
+                );
+                const missingRequest = branchReturnOrders.find(
+                  (request) => !confirmedRequestIds.has(String(request.id || "").trim()),
+                );
+                if (missingRequest) {
+                  event.preventDefault();
+                  setBranchReturnConfirmationError(
+                    `Te faltó confirmar el pedido #${missingRequest.orderNumber}. Confirma que lo tengas físicamente para continuar.`,
+                  );
+                  return;
+                }
+                setBranchReturnConfirmationError("");
                 if (!window.confirm("¿Confirmas que entregaste todos estos paquetes y deseas finalizar la ruta?")) {
                   event.preventDefault();
                 }
@@ -1961,6 +1987,7 @@ export default function RepartidorPublicPortal() {
                       type="checkbox"
                       name="confirmedBranchReturnIds"
                       value={request.id}
+                      onChange={() => setBranchReturnConfirmationError("")}
                     />
                     <span className={styles.orderSequenceBadge}>{index + 1}</span>
                     <strong>
@@ -1974,7 +2001,10 @@ export default function RepartidorPublicPortal() {
                 <button
                   className={styles.actionButton}
                   type="button"
-                  onClick={() => setShowBranchReturnConfirmation(false)}
+                  onClick={() => {
+                    setBranchReturnConfirmationError("");
+                    setShowBranchReturnConfirmation(false);
+                  }}
                 >
                   Cancelar
                 </button>
