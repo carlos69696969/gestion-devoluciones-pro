@@ -1827,6 +1827,12 @@ export default function RepartidorPublicPortal() {
         (!isCourierRouteTabStatus(request?.status) && !isCourierHistoryStatus(request?.status)),
     )
     .sort((firstRequest, secondRequest) => Number(firstRequest.sequenceNumber || 0) - Number(secondRequest.sequenceNumber || 0));
+  const isReturnOrder = (request) =>
+    String(request?.courierLabel || "")
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase() === "devolucion";
   const sequenceByOrderId = new Map(
     effectiveCourierOrders.map((request, index) => [
       String(request?.id || ""),
@@ -1864,12 +1870,6 @@ export default function RepartidorPublicPortal() {
       : activeTab === "historial"
         ? "No hay ordenes en historial."
         : "No hay ordenes pendientes por entregar.";
-  const isReturnOrder = (request) =>
-    String(request?.courierLabel || "")
-      .trim()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase() === "devolucion";
   const isRouteActionVisible = (request) => !isCourierRouteStatus(request?.status) && !isCourierHistoryStatus(request?.status);
   const isNotDeliveredStatus = (request) => String(request?.status || "").trim().toLowerCase() === "no_entregado";
   const isPickupReadyStatus = (request) => String(request?.status || "").trim().toLowerCase() === "recoger_en_sucursal";
