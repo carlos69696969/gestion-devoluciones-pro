@@ -970,7 +970,17 @@ function enrichCourierHistoryEvents({ events, request, activitiesByRequestId, tr
 function buildCourierHistoryDisplayItems(events, request) {
   const items = [];
   const shownAttemptKeys = new Set();
+  const shownRouteTimeKeys = new Set();
   for (const event of events || []) {
+    if (event?.routeTimeRescheduled && !shownRouteTimeKeys.has(event.id)) {
+      shownRouteTimeKeys.add(event.id);
+      const courierName = String(event?.courierName || request?.courierName || request?.assignedCourierName || "").trim();
+      items.push({
+        id: `route-time-heading-${event.id}`,
+        type: "heading",
+        label: courierName ? `Reprogramado por repartidor ${courierName}` : "Reprogramado por repartidor",
+      });
+    }
     const attempt = courierAttemptFromHistoryLabel(event?.label);
     if (attempt && !shownAttemptKeys.has(attempt)) {
       shownAttemptKeys.add(attempt);
@@ -1147,12 +1157,20 @@ function formatCourierRescheduledDate(value) {
 
 function buildAdminCourierPresentation(request) {
   const events = request.historyEvents || [];
+  const routeTimeActivities = (request.courierActivities || []).filter((activity) =>
+    ["courier_route_delivery_reprogrammed", "courier_route_return_reprogrammed"].includes(
+      String(activity?.action || "").trim().toLowerCase(),
+    ),
+  );
+  const latestRouteTimeActivity = routeTimeActivities[routeTimeActivities.length - 1] || null;
   const displayEvents = [];
   let scheduledDate = null;
+  let hasRouteTimeEvent = false;
 
   for (const event of events) {
     const routeTimeIsoDate = String(event.note || "").match(/route_time_rescheduled:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
     if (routeTimeIsoDate || String(event.label || "").trim().toLowerCase() === "reprogramada por falta de tiempo") {
+      hasRouteTimeEvent = true;
       const reprogrammedFor = routeTimeIsoDate ? new Date(`${routeTimeIsoDate}T12:00:00Z`) : null;
       const reprogrammedDateLabel = reprogrammedFor ? formatCourierRescheduledDate(reprogrammedFor) : "";
       if (reprogrammedFor) scheduledDate = reprogrammedFor;
@@ -1192,6 +1210,24 @@ function buildAdminCourierPresentation(request) {
       label: `${attemptMatch[1]} intento reprogramado para el ${reprogrammedDateLabel}`,
       at: event.at,
       atMs: parseEventMs(event.at),
+    });
+  }
+
+  if (!hasRouteTimeEvent && latestRouteTimeActivity) {
+    const fallbackDate = request.pickupDate ? new Date(`${request.pickupDate}T12:00:00Z`) : null;
+    const fallbackDateLabel = fallbackDate && Number.isFinite(fallbackDate.getTime())
+      ? formatCourierRescheduledDate(fallbackDate)
+      : "";
+    if (fallbackDateLabel && fallbackDate) scheduledDate = fallbackDate;
+    displayEvents.push({
+      id: `route-time-activity-${latestRouteTimeActivity.id || latestRouteTimeActivity.createdAt}`,
+      label: fallbackDateLabel
+        ? `Reprogramada por falta de tiempo para el ${fallbackDateLabel}`
+        : "Reprogramada por falta de tiempo",
+      at: latestRouteTimeActivity.createdAt,
+      atMs: parseEventMs(latestRouteTimeActivity.createdAt),
+      courierName: String(latestRouteTimeActivity.courierName || "").trim(),
+      routeTimeRescheduled: true,
     });
   }
 
@@ -1829,6 +1865,7 @@ export const loader = async ({ request }) => {
       });
       return {
         ...requestWithAttemptCount,
+        courierActivities: requestActivities,
         historyEvents: enrichCourierHistoryEvents({
           events: historyEvents,
           request: requestWithAttemptCount,
