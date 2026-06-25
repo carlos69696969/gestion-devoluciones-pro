@@ -1090,6 +1090,7 @@ function buildCourierHistoryEvents(request) {
         at: entry.at,
         atMs: parseEventMs(entry.at),
         note: entry.reason || "",
+        routeTimeRescheduled: String(entry?.kind || "").trim().toLowerCase() === "courier_route_time_reprogrammed",
       }))
       .filter((entry) => entry.label && entry.atMs)
       .sort((a, b) => a.atMs - b.atMs);
@@ -1169,16 +1170,30 @@ function buildAdminCourierPresentation(request) {
 
   for (const event of events) {
     const routeTimeIsoDate = String(event.note || "").match(/route_time_rescheduled:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
-    if (routeTimeIsoDate || String(event.label || "").trim().toLowerCase() === "reprogramada por falta de tiempo") {
+    const isRouteTimeEvent =
+      Boolean(event?.routeTimeRescheduled) ||
+      Boolean(routeTimeIsoDate) ||
+      /reprogramad[ao] por falta de tiempo/i.test(String(event.label || ""));
+    if (isRouteTimeEvent) {
       hasRouteTimeEvent = true;
-      const reprogrammedFor = routeTimeIsoDate ? new Date(`${routeTimeIsoDate}T12:00:00Z`) : null;
+      const requestScheduledDate = request.courierLabel === "Entrega" && request.pickupDate
+        ? new Date(`${request.pickupDate}T12:00:00Z`)
+        : null;
+      const noteDate = routeTimeIsoDate ? new Date(`${routeTimeIsoDate}T12:00:00Z`) : null;
+      const reprogrammedFor =
+        noteDate &&
+        requestScheduledDate &&
+        Number.isFinite(requestScheduledDate.getTime()) &&
+        requestScheduledDate.getTime() > noteDate.getTime()
+          ? requestScheduledDate
+          : noteDate;
       const reprogrammedDateLabel = reprogrammedFor ? formatCourierRescheduledDate(reprogrammedFor) : "";
       if (reprogrammedFor) scheduledDate = reprogrammedFor;
       displayEvents.push({
         ...event,
         label: reprogrammedDateLabel
           ? `Reprogramada por falta de tiempo para el ${reprogrammedDateLabel}`
-          : "Reprogramada por falta de tiempo",
+          : String(event.label || "").trim() || "Reprogramada por falta de tiempo",
         routeTimeRescheduled: true,
       });
       continue;
