@@ -1815,7 +1815,7 @@ export async function reprogramCourierReturnForNextRoute({
   const rescheduledDateLabel = formatCourierNotificationDate(nextRescheduledDate);
   const orderNumber = String(requestRow.orderNumber || "").replace(/^#/, "").trim() || "****";
   const message =
-    `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, tu devolución ha sido reprogramado para mañana (fecha) ${rescheduledDateLabel}.\n` +
+    `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, tu devolución ha sido reprogramado para mañana ${rescheduledDateLabel}.\n` +
     "Agradecemos tu comprensión y por confiar  siempre en Cariana . ✨";
 
   await prisma.returnRequest.update({
