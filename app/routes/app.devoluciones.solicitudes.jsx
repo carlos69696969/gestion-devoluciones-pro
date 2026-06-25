@@ -1102,11 +1102,15 @@ function latestCourierReprogrammingEvent(historyEvents = []) {
 
 function isAttemptReprogrammingEvent(event) {
   const label = String(event?.label || "").trim();
+  const normalizedLabel = label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
   const note = String(event?.note || "").trim();
   return (
-    /\bintento reprogramado\b/i.test(label) &&
+    /\bintento reprogramado\b/i.test(normalizedLabel) &&
     !Boolean(event?.routeTimeRescheduled) &&
-    !/falta de tiempo/i.test(label) &&
+    !/falta de tiempo/i.test(normalizedLabel) &&
     !/route_time_rescheduled/i.test(note)
   );
 }
@@ -4170,8 +4174,10 @@ function CourierOrderCard({
       ? styles.courierBadgeAttemptWarning
       : styles.courierBadgeStatusFailed
     : styles.courierBadgeAttempt;
-  const statusBadgeClass = (isAdminReprogrammed || courierHistoryView)
-    ? isRouteTimeReprogrammed
+  const statusBadgeClass = courierHistoryView && normalizedVisibleStatus === "pendiente"
+    ? styles.courierBadgeStatusPending
+    : (isAdminReprogrammed || courierHistoryView)
+      ? isRouteTimeReprogrammed
       ? styles.courierBadgeStatusTimeReprogrammed
       : styles.courierBadgeStatusReprogrammed
     : ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)

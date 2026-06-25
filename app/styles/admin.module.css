@@ -899,6 +899,12 @@
   color: #005bd3;
 }
 
+.courierBadgeStatusPending {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #64748b;
+}
+
 .courierBadgeStatusReprogrammed {
   background: #fff5e6;
   border-color: #f59e0b;
