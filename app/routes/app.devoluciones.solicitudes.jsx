@@ -824,6 +824,7 @@ function pickupRescheduleAttemptLabel(status) {
 
 function courierEventLabel(status, attempt) {
   const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "reintento_pendiente" && Number(attempt || 0) <= 0) return "Reprogramado";
   const attemptLabel = courierAttemptLabel(attempt);
   if (normalized === "en_ruta" || normalized.startsWith("en_ruta_")) return `${attemptLabel} en ruta`;
   if (normalized === "no_entregado") return `${attemptLabel} no entregado`;
@@ -834,6 +835,14 @@ function courierEventLabel(status, attempt) {
 }
 
 function courierHistoryEventLabel(event) {
+  const note = String(event?.note || "").trim();
+  const routeTimeMatch = note.match(/route_time_rescheduled:([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
+  if (routeTimeMatch) {
+    const dateLabel = formatCourierRescheduledDate(new Date(`${routeTimeMatch[1]}T12:00:00.000Z`));
+    return dateLabel
+      ? `Reprogramada por falta de tiempo para el ${dateLabel}`
+      : "Reprogramada por falta de tiempo";
+  }
   const label = courierEventLabel(event.status, event.attempt);
   if (String(event.status || "").trim().toLowerCase() !== "reintento_pendiente") return label;
   const eventDate = new Date(event.createdAt);

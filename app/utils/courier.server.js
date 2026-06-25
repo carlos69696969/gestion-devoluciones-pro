@@ -1357,6 +1357,7 @@ export async function reprogramCourierDeliveryForNextRoute({
   }
 
   const attemptCount = normalizeDeliveryAttemptCount(currentAttemptCount, 0);
+  const routeTimeAttemptCount = 0;
   const rescheduledDateLabel = formatCourierNotificationDate(rescheduledDate);
   const requestRow = {
     shop: shopDomain,
@@ -1387,7 +1388,7 @@ export async function reprogramCourierDeliveryForNextRoute({
     requestId: orderGid,
     orderNumber: requestRow.orderNumber,
     status: "reintento_pendiente",
-    attemptCount,
+    attemptCount: routeTimeAttemptCount,
     note: `route_time_rescheduled:${rescheduledDate}`,
   });
 
