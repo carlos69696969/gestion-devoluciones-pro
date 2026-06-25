@@ -3406,12 +3406,28 @@ function isCourierCompletedHistoryOrder(order) {
 function isCourierBranchReturnOrder(order, routeAction = "") {
   const normalizedAction = String(routeAction || "").trim().toLowerCase();
   if (normalizedAction) {
-    return ["courier_mark_not_delivered", "courier_return_mark_received"].includes(normalizedAction);
+    return [
+      "courier_mark_not_delivered",
+      "courier_return_mark_received",
+      "courier_route_delivery_reprogrammed",
+    ].includes(normalizedAction);
   }
   const status = String(order?.status || order?.currentStatus || "").trim().toLowerCase();
-  return isReturnCourierLabel(order?.courierLabel)
-    ? ["entregado", "recibido", "recibida"].includes(status)
-    : ["no_entregado", "no entregado"].includes(status);
+  if (isReturnCourierLabel(order?.courierLabel)) {
+    return ["entregado", "recibido", "recibida"].includes(status);
+  }
+
+  const historyLabels = (order?.historyEvents || [])
+    .map((event) => String(event?.label || "").trim())
+    .join(" ");
+  const historyNotes = (order?.historyEvents || [])
+    .map((event) => String(event?.note || "").trim())
+    .join(" ");
+  return (
+    ["no_entregado", "no entregado", "reintento_pendiente"].includes(status) ||
+    /\bno entregado\b/i.test(historyLabels) ||
+    /falta de tiempo|route_time_rescheduled/i.test(`${historyLabels} ${historyNotes}`)
+  );
 }
 
 function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders, search, shop }) {
