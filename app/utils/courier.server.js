@@ -1033,6 +1033,7 @@ async function emitCourierDeliveryManualStatusNotification({
         body: JSON.stringify({
           shopDomain,
           orderNumber: requestRow.orderNumber || null,
+          orderId: requestRow.shopifyOrderId || requestRow.id || null,
           customerEmail: requestRow.customerEmail || null,
           status,
           attemptCount,
@@ -1940,13 +1941,9 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
               node {
                 id
                 name
-                email
                 createdAt
                 updatedAt
                 displayFulfillmentStatus
-                customer {
-                  email
-                }
                 fulfillments(first: 20) {
                   deliveredAt
                 }
@@ -2010,13 +2007,9 @@ async function fetchCourierOrdersByIds({ shop, accessToken, orderIds }) {
             ... on Order {
               id
               name
-              email
               createdAt
               updatedAt
               displayFulfillmentStatus
-              customer {
-                email
-              }
               fulfillments(first: 20) {
                 deliveredAt
               }
@@ -2092,7 +2085,7 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
     id: orderNode.id,
     orderNumber,
     customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
-    customerEmail: String(orderNode?.email || orderNode?.customer?.email || "").trim(),
+    customerEmail: "",
     customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
     pickupDate: scheduledDate,
     pickupAddress: String(shipping?.address1 || "").trim(),
