@@ -286,7 +286,12 @@ function initialCourierDeliveryDate(rawValue) {
 }
 
 function courierDeliveryDateFromEventNote(note) {
-  return String(note || "").match(/scheduled_date:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
+  const text = String(note || "");
+  return (
+    text.match(/scheduled_date:(\d{4}-\d{2}-\d{2})/i)?.[1] ||
+    text.match(/route_time_rescheduled:(\d{4}-\d{2}-\d{2})/i)?.[1] ||
+    ""
+  );
 }
 
 async function getLatestCourierDeliveryDate({ shopDomain, requestId, orderNumber, fallbackDate }) {
@@ -302,9 +307,16 @@ async function getLatestCourierDeliveryDate({ shopDomain, requestId, orderNumber
       const event = await prisma.courierEvent.findFirst({
         where: {
           shop,
-          OR: references,
           status: { in: ["no_entregado", "reintento_pendiente"] },
-          note: { contains: "scheduled_date:" },
+          AND: [
+            { OR: references },
+            {
+              OR: [
+                { note: { contains: "scheduled_date:" } },
+                { note: { contains: "route_time_rescheduled:" } },
+              ],
+            },
+          ],
         },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         select: { note: true },
@@ -1390,7 +1402,7 @@ export async function reprogramCourierDeliveryForNextRoute({
     orderNumber: requestRow.orderNumber,
     status: "reintento_pendiente",
     attemptCount: routeTimeAttemptCount,
-    note: `route_time_rescheduled:${rescheduledDate}`,
+    note: `route_time_rescheduled:${rescheduledDate};scheduled_date:${rescheduledDate}`,
   });
 
   const notificationResult = await emitCourierDeliveryManualStatusNotification({
