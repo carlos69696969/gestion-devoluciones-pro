@@ -297,8 +297,21 @@ function isCourierWorkableForCurrentRoute(request) {
   return !isCourierHistoryStatus(normalizedStatus);
 }
 
-function shouldSkipRouteFinishReprogram({ requestId, status }) {
+function shouldSkipRouteFinishReprogram({ requestId, status, routeAction }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
+  const normalizedAction = String(routeAction || "").trim().toLowerCase();
+  if (
+    [
+      "courier_mark_en_route",
+      "courier_mark_delivered",
+      "courier_mark_not_delivered",
+      "courier_return_mark_received",
+      "courier_return_pickup_attempt_failed",
+      "courier_return_reject_after_failed_pickups",
+    ].includes(normalizedAction)
+  ) {
+    return true;
+  }
   if (!String(requestId || "").startsWith("pickup-") && normalizedStatus === "no_entregado") {
     return false;
   }
@@ -556,7 +569,15 @@ export const action = async ({ request }) => {
         )
           .trim()
           .toLowerCase();
-        if (shouldSkipRouteFinishReprogram({ requestId: id, status: currentStatus })) continue;
+        if (
+          shouldSkipRouteFinishReprogram({
+            requestId: id,
+            status: currentStatus,
+            routeAction: activity?.action,
+          })
+        ) {
+          continue;
+        }
 
         const result = id.startsWith("pickup-")
           ? await reprogramCourierReturnForNextRoute({ requestId: id })
