@@ -1221,6 +1221,9 @@ export const loader = async ({ request }) => {
   const currentRoutePickupRequestIds = Array.from(currentRouteRequestIds).filter((requestId) =>
     requestId.startsWith("pickup-"),
   );
+  const routeHasFrozenSnapshot = Boolean(
+    dailyAccess.routeId && currentRouteStartedAt && currentRouteRequestIds.size > 0,
+  );
   for (const activity of currentRouteActivities) {
     const activityRequestId = String(activity.requestId || "").trim();
     const activityAction = String(activity.action || "").trim();
@@ -1250,9 +1253,23 @@ export const loader = async ({ request }) => {
     const candidateSessions = sessionCandidatesByShop.get(shopCandidate) || [];
     if (!candidateSessions.length) continue;
 
+    const currentRouteDeliveryRequestIds = routeHasFrozenSnapshot
+      ? Array.from(currentRouteRequestIds).filter((requestId) => requestId && !requestId.startsWith("pickup-"))
+      : [];
+
     const [deliveryResult, pickupResult] = await Promise.allSettled([
-      fetchCourierOrdersForShop({ shop: shopCandidate, sessionCandidates: candidateSessions }),
-      fetchPickupCourierOrders(shopCandidate, currentRoutePickupRequestIds),
+      routeHasFrozenSnapshot
+        ? fetchCourierOrdersByIdsForShop({
+            shop: shopCandidate,
+            sessionCandidates: candidateSessions,
+            orderIds: currentRouteDeliveryRequestIds,
+          })
+        : fetchCourierOrdersForShop({ shop: shopCandidate, sessionCandidates: candidateSessions }),
+      routeHasFrozenSnapshot
+        ? fetchPickupCourierOrders(shopCandidate, currentRoutePickupRequestIds).then((orders) =>
+            orders.filter((order) => currentRoutePickupRequestIds.includes(String(order?.id || "").trim())),
+          )
+        : fetchPickupCourierOrders(shopCandidate, currentRoutePickupRequestIds),
     ]);
 
     const deliveryOrders = deliveryResult.status === "fulfilled" ? deliveryResult.value : [];
@@ -1336,7 +1353,7 @@ export const loader = async ({ request }) => {
     return requestRow;
   });
 
-  if (dailyAccess.routeId && currentRouteStartedAt && !dailyAccess.transferredFromName) {
+  if (dailyAccess.routeId && currentRouteStartedAt && !dailyAccess.transferredFromName && !routeHasFrozenSnapshot) {
     const unassignedCurrentOrders = courierOrders.filter((requestRow) => {
       const requestId = String(requestRow?.id || "").trim();
       return requestId && !currentRouteRequestIds.has(requestId) && isCourierWorkableForCurrentRoute(requestRow);
@@ -1361,7 +1378,7 @@ export const loader = async ({ request }) => {
     }
   }
 
-  if (dailyAccess.routeId && currentRouteStartedAt) {
+  if (dailyAccess.routeId && currentRouteStartedAt && !routeHasFrozenSnapshot) {
     const unassignedReturnIds = courierOrders
       .filter((requestRow) => {
         const requestId = String(requestRow?.id || "").trim();
