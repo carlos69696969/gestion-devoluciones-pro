@@ -11,6 +11,7 @@ const STATUS_LABEL = {
   en_revision: "en revision",
   aprobada: "aprobada",
   en_ruta: "en ruta",
+  reintento_pendiente: "reprogramado",
   intento_fallido_1: "intento de devolucion fallido",
   intento_fallido_2: "segundo intento de devolucion fallido",
   por_devolver: "pendiente por devolver",
@@ -100,6 +101,7 @@ function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
   if (status === "aprobada") return "statusApproved";
   if (status === "en_ruta") return "statusApproved";
+  if (status === "reintento_pendiente") return "statusReprogrammed";
   if (status === "intento_fallido_1" || status === "intento_fallido_2") return "statusAttemptFailed";
   if (status === "por_devolver") return "statusPendingReturn";
   if (status === "rechazada") return "statusRejected";

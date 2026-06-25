@@ -17,6 +17,7 @@ const STATUS_LABEL = {
   en_revision: "en revision",
   aprobada: "aprobada",
   en_ruta: "en ruta",
+  reintento_pendiente: "reprogramado",
   intento_fallido_1: "intento de devolucion fallido",
   intento_fallido_2: "segundo intento de devolucion fallido",
   por_devolver: "pendiente por recoger",
@@ -259,6 +260,7 @@ function getStatusClassName(status) {
   if (status === "en_revision") return "statusReview";
   if (status === "aprobada") return "statusApproved";
   if (status === "en_ruta") return "statusApproved";
+  if (status === "reintento_pendiente") return "statusReprogrammed";
   if (status === "intento_fallido_1" || status === "intento_fallido_2") return "statusAttemptFailed";
   if (status === "por_devolver") return "statusPendingReturn";
   if (status === "rechazada") return "statusRejected";
@@ -487,6 +489,50 @@ function latestEntryAtFromKinds(rawValue, kinds) {
   return "";
 }
 
+function formatReturnRescheduleDate(rawValue) {
+  const text = String(rawValue || "").trim();
+  const slashMatch = text.match(/^(\d{1,2})\/([^/]+)\/(\d{4})$/);
+  if (slashMatch) {
+    const month = slashMatch[2].trim();
+    const capitalizedMonth = month ? `${month.charAt(0).toUpperCase()}${month.slice(1)}` : "";
+    return `${slashMatch[1]}/${capitalizedMonth}/${slashMatch[3]}`;
+  }
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!isoMatch) return text;
+  const date = new Date(Date.UTC(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3])));
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const month = String(values.month || "").trim();
+  const capitalizedMonth = month ? `${month.charAt(0).toUpperCase()}${month.slice(1)}` : "";
+  return `${values.day}/${capitalizedMonth}/${values.year}`;
+}
+
+function latestRouteTimeRescheduleDate(requestRow) {
+  const entries = parseReasonEntries(requestRow?.rejectionReason);
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (String(entry?.kind || "").toLowerCase() !== "courier_route_time_reprogrammed") continue;
+    const dateLabel = String(entry?.reason || "").match(/Reprogramado para el ([^.\n]+)/i)?.[1] || "";
+    if (dateLabel) return formatReturnRescheduleDate(dateLabel);
+  }
+  return formatReturnRescheduleDate(requestRow?.pickupDate);
+}
+
+function buildReturnRouteTimeRescheduleMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  const dateLabel = latestRouteTimeRescheduleDate(requestRow);
+  return (
+    `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, ` +
+    `tu devolución ha sido reprogramada para mañana${dateLabel ? ` ${dateLabel}` : ""}.\n` +
+    "Agradecemos tu comprensión y por confiar siempre en Cariana . ✨"
+  );
+}
+
 function addDays(dateValue, days) {
   const base = new Date(dateValue);
   if (!Number.isFinite(base.getTime())) return null;
@@ -547,6 +593,7 @@ function timelineLabelFromStatus(status) {
   if (normalized === "en_revision") return "Solicitud en revision";
   if (normalized === "aprobada") return "Devolucion aprobada";
   if (normalized === "en_ruta") return "En ruta";
+  if (normalized === "reintento_pendiente") return "Reprogramado";
   if (normalized === "intento_fallido_1") return "Primer intento";
   if (normalized === "intento_fallido_2") return "Segundo intento";
   if (normalized === "rechazada") return "Devolucion rechazada";
@@ -564,6 +611,7 @@ function timelineLabelFromReasonEntry(entry) {
   if (courierRouteMatch) return `${courierAttemptLabel(courierRouteMatch[1])} en ruta`;
   const courierRetryMatch = kind.match(/^courier_retry_(\d)$/);
   if (courierRetryMatch) return `${courierAttemptLabel(courierRetryMatch[1])} reprogramado`;
+  if (kind === "courier_route_time_reprogrammed") return "Reprogramado";
   if (kind === STATUS_REVIEW_KIND) return "Solicitud en revision";
   if (kind === STATUS_APPROVED_KIND) return "Devolucion aprobada";
   if (kind === STATUS_IN_ROUTE_KIND) return "En ruta";
@@ -583,6 +631,7 @@ function timelineToneFromStatus(status) {
   if (normalized === "en_revision") return "review";
   if (normalized === "aprobada") return "approved";
   if (normalized === "en_ruta") return "approved";
+  if (normalized === "reintento_pendiente") return "reprogrammed";
   if (normalized === "intento_fallido_1" || normalized === "intento_fallido_2" || normalized === "intento_fallido_3") return "attempt";
   if (normalized === "rechazada") return "rejected";
   if (normalized === "recibida") return "received";
@@ -598,6 +647,7 @@ function timelineToneFromReasonEntry(entry) {
   if (kind === STATUS_REVIEW_KIND) return "review";
   if (kind === STATUS_APPROVED_KIND) return "approved";
   if (kind === STATUS_IN_ROUTE_KIND) return "approved";
+  if (kind === "courier_route_time_reprogrammed") return "reprogrammed";
   if (kind === STATUS_RECEIVED_KIND) return "received";
   if (kind === STATUS_REFUNDED_KIND) return "refunded";
   if (kind === "attempt_failed_1" || kind === "attempt_failed_2" || kind === "attempt_failed_3") return "attempt";
@@ -620,6 +670,9 @@ function timelineStatusDescription(status, requestRow) {
   }
   if (normalized === "en_ruta") {
     return "Tu recoleccion ya va en ruta hacia tu domicilio. Nuestro equipo se dirige para continuar el proceso.";
+  }
+  if (normalized === "reintento_pendiente") {
+    return buildReturnRouteTimeRescheduleMessage(requestRow);
   }
   if (normalized === "recibida") {
     return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰";
@@ -1491,6 +1544,7 @@ function timelineToneClassName(tone) {
   if (tone === "rejected") return styles.timelineToneRejected;
   if (tone === "received") return styles.timelineToneReceived;
   if (tone === "pending") return styles.timelineTonePending;
+  if (tone === "reprogrammed") return styles.timelineToneReprogrammed;
   if (tone === "denied") return styles.timelineToneDenied;
   if (tone === "refunded") return styles.timelineToneRefunded;
   return "";

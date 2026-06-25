@@ -554,6 +554,50 @@ function latestEntryAtFromKinds(rawValue, kinds) {
   return "";
 }
 
+function formatReturnRescheduleDate(rawValue) {
+  const text = String(rawValue || "").trim();
+  const slashMatch = text.match(/^(\d{1,2})\/([^/]+)\/(\d{4})$/);
+  if (slashMatch) {
+    const month = slashMatch[2].trim();
+    const capitalizedMonth = month ? `${month.charAt(0).toUpperCase()}${month.slice(1)}` : "";
+    return `${slashMatch[1]}/${capitalizedMonth}/${slashMatch[3]}`;
+  }
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!isoMatch) return text;
+  const date = new Date(Date.UTC(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3])));
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const month = String(values.month || "").trim();
+  const capitalizedMonth = month ? `${month.charAt(0).toUpperCase()}${month.slice(1)}` : "";
+  return `${values.day}/${capitalizedMonth}/${values.year}`;
+}
+
+function latestRouteTimeRescheduleDate(requestItem) {
+  const entries = parseReasonEntries(requestItem?.rejectionReason);
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (String(entry?.kind || "").toLowerCase() !== "courier_route_time_reprogrammed") continue;
+    const dateLabel = String(entry?.reason || "").match(/Reprogramado para el ([^.\n]+)/i)?.[1] || "";
+    if (dateLabel) return formatReturnRescheduleDate(dateLabel);
+  }
+  return formatReturnRescheduleDate(requestItem?.pickupDate);
+}
+
+function buildReturnRouteTimeRescheduleMessage(requestItem) {
+  const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  const dateLabel = latestRouteTimeRescheduleDate(requestItem);
+  return (
+    `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, ` +
+    `tu devolución ha sido reprogramada para mañana${dateLabel ? ` ${dateLabel}` : ""}.\n` +
+    "Agradecemos tu comprensión y por confiar siempre en Cariana . ✨"
+  );
+}
+
 function isRefundDeniedAfterReceivedFromRaw(rawValue) {
   const entries = parseReasonEntries(rawValue);
   return entries.some((entry) => {
@@ -570,7 +614,7 @@ function timelineLabelFromStatus(status) {
   if (normalized === "intento_fallido_1") return "Primer intento";
   if (normalized === "intento_fallido_2") return "Segundo intento";
   if (normalized === "intento_fallido_3") return "Intento de devolucion fallido (3 de 3)";
-  if (normalized === "reintento_pendiente") return "Pendiente para reintento";
+  if (normalized === "reintento_pendiente") return "Reprogramado";
   if (normalized === "rechazada") return "Devolucion rechazada";
   if (normalized === "recibida") return "Recibimos tu producto";
   if (normalized === "por_devolver") return "Pendiente por recoger";
@@ -584,6 +628,7 @@ function timelineToneFromStatus(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") return "review";
   if (normalized === "aprobada") return "approved";
+  if (normalized === "reintento_pendiente") return "reprogrammed";
   if (normalized === "intento_fallido_1" || normalized === "intento_fallido_2") return "attempt";
   if (normalized === "rechazada") return "rejected";
   if (normalized === "recibida") return "received";
@@ -637,6 +682,9 @@ function timelineStatusDescription(status, requestItem) {
   }
   if (normalized === "recibida") {
     return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰";
+  }
+  if (normalized === "reintento_pendiente") {
+    return buildReturnRouteTimeRescheduleMessage(requestItem);
   }
   if (normalized === "reembolsada" || normalized === "completada") {
     return "Tu reembolso ya fue procesado al metodo de pago original.";
@@ -836,7 +884,7 @@ function statusLabelForCustomer(status) {
   if (normalized === "en_revision") return "en revision";
   if (normalized === "aprobada") return "aprobada";
   if (normalized === "en_ruta" || normalized.startsWith("en_ruta_")) return "aprobada";
-  if (normalized === "reintento_pendiente") return "pendiente para reintento";
+  if (normalized === "reintento_pendiente") return "reprogramado";
   if (normalized === "intento_fallido_1") return "intento de devolucion fallido";
   if (normalized === "intento_fallido_2") return "segundo intento de devolucion fallido";
   if (normalized === "intento_fallido_3") return "tercer intento de devolucion fallido";
@@ -1870,6 +1918,7 @@ function timelineToneClassName(tone) {
   if (tone === "rejected") return styles.timelineToneRejected;
   if (tone === "received") return styles.timelineToneReceived;
   if (tone === "pending") return styles.timelineTonePending;
+  if (tone === "reprogrammed") return styles.timelineToneReprogrammed;
   if (tone === "denied") return styles.timelineToneDenied;
   if (tone === "refunded") return styles.timelineToneRefunded;
   return "";
@@ -1885,6 +1934,7 @@ function CompletedReturnSummary({ requestItem }) {
     normalizedStatus === "intento_fallido_1" || normalizedStatus === "intento_fallido_2";
   const isSecondFailedPickupAttempt = normalizedStatus === "intento_fallido_2";
   const isPendingToReturn = normalizedStatus === "por_devolver";
+  const isReprogrammed = normalizedStatus === "reintento_pendiente";
   const failedAttemptLabel =
     normalizedStatus === "intento_fallido_2"
       ? "Segundo intento de devolucion fallido"
@@ -1909,7 +1959,9 @@ function CompletedReturnSummary({ requestItem }) {
         Estado de devolucion:{" "}
         <strong
           className={
-            isRejectedOrDenied
+            isReprogrammed
+              ? styles.reprogrammedText
+              : isRejectedOrDenied
               ? styles.deniedText
               : isReview
                 ? styles.reviewText
@@ -2736,7 +2788,5 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
     </section>
   );
 }
-
-
 
 

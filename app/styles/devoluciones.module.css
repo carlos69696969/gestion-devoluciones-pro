@@ -555,6 +555,11 @@
   font-weight: 800;
 }
 
+.timelineToneReprogrammed {
+  color: #d6a100;
+  font-weight: 800;
+}
+
 .timelineToneDenied {
   color: #d72c0d;
   font-weight: 800;
@@ -586,6 +591,11 @@
 
 .failedPickupText {
   color: #ff8c00;
+  font-weight: 800;
+}
+
+.reprogrammedText {
+  color: #d6a100;
   font-weight: 800;
 }
 
