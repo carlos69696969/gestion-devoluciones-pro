@@ -1086,6 +1086,20 @@ function hasCourierReprogrammedHistoryEvent(historyEvents = []) {
   );
 }
 
+function latestCourierReprogrammingEvent(historyEvents = []) {
+  return [...(historyEvents || [])]
+    .filter((event) => {
+      const label = String(event?.label || "").trim();
+      const note = String(event?.note || "").trim();
+      return (
+        Boolean(event?.routeTimeRescheduled) ||
+        /\breprogramad[ao]\b/i.test(label) ||
+        /route_time_rescheduled|scheduled_date/i.test(note)
+      );
+    })
+    .sort((firstEvent, secondEvent) => parseEventMs(secondEvent?.at) - parseEventMs(firstEvent?.at))[0] || null;
+}
+
 function courierResultStatusFromHistoryEvents(historyEvents = []) {
   const events = [...(historyEvents || [])].reverse();
   for (const event of events) {
@@ -4108,12 +4122,11 @@ function CourierOrderCard({
     ? buildAdminCourierPresentation(request)
     : { events: request.historyEvents || [], scheduledDate: null };
   const displayHistoryEvents = adminCourierPresentation.events;
-  const isRouteTimeReprogrammed = displayHistoryEvents.some(
-    (event) =>
-      Boolean(event?.routeTimeRescheduled) ||
-      /falta de tiempo/i.test(String(event?.label || "")) ||
-      /route_time_rescheduled/i.test(String(event?.note || "")),
-  );
+  const latestReprogrammingEvent = latestCourierReprogrammingEvent(displayHistoryEvents);
+  const isRouteTimeReprogrammed =
+    Boolean(latestReprogrammingEvent?.routeTimeRescheduled) ||
+    /falta de tiempo/i.test(String(latestReprogrammingEvent?.label || "")) ||
+    /route_time_rescheduled/i.test(String(latestReprogrammingEvent?.note || ""));
   const displayHistoryItems = buildCourierHistoryDisplayItems(displayHistoryEvents, request);
   const displayedScheduledDate =
     request.courierLabel === "Devolución"

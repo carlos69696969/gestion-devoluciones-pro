@@ -103,12 +103,52 @@ function courierAttemptLabel(attempt) {
   return "Tercer intento";
 }
 
+function formatCourierSnapshotRescheduledDate(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+function nextCourierSnapshotMexicoDay(value) {
+  const date = value ? new Date(value) : new Date();
+  if (!Number.isFinite(date.getTime())) return null;
+  const mexicoDateParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const lookup = Object.fromEntries(mexicoDateParts.map((part) => [part.type, part.value]));
+  return new Date(Date.UTC(Number(lookup.year), Number(lookup.month) - 1, Number(lookup.day) + 1));
+}
+
 function courierSnapshotEventLabel(event) {
   const normalizedStatus = String(event?.status || "").trim().toLowerCase();
+  const note = String(event?.note || "").trim();
   const attemptLabel = courierAttemptLabel(event?.attempt);
+  const routeTimeIsoDate = note.match(/route_time_rescheduled:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
+  if (routeTimeIsoDate) {
+    const dateLabel = formatCourierSnapshotRescheduledDate(`${routeTimeIsoDate}T12:00:00Z`);
+    return dateLabel
+      ? `Reprogramada por falta de tiempo para el ${dateLabel}`
+      : "Reprogramada por falta de tiempo";
+  }
   if (normalizedStatus === "en_ruta" || normalizedStatus.startsWith("en_ruta_")) return `${attemptLabel} en ruta`;
   if (normalizedStatus === "no_entregado") return `${attemptLabel} no entregado`;
-  if (normalizedStatus === "reintento_pendiente") return `${attemptLabel} reprogramado`;
+  if (normalizedStatus === "reintento_pendiente") {
+    const scheduledIsoDate = note.match(/scheduled_date:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
+    const scheduledDate = scheduledIsoDate
+      ? new Date(`${scheduledIsoDate}T12:00:00Z`)
+      : nextCourierSnapshotMexicoDay(event?.createdAt || event?.at);
+    const dateLabel = formatCourierSnapshotRescheduledDate(scheduledDate);
+    return dateLabel ? `${attemptLabel} reprogramado para el ${dateLabel}` : `${attemptLabel} reprogramado`;
+  }
   if (normalizedStatus === "recoger_en_sucursal") return "Enviado a recoger en sucursal";
   if (normalizedStatus === "entregado") return `${attemptLabel} entregado`;
   return normalizedStatus.replace(/_/g, " ");
