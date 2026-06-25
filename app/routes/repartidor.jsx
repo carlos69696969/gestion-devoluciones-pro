@@ -297,6 +297,14 @@ function isCourierWorkableForCurrentRoute(request) {
   return !isCourierHistoryStatus(normalizedStatus);
 }
 
+function shouldSkipRouteFinishReprogram({ requestId, status }) {
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  if (!String(requestId || "").startsWith("pickup-") && normalizedStatus === "no_entregado") {
+    return false;
+  }
+  return isCourierHistoryStatus(normalizedStatus);
+}
+
 function shouldResetAssignedOrderForCurrentRoute(routeAction) {
   return routeAction === "courier_route_order_assigned";
 }
@@ -548,7 +556,7 @@ export const action = async ({ request }) => {
         )
           .trim()
           .toLowerCase();
-        if (isCourierHistoryStatus(currentStatus)) continue;
+        if (shouldSkipRouteFinishReprogram({ requestId: id, status: currentStatus })) continue;
 
         const result = id.startsWith("pickup-")
           ? await reprogramCourierReturnForNextRoute({ requestId: id })
