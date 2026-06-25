@@ -184,6 +184,12 @@ function buildPickupSnapshotHistoryEvents(order) {
       const enRouteAttemptMatch = kind.match(/^courier_en_route_(\d)$/);
       if (failedAttemptMatch) label = `${courierAttemptLabel(failedAttemptMatch[1])} no recibido`;
       if (enRouteAttemptMatch) label = `${courierAttemptLabel(enRouteAttemptMatch[1])} en ruta`;
+      if (kind === "courier_route_time_reprogrammed") {
+        const dateLabel = String(entry?.reason || "").match(/Reprogramado para el ([^.\n]+)/i)?.[1] || "";
+        label = dateLabel
+          ? `Reprogramada por falta de tiempo para el ${dateLabel}`
+          : "Reprogramada por falta de tiempo";
+      }
       if (kind === "status_received") label = `${courierAttemptLabel(finalAttempt)} recibido`;
       return {
         id: `${kind || "pickup-event"}-${entry?.at || index}-${index}`,
@@ -194,6 +200,29 @@ function buildPickupSnapshotHistoryEvents(order) {
     })
     .filter((event) => event.label && event.at)
     .sort((firstEvent, secondEvent) => new Date(firstEvent.at).getTime() - new Date(secondEvent.at).getTime());
+}
+
+function isRouteTimeSnapshotReasonEntry(entry) {
+  const kind = String(entry?.kind || "").trim().toLowerCase();
+  const reason = String(entry?.reason || "").trim();
+  return kind === "courier_route_time_reprogrammed" || /falta de tiempo/i.test(reason);
+}
+
+function isRouteTimeCourierEvent(event) {
+  const note = String(event?.note || "").trim();
+  const status = String(event?.status || "").trim().toLowerCase();
+  return status === "reintento_pendiente" && /route_time_rescheduled/i.test(note);
+}
+
+function isWorkedCourierRouteAction(action) {
+  return [
+    "courier_mark_en_route",
+    "courier_mark_delivered",
+    "courier_mark_not_delivered",
+    "courier_return_mark_received",
+    "courier_return_pickup_attempt_failed",
+    "courier_return_reject_after_failed_pickups",
+  ].includes(String(action || "").trim().toLowerCase());
 }
 
 function courierHistoryTimestampMs(request) {
@@ -692,16 +721,38 @@ export const action = async ({ request }) => {
         .map((id, index) => {
           const activity = reprogrammedActivityByRequestId.get(id) || latestActivityByRequestId.get(id);
           const fetchedOrder = fetchedOrderById.get(id) || buildSnapshotFallbackOrder(id, activity, index);
-          const historyEvents = (id.startsWith("pickup-")
-            ? buildPickupSnapshotHistoryEvents({
+          const routeActionsForOrder = orderActivities
+            .filter((routeActivity) => String(routeActivity.requestId || "").trim() === id)
+            .map((routeActivity) => String(routeActivity.action || "").trim());
+          const wasWorkedInThisRoute = routeActionsForOrder.some(isWorkedCourierRouteAction);
+          const wasRouteTimeReprogrammedOnly =
+            reprogrammedActivityByRequestId.has(id) && !wasWorkedInThisRoute;
+          const pickupSnapshotOrder = wasRouteTimeReprogrammedOnly && id.startsWith("pickup-")
+            ? {
                 ...fetchedOrder,
                 courierName: String(dailyAccess.courierName || ""),
-              })
-            : (deliveryHistoryByRequestId.get(id) || []).map((event) => ({
+                rejectionReason: JSON.stringify({
+                  entries: parseSnapshotReasonEntries(fetchedOrder?.rejectionReason).filter(
+                    isRouteTimeSnapshotReasonEntry,
+                  ),
+                }),
+              }
+            : {
+                ...fetchedOrder,
+                courierName: String(dailyAccess.courierName || ""),
+              };
+          const deliverySnapshotEvents = wasRouteTimeReprogrammedOnly
+            ? (deliveryHistoryByRequestId.get(id) || []).filter(isRouteTimeCourierEvent)
+            : (deliveryHistoryByRequestId.get(id) || []);
+          const historyEvents = (id.startsWith("pickup-")
+            ? buildPickupSnapshotHistoryEvents(pickupSnapshotOrder)
+            : deliverySnapshotEvents.map((event) => ({
                 id: `delivery-event-${event.id}`,
                 label: courierSnapshotEventLabel(event),
                 at: event.createdAt,
                 courierName: String(dailyAccess.courierName || ""),
+                note: event.note || "",
+                routeTimeRescheduled: isRouteTimeCourierEvent(event),
               }))).map(markSnapshotEventTransfer);
           return {
             ...fetchedOrder,
