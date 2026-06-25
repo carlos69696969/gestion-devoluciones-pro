@@ -1100,6 +1100,17 @@ function latestCourierReprogrammingEvent(historyEvents = []) {
     .sort((firstEvent, secondEvent) => parseEventMs(secondEvent?.at) - parseEventMs(firstEvent?.at))[0] || null;
 }
 
+function isAttemptReprogrammingEvent(event) {
+  const label = String(event?.label || "").trim();
+  const note = String(event?.note || "").trim();
+  return (
+    /\bintento reprogramado\b/i.test(label) &&
+    !Boolean(event?.routeTimeRescheduled) &&
+    !/falta de tiempo/i.test(label) &&
+    !/route_time_rescheduled/i.test(note)
+  );
+}
+
 function courierResultStatusFromHistoryEvents(historyEvents = []) {
   const events = [...(historyEvents || [])].reverse();
   for (const event of events) {
@@ -3712,6 +3723,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                     sequenceNumber={Number(order.sequenceNumber || index + 1)}
                     statusOverride={courierHistoryPendingStatusOverride(order)}
                     showFinalAttemptBadge
+                    courierHistoryView
                   />
                 ))}
               </div>
@@ -3854,6 +3866,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                         : courierHistoryPendingStatusOverride(order)
                   }
                   showFinalAttemptBadge
+                  courierHistoryView
                 />
               ))}
             </div>
@@ -4107,6 +4120,7 @@ function CourierOrderCard({
   showFinalAttemptBadge = false,
   adminCourierView = false,
   hideTransferredCourierBadge = false,
+  courierHistoryView = false,
 }) {
   const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
   const visibleStatus = statusOverride || request.status;
@@ -4143,7 +4157,10 @@ function CourierOrderCard({
     Boolean(latestReprogrammingEvent?.routeTimeRescheduled) ||
     /falta de tiempo/i.test(String(latestReprogrammingEvent?.label || "")) ||
     /route_time_rescheduled/i.test(String(latestReprogrammingEvent?.note || ""));
-  const displayHistoryItems = buildCourierHistoryDisplayItems(displayHistoryEvents, request);
+  const filteredHistoryEvents = courierHistoryView
+    ? displayHistoryEvents.filter((event) => !isAttemptReprogrammingEvent(event))
+    : displayHistoryEvents;
+  const displayHistoryItems = buildCourierHistoryDisplayItems(filteredHistoryEvents, request);
   const displayedScheduledDate =
     request.courierLabel === "Devolución"
       ? request.pickupDate
@@ -4153,7 +4170,7 @@ function CourierOrderCard({
       ? styles.courierBadgeAttemptWarning
       : styles.courierBadgeStatusFailed
     : styles.courierBadgeAttempt;
-  const statusBadgeClass = isAdminReprogrammed
+  const statusBadgeClass = (isAdminReprogrammed || courierHistoryView)
     ? isRouteTimeReprogrammed
       ? styles.courierBadgeStatusTimeReprogrammed
       : styles.courierBadgeStatusReprogrammed
