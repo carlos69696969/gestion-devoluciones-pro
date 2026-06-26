@@ -5,6 +5,7 @@ import {
   redirect,
   useActionData,
   useLoaderData,
+  useNavigation,
   useRevalidator,
   useSearchParams,
 } from "react-router";
@@ -1764,6 +1765,7 @@ export default function RepartidorPublicPortal() {
     receivedTransferReturnOrders = [],
   } = useLoaderData();
   const actionData = useActionData();
+  const navigation = useNavigation();
   const revalidator = useRevalidator();
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
@@ -2098,6 +2100,8 @@ export default function RepartidorPublicPortal() {
     );
   };
 
+  const isSubmitting = navigation.state !== "idle";
+
   const renderCourierActionForm = (
     request,
     buttonLabel,
@@ -2112,7 +2116,13 @@ export default function RepartidorPublicPortal() {
       onSubmit={(event) => {
         if (!confirmCourierAction(request, actionLabel, confirmNote)) {
           event.preventDefault();
+          return;
         }
+        event.currentTarget
+          .querySelectorAll("button[type='submit']")
+          .forEach((button) => {
+            button.disabled = true;
+          });
       }}
     >
       <input type="hidden" name="shop" value={shop || ""} />
@@ -2125,7 +2135,7 @@ export default function RepartidorPublicPortal() {
       <input type="hidden" name="currentStatus" value={String(request.status || "")} />
       <input type="hidden" name="currentAttemptCount" value={String(request.attemptCount || 0)} />
       <input type="hidden" name="currentScheduledDate" value={String(request.pickupDate || "")} />
-      <button type="submit" className={buttonClassName}>
+      <button type="submit" className={buttonClassName} disabled={isSubmitting}>
         {buttonLabel}
       </button>
     </Form>

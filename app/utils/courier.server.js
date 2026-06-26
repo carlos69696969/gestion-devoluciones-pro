@@ -30,6 +30,7 @@ const NOTIFICATIONS_API_BASE_URL = String(
 const NOTIFICATIONS_API_KEY = String(
   process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "",
 ).trim();
+const COURIER_DUPLICATE_ACTION_WINDOW_MS = 2 * 60 * 1000;
 const STATUS_RECEIVED_KIND = "status_received";
 const PICKUP_FAILED_REASON_FIRST =
   "No logramos completar la recoleccion. Visitamos tu domicilio, pero no obtuvimos respuesta. Nuestro equipo volvera a intentarlo.";
@@ -362,6 +363,43 @@ async function recordCourierDeliveryEvent({
     });
   } catch (error) {
     console.error("Courier event history is not available yet", error);
+  }
+}
+
+async function hasRecentCourierDeliveryEvent({
+  shopDomain,
+  requestId,
+  orderNumber,
+  status,
+  attemptCount,
+  windowMs = COURIER_DUPLICATE_ACTION_WINDOW_MS,
+}) {
+  const shop = normalizeShop(shopDomain);
+  const cleanRequestId = String(requestId || "").trim();
+  const cleanOrderNumber = String(orderNumber || "").replace(/^#/, "").trim();
+  const cleanStatus = String(status || "").trim().toLowerCase();
+  const cleanAttempt = Math.max(0, Number(attemptCount || 0)) || null;
+  const references = [];
+  if (cleanRequestId) references.push({ requestId: cleanRequestId });
+  if (cleanOrderNumber) references.push({ orderNumber: cleanOrderNumber });
+  if (!shop || !cleanStatus || !references.length) return false;
+
+  try {
+    const existing = await prisma.courierEvent.findFirst({
+      where: {
+        shop,
+        status: cleanStatus,
+        ...(cleanAttempt ? { attempt: cleanAttempt } : {}),
+        OR: references,
+        createdAt: { gte: new Date(Date.now() - windowMs) },
+      },
+      select: { id: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    return Boolean(existing);
+  } catch (error) {
+    console.error("Courier duplicate event check is not available yet", error);
+    return false;
   }
 }
 
@@ -1157,6 +1195,17 @@ export async function markCourierOrderAsEnRoute({
     status: nextStatus,
     attemptCount: nextStep,
   };
+
+  const alreadyProcessed = await hasRecentCourierDeliveryEvent({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber: requestRow.orderNumber,
+    status: nextStatus,
+    attemptCount: nextStep,
+  });
+  if (alreadyProcessed) {
+    return { ok: true, requestRow, routeStep: nextStep, nextStatus, attemptCount: requestRow.attemptCount };
+  }
 
   try {
     await replaceCourierOrderStatusTag({
