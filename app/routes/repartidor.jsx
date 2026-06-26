@@ -166,6 +166,16 @@ function parseSnapshotReasonEntries(rawValue) {
   return [{ kind: "legacy", reason: text, at: "" }];
 }
 
+function appendSnapshotReasonEntry(rawValue, entry, at = new Date()) {
+  const entries = parseSnapshotReasonEntries(rawValue);
+  entries.push({
+    kind: String(entry?.kind || "legacy"),
+    reason: String(entry?.reason || "").trim(),
+    at: (at instanceof Date ? at : new Date(at)).toISOString(),
+  });
+  return JSON.stringify({ entries });
+}
+
 function buildPickupSnapshotHistoryEvents(order) {
   const courierName = String(order?.courierName || "").trim();
   const entries = parseSnapshotReasonEntries(order?.rejectionReason);
@@ -369,6 +379,9 @@ function isCourierWorkableForCurrentRoute(request) {
 function shouldSkipRouteFinishReprogram({ requestId, status, routeAction }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
   const normalizedAction = String(routeAction || "").trim().toLowerCase();
+  if (normalizedAction === "courier_route_order_assigned") {
+    return false;
+  }
   if (
     [
       "courier_mark_en_route",
@@ -670,10 +683,36 @@ export const action = async ({ request }) => {
           continue;
         }
 
+        const rescheduledDateLabel = formatCourierSnapshotRescheduledDate(result.rescheduledDate);
+        if (!id.startsWith("pickup-")) {
+          const currentEvents = deliveryHistoryByRequestId.get(id) || [];
+          deliveryHistoryByRequestId.set(id, [
+            ...currentEvents,
+            {
+              id: `route-time-${dailyAccess.routeId || "route"}-${id}`,
+              requestId: id,
+              status: result.nextStatus || "reintento_pendiente",
+              note: result.rescheduledDate ? `route_time_rescheduled:${result.rescheduledDate}` : "route_time_rescheduled",
+              createdAt: finishedAt,
+            },
+          ]);
+        }
         reprogrammedByRequestId.set(id, {
           status: result.nextStatus || "reintento_pendiente",
           attemptCount: result.attemptCount || fetchedOrder?.attemptCount || 0,
           pickupDate: result.rescheduledDate || fetchedOrder?.pickupDate || "",
+          ...(id.startsWith("pickup-")
+            ? {
+                rejectionReason: appendSnapshotReasonEntry(
+                  fetchedOrder?.rejectionReason,
+                  {
+                    kind: "courier_route_time_reprogrammed",
+                    reason: rescheduledDateLabel ? `Reprogramado para el ${rescheduledDateLabel}.` : "Reprogramado por falta de tiempo.",
+                  },
+                  finishedAt,
+                ),
+              }
+            : {}),
         });
         const reprogrammedActivity = {
           shop,
