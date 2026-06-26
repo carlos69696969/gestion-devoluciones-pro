@@ -3825,11 +3825,44 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
       if (selectedSnapshot) {
         const selectedSnapshotCutoff = selectedSnapshot;
         const selectedTransferActivity = transferActivityForRoute(selectedRouteId, selectedDate);
+        const routeReprogramActivityByRequestId = new Map(
+          courierActivities
+            .filter(
+              (activity) =>
+                String(activity.routeId || "").trim() === selectedRouteId &&
+                ["courier_route_delivery_reprogrammed", "courier_route_return_reprogrammed"].includes(
+                  String(activity.action || "").trim().toLowerCase(),
+                ),
+            )
+            .map((activity) => [String(activity.requestId || "").trim(), activity]),
+        );
         const selectedSnapshotOrders = (Array.isArray(selectedSnapshotCutoff.orders) ? selectedSnapshotCutoff.orders : [])
           .map((order, index) => {
             const id = String(order?.id || "");
             const sourceOrder = orderByRequestId.get(id) || {};
-            const snapshotHistoryEvents = Array.isArray(order?.historyEvents) ? order.historyEvents : [];
+            const storedSnapshotHistoryEvents = Array.isArray(order?.historyEvents) ? order.historyEvents : [];
+            const routeReprogramActivity = routeReprogramActivityByRequestId.get(id);
+            const scheduledDate = String(order?.pickupDate || sourceOrder?.pickupDate || "").trim();
+            const scheduledDateLabel = scheduledDate
+              ? formatCourierRescheduledDate(new Date(`${scheduledDate}T12:00:00Z`))
+              : "";
+            const snapshotHistoryEvents = routeReprogramActivity
+              ? [
+                  ...storedSnapshotHistoryEvents.filter((event) => !isRouteTimeHistoryEvent(event)),
+                  {
+                    id: `snapshot-route-activity-${selectedRouteId}-${id}`,
+                    label: scheduledDateLabel
+                      ? `Reprogramada por falta de tiempo para el ${scheduledDateLabel}`
+                      : "Reprogramada por falta de tiempo",
+                    at: routeReprogramActivity.createdAt || selectedSnapshotCutoff.finishedAt,
+                    courierName: String(
+                      routeReprogramActivity.courierName || selectedSnapshotCutoff.courierName || "",
+                    ).trim(),
+                    note: scheduledDate ? `route_time_rescheduled:${scheduledDate}` : "route_time_rescheduled",
+                    routeTimeRescheduled: true,
+                  },
+                ]
+              : storedSnapshotHistoryEvents;
             const orderWithCourierName = {
               customerName: sourceOrder.customerName || "",
               customerPhone: sourceOrder.customerPhone || "",
