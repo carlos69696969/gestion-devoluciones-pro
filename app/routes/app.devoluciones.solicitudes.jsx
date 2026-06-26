@@ -1074,6 +1074,31 @@ function filterCourierSnapshotHistoryEvents(events, snapshot) {
   });
 }
 
+function courierSnapshotRouteTimeFallbackEvents(order, snapshot) {
+  const events = Array.isArray(order?.historyEvents) ? order.historyEvents : [];
+  if (events.length) return events;
+  const status = String(order?.status || order?.currentStatus || "").trim().toLowerCase();
+  if (status !== "reintento_pendiente") return events;
+  const scheduledDate = String(order?.pickupDate || "").trim();
+  const scheduledDateValue = scheduledDate ? new Date(`${scheduledDate}T12:00:00Z`) : null;
+  const scheduledDateLabel = scheduledDateValue && Number.isFinite(scheduledDateValue.getTime())
+    ? formatCourierRescheduledDate(scheduledDateValue)
+    : "";
+  const eventAt = snapshot?.finishedAt || snapshot?.createdAt || order?.updatedAt || order?.createdAt || "";
+  if (!eventAt) return events;
+  return [{
+    id: `snapshot-route-time-${snapshot?.routeId || "route"}-${order?.id || order?.orderNumber || "order"}`,
+    label: scheduledDateLabel
+      ? `Reprogramada por falta de tiempo para el ${scheduledDateLabel}`
+      : "Reprogramada por falta de tiempo",
+    at: eventAt,
+    atMs: parseEventMs(eventAt),
+    courierName: String(order?.courierName || snapshot?.courierName || "").trim(),
+    note: scheduledDate ? `route_time_rescheduled:${scheduledDate}` : "route_time_rescheduled",
+    routeTimeRescheduled: true,
+  }];
+}
+
 function courierStatusFromActivityAction(action, fallbackStatus = "") {
   const normalizedAction = String(action || "").trim().toLowerCase();
   const statusByAction = {
@@ -3676,7 +3701,10 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
               ...orderWithCourierName,
               id,
               historyEvents: enrichCourierHistoryEvents({
-                events: historyEvents,
+                events: courierSnapshotRouteTimeFallbackEvents(
+                  { ...orderWithCourierName, historyEvents },
+                  selectedSnapshot,
+                ),
                 request: orderWithCourierName,
                 activitiesByRequestId,
                 transferActivityByRouteId: transferActivityByRouteIdForHistory,
