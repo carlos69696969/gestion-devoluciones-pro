@@ -573,8 +573,13 @@ export const action = async ({ request }) => {
         ...new Set(orderActivities.map((activity) => String(activity.requestId || "").trim()).filter(Boolean)),
       ];
       const latestActivityByRequestId = new Map();
+      const finalActivityByRequestId = new Map();
       for (const activity of orderActivities) {
-        latestActivityByRequestId.set(String(activity.requestId || "").trim(), activity);
+        const activityRequestId = String(activity.requestId || "").trim();
+        latestActivityByRequestId.set(activityRequestId, activity);
+        if (isCourierFinalRouteAction(activity.action)) {
+          finalActivityByRequestId.set(activityRequestId, activity);
+        }
       }
       const confirmedBranchReturnIds = formData
         .getAll("confirmedBranchReturnIds")
@@ -646,7 +651,7 @@ export const action = async ({ request }) => {
       const reprogrammedActivityRows = [];
       for (const id of requestIds) {
         const fetchedOrder = fetchedOrderById.get(id);
-        const activity = latestActivityByRequestId.get(id);
+        const activity = finalActivityByRequestId.get(id) || latestActivityByRequestId.get(id);
         const currentStatus = String(
           fetchedOrder?.status || courierStatusFromSnapshotAction(activity?.action, "pendiente"),
         )
@@ -759,7 +764,10 @@ export const action = async ({ request }) => {
       };
       const snapshotOrders = requestIds
         .map((id, index) => {
-          const activity = reprogrammedActivityByRequestId.get(id) || latestActivityByRequestId.get(id);
+          const activity =
+            reprogrammedActivityByRequestId.get(id) ||
+            finalActivityByRequestId.get(id) ||
+            latestActivityByRequestId.get(id);
           const fetchedOrder = fetchedOrderById.get(id) || buildSnapshotFallbackOrder(id, activity, index);
           const routeActionsForOrder = orderActivities
             .filter((routeActivity) => String(routeActivity.requestId || "").trim() === id)
@@ -805,8 +813,12 @@ export const action = async ({ request }) => {
           };
         })
         .sort((firstOrder, secondOrder) => {
-          const firstActivity = latestActivityByRequestId.get(String(firstOrder.id || ""));
-          const secondActivity = latestActivityByRequestId.get(String(secondOrder.id || ""));
+          const firstActivity =
+            finalActivityByRequestId.get(String(firstOrder.id || "")) ||
+            latestActivityByRequestId.get(String(firstOrder.id || ""));
+          const secondActivity =
+            finalActivityByRequestId.get(String(secondOrder.id || "")) ||
+            latestActivityByRequestId.get(String(secondOrder.id || ""));
           const firstFinalized = isCourierFinalRouteAction(firstActivity?.action);
           const secondFinalized = isCourierFinalRouteAction(secondActivity?.action);
           if (firstFinalized !== secondFinalized) return firstFinalized ? -1 : 1;
