@@ -1179,7 +1179,7 @@ function dedupeCourierHistoryEvents(events = []) {
 
 function courierSnapshotRouteTimeFallbackEvents(order, snapshot) {
   const events = Array.isArray(order?.historyEvents) ? order.historyEvents : [];
-  if (events.length) return events;
+  if (events.some((event) => isRouteTimeHistoryEvent(event))) return events;
   const status = String(order?.status || order?.currentStatus || "").trim().toLowerCase();
   if (status !== "reintento_pendiente") return events;
   const scheduledDate = String(order?.pickupDate || "").trim();
