@@ -2397,7 +2397,7 @@ export default function RepartidorPublicPortal() {
                     </div>
                     <div className={styles.statusGroup}>
                       {!isReturnOrder(request) && getDeliveryAttemptLabel(request, activeTab) ? (
-                        <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeFailed}`}>
+                        <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
                           {getDeliveryAttemptLabel(request, activeTab)}
                         </span>
                       ) : null}
