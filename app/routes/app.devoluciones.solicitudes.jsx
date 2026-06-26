@@ -941,9 +941,33 @@ function returnCourierHistoryLabel(entry, finalAttempt) {
       : "Reprogramada por falta de tiempo";
   }
   const failedAttemptMatch = kind.match(/^attempt_failed_(\d)$/);
-  if (failedAttemptMatch) return `${courierAttemptLabel(failedAttemptMatch[1])} no entregado`;
+  if (failedAttemptMatch) return `${courierAttemptLabel(failedAttemptMatch[1])} no recibido`;
   if (kind === STATUS_RECEIVED_KIND) return `${courierAttemptLabel(finalAttempt)} entregado`;
   return timelineLabelFromReasonEntry(entry);
+}
+
+function returnCourierHistoryDedupeKey(event) {
+  const label = String(event?.label || "").trim().toLowerCase();
+  const attemptMatch = label.match(/^(primer|segundo|tercer) intento/i);
+  if (!attemptMatch) return `${label}|${event.atMs}`;
+  const action = /\ben ruta\b/i.test(label)
+    ? "route"
+    : /\bno (?:entregado|recibido)\b/i.test(label)
+      ? "failed"
+      : label.replace(attemptMatch[0], "").trim();
+  return `${attemptMatch[1]}|${action}|${event.atMs}`;
+}
+
+function dedupeReturnCourierHistoryEvents(events) {
+  const eventByKey = new Map();
+  for (const event of events) {
+    const key = returnCourierHistoryDedupeKey(event);
+    const existingEvent = eventByKey.get(key);
+    if (!existingEvent || /\bno recibido\b/i.test(String(event.label || ""))) {
+      eventByKey.set(key, event);
+    }
+  }
+  return Array.from(eventByKey.values());
 }
 
 function courierAttemptFromHistoryEvents(historyEvents, fallbackAttempt = 0) {
@@ -1355,7 +1379,7 @@ function buildCourierHistoryEvents(request) {
         return match ? Math.max(maxAttempt, Number(match[1]) || 0) : maxAttempt;
       }, 0),
     );
-    return entries
+    return dedupeReturnCourierHistoryEvents(entries
       .map((entry, index) => ({
         id: `${entry.kind}-${entry.at}-${index}`,
         label: returnCourierHistoryLabel(entry, finalAttempt),
@@ -1364,7 +1388,7 @@ function buildCourierHistoryEvents(request) {
         note: entry.reason || "",
         routeTimeRescheduled: String(entry?.kind || "").trim().toLowerCase() === "courier_route_time_reprogrammed",
       }))
-      .filter((entry) => entry.label && entry.atMs)
+      .filter((entry) => entry.label && entry.atMs))
       .sort((a, b) => a.atMs - b.atMs);
   }
 
