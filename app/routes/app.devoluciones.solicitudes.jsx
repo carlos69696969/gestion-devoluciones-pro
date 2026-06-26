@@ -1076,6 +1076,26 @@ function filterCourierSnapshotHistoryEvents(events, snapshot) {
   });
 }
 
+function mergeCourierHistoryEvents(...eventLists) {
+  const seen = new Set();
+  const merged = [];
+  for (const events of eventLists) {
+    for (const event of events || []) {
+      const contentKey = [
+        event?.at || event?.createdAt || "",
+        event?.label || "",
+        event?.note || "",
+        event?.status || "",
+      ].map((value) => String(value).trim().toLowerCase()).join(":");
+      const key = contentKey || String(event?.id || "");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(event);
+    }
+  }
+  return merged;
+}
+
 function courierSnapshotRouteTimeFallbackEvents(order, snapshot) {
   const events = Array.isArray(order?.historyEvents) ? order.historyEvents : [];
   if (events.length) return events;
@@ -3720,10 +3740,10 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           .map((order, index) => {
             const id = String(order?.id || "");
             const sourceOrder = orderByRequestId.get(id) || {};
+            const snapshotHistoryEvents = Array.isArray(order?.historyEvents) ? order.historyEvents : [];
+            const sourceHistoryEvents = Array.isArray(sourceOrder.historyEvents) ? sourceOrder.historyEvents : [];
             const historyEvents = filterCourierSnapshotHistoryEvents(
-              Array.isArray(order?.historyEvents) && order.historyEvents.length
-                ? order.historyEvents
-                : sourceOrder.historyEvents || [],
+              mergeCourierHistoryEvents(snapshotHistoryEvents, sourceHistoryEvents),
               selectedSnapshot,
             );
             const orderWithCourierName = {
