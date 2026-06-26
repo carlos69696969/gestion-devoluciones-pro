@@ -1089,10 +1089,12 @@ function mergeCourierHistoryEvents(...eventLists) {
   const merged = [];
   for (const events of eventLists) {
     for (const event of events || []) {
+      const eventTimeValue = event?.at || event?.createdAt || "";
+      const eventTimeKey = parseEventMs(eventTimeValue) || String(eventTimeValue).trim().toLowerCase();
       const contentKeyParts = isRouteTimeHistoryEvent(event)
-        ? [event?.at || event?.createdAt || "", event?.label || ""]
+        ? [eventTimeKey, event?.label || ""]
         : [
-            event?.at || event?.createdAt || "",
+            eventTimeKey,
             event?.label || "",
             event?.note || "",
             event?.status || "",
@@ -1104,7 +1106,9 @@ function mergeCourierHistoryEvents(...eventLists) {
       merged.push(event);
     }
   }
-  return merged;
+  return merged.sort((firstEvent, secondEvent) =>
+    parseEventMs(firstEvent?.at || firstEvent?.createdAt) - parseEventMs(secondEvent?.at || secondEvent?.createdAt),
+  );
 }
 
 function courierRouteTimeReprogramActivityActions() {
