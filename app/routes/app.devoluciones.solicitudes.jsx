@@ -4465,6 +4465,8 @@ function CourierOrderCard({
     ? styles.courierBadgeStatusPending
     : ["entregado", "recibido", "recibida"].includes(normalizedVisibleStatus)
       ? styles.courierBadgeStatusSuccess
+    : courierHistoryView && isRouteTimeReprogrammed
+      ? styles.courierBadgeStatusTimeReprogrammed
     : courierHistoryView
       ? styles.courierBadgeStatusHistoryWarning
     : isAdminReprogrammed
