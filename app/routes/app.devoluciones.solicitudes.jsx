@@ -523,9 +523,14 @@ function latestRouteTimeRescheduleDate(requestRow) {
   return formatReturnRescheduleDate(requestRow?.pickupDate);
 }
 
-function buildReturnRouteTimeRescheduleMessage(requestRow) {
+function routeTimeRescheduleDateFromReason(reason) {
+  const dateLabel = String(reason || "").match(/Reprogramado para el ([^.\n]+)/i)?.[1] || "";
+  return dateLabel ? formatReturnRescheduleDate(dateLabel) : "";
+}
+
+function buildReturnRouteTimeRescheduleMessage(requestRow, dateOverride = "") {
   const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
-  const dateLabel = latestRouteTimeRescheduleDate(requestRow);
+  const dateLabel = dateOverride || latestRouteTimeRescheduleDate(requestRow);
   return (
     `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, ` +
     `tu devolución ha sido reprogramada para mañana${dateLabel ? ` ${dateLabel}` : ""}.\n` +
@@ -797,9 +802,11 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false) {
     if (hideCourierProgress && (kind.startsWith("courier_en_route_") || kind.startsWith("courier_retry_"))) continue;
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
-    const note = kind === RETURNED_TO_CUSTOMER_KIND
-      ? RETURNED_TO_CUSTOMER_MESSAGE
-      : normalizeDisplayedReasonText(entry.reason);
+    const note = kind === "courier_route_time_reprogrammed"
+      ? buildReturnRouteTimeRescheduleMessage(requestRow, routeTimeRescheduleDateFromReason(entry.reason))
+      : kind === RETURNED_TO_CUSTOMER_KIND
+        ? RETURNED_TO_CUSTOMER_MESSAGE
+        : normalizeDisplayedReasonText(entry.reason);
     pushEvent(label, entry.at, note, timelineToneFromReasonEntry(entry));
   }
 

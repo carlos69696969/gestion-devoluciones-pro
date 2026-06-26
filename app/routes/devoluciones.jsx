@@ -588,9 +588,14 @@ function latestRouteTimeRescheduleDate(requestItem) {
   return formatReturnRescheduleDate(requestItem?.pickupDate);
 }
 
-function buildReturnRouteTimeRescheduleMessage(requestItem) {
+function routeTimeRescheduleDateFromReason(reason) {
+  const dateLabel = String(reason || "").match(/Reprogramado para el ([^.\n]+)/i)?.[1] || "";
+  return dateLabel ? formatReturnRescheduleDate(dateLabel) : "";
+}
+
+function buildReturnRouteTimeRescheduleMessage(requestItem, dateOverride = "") {
   const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim() || "****";
-  const dateLabel = latestRouteTimeRescheduleDate(requestItem);
+  const dateLabel = dateOverride || latestRouteTimeRescheduleDate(requestItem);
   return (
     `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, ` +
     `tu devolución ha sido reprogramada para mañana${dateLabel ? ` ${dateLabel}` : ""}.\n` +
@@ -646,6 +651,7 @@ function timelineLabelFromReasonEntry(entry) {
   if (kind === STATUS_IN_ROUTE_KIND) return "En ruta";
   if (kind === STATUS_RECEIVED_KIND) return "Recibimos tu producto";
   if (kind === STATUS_REFUNDED_KIND) return "Reembolso procesado";
+  if (kind === "courier_route_time_reprogrammed") return "Reprogramado";
   if (kind === "attempt_failed_1") return "Primer intento";
   if (kind === "attempt_failed_2") return "Segundo intento";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "Devolucion rechazada";
@@ -662,6 +668,7 @@ function timelineToneFromReasonEntry(entry) {
   if (kind === STATUS_APPROVED_KIND) return "approved";
   if (kind === STATUS_RECEIVED_KIND) return "received";
   if (kind === STATUS_REFUNDED_KIND) return "refunded";
+  if (kind === "courier_route_time_reprogrammed") return "reprogrammed";
   if (kind === "attempt_failed_1" || kind === "attempt_failed_2") return "attempt";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "rejected";
   if (kind === "denied_after_received") return "denied";
@@ -830,9 +837,11 @@ function buildStatusTimeline(requestItem) {
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
     const kind = String(entry?.kind || "").toLowerCase();
-    const note = kind === RETURNED_TO_CUSTOMER_KIND
-      ? RETURNED_TO_CUSTOMER_MESSAGE
-      : normalizeDisplayedReasonText(entry.reason);
+    const note = kind === "courier_route_time_reprogrammed"
+      ? buildReturnRouteTimeRescheduleMessage(requestItem, routeTimeRescheduleDateFromReason(entry.reason))
+      : kind === RETURNED_TO_CUSTOMER_KIND
+        ? RETURNED_TO_CUSTOMER_MESSAGE
+        : normalizeDisplayedReasonText(entry.reason);
     pushEvent(label, entry.at, note, timelineToneFromReasonEntry(entry));
   }
 
