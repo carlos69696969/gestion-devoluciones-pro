@@ -4364,10 +4364,33 @@ function CourierOrderCard({
   const filteredHistoryEvents = courierHistoryView
     ? displayHistoryEvents.filter((event) => !isAttemptReprogrammingEvent(event))
     : displayHistoryEvents;
+  const needsCourierRouteTimeFallback =
+    courierHistoryView &&
+    normalizedVisibleStatus === "reintento_pendiente" &&
+    !filteredHistoryEvents.some((event) => isRouteTimeHistoryEvent(event));
+  const courierRouteTimeFallbackDate = request.pickupDate
+    ? formatCourierRescheduledDate(new Date(`${request.pickupDate}T12:00:00Z`))
+    : "";
+  const effectiveHistoryEvents = needsCourierRouteTimeFallback
+    ? [
+        ...filteredHistoryEvents,
+        {
+          id: `courier-history-route-time-fallback-${request.id || request.orderNumber || "order"}`,
+          label: courierRouteTimeFallbackDate
+            ? `Reprogramada por falta de tiempo para el ${courierRouteTimeFallbackDate}`
+            : "Reprogramada por falta de tiempo",
+          at: request.finishedAt || request.courierHistoryAt || request.updatedAt || request.createdAt,
+          atMs: parseEventMs(request.finishedAt || request.courierHistoryAt || request.updatedAt || request.createdAt),
+          courierName: String(request.courierName || request.assignedCourierName || "").trim(),
+          note: request.pickupDate ? `route_time_rescheduled:${request.pickupDate}` : "route_time_rescheduled",
+          routeTimeRescheduled: true,
+        },
+      ].filter((event) => event.atMs || event.at)
+    : filteredHistoryEvents;
   const displayHistoryItems = buildCourierHistoryDisplayItems(
     courierHistoryView && isReturnCourierLabel(request.courierLabel)
-      ? normalizeReturnCourierHistoryEvents(filteredHistoryEvents)
-      : filteredHistoryEvents,
+      ? normalizeReturnCourierHistoryEvents(effectiveHistoryEvents)
+      : effectiveHistoryEvents,
     request,
   );
   const displayedScheduledDate =
