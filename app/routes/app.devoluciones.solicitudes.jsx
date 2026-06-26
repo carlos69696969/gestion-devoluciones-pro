@@ -1272,6 +1272,8 @@ function courierResultStatusFromHistoryEvents(historyEvents = []) {
 function courierHistoryPendingStatusOverride(order) {
   const normalizedStatus = String(order?.status || "").trim().toLowerCase();
   const normalizedCurrentStatus = String(order?.currentStatus || "").trim().toLowerCase();
+  const historyResultStatus = courierResultStatusFromHistoryEvents(order?.historyEvents);
+  if (["entregado", "recibida", "rechazada"].includes(historyResultStatus)) return historyResultStatus;
   const routeTimeReprogrammedEvent = latestCourierReprogrammingEvent(order?.historyEvents);
   const isRouteTimeReprogrammed =
     Boolean(routeTimeReprogrammedEvent?.routeTimeRescheduled) ||
@@ -1287,7 +1289,6 @@ function courierHistoryPendingStatusOverride(order) {
   ) {
     return "pendiente";
   }
-  const historyResultStatus = courierResultStatusFromHistoryEvents(order?.historyEvents);
   if (historyResultStatus) return historyResultStatus;
   return "";
 }
