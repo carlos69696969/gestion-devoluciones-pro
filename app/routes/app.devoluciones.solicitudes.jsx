@@ -970,6 +970,16 @@ function dedupeReturnCourierHistoryEvents(events) {
   return Array.from(eventByKey.values());
 }
 
+function normalizeReturnCourierHistoryEvents(events) {
+  return dedupeReturnCourierHistoryEvents((events || []).map((event) => ({
+    ...event,
+    label: String(event?.label || "").replace(
+      /^(Primer|Segundo|Tercer) intento no entregado$/i,
+      "$1 intento no recibido",
+    ),
+  })));
+}
+
 function courierAttemptFromHistoryEvents(historyEvents, fallbackAttempt = 0) {
   const historyAttempt = (historyEvents || []).reduce((maxAttempt, event) => {
     const match = String(event?.label || "").match(/^(Primer|Segundo|Tercer) intento/i);
@@ -4428,7 +4438,12 @@ function CourierOrderCard({
   const filteredHistoryEvents = courierHistoryView
     ? displayHistoryEvents.filter((event) => !isAttemptReprogrammingEvent(event))
     : displayHistoryEvents;
-  const displayHistoryItems = buildCourierHistoryDisplayItems(filteredHistoryEvents, request);
+  const displayHistoryItems = buildCourierHistoryDisplayItems(
+    courierHistoryView && isReturnCourierLabel(request.courierLabel)
+      ? normalizeReturnCourierHistoryEvents(filteredHistoryEvents)
+      : filteredHistoryEvents,
+    request,
+  );
   const displayedScheduledDate =
     request.courierLabel === "Devolución"
       ? request.pickupDate
