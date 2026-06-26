@@ -1096,6 +1096,39 @@ function mergeCourierHistoryEvents(...eventLists) {
   return merged;
 }
 
+function courierRouteTimeReprogramActivityActions() {
+  return ["courier_route_delivery_reprogrammed", "courier_route_return_reprogrammed"];
+}
+
+function courierSnapshotWithLatestRouteTimeCutoff(snapshot, activities = []) {
+  const snapshotFinishedAt = snapshot?.finishedAt || snapshot?.createdAt || "";
+  const snapshotFinishedMs = parseEventMs(snapshotFinishedAt);
+  const orderIds = new Set((Array.isArray(snapshot?.orders) ? snapshot.orders : [])
+    .map((order) => String(order?.id || "").trim())
+    .filter(Boolean));
+  const latestRouteTimeActivity = (activities || [])
+    .filter((activity) => {
+      const action = String(activity?.action || "").trim().toLowerCase();
+      const routeId = String(activity?.routeId || "").trim();
+      const requestId = String(activity?.requestId || "").trim();
+      return (
+        courierRouteTimeReprogramActivityActions().includes(action) &&
+        routeId &&
+        routeId === String(snapshot?.routeId || "").trim() &&
+        orderIds.has(requestId)
+      );
+    })
+    .sort((firstActivity, secondActivity) =>
+      parseEventMs(secondActivity?.createdAt) - parseEventMs(firstActivity?.createdAt),
+    )[0];
+  const latestRouteTimeMs = parseEventMs(latestRouteTimeActivity?.createdAt);
+  if (!latestRouteTimeMs || (snapshotFinishedMs && latestRouteTimeMs <= snapshotFinishedMs)) return snapshot;
+  return {
+    ...snapshot,
+    finishedAt: latestRouteTimeActivity.createdAt,
+  };
+}
+
 function courierSnapshotRouteTimeFallbackEvents(order, snapshot) {
   const events = Array.isArray(order?.historyEvents) ? order.historyEvents : [];
   if (events.length) return events;
@@ -3735,8 +3768,9 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
     if (historyView === "courier_day" && selectedDate) {
       const selectedSnapshot = selectedRouteId ? snapshotByRouteId.get(selectedRouteId) : null;
       if (selectedSnapshot) {
+        const selectedSnapshotCutoff = courierSnapshotWithLatestRouteTimeCutoff(selectedSnapshot, courierActivities);
         const selectedTransferActivity = transferActivityForRoute(selectedRouteId, selectedDate);
-        const selectedSnapshotOrders = (Array.isArray(selectedSnapshot.orders) ? selectedSnapshot.orders : [])
+        const selectedSnapshotOrders = (Array.isArray(selectedSnapshotCutoff.orders) ? selectedSnapshotCutoff.orders : [])
           .map((order, index) => {
             const id = String(order?.id || "");
             const sourceOrder = orderByRequestId.get(id) || {};
@@ -3744,12 +3778,12 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
             const sourceHistoryEvents = Array.isArray(sourceOrder.historyEvents) ? sourceOrder.historyEvents : [];
             const historyEvents = filterCourierSnapshotHistoryEvents(
               mergeCourierHistoryEvents(snapshotHistoryEvents, sourceHistoryEvents),
-              selectedSnapshot,
+              selectedSnapshotCutoff,
             );
             const orderWithCourierName = {
               ...sourceOrder,
               ...order,
-              courierName: String(order?.courierName || selectedSnapshot.courierName || sourceOrder.courierName || "").trim(),
+              courierName: String(order?.courierName || selectedSnapshotCutoff.courierName || sourceOrder.courierName || "").trim(),
               currentStatus: sourceOrder.status || order.currentStatus || order.status,
             };
             return {
@@ -3758,7 +3792,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
               historyEvents: enrichCourierHistoryEvents({
                 events: courierSnapshotRouteTimeFallbackEvents(
                   { ...orderWithCourierName, historyEvents },
-                  selectedSnapshot,
+                  selectedSnapshotCutoff,
                 ),
                 request: orderWithCourierName,
                 activitiesByRequestId,
