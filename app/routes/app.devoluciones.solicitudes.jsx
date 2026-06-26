@@ -926,7 +926,9 @@ function returnCourierHistoryLabel(entry, finalAttempt) {
   if (kind === STATUS_APPROVED_KIND) return "";
   if (kind.startsWith("courier_retry_") || kind === "rejected_after_attempts") return "";
   if (kind === "courier_route_time_reprogrammed") {
-    const dateLabel = String(entry?.reason || "").match(/Reprogramado para el ([^.\n]+)/i)?.[1] || "";
+    const dateLabel = normalizeCourierRescheduledDateLabel(
+      String(entry?.reason || "").match(/Reprogramado para el ([^.\n]+)/i)?.[1] || "",
+    );
     return dateLabel
       ? `Reprogramada por falta de tiempo para el ${dateLabel}`
       : "Reprogramada por falta de tiempo";
@@ -1277,6 +1279,36 @@ function formatCourierRescheduledDate(value) {
   }).format(value);
 }
 
+function normalizeCourierRescheduledDateLabel(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return formatCourierRescheduledDate(new Date(`${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}T12:00:00Z`));
+  }
+  const slashMatch = raw.match(/^(\d{1,2})\/([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\/(\d{4})$/);
+  if (!slashMatch) return raw;
+  const monthNames = {
+    enero: 0,
+    febrero: 1,
+    marzo: 2,
+    abril: 3,
+    mayo: 4,
+    junio: 5,
+    julio: 6,
+    agosto: 7,
+    septiembre: 8,
+    setiembre: 8,
+    octubre: 9,
+    noviembre: 10,
+    diciembre: 11,
+  };
+  const monthKey = slashMatch[2].normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const monthIndex = monthNames[monthKey];
+  if (monthIndex === undefined) return raw;
+  return formatCourierRescheduledDate(new Date(Date.UTC(Number(slashMatch[3]), monthIndex, Number(slashMatch[1]), 12)));
+}
+
 function buildAdminCourierPresentation(request) {
   const events = request.historyEvents || [];
   const routeTimeActivities = (request.courierActivities || []).filter((activity) =>
@@ -1308,7 +1340,10 @@ function buildAdminCourierPresentation(request) {
         requestScheduledDate.getTime() > noteDate.getTime()
           ? requestScheduledDate
           : noteDate;
-      const reprogrammedDateLabel = reprogrammedFor ? formatCourierRescheduledDate(reprogrammedFor) : "";
+      const labelDateMatch = String(event.label || "").match(/para el ([^.\n]+)$/i);
+      const reprogrammedDateLabel = reprogrammedFor
+        ? formatCourierRescheduledDate(reprogrammedFor)
+        : normalizeCourierRescheduledDateLabel(labelDateMatch?.[1] || "");
       if (reprogrammedFor) scheduledDate = reprogrammedFor;
       displayEvents.push({
         ...event,
