@@ -1065,6 +1065,15 @@ function buildCourierHistoryDisplayItems(events, request) {
   return items;
 }
 
+function filterCourierSnapshotHistoryEvents(events, snapshot) {
+  const cutoffMs = parseEventMs(snapshot?.finishedAt || snapshot?.createdAt);
+  if (!cutoffMs) return events || [];
+  return (events || []).filter((event) => {
+    const eventMs = parseEventMs(event?.at || event?.createdAt);
+    return !eventMs || eventMs <= cutoffMs;
+  });
+}
+
 function courierStatusFromActivityAction(action, fallbackStatus = "") {
   const normalizedAction = String(action || "").trim().toLowerCase();
   const statusByAction = {
@@ -3648,9 +3657,12 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           .map((order, index) => {
             const id = String(order?.id || "");
             const sourceOrder = orderByRequestId.get(id) || {};
-            const historyEvents = Array.isArray(order?.historyEvents) && order.historyEvents.length
-              ? order.historyEvents
-              : sourceOrder.historyEvents || [];
+            const historyEvents = filterCourierSnapshotHistoryEvents(
+              Array.isArray(order?.historyEvents) && order.historyEvents.length
+                ? order.historyEvents
+                : sourceOrder.historyEvents || [],
+              selectedSnapshot,
+            );
             const orderWithCourierName = {
               ...sourceOrder,
               ...order,
