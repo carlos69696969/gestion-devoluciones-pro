@@ -4193,14 +4193,14 @@ function CourierOrderCard({
     : styles.courierBadgeAttempt;
   const statusBadgeClass = courierHistoryView && normalizedVisibleStatus === "pendiente"
     ? styles.courierBadgeStatusPending
+    : ["entregado", "recibido", "recibida"].includes(normalizedVisibleStatus)
+      ? styles.courierBadgeStatusSuccess
     : (isAdminReprogrammed || courierHistoryView)
       ? isRouteTimeReprogrammed
       ? styles.courierBadgeStatusTimeReprogrammed
       : styles.courierBadgeStatusReprogrammed
     : ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
       ? styles.courierBadgeStatusFailed
-    : ["entregado", "recibido", "recibida"].includes(normalizedVisibleStatus)
-      ? styles.courierBadgeStatusSuccess
       : normalizedVisibleStatus.startsWith("en_ruta")
         ? styles.courierBadgeStatusRoute
         : "";
