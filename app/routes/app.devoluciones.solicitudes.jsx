@@ -1091,7 +1091,11 @@ function courierHistoryMinuteKey(value) {
 }
 
 function normalizeCourierHistoryKeyText(value) {
-  return String(value || "")
+  const normalizedDateText = String(value || "").replace(
+    /\b(\d{1,2})\/([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\/(\d{4})\b/g,
+    (_match, day, month, year) => `${Number(day)} de ${month} de ${year}`,
+  );
+  return normalizedDateText
     .trim()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
