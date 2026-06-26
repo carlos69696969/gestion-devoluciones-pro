@@ -955,7 +955,7 @@ function returnCourierHistoryDedupeKey(event) {
     : /\bno (?:entregado|recibido)\b/i.test(label)
       ? "failed"
       : label.replace(attemptMatch[0], "").trim();
-  return `${attemptMatch[1]}|${action}|${event.atMs}`;
+  return `${attemptMatch[1]}|${action}`;
 }
 
 function dedupeReturnCourierHistoryEvents(events) {
