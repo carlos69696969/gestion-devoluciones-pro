@@ -1084,13 +1084,30 @@ function isRouteTimeHistoryEvent(event) {
   );
 }
 
+function courierHistoryMinuteKey(value) {
+  const ms = parseEventMs(value);
+  if (!ms) return String(value || "").trim().toLowerCase();
+  return String(Math.floor(ms / 60000));
+}
+
+function normalizeCourierHistoryKeyText(value) {
+  return String(value || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
 function mergeCourierHistoryEvents(...eventLists) {
   const seen = new Set();
   const merged = [];
   for (const events of eventLists) {
     for (const event of events || []) {
       const eventTimeValue = event?.at || event?.createdAt || "";
-      const eventTimeKey = parseEventMs(eventTimeValue) || String(eventTimeValue).trim().toLowerCase();
+      const eventTimeKey = isRouteTimeHistoryEvent(event)
+        ? courierHistoryMinuteKey(eventTimeValue)
+        : parseEventMs(eventTimeValue) || String(eventTimeValue).trim().toLowerCase();
       const contentKeyParts = isRouteTimeHistoryEvent(event)
         ? [eventTimeKey, event?.label || ""]
         : [
@@ -1099,7 +1116,7 @@ function mergeCourierHistoryEvents(...eventLists) {
             event?.note || "",
             event?.status || "",
           ];
-      const contentKey = contentKeyParts.map((value) => String(value).trim().toLowerCase()).join(":");
+      const contentKey = contentKeyParts.map(normalizeCourierHistoryKeyText).join(":");
       const key = contentKey || String(event?.id || "");
       if (seen.has(key)) continue;
       seen.add(key);
