@@ -1033,7 +1033,7 @@ function buildCourierHistoryDisplayItems(events, request) {
   const items = [];
   const shownAttemptKeys = new Set();
   const shownRouteTimeKeys = new Set();
-  for (const event of events || []) {
+  for (const event of dedupeCourierHistoryEvents(events) || []) {
     const isRouteTimeRescheduledEvent =
       Boolean(event?.routeTimeRescheduled) ||
       /falta de tiempo/i.test(String(event?.label || "")) ||
@@ -1118,7 +1118,7 @@ function mergeCourierHistoryEvents(...eventLists) {
       const eventTimeValue = event?.at || event?.createdAt || "";
       const eventTimeKey = isRouteTimeHistoryEvent(event)
         ? courierHistoryMinuteKey(eventTimeValue)
-        : parseEventMs(eventTimeValue) || String(eventTimeValue).trim().toLowerCase();
+        : courierHistoryMinuteKey(eventTimeValue) || parseEventMs(eventTimeValue) || String(eventTimeValue).trim().toLowerCase();
       const contentKeyParts = isRouteTimeHistoryEvent(event)
         ? [eventTimeKey, event?.label || ""]
         : [
@@ -1137,6 +1137,10 @@ function mergeCourierHistoryEvents(...eventLists) {
   return merged.sort((firstEvent, secondEvent) =>
     parseEventMs(firstEvent?.at || firstEvent?.createdAt) - parseEventMs(secondEvent?.at || secondEvent?.createdAt),
   );
+}
+
+function dedupeCourierHistoryEvents(events = []) {
+  return mergeCourierHistoryEvents(events);
 }
 
 function courierRouteTimeReprogramActivityActions() {
@@ -1295,7 +1299,7 @@ function isAttemptReprogrammingEvent(event) {
   const note = String(event?.note || "").trim();
   return (
     /\bintento reprogramado\b/i.test(normalizedLabel) &&
-    !Boolean(event?.routeTimeRescheduled) &&
+    !event?.routeTimeRescheduled &&
     !/falta de tiempo/i.test(normalizedLabel) &&
     !/route_time_rescheduled/i.test(note)
   );
@@ -2184,7 +2188,7 @@ export const loader = async ({ request }) => {
         ...requestWithAttemptCount,
         courierActivities: requestActivities,
         historyEvents: enrichCourierHistoryEvents({
-          events: historyEvents,
+          events: dedupeCourierHistoryEvents(historyEvents),
           request: requestWithAttemptCount,
           activitiesByRequestId: courierActivitiesByRequestId,
           transferActivityByRouteId,
@@ -4391,7 +4395,7 @@ function CourierOrderCard({
   const adminCourierPresentation = adminCourierView
     ? buildAdminCourierPresentation(request)
     : { events: request.historyEvents || [], scheduledDate: null };
-  const displayHistoryEvents = adminCourierPresentation.events;
+  const displayHistoryEvents = dedupeCourierHistoryEvents(adminCourierPresentation.events);
   const latestReprogrammingEvent = latestCourierReprogrammingEvent(displayHistoryEvents);
   const isRouteTimeReprogrammed =
     Boolean(latestReprogrammingEvent?.routeTimeRescheduled) ||

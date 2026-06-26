@@ -175,6 +175,17 @@ function appendReasonEntry(rawValue, entry) {
   return JSON.stringify({ entries });
 }
 
+function hasRecentReasonEntry(rawValue, kind, windowMs = COURIER_DUPLICATE_ACTION_WINDOW_MS) {
+  const normalizedKind = String(kind || "").trim().toLowerCase();
+  if (!normalizedKind) return false;
+  const cutoffMs = Date.now() - windowMs;
+  return parseReasonEntries(rawValue).some((entry) => {
+    if (String(entry?.kind || "").trim().toLowerCase() !== normalizedKind) return false;
+    const entryMs = new Date(entry?.at || 0).getTime();
+    return Number.isFinite(entryMs) && entryMs >= cutoffMs;
+  });
+}
+
 function appendTimelineMetaEntry(rawValue, entry) {
   const kind = String(entry?.kind || "").trim().toLowerCase();
   if (!kind) return rawValue || "";
@@ -1292,6 +1303,17 @@ export async function markCourierOrderAsNotDelivered({
     attemptCount: nextAttemptCount,
   };
 
+  const alreadyProcessed = await hasRecentCourierDeliveryEvent({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber: requestRow.orderNumber,
+    status: nextStatus,
+    attemptCount: nextAttemptCount,
+  });
+  if (alreadyProcessed) {
+    return { ok: true, requestRow, nextStatus, attemptCount: nextAttemptCount };
+  }
+
   try {
     await replaceCourierOrderStatusTag({
       shopDomain,
@@ -1546,6 +1568,17 @@ export async function markCourierOrderAsDelivered({
     attemptCount: deliveredAttemptCount,
   };
 
+  const alreadyProcessed = await hasRecentCourierDeliveryEvent({
+    shopDomain,
+    requestId: orderGid,
+    orderNumber: requestRow.orderNumber,
+    status: "entregado",
+    attemptCount: deliveredAttemptCount,
+  });
+  if (alreadyProcessed) {
+    return { ok: true, requestRow, nextStatus: "entregado", attemptCount: requestRow.attemptCount };
+  }
+
   try {
     await markShopifyOrderFulfillmentsAsDelivered({
       shopDomain,
@@ -1667,12 +1700,16 @@ export async function markCourierReturnAsEnRoute({ requestId }) {
   }
 
   const nextStatus = `en_ruta_${nextStep}`;
+  const routeEntryKind = `courier_en_route_${nextStep}`;
+  if (hasRecentReasonEntry(requestRow.rejectionReason, routeEntryKind)) {
+    return { ok: true, requestRow, nextStatus, routeStep: nextStep, attemptCount: nextStep };
+  }
   await prisma.returnRequest.update({
     where: { id },
     data: {
       status: nextStatus,
       rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
-        kind: `courier_en_route_${nextStep}`,
+        kind: routeEntryKind,
         reason: `${nextStep === 1 ? "Primer" : nextStep === 2 ? "Segundo" : "Tercer"} intento en ruta`,
       }),
     },
@@ -1759,6 +1796,10 @@ export async function markCourierReturnAsReceived({ requestId }) {
     return { ok: false, error: "Solo puedes marcar como recibida una devolucion aprobada o con intento fallido." };
   }
 
+  if (hasRecentReasonEntry(requestRow.rejectionReason, STATUS_RECEIVED_KIND)) {
+    return { ok: true, requestRow, nextStatus: "recibida", attemptCount: 0 };
+  }
+
   await prisma.returnRequest.update({
     where: { id: requestRow.id },
     data: {
@@ -1798,6 +1839,11 @@ export async function markCourierReturnPickupAttemptFailed({ requestId, rejectio
   const nextPickupDate = getNextPickupDate(requestRow.pickupDate);
   const reprogrammedReason = `Reprogramado para el ${formatPickupDateForMessage(nextPickupDate)}.\n\n${rejectionReason}`;
   const attemptCount = Number(nextStatus.replace("intento_fallido_", "")) || 0;
+  const failedEntryKind = `attempt_failed_${attemptCount}`;
+
+  if (hasRecentReasonEntry(requestRow.rejectionReason, failedEntryKind)) {
+    return { ok: true, requestRow, nextStatus, attemptCount };
+  }
 
   await prisma.returnRequest.update({
     where: { id: requestRow.id },
@@ -1805,7 +1851,7 @@ export async function markCourierReturnPickupAttemptFailed({ requestId, rejectio
       status: nextStatus,
       pickupDate: nextPickupDate,
       rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
-        kind: `attempt_failed_${attemptCount}`,
+        kind: failedEntryKind,
         reason: reprogrammedReason,
       }),
     },
