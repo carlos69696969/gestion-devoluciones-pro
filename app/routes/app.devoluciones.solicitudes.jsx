@@ -3434,6 +3434,10 @@ function isCourierCompletedHistoryOrder(order) {
 
 function isCourierBranchReturnOrder(order, routeAction = "") {
   const normalizedAction = String(routeAction || "").trim().toLowerCase();
+  const status = String(order?.status || order?.currentStatus || "").trim().toLowerCase();
+  if (!isReturnCourierLabel(order?.courierLabel) && ["entregado", "recibido", "recibida"].includes(status)) {
+    return false;
+  }
   if (normalizedAction) {
     return [
       "courier_mark_not_delivered",
@@ -3441,7 +3445,6 @@ function isCourierBranchReturnOrder(order, routeAction = "") {
       "courier_route_delivery_reprogrammed",
     ].includes(normalizedAction);
   }
-  const status = String(order?.status || order?.currentStatus || "").trim().toLowerCase();
   if (isReturnCourierLabel(order?.courierLabel)) {
     return ["entregado", "recibido", "recibida"].includes(status);
   }
