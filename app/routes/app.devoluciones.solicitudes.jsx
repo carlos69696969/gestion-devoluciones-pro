@@ -1076,17 +1076,28 @@ function filterCourierSnapshotHistoryEvents(events, snapshot) {
   });
 }
 
+function isRouteTimeHistoryEvent(event) {
+  return (
+    Boolean(event?.routeTimeRescheduled) ||
+    /falta de tiempo/i.test(String(event?.label || "")) ||
+    /route_time_rescheduled/i.test(String(event?.note || ""))
+  );
+}
+
 function mergeCourierHistoryEvents(...eventLists) {
   const seen = new Set();
   const merged = [];
   for (const events of eventLists) {
     for (const event of events || []) {
-      const contentKey = [
-        event?.at || event?.createdAt || "",
-        event?.label || "",
-        event?.note || "",
-        event?.status || "",
-      ].map((value) => String(value).trim().toLowerCase()).join(":");
+      const contentKeyParts = isRouteTimeHistoryEvent(event)
+        ? [event?.at || event?.createdAt || "", event?.label || ""]
+        : [
+            event?.at || event?.createdAt || "",
+            event?.label || "",
+            event?.note || "",
+            event?.status || "",
+          ];
+      const contentKey = contentKeyParts.map((value) => String(value).trim().toLowerCase()).join(":");
       const key = contentKey || String(event?.id || "");
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1127,6 +1138,55 @@ function courierSnapshotWithLatestRouteTimeCutoff(snapshot, activities = []) {
     ...snapshot,
     finishedAt: latestRouteTimeActivity.createdAt,
   };
+}
+
+function courierRouteTimeActivityEventsForOrder({
+  activities = [],
+  snapshot,
+  requestId = "",
+  sourceEvents = [],
+  fallbackCourierName = "",
+}) {
+  const routeId = String(snapshot?.routeId || "").trim();
+  const cutoffMs = parseEventMs(snapshot?.finishedAt || snapshot?.createdAt);
+  if (!routeId || !requestId) return [];
+  const routeTimeEvents = (sourceEvents || [])
+    .filter(isRouteTimeHistoryEvent)
+    .sort((firstEvent, secondEvent) => parseEventMs(firstEvent?.at || firstEvent?.createdAt) - parseEventMs(secondEvent?.at || secondEvent?.createdAt));
+  const usedEventIndexes = new Set();
+  return (activities || [])
+    .filter((activity) => {
+      const action = String(activity?.action || "").trim().toLowerCase();
+      const activityMs = parseEventMs(activity?.createdAt);
+      return (
+        courierRouteTimeReprogramActivityActions().includes(action) &&
+        String(activity?.routeId || "").trim() === routeId &&
+        String(activity?.requestId || "").trim() === String(requestId || "").trim() &&
+        activityMs &&
+        (!cutoffMs || activityMs <= cutoffMs)
+      );
+    })
+    .sort((firstActivity, secondActivity) => parseEventMs(firstActivity?.createdAt) - parseEventMs(secondActivity?.createdAt))
+    .map((activity, index) => {
+      const activityMs = parseEventMs(activity?.createdAt);
+      const matchedIndex = routeTimeEvents.findIndex((event, eventIndex) => {
+        if (usedEventIndexes.has(eventIndex)) return false;
+        const eventMs = parseEventMs(event?.at || event?.createdAt);
+        return eventMs && Math.abs(eventMs - activityMs) <= 2 * 60 * 1000;
+      });
+      const matchedEvent = matchedIndex >= 0 ? routeTimeEvents[matchedIndex] : null;
+      if (matchedIndex >= 0) usedEventIndexes.add(matchedIndex);
+      return {
+        ...(matchedEvent || {}),
+        id: `route-time-activity-${activity.id || activity.createdAt || index}`,
+        label: String(matchedEvent?.label || "").trim() || "Reprogramada por falta de tiempo",
+        at: activity.createdAt,
+        atMs: activityMs,
+        courierName: String(activity?.courierName || matchedEvent?.courierName || fallbackCourierName || "").trim(),
+        note: String(matchedEvent?.note || "route_time_rescheduled").trim(),
+        routeTimeRescheduled: true,
+      };
+    });
 }
 
 function courierSnapshotRouteTimeFallbackEvents(order, snapshot) {
@@ -3776,8 +3836,15 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
             const sourceOrder = orderByRequestId.get(id) || {};
             const snapshotHistoryEvents = Array.isArray(order?.historyEvents) ? order.historyEvents : [];
             const sourceHistoryEvents = Array.isArray(sourceOrder.historyEvents) ? sourceOrder.historyEvents : [];
+            const routeTimeActivityEvents = courierRouteTimeActivityEventsForOrder({
+              activities: courierActivities,
+              snapshot: selectedSnapshotCutoff,
+              requestId: id,
+              sourceEvents: sourceHistoryEvents,
+              fallbackCourierName: String(order?.courierName || selectedSnapshotCutoff.courierName || sourceOrder.courierName || "").trim(),
+            });
             const historyEvents = filterCourierSnapshotHistoryEvents(
-              mergeCourierHistoryEvents(snapshotHistoryEvents, sourceHistoryEvents),
+              mergeCourierHistoryEvents(routeTimeActivityEvents, sourceHistoryEvents, snapshotHistoryEvents),
               selectedSnapshotCutoff,
             );
             const orderWithCourierName = {
