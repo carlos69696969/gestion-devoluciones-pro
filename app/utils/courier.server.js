@@ -1110,7 +1110,7 @@ async function emitCourierDeliveryManualStatusNotification({
       const totalRecipients = Number(responsePayload?.result?.total || 0) || 0;
       const sentRecipients = Number(responsePayload?.result?.sent || 0) || 0;
 
-      if (response.ok && totalRecipients > 0 && sentRecipients > 0) {
+      if (response.ok && !responsePayload?.result?.skipped) {
         return { ok: true };
       }
 
