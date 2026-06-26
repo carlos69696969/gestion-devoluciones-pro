@@ -1025,11 +1025,16 @@ function buildCourierHistoryDisplayItems(events, request) {
   const shownAttemptKeys = new Set();
   const shownRouteTimeKeys = new Set();
   for (const event of events || []) {
-    if (event?.routeTimeRescheduled && !shownRouteTimeKeys.has(event.id)) {
-      shownRouteTimeKeys.add(event.id);
+    const isRouteTimeRescheduledEvent =
+      Boolean(event?.routeTimeRescheduled) ||
+      /falta de tiempo/i.test(String(event?.label || "")) ||
+      /route_time_rescheduled/i.test(String(event?.note || ""));
+    const routeTimeKey = String(event?.id || `${event?.at || ""}:${event?.label || ""}`);
+    if (isRouteTimeRescheduledEvent && !shownRouteTimeKeys.has(routeTimeKey)) {
+      shownRouteTimeKeys.add(routeTimeKey);
       const courierName = String(event?.courierName || request?.courierName || request?.assignedCourierName || "").trim();
       items.push({
-        id: `route-time-heading-${event.id}`,
+        id: `route-time-heading-${routeTimeKey}`,
         type: "heading",
         label: courierName ? `Reprogramado por repartidor ${courierName}` : "Reprogramado por repartidor",
       });
