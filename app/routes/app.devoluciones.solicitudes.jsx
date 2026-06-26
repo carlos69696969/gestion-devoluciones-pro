@@ -4359,6 +4359,8 @@ function CourierOrderCard({
     Boolean(latestReprogrammingEvent?.routeTimeRescheduled) ||
     /falta de tiempo/i.test(String(latestReprogrammingEvent?.label || "")) ||
     /route_time_rescheduled/i.test(String(latestReprogrammingEvent?.note || ""));
+  const isCourierHistoryReprogrammed =
+    courierHistoryView && normalizedVisibleStatus === "reintento_pendiente";
   const filteredHistoryEvents = courierHistoryView
     ? displayHistoryEvents.filter((event) => !isAttemptReprogrammingEvent(event))
     : displayHistoryEvents;
@@ -4383,7 +4385,7 @@ function CourierOrderCard({
     ? styles.courierBadgeStatusPending
     : ["entregado", "recibido", "recibida"].includes(normalizedVisibleStatus)
       ? styles.courierBadgeStatusSuccess
-    : courierHistoryView && isRouteTimeReprogrammed
+    : courierHistoryView && (isRouteTimeReprogrammed || isCourierHistoryReprogrammed)
       ? styles.courierBadgeStatusTimeReprogrammed
     : courierHistoryView
       ? styles.courierBadgeStatusHistoryWarning

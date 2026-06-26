@@ -802,6 +802,22 @@ export const action = async ({ request }) => {
                 note: event.note || "",
                 routeTimeRescheduled: isRouteTimeCourierEvent(event),
               }))).map(markSnapshotEventTransfer);
+          if (wasRouteTimeReprogrammedOnly && !historyEvents.some((event) => event.routeTimeRescheduled)) {
+            const scheduledDate = String(fetchedOrder.pickupDate || "").trim();
+            const scheduledDateLabel = scheduledDate
+              ? formatCourierSnapshotRescheduledDate(`${scheduledDate}T12:00:00Z`)
+              : "";
+            historyEvents.push(markSnapshotEventTransfer({
+              id: `route-time-fallback-${dailyAccess.routeId || "route"}-${id}`,
+              label: scheduledDateLabel
+                ? `Reprogramada por falta de tiempo para el ${scheduledDateLabel}`
+                : "Reprogramada por falta de tiempo",
+              at: finishedAt,
+              courierName: String(dailyAccess.courierName || ""),
+              note: scheduledDate ? `route_time_rescheduled:${scheduledDate}` : "route_time_rescheduled",
+              routeTimeRescheduled: true,
+            }));
+          }
           return {
             ...fetchedOrder,
             id,
