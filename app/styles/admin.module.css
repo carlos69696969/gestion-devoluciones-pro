@@ -911,6 +911,12 @@
   color: #b45309;
 }
 
+.courierBadgeStatusHistoryWarning {
+  background: #fff5e6;
+  border-color: #f59e0b;
+  color: #b45309;
+}
+
 .courierBadgeStatusTimeReprogrammed {
   background: #fff1f1;
   border-color: #d9364f;

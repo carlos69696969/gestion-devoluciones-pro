@@ -4449,7 +4449,9 @@ function CourierOrderCard({
       ? request.pickupDate
       : adminCourierPresentation.scheduledDate || request.pickupDate;
   const attemptBadgeClass = ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
-    ? normalizedVisibleStatus === "rechazada"
+    ? courierHistoryView
+      ? styles.courierBadgeStatusHistoryWarning
+      : normalizedVisibleStatus === "rechazada"
       ? styles.courierBadgeAttemptWarning
       : styles.courierBadgeStatusFailed
     : styles.courierBadgeAttempt;
@@ -4457,12 +4459,16 @@ function CourierOrderCard({
     ? styles.courierBadgeStatusPending
     : ["entregado", "recibido", "recibida"].includes(normalizedVisibleStatus)
       ? styles.courierBadgeStatusSuccess
-    : (isAdminReprogrammed || courierHistoryView)
+    : courierHistoryView
+      ? styles.courierBadgeStatusHistoryWarning
+    : isAdminReprogrammed
       ? isRouteTimeReprogrammed
       ? styles.courierBadgeStatusTimeReprogrammed
       : styles.courierBadgeStatusReprogrammed
     : ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
-      ? styles.courierBadgeStatusFailed
+      ? courierHistoryView
+        ? styles.courierBadgeStatusHistoryWarning
+        : styles.courierBadgeStatusFailed
       : normalizedVisibleStatus.startsWith("en_ruta")
         ? styles.courierBadgeStatusRoute
         : "";
