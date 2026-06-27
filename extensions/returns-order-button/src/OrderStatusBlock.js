@@ -160,16 +160,13 @@ export default function extension() {
   const deliveryCodeBlock = document.createElement("s-stack");
   deliveryCodeBlock.setAttribute("gap", "small");
 
-  const deliveryCodeTitle = document.createElement("s-text");
-  deliveryCodeTitle.setAttribute("appearance", "strong");
+  const deliveryCodeTitle = document.createElement("s-heading");
   deliveryCodeTitle.textContent = "CLAVE DE ENTREGA";
 
-  const deliveryCodeValue = document.createElement("s-text");
-  deliveryCodeValue.setAttribute("appearance", "strong");
+  const deliveryCodeValue = document.createElement("s-heading");
 
   const deliveryCodeDescription = document.createElement("s-text");
-  deliveryCodeDescription.textContent =
-    "Entrega esta clave al repartidor para que te entregue tu pedido.";
+  deliveryCodeDescription.textContent = "Entrega esta clave al repartidor para recibir tu pedido.";
 
   deliveryCodeBlock.appendChild(deliveryCodeTitle);
   deliveryCodeBlock.appendChild(deliveryCodeValue);
