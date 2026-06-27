@@ -3848,7 +3848,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
               : "";
             const snapshotHistoryEvents = routeReprogramActivity
               ? [
-                  ...storedSnapshotHistoryEvents.filter((event) => !isRouteTimeHistoryEvent(event)),
+                  ...storedSnapshotHistoryEvents,
                   {
                     id: `snapshot-route-activity-${selectedRouteId}-${id}`,
                     label: scheduledDateLabel

@@ -792,7 +792,7 @@ export const action = async ({ request }) => {
           const deliverySnapshotEvents = wasRouteTimeReprogrammedOnly
             ? (deliveryHistoryByRequestId.get(id) || []).filter(isRouteTimeCourierEvent)
             : (deliveryHistoryByRequestId.get(id) || []);
-          let historyEvents = (id.startsWith("pickup-")
+          const historyEvents = (id.startsWith("pickup-")
             ? buildPickupSnapshotHistoryEvents(pickupSnapshotOrder)
             : deliverySnapshotEvents.map((event) => ({
                 id: `delivery-event-${event.id}`,
@@ -807,7 +807,7 @@ export const action = async ({ request }) => {
             const scheduledDateLabel = scheduledDate
               ? formatCourierSnapshotRescheduledDate(`${scheduledDate}T12:00:00Z`)
               : "";
-            historyEvents = [markSnapshotEventTransfer({
+            historyEvents.push(markSnapshotEventTransfer({
               id: `route-time-fallback-${dailyAccess.routeId || "route"}-${id}`,
               label: scheduledDateLabel
                 ? `Reprogramada por falta de tiempo para el ${scheduledDateLabel}`
@@ -816,7 +816,7 @@ export const action = async ({ request }) => {
               courierName: String(dailyAccess.courierName || ""),
               note: scheduledDate ? `route_time_rescheduled:${scheduledDate}` : "route_time_rescheduled",
               routeTimeRescheduled: true,
-            })];
+            }));
           }
           return {
             ...fetchedOrder,
