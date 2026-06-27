@@ -3840,7 +3840,10 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           .map((order, index) => {
             const id = String(order?.id || "");
             const sourceOrder = orderByRequestId.get(id) || {};
-            const storedSnapshotHistoryEvents = Array.isArray(order?.historyEvents) ? order.historyEvents : [];
+            const storedSnapshotHistoryEvents = mergeCourierHistoryEvents(
+              Array.isArray(order?.historyEvents) ? order.historyEvents : [],
+              Array.isArray(sourceOrder?.historyEvents) ? sourceOrder.historyEvents : [],
+            );
             const routeReprogramActivity = routeReprogramActivityByRequestId.get(id);
             const scheduledDate = String(order?.pickupDate || sourceOrder?.pickupDate || "").trim();
             const scheduledDateLabel = scheduledDate

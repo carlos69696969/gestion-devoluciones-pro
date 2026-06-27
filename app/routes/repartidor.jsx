@@ -213,12 +213,6 @@ function buildPickupSnapshotHistoryEvents(order) {
     .sort((firstEvent, secondEvent) => new Date(firstEvent.at).getTime() - new Date(secondEvent.at).getTime());
 }
 
-function isRouteTimeSnapshotReasonEntry(entry) {
-  const kind = String(entry?.kind || "").trim().toLowerCase();
-  const reason = String(entry?.reason || "").trim();
-  return kind === "courier_route_time_reprogrammed" || /falta de tiempo/i.test(reason);
-}
-
 function isRouteTimeCourierEvent(event) {
   const note = String(event?.note || "").trim();
   const status = String(event?.status || "").trim().toLowerCase();
@@ -775,23 +769,11 @@ export const action = async ({ request }) => {
           const wasWorkedInThisRoute = routeActionsForOrder.some(isWorkedCourierRouteAction);
           const wasRouteTimeReprogrammedOnly =
             reprogrammedActivityByRequestId.has(id) && !wasWorkedInThisRoute;
-          const pickupSnapshotOrder = wasRouteTimeReprogrammedOnly && id.startsWith("pickup-")
-            ? {
-                ...fetchedOrder,
-                courierName: String(dailyAccess.courierName || ""),
-                rejectionReason: JSON.stringify({
-                  entries: parseSnapshotReasonEntries(fetchedOrder?.rejectionReason).filter(
-                    isRouteTimeSnapshotReasonEntry,
-                  ),
-                }),
-              }
-            : {
-                ...fetchedOrder,
-                courierName: String(dailyAccess.courierName || ""),
-              };
-          const deliverySnapshotEvents = wasRouteTimeReprogrammedOnly
-            ? (deliveryHistoryByRequestId.get(id) || []).filter(isRouteTimeCourierEvent)
-            : (deliveryHistoryByRequestId.get(id) || []);
+          const pickupSnapshotOrder = {
+            ...fetchedOrder,
+            courierName: String(dailyAccess.courierName || ""),
+          };
+          const deliverySnapshotEvents = deliveryHistoryByRequestId.get(id) || [];
           const historyEvents = (id.startsWith("pickup-")
             ? buildPickupSnapshotHistoryEvents(pickupSnapshotOrder)
             : deliverySnapshotEvents.map((event) => ({
