@@ -2383,7 +2383,13 @@ export default function RepartidorPublicPortal() {
                     </div>
                     <div className={styles.statusGroup}>
                       {!isReturnOrder(request) && getDeliveryAttemptLabel(request, activeTab) ? (
-                        <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
+                        <span
+                          className={`${adminStyles.courierBadgeStatus} ${
+                            getDeliveryAttemptLabel(request, activeTab) === "Tercer intento"
+                              ? styles.statusBadgeFailed
+                              : styles.statusBadgeAttempt
+                          }`}
+                        >
                           {getDeliveryAttemptLabel(request, activeTab)}
                         </span>
                       ) : null}
@@ -2415,7 +2421,13 @@ export default function RepartidorPublicPortal() {
                             </span>
                           ) : null}
                           {isReturnOrder(request) && getReturnRetryAttemptLabel(request) ? (
-                            <span className={`${adminStyles.courierBadgeStatus} ${styles.statusBadgeAttempt}`}>
+                            <span
+                              className={`${adminStyles.courierBadgeStatus} ${
+                                getReturnRetryAttemptLabel(request) === "tercer intento"
+                                  ? styles.statusBadgeFailed
+                                  : styles.statusBadgeAttempt
+                              }`}
+                            >
                               {getReturnRetryAttemptLabel(request)}
                             </span>
                           ) : null}
