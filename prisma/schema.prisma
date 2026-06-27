@@ -187,3 +187,20 @@ model PushDevice {
   @@index([shop, customerId])
   @@index([shop, isActive])
 }
+
+model DeliveryCodeAssignment {
+  id             Int       @id @default(autoincrement())
+  shop           String
+  shopifyOrderId String
+  orderNumber    String
+  code           String?   @unique
+  historicalCode String
+  active         Boolean   @default(true)
+  releasedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([shop, shopifyOrderId])
+  @@index([shop, active])
+  @@index([shop, orderNumber])
+}

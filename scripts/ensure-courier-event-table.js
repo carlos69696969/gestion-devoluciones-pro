@@ -113,4 +113,40 @@ await prisma.$executeRawUnsafe(`
   ON "CourierRouteSnapshot"("shop", "courierId", "dateKey")
 `);
 
+await prisma.$executeRawUnsafe(`
+  CREATE TABLE IF NOT EXISTS "DeliveryCodeAssignment" (
+    "id" SERIAL NOT NULL,
+    "shop" TEXT NOT NULL,
+    "shopifyOrderId" TEXT NOT NULL,
+    "orderNumber" TEXT NOT NULL,
+    "code" TEXT,
+    "historicalCode" TEXT NOT NULL,
+    "active" BOOLEAN NOT NULL DEFAULT true,
+    "releasedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "DeliveryCodeAssignment_pkey" PRIMARY KEY ("id")
+  )
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE UNIQUE INDEX IF NOT EXISTS "DeliveryCodeAssignment_code_key"
+  ON "DeliveryCodeAssignment"("code")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE UNIQUE INDEX IF NOT EXISTS "DeliveryCodeAssignment_shop_shopifyOrderId_key"
+  ON "DeliveryCodeAssignment"("shop", "shopifyOrderId")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "DeliveryCodeAssignment_shop_active_idx"
+  ON "DeliveryCodeAssignment"("shop", "active")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "DeliveryCodeAssignment_shop_orderNumber_idx"
+  ON "DeliveryCodeAssignment"("shop", "orderNumber")
+`);
+
 await prisma.$disconnect();

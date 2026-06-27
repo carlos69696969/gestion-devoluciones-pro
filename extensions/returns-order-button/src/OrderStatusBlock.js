@@ -69,6 +69,7 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
       hasConfirmedReturns: hasConfirmedReturnsFromProbe,
       limitDate: effective?.limitDate || "",
       isDelivered: Boolean(effective?.isDelivered),
+      deliveryCode: String(primary?.deliveryCode || effective?.deliveryCode || "").trim(),
     };
   } catch {
     return null;
@@ -145,6 +146,24 @@ export default function extension() {
   const noEligibleText = document.createElement("s-text");
   noEligibleText.textContent = "Este pedido ya no tiene productos disponibles para devolucion.";
 
+  const deliveryCodeBlock = document.createElement("s-stack");
+  deliveryCodeBlock.setAttribute("gap", "small");
+
+  const deliveryCodeTitle = document.createElement("s-text");
+  deliveryCodeTitle.setAttribute("appearance", "strong");
+  deliveryCodeTitle.textContent = "CLAVE DE ENTREGA";
+
+  const deliveryCodeValue = document.createElement("s-text");
+  deliveryCodeValue.setAttribute("appearance", "strong");
+
+  const deliveryCodeDescription = document.createElement("s-text");
+  deliveryCodeDescription.textContent =
+    "Entrega esta clave al repartidor para que te entregue tu pedido.";
+
+  deliveryCodeBlock.appendChild(deliveryCodeTitle);
+  deliveryCodeBlock.appendChild(deliveryCodeValue);
+  deliveryCodeBlock.appendChild(deliveryCodeDescription);
+
   wrapper.appendChild(title);
   wrapper.appendChild(description);
   wrapper.appendChild(actions);
@@ -193,6 +212,14 @@ export default function extension() {
       if (!noEligibleText.parentNode) wrapper.appendChild(noEligibleText);
     } else if (noEligibleText.parentNode) {
       noEligibleText.parentNode.removeChild(noEligibleText);
+    }
+
+    const deliveryCode = String(eligibility?.deliveryCode || "").trim();
+    if (!eligibility?.isDelivered && deliveryCode) {
+      deliveryCodeValue.textContent = deliveryCode;
+      if (!deliveryCodeBlock.parentNode) wrapper.appendChild(deliveryCodeBlock);
+    } else if (deliveryCodeBlock.parentNode) {
+      deliveryCodeBlock.parentNode.removeChild(deliveryCodeBlock);
     }
   });
 }

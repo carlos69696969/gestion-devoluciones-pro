@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+
 const ACTIVE_RETURN_STATUSES = [
   "en_revision",
   "aprobada",
@@ -21,6 +23,9 @@ const ACTIVE_RETURN_STATUSES = [
 
 const ADMIN_API_VERSION = "2025-10";
 const DELIVERED_FULFILLMENT_STATUSES = new Set(["FULFILLED", "PARTIALLY_FULFILLED"]);
+const DELIVERY_CODE_MIN = 100000;
+const DELIVERY_CODE_MAX_EXCLUSIVE = 1000000;
+const DELIVERY_CODE_GENERATION_ATTEMPTS = 30;
 
 function jsonWithCors(data) {
   return Response.json(data, {
@@ -124,7 +129,7 @@ async function resolveDeliveryStatus({ prisma, requestedShop, orderNumber, custo
     allSessions.some((session) => String(session.shop || "").trim().toLowerCase() === candidate),
   );
   if (preferredShops.length && !preferredHasSession) {
-    return { isDelivered: false, limitDate: "" };
+    return { isDelivered: false, limitDate: "", shop: "", shopifyOrderId: "" };
   }
   const candidateShops = preferredShops.length
     ? preferredShops
@@ -191,10 +196,73 @@ async function resolveDeliveryStatus({ prisma, requestedShop, orderNumber, custo
     return {
       isDelivered: Boolean(deliveredAt),
       limitDate: limitDate ? limitDate.toISOString() : "",
+      shop: shopCandidate,
+      shopifyOrderId: String(match?.id || "").trim(),
     };
   }
 
-  return { isDelivered: false, limitDate: "" };
+  return { isDelivered: false, limitDate: "", shop: "", shopifyOrderId: "" };
+}
+
+async function resolveDeliveryCode({ prisma, delivery, orderNumber, canDisplayCode }) {
+  const resolvedShop = String(delivery?.shop || "").trim();
+  const shopifyOrderId = String(delivery?.shopifyOrderId || "").trim();
+  if (!resolvedShop || !shopifyOrderId) return "";
+
+  const orderIdentity = {
+    shop_shopifyOrderId: {
+      shop: resolvedShop,
+      shopifyOrderId,
+    },
+  };
+  const existingAssignment = await prisma.deliveryCodeAssignment.findUnique({
+    where: orderIdentity,
+  });
+
+  if (delivery?.isDelivered) {
+    if (existingAssignment?.active || existingAssignment?.code) {
+      await prisma.deliveryCodeAssignment.update({
+        where: orderIdentity,
+        data: {
+          code: null,
+          active: false,
+          releasedAt: new Date(),
+        },
+      });
+    }
+    return "";
+  }
+
+  if (!canDisplayCode) return "";
+  if (existingAssignment) {
+    return existingAssignment.active ? String(existingAssignment.code || "") : "";
+  }
+
+  for (let attempt = 0; attempt < DELIVERY_CODE_GENERATION_ATTEMPTS; attempt += 1) {
+    const code = String(randomInt(DELIVERY_CODE_MIN, DELIVERY_CODE_MAX_EXCLUSIVE));
+    try {
+      const assignment = await prisma.deliveryCodeAssignment.create({
+        data: {
+          shop: resolvedShop,
+          shopifyOrderId,
+          orderNumber,
+          code,
+          historicalCode: code,
+        },
+      });
+      return String(assignment.code || "");
+    } catch (error) {
+      if (error?.code !== "P2002") throw error;
+      const concurrentAssignment = await prisma.deliveryCodeAssignment.findUnique({
+        where: orderIdentity,
+      });
+      if (concurrentAssignment) {
+        return concurrentAssignment.active ? String(concurrentAssignment.code || "") : "";
+      }
+    }
+  }
+
+  throw new Error("No fue posible generar una clave de entrega unica.");
 }
 
 export const loader = async ({ request }) => {
@@ -252,10 +320,17 @@ export const loader = async ({ request }) => {
     orderNumber,
     customerEmail,
   });
+  const deliveryCode = await resolveDeliveryCode({
+    prisma,
+    delivery,
+    orderNumber,
+    canDisplayCode: Boolean(customerEmail),
+  });
 
   return jsonWithCors({
     hasExistingReturns,
     isDelivered: Boolean(delivery?.isDelivered),
     limitDate: String(delivery?.limitDate || ""),
+    deliveryCode,
   });
 };

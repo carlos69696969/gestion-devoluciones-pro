@@ -1527,6 +1527,29 @@ export async function markCourierOrderReadyForBranchPickup({ shopDomain, request
   return { ok: true, nextStatus: "recoger_en_sucursal", attemptCount: 3 };
 }
 
+async function releaseDeliveryCodeForOrder({ shopDomain, shopifyOrderId }) {
+  try {
+    await prisma.deliveryCodeAssignment.updateMany({
+      where: {
+        shop: shopDomain,
+        shopifyOrderId,
+        active: true,
+      },
+      data: {
+        code: null,
+        active: false,
+        releasedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    console.error("Failed to release delivery code", {
+      shopDomain,
+      shopifyOrderId,
+      error: String(error?.message || error),
+    });
+  }
+}
+
 export async function markCourierOrderAsDelivered({
   shopDomain,
   requestId,
@@ -1576,6 +1599,10 @@ export async function markCourierOrderAsDelivered({
     attemptCount: deliveredAttemptCount,
   });
   if (alreadyProcessed) {
+    await releaseDeliveryCodeForOrder({
+      shopDomain,
+      shopifyOrderId: orderGid,
+    });
     return { ok: true, requestRow, nextStatus: "entregado", attemptCount: requestRow.attemptCount };
   }
 
@@ -1602,6 +1629,10 @@ export async function markCourierOrderAsDelivered({
     orderNumber: requestRow.orderNumber,
     status: "entregado",
     attemptCount: requestRow.attemptCount,
+  });
+  await releaseDeliveryCodeForOrder({
+    shopDomain,
+    shopifyOrderId: orderGid,
   });
 
   return { ok: true, requestRow, nextStatus: "entregado", attemptCount: requestRow.attemptCount };
