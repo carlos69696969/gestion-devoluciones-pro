@@ -942,7 +942,7 @@ function returnCourierHistoryLabel(entry, finalAttempt) {
   }
   const failedAttemptMatch = kind.match(/^attempt_failed_(\d)$/);
   if (failedAttemptMatch) return `${courierAttemptLabel(failedAttemptMatch[1])} no recibido`;
-  if (kind === STATUS_RECEIVED_KIND) return `${courierAttemptLabel(finalAttempt)} entregado`;
+  if (kind === STATUS_RECEIVED_KIND) return `${courierAttemptLabel(finalAttempt)} recibido`;
   return timelineLabelFromReasonEntry(entry);
 }
 
