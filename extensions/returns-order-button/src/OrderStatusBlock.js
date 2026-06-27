@@ -184,10 +184,6 @@ export default function extension() {
   deliveryCodeBlock.appendChild(deliveryCodeValue);
   deliveryCodeBlock.appendChild(deliveryCodeDescription);
 
-  wrapper.appendChild(title);
-  wrapper.appendChild(description);
-  wrapper.appendChild(actions);
-
   const mountWrapper = () => {
     if (!wrapper.parentNode) document.body.appendChild(wrapper);
   };
@@ -231,10 +227,31 @@ export default function extension() {
       actions.removeChild(actions.firstChild);
     }
 
+    const deliveryCode = String(eligibility?.deliveryCode || "").trim();
+    if (!eligibility?.isDelivered) {
+      [title, description, actions, noEligibleText].forEach((element) => {
+        if (element.parentNode) element.parentNode.removeChild(element);
+      });
+      if (deliveryCode) {
+        renderDeliveryCode(deliveryCode);
+        if (!deliveryCodeBlock.parentNode) wrapper.appendChild(deliveryCodeBlock);
+      } else {
+        unmountWrapper();
+      }
+      return;
+    }
+
+    if (deliveryCodeBlock.parentNode) {
+      deliveryCodeBlock.parentNode.removeChild(deliveryCodeBlock);
+    }
+    [title, description, actions].forEach((element) => {
+      if (!element.parentNode) wrapper.appendChild(element);
+    });
+
     if (hasConfirmedReturns) {
       actions.appendChild(viewButton);
     }
-    if (hasEligibleItems) {
+    if (eligibility?.isDelivered && hasEligibleItems) {
       actions.appendChild(requestButton);
     }
 
@@ -242,14 +259,6 @@ export default function extension() {
       if (!noEligibleText.parentNode) wrapper.appendChild(noEligibleText);
     } else if (noEligibleText.parentNode) {
       noEligibleText.parentNode.removeChild(noEligibleText);
-    }
-
-    const deliveryCode = String(eligibility?.deliveryCode || "").trim();
-    if (!eligibility?.isDelivered && deliveryCode) {
-      renderDeliveryCode(deliveryCode);
-      if (!deliveryCodeBlock.parentNode) wrapper.appendChild(deliveryCodeBlock);
-    } else if (deliveryCodeBlock.parentNode) {
-      deliveryCodeBlock.parentNode.removeChild(deliveryCodeBlock);
     }
   });
 }
