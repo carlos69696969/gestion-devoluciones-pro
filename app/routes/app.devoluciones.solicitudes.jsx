@@ -1067,7 +1067,16 @@ function buildCourierHistoryDisplayItems(events, request) {
   const items = [];
   const shownAttemptKeys = new Set();
   const shownRouteTimeKeys = new Set();
-  for (const event of dedupeCourierHistoryEvents(events) || []) {
+  const dedupedEvents = dedupeCourierHistoryEvents(events) || [];
+  const transferredCourierNameByAttempt = new Map();
+  for (const event of dedupedEvents) {
+    const attempt = courierAttemptFromHistoryLabel(event?.label);
+    const transferredCourierName = String(event?.transferredCourierName || "").trim();
+    if (attempt && transferredCourierName) {
+      transferredCourierNameByAttempt.set(attempt, transferredCourierName);
+    }
+  }
+  for (const event of dedupedEvents) {
     const isRouteTimeRescheduledEvent =
       Boolean(event?.routeTimeRescheduled) ||
       /falta de tiempo/i.test(String(event?.label || "")) ||
@@ -1098,12 +1107,16 @@ function buildCourierHistoryDisplayItems(events, request) {
       const heading = courierAttemptHeading(attempt);
       const courierName = String(event?.courierName || request?.courierName || request?.assignedCourierName || "").trim();
       const transferredCourierName = String(
-        event?.transferredCourierName || request?.transferredCourierName || "",
+        transferredCourierNameByAttempt.get(attempt) ||
+          event?.transferredCourierName ||
+          request?.transferredCourierName ||
+          "",
       ).trim();
       const routeTransferredAtMs = parseEventMs(request?.routeTransferredAt);
       const wasHandledAfterTransfer =
         transferredCourierName &&
-        (Boolean(event?.transferredCourierName) ||
+        (transferredCourierNameByAttempt.has(attempt) ||
+          Boolean(event?.transferredCourierName) ||
           (routeTransferredAtMs && parseEventMs(event?.at) >= routeTransferredAtMs));
       items.push({
         id: `attempt-heading-${attempt}-${event.id}`,
