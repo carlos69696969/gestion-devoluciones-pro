@@ -2747,7 +2747,7 @@ export default function RepartidorPublicPortal() {
                 </button>
                 <button
                   type="submit"
-                  className={styles.actionButtonPrimary}
+                  className={`${styles.actionButton} ${styles.deliveryCodeConfirmButton}`}
                   disabled={isSubmitting || deliveryCodeInput.length !== 6}
                 >
                   Confirmar

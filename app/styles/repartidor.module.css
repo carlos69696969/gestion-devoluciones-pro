@@ -410,6 +410,24 @@
   border-color: #d1d5db;
 }
 
+.deliveryCodeConfirmButton {
+  background: #005bd3;
+  border-color: #005bd3;
+  color: #fff;
+}
+
+.deliveryCodeConfirmButton:hover:not(:disabled) {
+  background: #004299;
+  border-color: #004299;
+}
+
+.deliveryCodeConfirmButton:disabled {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #9ca3af;
+  opacity: 1;
+}
+
 .actionButtonSecondary {
   border-color: #d1d5db;
 }
