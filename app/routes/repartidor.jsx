@@ -1197,6 +1197,36 @@ export const action = async ({ request }) => {
       return { ok: false, error: "Accion no valida." };
     }
 
+    if (intent === "courier_mark_delivered") {
+      const submittedDeliveryCode = String(formData.get("deliveryCode") || "")
+        .replace(/\D/g, "")
+        .slice(0, 6);
+      const deliveryCodeAssignment = await prisma.deliveryCodeAssignment.findUnique({
+        where: {
+          shop_shopifyOrderId: {
+            shop,
+            shopifyOrderId: requestId,
+          },
+        },
+        select: {
+          code: true,
+          active: true,
+        },
+      });
+      if (
+        submittedDeliveryCode.length !== 6 ||
+        !deliveryCodeAssignment?.active ||
+        String(deliveryCodeAssignment.code || "") !== submittedDeliveryCode
+      ) {
+        return {
+          ok: false,
+          error: "Clave incorrecta",
+          deliveryCodeError: true,
+          requestId,
+        };
+      }
+    }
+
     const actionHandler =
       intent === "courier_mark_delivered"
         ? markCourierOrderAsDelivered
@@ -1780,8 +1810,19 @@ export default function RepartidorPublicPortal() {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
   const [failedPickupRequest, setFailedPickupRequest] = useState(null);
+  const [deliveryCodeRequest, setDeliveryCodeRequest] = useState(null);
+  const [deliveryCodeInput, setDeliveryCodeInput] = useState("");
+  const [deliveryCodeError, setDeliveryCodeError] = useState("");
   const [showBranchReturnConfirmation, setShowBranchReturnConfirmation] = useState(false);
   const [branchReturnConfirmationError, setBranchReturnConfirmationError] = useState("");
+  useEffect(() => {
+    if (
+      actionData?.deliveryCodeError &&
+      String(actionData?.requestId || "") === String(deliveryCodeRequest?.id || "")
+    ) {
+      setDeliveryCodeError(String(actionData.error || "Clave incorrecta"));
+    }
+  }, [actionData, deliveryCodeRequest?.id]);
   useEffect(() => {
     if (requiresDailyAccess || routeTransferred) return undefined;
     const refreshTransferStatus = () => {
@@ -2317,7 +2358,7 @@ export default function RepartidorPublicPortal() {
 
         {!showBranchReturnConfirmation ? (
           <section className={styles.card}>
-          {actionData?.ok === false && actionData?.error ? (
+          {actionData?.ok === false && actionData?.error && !actionData?.deliveryCodeError ? (
             <p className={styles.empty} role="alert" aria-live="polite">
               {actionData.error}
             </p>
@@ -2579,7 +2620,18 @@ export default function RepartidorPublicPortal() {
                           {isRouteActionVisible(request) ? renderCourierActionForm(request, "En ruta", "courier_mark_en_route", "en ruta") : null}
                           {canShowDeliveryResultActions(request) ? (
                             <>
-                              {renderCourierActionForm(request, "Entregado", "courier_mark_delivered", "entregado")}
+                              <button
+                                type="button"
+                                className={styles.actionButton}
+                                disabled={isSubmitting}
+                                onClick={() => {
+                                  setDeliveryCodeInput("");
+                                  setDeliveryCodeError("");
+                                  setDeliveryCodeRequest(request);
+                                }}
+                              >
+                                Entregado
+                              </button>
                               {renderCourierActionForm(
                                 request,
                                 "No entregado",
@@ -2625,6 +2677,83 @@ export default function RepartidorPublicPortal() {
                 Cerrar
               </button>
             </div>
+          </section>
+        </div>
+      ) : null}
+      {deliveryCodeRequest ? (
+        <div className={styles.modalBackdrop}>
+          <section
+            className={styles.deliveryCodeModal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delivery-code-title"
+          >
+            <h2 id="delivery-code-title" className={styles.reasonModalTitle}>
+              Introduce la clave de entrega
+            </h2>
+            <p className={styles.deliveryCodeDescription}>
+              Solicita al cliente la clave de seis digitos del pedido #{deliveryCodeRequest.orderNumber}.
+            </p>
+            <Form
+              method="post"
+              className={styles.deliveryCodeForm}
+              onSubmit={() => setDeliveryCodeError("")}
+            >
+              <input type="hidden" name="shop" value={shop || ""} />
+              <input type="hidden" name="intent" value="courier_mark_delivered" />
+              <input type="hidden" name="requestId" value={String(deliveryCodeRequest.id || "")} />
+              <input type="hidden" name="orderNumber" value={String(deliveryCodeRequest.orderNumber || "")} />
+              <input type="hidden" name="customerName" value={String(deliveryCodeRequest.customerName || "")} />
+              <input type="hidden" name="customerEmail" value={String(deliveryCodeRequest.customerEmail || "")} />
+              <input type="hidden" name="customerPhone" value={String(deliveryCodeRequest.customerPhone || "")} />
+              <input type="hidden" name="currentStatus" value={String(deliveryCodeRequest.status || "")} />
+              <input
+                type="hidden"
+                name="currentAttemptCount"
+                value={String(deliveryCodeRequest.attemptCount || 0)}
+              />
+              <input
+                type="hidden"
+                name="currentScheduledDate"
+                value={String(deliveryCodeRequest.pickupDate || "")}
+              />
+              <input
+                className={styles.deliveryCodeInput}
+                name="deliveryCode"
+                value={deliveryCodeInput}
+                onChange={(event) => {
+                  setDeliveryCodeInput(event.target.value.replace(/\D/g, "").slice(0, 6));
+                  setDeliveryCodeError("");
+                }}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                pattern="[0-9]{6}"
+                aria-label="Clave de entrega de seis digitos"
+                required
+              />
+              {deliveryCodeError ? (
+                <p className={styles.deliveryCodeError} role="alert" aria-live="polite">
+                  {deliveryCodeError}
+                </p>
+              ) : null}
+              <div className={styles.deliveryCodeActions}>
+                <button
+                  type="button"
+                  className={styles.actionButton}
+                  onClick={() => setDeliveryCodeRequest(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className={styles.actionButtonPrimary}
+                  disabled={isSubmitting || deliveryCodeInput.length !== 6}
+                >
+                  Confirmar
+                </button>
+              </div>
+            </Form>
           </section>
         </div>
       ) : null}
