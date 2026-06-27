@@ -1076,10 +1076,20 @@ function buildCourierHistoryDisplayItems(events, request) {
     if (isRouteTimeRescheduledEvent && !shownRouteTimeKeys.has(routeTimeKey)) {
       shownRouteTimeKeys.add(routeTimeKey);
       const courierName = String(event?.courierName || request?.courierName || request?.assignedCourierName || "").trim();
+      const transferredCourierName = String(
+        event?.transferredCourierName || request?.transferredCourierName || "",
+      ).trim();
+      const routeTransferredAtMs = parseEventMs(request?.routeTransferredAt);
+      const wasHandledAfterTransfer =
+        transferredCourierName &&
+        (Boolean(event?.transferredCourierName) ||
+          (routeTransferredAtMs && parseEventMs(event?.at) >= routeTransferredAtMs));
       items.push({
         id: `route-time-heading-${routeTimeKey}`,
         type: "heading",
-        label: courierName ? `Reprogramado por repartidor ${courierName}` : "Reprogramado por repartidor",
+        label: `${courierName ? `Reprogramado por repartidor ${courierName}` : "Reprogramado por repartidor"}${
+          wasHandledAfterTransfer ? ` · traspasado a ${transferredCourierName}` : ""
+        }`,
       });
     }
     const attempt = courierAttemptFromHistoryLabel(event?.label);
