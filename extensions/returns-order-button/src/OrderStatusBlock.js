@@ -92,7 +92,10 @@ function formatLimitDate(limitDateISO) {
   if (!raw) return "";
   const date = new Date(raw);
   if (!Number.isFinite(date.getTime())) return "";
-  return date.toLocaleDateString("es-MX");
+  const day = date.getDate();
+  const month = date.toLocaleDateString("es-MX", { month: "long" });
+  const formattedMonth = month.charAt(0).toUpperCase() + month.slice(1);
+  return `${day} / ${formattedMonth} / ${date.getFullYear()}`;
 }
 
 function buildPortalUrl({ orderName, customerEmail, shopDomain, mode }) {
