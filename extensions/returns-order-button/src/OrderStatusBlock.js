@@ -163,17 +163,17 @@ export default function extension() {
   const deliveryCodeTitle = document.createElement("s-heading");
   deliveryCodeTitle.textContent = "CLAVE DE ENTREGA";
 
-  const deliveryCodeValue = document.createElement("s-heading");
+  const deliveryCodeValue = document.createElement("s-stack");
+  deliveryCodeValue.setAttribute("direction", "inline");
+  deliveryCodeValue.setAttribute("gap", "small");
   const renderDeliveryCode = (code) => {
     while (deliveryCodeValue.firstChild) {
       deliveryCodeValue.removeChild(deliveryCodeValue.firstChild);
     }
-    Array.from(String(code || "")).forEach((digit, index, digits) => {
-      const digitText = document.createElement("s-text");
-      digitText.setAttribute("type", "strong");
-      digitText.setAttribute("tone", "info");
-      digitText.textContent = index < digits.length - 1 ? `${digit}\u00A0\u00A0` : digit;
-      deliveryCodeValue.appendChild(digitText);
+    Array.from(String(code || "")).forEach((digit) => {
+      const digitHeading = document.createElement("s-heading");
+      digitHeading.textContent = digit;
+      deliveryCodeValue.appendChild(digitHeading);
     });
   };
 
