@@ -1,4 +1,5 @@
 import { randomInt } from "node:crypto";
+import { authenticate } from "../shopify.server";
 
 const ACTIVE_RETURN_STATUSES = [
   "en_revision",
@@ -32,7 +33,7 @@ function jsonWithCors(data) {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type",
     },
   });
 }
@@ -265,6 +266,16 @@ async function resolveDeliveryCode({ prisma, delivery, orderNumber, canDisplayCo
   throw new Error("No fue posible generar una clave de entrega unica.");
 }
 
+async function authenticatedCustomerAccountShop(request) {
+  if (!String(request.headers.get("Authorization") || "").startsWith("Bearer ")) return "";
+  try {
+    const { sessionToken } = await authenticate.public.customerAccount(request);
+    return new URL(String(sessionToken?.dest || "")).hostname.trim().toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 export const loader = async ({ request }) => {
   const { default: prisma } = await import("../db.server");
   const url = new URL(request.url);
@@ -277,6 +288,8 @@ export const loader = async ({ request }) => {
   const shop = String(url.searchParams.get("shop") || "")
     .trim()
     .toLowerCase();
+  const authenticatedShop = await authenticatedCustomerAccountShop(request);
+  const effectiveShop = authenticatedShop || shop;
 
   if (!orderNumber) {
     return jsonWithCors({ hasExistingReturns: false, isDelivered: false, limitDate: "" });
@@ -298,12 +311,12 @@ export const loader = async ({ request }) => {
   // Prefer exact shop match when available, but fall back to cross-shop lookup.
   // Some historical requests were saved under a different myshopify domain alias.
   let hasExistingReturns = false;
-  if (shop) {
+  if (effectiveShop) {
     hasExistingReturns =
       (await prisma.returnRequest.count({
         where: {
           ...baseWhere,
-          shop,
+          shop: effectiveShop,
         },
       })) > 0;
   }
@@ -316,7 +329,7 @@ export const loader = async ({ request }) => {
 
   const delivery = await resolveDeliveryStatus({
     prisma,
-    requestedShop: shop,
+    requestedShop: effectiveShop,
     orderNumber,
     customerEmail,
   });
@@ -324,7 +337,9 @@ export const loader = async ({ request }) => {
     prisma,
     delivery,
     orderNumber,
-    canDisplayCode: Boolean(customerEmail),
+    canDisplayCode:
+      Boolean(authenticatedShop) &&
+      String(delivery?.shop || "").trim().toLowerCase() === authenticatedShop,
   });
 
   return jsonWithCors({

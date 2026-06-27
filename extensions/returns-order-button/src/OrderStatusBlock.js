@@ -4,7 +4,14 @@ import "@shopify/ui-extensions/customer-account";
 const RETURN_PORTAL_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones";
 const RETURN_PROBE_URL = "https://gestion-devoluciones-pro.onrender.com/devoluciones/probe";
 
-async function fetchProbe({ shopDomain, orderNumber, customerEmail, includeShop = true, includeEmail = true }) {
+async function fetchProbe({
+  shopDomain,
+  orderNumber,
+  customerEmail,
+  sessionToken,
+  includeShop = true,
+  includeEmail = true,
+}) {
   const url = new URL(RETURN_PROBE_URL);
   if (orderNumber) {
     url.searchParams.set("order", String(orderNumber).replace("#", ""));
@@ -16,14 +23,17 @@ async function fetchProbe({ shopDomain, orderNumber, customerEmail, includeShop 
     url.searchParams.set("shop", String(shopDomain));
   }
 
-  const response = await fetch(url.toString(), { method: "GET" });
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {},
+  });
   if (!response.ok) return null;
   return response.json();
 }
 
-async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
+async function getEligibility({ shopDomain, orderNumber, customerEmail, sessionToken }) {
   try {
-    const primary = await fetchProbe({ shopDomain, orderNumber, customerEmail });
+    const primary = await fetchProbe({ shopDomain, orderNumber, customerEmail, sessionToken });
     if (!primary) return null;
 
     let effective = primary;
@@ -41,6 +51,7 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail }) {
         shopDomain,
         orderNumber,
         customerEmail,
+        sessionToken,
         includeShop: false,
         includeEmail: false,
       });
@@ -175,7 +186,17 @@ export default function extension() {
     if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
   };
 
-  getEligibility({ shopDomain, orderNumber: orderName, customerEmail }).then((eligibility) => {
+  const loadEligibility = async () => {
+    const sessionToken = await Promise.resolve(shopifyObj?.sessionToken?.get?.()).catch(() => "");
+    return getEligibility({
+      shopDomain,
+      orderNumber: orderName,
+      customerEmail,
+      sessionToken,
+    });
+  };
+
+  loadEligibility().then((eligibility) => {
     if (!eligibility) {
       unmountWrapper();
       while (actions.firstChild) {
