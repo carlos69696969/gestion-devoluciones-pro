@@ -1844,13 +1844,17 @@ export default function RepartidorPublicPortal() {
     );
   }
   const deliveryConfirmationOrders = courierOrders
-    .filter(
-      (request) =>
+    .filter((request) => {
+      const normalizedStatus = String(request?.status || "").trim().toLowerCase();
+      const isTransferredPhysicalDelivery =
+        Boolean(transferredFromName) &&
+        ["no_entregado", "recoger_en_sucursal"].includes(normalizedStatus);
+      return (
         String(request?.courierLabel || "").trim().toLowerCase() === "entrega" &&
-        !isCourierHistoryStatus(request?.status) &&
-        String(request?.status || "").trim().toLowerCase() !== "recoger_en_sucursal" &&
-        (Boolean(transferredFromName) || !isCourierRouteTabStatus(request?.status)),
-    )
+        (!isCourierHistoryStatus(normalizedStatus) || isTransferredPhysicalDelivery) &&
+        (Boolean(transferredFromName) || !isCourierRouteTabStatus(normalizedStatus))
+      );
+    })
     .sort(compareCourierDisplayOrder);
   const confirmedRequestIdSet = new Set(confirmedRequestIds);
   const unconfirmedDeliveryOrders = deliveryConfirmationOrders.filter(
