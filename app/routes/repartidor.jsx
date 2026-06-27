@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createCookie,
   Form,
@@ -1813,16 +1813,37 @@ export default function RepartidorPublicPortal() {
   const [deliveryCodeRequest, setDeliveryCodeRequest] = useState(null);
   const [deliveryCodeInput, setDeliveryCodeInput] = useState("");
   const [deliveryCodeError, setDeliveryCodeError] = useState("");
+  const [deliveryCodeSuccess, setDeliveryCodeSuccess] = useState("");
+  const deliveryCodeSubmissionRef = useRef({ requestId: "", started: false });
   const [showBranchReturnConfirmation, setShowBranchReturnConfirmation] = useState(false);
   const [branchReturnConfirmationError, setBranchReturnConfirmationError] = useState("");
   useEffect(() => {
+    const submission = deliveryCodeSubmissionRef.current;
+    if (!submission.requestId) return;
+    if (navigation.state !== "idle") {
+      submission.started = true;
+      return;
+    }
+    if (!submission.started) return;
+
     if (
       actionData?.deliveryCodeError &&
-      String(actionData?.requestId || "") === String(deliveryCodeRequest?.id || "")
+      String(actionData?.requestId || "") === submission.requestId
     ) {
       setDeliveryCodeError(String(actionData.error || "Clave incorrecta"));
+    } else {
+      setDeliveryCodeRequest(null);
+      setDeliveryCodeInput("");
+      setDeliveryCodeError("");
+      setDeliveryCodeSuccess("Clave de entrega correcta. Pedido entregado.");
     }
-  }, [actionData, deliveryCodeRequest?.id]);
+    deliveryCodeSubmissionRef.current = { requestId: "", started: false };
+  }, [actionData, navigation.state]);
+  useEffect(() => {
+    if (!deliveryCodeSuccess) return undefined;
+    const timeoutId = window.setTimeout(() => setDeliveryCodeSuccess(""), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [deliveryCodeSuccess]);
   useEffect(() => {
     if (requiresDailyAccess || routeTransferred) return undefined;
     const refreshTransferStatus = () => {
@@ -2697,7 +2718,14 @@ export default function RepartidorPublicPortal() {
             <Form
               method="post"
               className={styles.deliveryCodeForm}
-              onSubmit={() => setDeliveryCodeError("")}
+              onSubmit={() => {
+                setDeliveryCodeError("");
+                setDeliveryCodeSuccess("");
+                deliveryCodeSubmissionRef.current = {
+                  requestId: String(deliveryCodeRequest.id || ""),
+                  started: false,
+                };
+              }}
             >
               <input type="hidden" name="shop" value={shop || ""} />
               <input type="hidden" name="intent" value="courier_mark_delivered" />
@@ -2755,6 +2783,11 @@ export default function RepartidorPublicPortal() {
               </div>
             </Form>
           </section>
+        </div>
+      ) : null}
+      {deliveryCodeSuccess ? (
+        <div className={styles.deliveryCodeSuccess} role="status" aria-live="polite">
+          {deliveryCodeSuccess}
         </div>
       ) : null}
     </main>

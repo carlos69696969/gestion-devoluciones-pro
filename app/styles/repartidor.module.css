@@ -623,6 +623,21 @@
   font-weight: 700;
 }
 
+.deliveryCodeSuccess {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  z-index: 30;
+  padding: 12px 18px;
+  border: 1px solid #008060;
+  border-radius: 12px;
+  background: #e3f1df;
+  color: #004c3f;
+  font-weight: 800;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  transform: translateX(-50%);
+}
+
 .deliveryCodeActions {
   display: flex;
   justify-content: flex-end;
