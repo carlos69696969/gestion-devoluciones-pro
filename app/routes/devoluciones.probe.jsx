@@ -270,7 +270,9 @@ async function authenticatedCustomerAccountShop(request) {
   if (!String(request.headers.get("Authorization") || "").startsWith("Bearer ")) return "";
   try {
     const { sessionToken } = await authenticate.public.customerAccount(request);
-    return new URL(String(sessionToken?.dest || "")).hostname.trim().toLowerCase();
+    const destination = String(sessionToken?.dest || "").trim().toLowerCase();
+    if (!destination) return "";
+    return destination.replace(/^https?:\/\//, "").split("/")[0];
   } catch {
     return "";
   }
