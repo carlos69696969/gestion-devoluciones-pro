@@ -164,6 +164,18 @@ export default function extension() {
   deliveryCodeTitle.textContent = "CLAVE DE ENTREGA";
 
   const deliveryCodeValue = document.createElement("s-heading");
+  const renderDeliveryCode = (code) => {
+    while (deliveryCodeValue.firstChild) {
+      deliveryCodeValue.removeChild(deliveryCodeValue.firstChild);
+    }
+    Array.from(String(code || "")).forEach((digit, index, digits) => {
+      const digitText = document.createElement("s-text");
+      digitText.setAttribute("type", "strong");
+      digitText.setAttribute("tone", "info");
+      digitText.textContent = index < digits.length - 1 ? `${digit}\u00A0\u00A0` : digit;
+      deliveryCodeValue.appendChild(digitText);
+    });
+  };
 
   const deliveryCodeDescription = document.createElement("s-text");
   deliveryCodeDescription.textContent = "Entrega esta clave al repartidor para recibir tu pedido.";
@@ -234,7 +246,7 @@ export default function extension() {
 
     const deliveryCode = String(eligibility?.deliveryCode || "").trim();
     if (!eligibility?.isDelivered && deliveryCode) {
-      deliveryCodeValue.textContent = deliveryCode;
+      renderDeliveryCode(deliveryCode);
       if (!deliveryCodeBlock.parentNode) wrapper.appendChild(deliveryCodeBlock);
     } else if (deliveryCodeBlock.parentNode) {
       deliveryCodeBlock.parentNode.removeChild(deliveryCodeBlock);
