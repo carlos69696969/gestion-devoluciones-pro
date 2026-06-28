@@ -81,6 +81,10 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail, sessionT
       limitDate: effective?.limitDate || "",
       isDelivered: Boolean(effective?.isDelivered),
       deliveryCode: String(primary?.deliveryCode || effective?.deliveryCode || "").trim(),
+      latestOrderNotification:
+        primary?.latestOrderNotification ||
+        effective?.latestOrderNotification ||
+        null,
     };
   } catch {
     return null;
@@ -163,6 +167,31 @@ export default function extension() {
   const deliveryCodeBlock = document.createElement("s-stack");
   deliveryCodeBlock.setAttribute("gap", "small");
 
+  const latestOrderMessageBlock = document.createElement("s-stack");
+  latestOrderMessageBlock.setAttribute("gap", "small");
+  latestOrderMessageBlock.setAttribute("padding", "base");
+  latestOrderMessageBlock.setAttribute("border", "base");
+  latestOrderMessageBlock.setAttribute("borderRadius", "base");
+
+  const latestOrderMessageTitle = document.createElement("s-text");
+  latestOrderMessageTitle.setAttribute("appearance", "strong");
+
+  const latestOrderMessageBody = document.createElement("s-text");
+
+  const renderLatestOrderMessage = (notification) => {
+    latestOrderMessageTitle.textContent = String(notification?.title || "").trim();
+    latestOrderMessageBody.textContent = String(notification?.message || "").trim();
+    while (latestOrderMessageBlock.firstChild) {
+      latestOrderMessageBlock.removeChild(latestOrderMessageBlock.firstChild);
+    }
+    if (latestOrderMessageTitle.textContent) {
+      latestOrderMessageBlock.appendChild(latestOrderMessageTitle);
+    }
+    if (latestOrderMessageBody.textContent) {
+      latestOrderMessageBlock.appendChild(latestOrderMessageBody);
+    }
+  };
+
   const deliveryCodeTitle = document.createElement("s-heading");
   deliveryCodeTitle.textContent = "CLAVE DE ENTREGA";
 
@@ -235,10 +264,17 @@ export default function extension() {
       [title, description, actions, noEligibleText].forEach((element) => {
         if (element.parentNode) element.parentNode.removeChild(element);
       });
+      const latestOrderNotification = eligibility?.latestOrderNotification;
+      if (latestOrderNotification?.title || latestOrderNotification?.message) {
+        renderLatestOrderMessage(latestOrderNotification);
+        if (!latestOrderMessageBlock.parentNode) wrapper.appendChild(latestOrderMessageBlock);
+      } else if (latestOrderMessageBlock.parentNode) {
+        latestOrderMessageBlock.parentNode.removeChild(latestOrderMessageBlock);
+      }
       if (deliveryCode) {
         renderDeliveryCode(deliveryCode);
         if (!deliveryCodeBlock.parentNode) wrapper.appendChild(deliveryCodeBlock);
-      } else {
+      } else if (!latestOrderMessageBlock.parentNode) {
         unmountWrapper();
       }
       return;
@@ -246,6 +282,9 @@ export default function extension() {
 
     if (deliveryCodeBlock.parentNode) {
       deliveryCodeBlock.parentNode.removeChild(deliveryCodeBlock);
+    }
+    if (latestOrderMessageBlock.parentNode) {
+      latestOrderMessageBlock.parentNode.removeChild(latestOrderMessageBlock);
     }
     [description, actions].forEach((element) => {
       if (!element.parentNode) wrapper.appendChild(element);

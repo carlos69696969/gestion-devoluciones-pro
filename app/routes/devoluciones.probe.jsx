@@ -27,6 +27,9 @@ const DELIVERED_FULFILLMENT_STATUSES = new Set(["FULFILLED", "PARTIALLY_FULFILLE
 const DELIVERY_CODE_MIN = 100000;
 const DELIVERY_CODE_MAX_EXCLUSIVE = 1000000;
 const DELIVERY_CODE_GENERATION_ATTEMPTS = 30;
+const NOTIFICATIONS_API_BASE_URL = String(
+  process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
+).replace(/\/+$/, "");
 
 function jsonWithCors(data) {
   return Response.json(data, {
@@ -266,6 +269,34 @@ async function resolveDeliveryCode({ prisma, delivery, orderNumber, canDisplayCo
   throw new Error("No fue posible generar una clave de entrega unica.");
 }
 
+async function fetchLatestOrderNotification({ shop, orderNumber, isDelivered }) {
+  const resolvedShop = String(shop || "").trim().toLowerCase();
+  const resolvedOrderNumber = normalizeOrderNumber(orderNumber);
+  if (!resolvedShop || !resolvedOrderNumber || isDelivered) return null;
+
+  try {
+    const url = new URL(`${NOTIFICATIONS_API_BASE_URL}/proxy/orders/latest-notification`);
+    url.searchParams.set("shopDomain", resolvedShop);
+    url.searchParams.set("orderNumber", resolvedOrderNumber);
+    const response = await fetch(url.toString(), {
+      headers: {
+        "x-shop-domain": resolvedShop,
+      },
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const notification = payload?.notification;
+    if (!notification?.title && !notification?.message) return null;
+    return {
+      title: String(notification?.title || "").trim(),
+      message: String(notification?.message || "").trim(),
+      createdAt: String(notification?.createdAt || "").trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function authenticatedCustomerAccountShop(request) {
   if (!String(request.headers.get("Authorization") || "").startsWith("Bearer ")) return "";
   try {
@@ -343,11 +374,17 @@ export const loader = async ({ request }) => {
       Boolean(authenticatedShop) &&
       String(delivery?.shop || "").trim().toLowerCase() === authenticatedShop,
   });
+  const latestOrderNotification = await fetchLatestOrderNotification({
+    shop: String(delivery?.shop || effectiveShop || "").trim().toLowerCase(),
+    orderNumber,
+    isDelivered: Boolean(delivery?.isDelivered),
+  });
 
   return jsonWithCors({
     hasExistingReturns,
     isDelivered: Boolean(delivery?.isDelivered),
     limitDate: String(delivery?.limitDate || ""),
     deliveryCode,
+    latestOrderNotification,
   });
 };
