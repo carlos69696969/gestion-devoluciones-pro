@@ -171,7 +171,8 @@ export default function extension() {
   latestOrderMessageBlock.setAttribute("gap", "small");
   latestOrderMessageBlock.setAttribute("padding", "base");
   latestOrderMessageBlock.setAttribute("border", "base");
-  latestOrderMessageBlock.setAttribute("borderRadius", "base");
+  latestOrderMessageBlock.setAttribute("borderRadius", "large");
+  latestOrderMessageBlock.setAttribute("background", "subdued");
 
   const latestOrderMessageTitle = document.createElement("s-text");
   latestOrderMessageTitle.setAttribute("appearance", "strong");
