@@ -167,17 +167,20 @@ export default function extension() {
   const deliveryCodeBlock = document.createElement("s-stack");
   deliveryCodeBlock.setAttribute("gap", "small");
 
-  const latestOrderMessageBlock = document.createElement("s-stack");
-  latestOrderMessageBlock.setAttribute("gap", "small");
-  latestOrderMessageBlock.setAttribute("padding", "base");
-  latestOrderMessageBlock.setAttribute("border", "base");
-  latestOrderMessageBlock.setAttribute("borderRadius", "large");
-  latestOrderMessageBlock.setAttribute("background", "subdued");
+  const latestOrderMessageBlock = document.createElement("div");
+  latestOrderMessageBlock.style.border = "1px solid #e5e7eb";
+  latestOrderMessageBlock.style.borderRadius = "14px";
+  latestOrderMessageBlock.style.background = "#fff";
+  latestOrderMessageBlock.style.padding = "18px";
+  latestOrderMessageBlock.style.boxShadow = "0 1px 2px rgba(15, 23, 42, 0.06)";
 
   const latestOrderMessageTitle = document.createElement("s-text");
   latestOrderMessageTitle.setAttribute("appearance", "strong");
+  latestOrderMessageTitle.style.display = "block";
+  latestOrderMessageTitle.style.marginBottom = "8px";
 
   const latestOrderMessageBody = document.createElement("s-text");
+  latestOrderMessageBody.style.display = "block";
 
   const renderLatestOrderMessage = (notification) => {
     latestOrderMessageTitle.textContent = String(notification?.title || "").trim();
