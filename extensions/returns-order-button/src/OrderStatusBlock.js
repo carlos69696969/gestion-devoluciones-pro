@@ -41,10 +41,14 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail, sessionT
       typeof primary?.hasExistingReturns === "boolean"
         ? primary.hasExistingReturns
         : Array.isArray(primary?.completedRequests) && primary.completedRequests.length > 0;
+    const hasCustomerOrderBlockData =
+      Boolean(String(primary?.deliveryCode || "").trim()) ||
+      Boolean(primary?.latestOrderNotification?.title || primary?.latestOrderNotification?.message);
 
     // Silent fallback: retry using only the order number in case shop/email aliases differ.
     if (
       orderNumber &&
+      !hasCustomerOrderBlockData &&
       (!hasConfirmedReturnsFromProbe || !primary?.isDelivered || primary?.hasEligibleItems === undefined)
     ) {
       const fallback = await fetchProbe({
