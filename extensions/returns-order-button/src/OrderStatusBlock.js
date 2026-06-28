@@ -167,14 +167,11 @@ export default function extension() {
   const deliveryCodeBlock = document.createElement("s-stack");
   deliveryCodeBlock.setAttribute("gap", "small");
 
-  const latestOrderMessageBlock = document.createElement("s-box");
+  const latestOrderMessageBlock = document.createElement("s-stack");
+  latestOrderMessageBlock.setAttribute("gap", "small");
   latestOrderMessageBlock.setAttribute("padding", "base");
-  latestOrderMessageBlock.setAttribute("borderWidth", "base");
-  latestOrderMessageBlock.setAttribute("borderRadius", "base");
-
-  const latestOrderMessageContent = document.createElement("s-stack");
-  latestOrderMessageContent.setAttribute("gap", "small");
-  latestOrderMessageBlock.appendChild(latestOrderMessageContent);
+  latestOrderMessageBlock.setAttribute("border", "base");
+  latestOrderMessageBlock.setAttribute("borderRadius", "large");
 
   const latestOrderMessageTitle = document.createElement("s-text");
   latestOrderMessageTitle.setAttribute("appearance", "strong");
@@ -184,14 +181,14 @@ export default function extension() {
   const renderLatestOrderMessage = (notification) => {
     latestOrderMessageTitle.textContent = String(notification?.title || "").trim();
     latestOrderMessageBody.textContent = String(notification?.message || "").trim();
-    while (latestOrderMessageContent.firstChild) {
-      latestOrderMessageContent.removeChild(latestOrderMessageContent.firstChild);
+    while (latestOrderMessageBlock.firstChild) {
+      latestOrderMessageBlock.removeChild(latestOrderMessageBlock.firstChild);
     }
     if (latestOrderMessageTitle.textContent) {
-      latestOrderMessageContent.appendChild(latestOrderMessageTitle);
+      latestOrderMessageBlock.appendChild(latestOrderMessageTitle);
     }
     if (latestOrderMessageBody.textContent) {
-      latestOrderMessageContent.appendChild(latestOrderMessageBody);
+      latestOrderMessageBlock.appendChild(latestOrderMessageBody);
     }
   };
 
