@@ -247,7 +247,7 @@ export default function extension() {
     if (deliveryCodeBlock.parentNode) {
       deliveryCodeBlock.parentNode.removeChild(deliveryCodeBlock);
     }
-    [title, description, actions].forEach((element) => {
+    [description, actions].forEach((element) => {
       if (!element.parentNode) wrapper.appendChild(element);
     });
 
