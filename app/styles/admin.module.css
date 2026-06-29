@@ -1018,6 +1018,93 @@
   font-size: 12px;
 }
 
+.courierRouteModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(17, 24, 39, 0.36);
+}
+
+.courierRouteModal {
+  width: min(520px, 100%);
+  border: 1px solid #d8dee8;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+  padding: 18px;
+}
+
+.courierRouteModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.courierRouteModalHeader h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.courierRouteModalClose {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d8dee8;
+  border-radius: 999px;
+  background: #fff;
+  color: #4b5563;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.courierRouteModalText {
+  margin: 8px 0 14px;
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.courierRouteModalForm,
+.courierRouteCourierList {
+  display: grid;
+  gap: 12px;
+}
+
+.courierRouteCourierOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid #d8dee8;
+  border-radius: 10px;
+  background: #fff;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.courierRouteCourierOption input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.courierRouteModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 .courierField,
 .courierAddress {
   margin: 0;

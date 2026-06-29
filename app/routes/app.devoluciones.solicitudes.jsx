@@ -2267,12 +2267,18 @@ export const action = async ({ request }) => {
   const id = Number(formData.get("id") || 0);
 
   if (intent === "plan_courier_routes") {
+    const selectedCourierIds = formData
+      .getAll("courierIds")
+      .map((courierId) => Number(courierId))
+      .filter((courierId) => Number.isInteger(courierId) && courierId > 0);
     const couriers = await prisma.courier.findMany({
-      where: { shop: session.shop },
+      where: selectedCourierIds.length
+        ? { shop: session.shop, id: { in: selectedCourierIds } }
+        : { shop: session.shop, id: { in: [] } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     if (!couriers.length) {
-      return { ok: false, error: "Primero agrega repartidores para poder distribuir las rutas." };
+      return { ok: false, error: "Selecciona al menos un repartidor para distribuir las rutas." };
     }
     const routeOrders = [
       ...(await fetchCourierOrders(admin)).map((requestRow) => ({
@@ -3428,6 +3434,17 @@ export default function ReturnsRequests() {
   const navigation = useNavigation();
   const location = useLocation();
   const isSubmitting = navigation.state === "submitting";
+  const [showCourierRouteModal, setShowCourierRouteModal] = useState(false);
+  const [selectedCourierIds, setSelectedCourierIds] = useState([]);
+  const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
+  const canConfirmCourierRoutePlan = selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting;
+
+  useEffect(() => {
+    if (actionData?.ok) {
+      setShowCourierRouteModal(false);
+      setSelectedCourierIds([]);
+    }
+  }, [actionData]);
 
   const reviewRequests = requests.filter(
     (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
@@ -3629,17 +3646,87 @@ export default function ReturnsRequests() {
                 </div>
               ) : null}
             </div>
-            <Form method="post">
-              <input type="hidden" name="intent" value="plan_courier_routes" />
-              <button
-                className={`${styles.btn} ${styles.btnPrimary}`}
-                type="submit"
-                disabled={isSubmitting || couriers.length === 0 || courierOrders.length === 0}
-              >
-                Distribuir rutas automaticamente
-              </button>
-            </Form>
+            <button
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              type="button"
+              disabled={isSubmitting || couriers.length === 0 || courierOrders.length === 0}
+              onClick={() => {
+                setSelectedCourierIds([]);
+                setShowCourierRouteModal(true);
+              }}
+            >
+              Distribuir rutas automaticamente
+            </button>
           </div>
+          {showCourierRouteModal ? (
+            <div className={styles.courierRouteModalBackdrop} role="presentation">
+              <div
+                className={styles.courierRouteModal}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="courier-route-modal-title"
+              >
+                <div className={styles.courierRouteModalHeader}>
+                  <h3 id="courier-route-modal-title">Selecciona repartidores</h3>
+                  <button
+                    className={styles.courierRouteModalClose}
+                    type="button"
+                    aria-label="Cerrar"
+                    onClick={() => setShowCourierRouteModal(false)}
+                  >
+                    x
+                  </button>
+                </div>
+                <p className={styles.courierRouteModalText}>
+                  Marca los repartidores que recibiran las rutas pendientes.
+                </p>
+                <Form method="post" className={styles.courierRouteModalForm}>
+                  <input type="hidden" name="intent" value="plan_courier_routes" />
+                  <div className={styles.courierRouteCourierList}>
+                    {couriers.map((courier) => {
+                      const courierId = String(courier.id);
+                      const isChecked = selectedCourierIdSet.has(courierId);
+                      return (
+                        <label key={courier.id} className={styles.courierRouteCourierOption}>
+                          <input
+                            type="checkbox"
+                            name="courierIds"
+                            value={courierId}
+                            checked={isChecked}
+                            onChange={(event) => {
+                              setSelectedCourierIds((currentIds) =>
+                                event.target.checked
+                                  ? [...currentIds, courierId]
+                                  : currentIds.filter((currentId) => String(currentId) !== courierId),
+                              );
+                            }}
+                          />
+                          <span>{courier.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div className={styles.courierRouteModalActions}>
+                    <button
+                      className={styles.btn}
+                      type="button"
+                      onClick={() => setShowCourierRouteModal(false)}
+                      disabled={isSubmitting}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      className={`${styles.btn} ${styles.btnPrimary}`}
+                      type="submit"
+                      disabled={!canConfirmCourierRoutePlan}
+                    >
+                      Confirmar distribucion
+                    </button>
+                  </div>
+                </Form>
+              </div>
+            </div>
+          ) : null}
           {courierOrders.length === 0 ? (
             <p>No hay ordenes pendientes por entregar.</p>
           ) : (
