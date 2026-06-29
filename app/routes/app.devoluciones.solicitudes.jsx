@@ -2276,6 +2276,13 @@ export const action = async ({ request }) => {
       .map((routeOrderId) => String(routeOrderId || "").trim())
       .filter(Boolean);
     const selectedRouteOrderIdSet = new Set(selectedRouteOrderIds);
+    let visibleRouteOrders = [];
+    try {
+      const parsedRouteOrders = JSON.parse(String(formData.get("routeOrdersJson") || "[]"));
+      visibleRouteOrders = Array.isArray(parsedRouteOrders) ? parsedRouteOrders : [];
+    } catch {
+      visibleRouteOrders = [];
+    }
     const couriers = await prisma.courier.findMany({
       where: selectedCourierIds.length
         ? { shop: session.shop, id: { in: selectedCourierIds } }
@@ -2285,7 +2292,7 @@ export const action = async ({ request }) => {
     if (!couriers.length) {
       return { ok: false, error: "Selecciona al menos un repartidor para distribuir las rutas." };
     }
-    const routeOrders = [
+    const fetchedRouteOrders = [
       ...(await fetchCourierOrders(admin)).map((requestRow) => ({
         ...requestRow,
         courierLabel: "Entrega",
@@ -2294,8 +2301,18 @@ export const action = async ({ request }) => {
         ...requestRow,
         courierLabel: "Devolución",
       })),
-    ].filter((order) => {
+    ];
+    const routeOrderById = new Map();
+    for (const order of [...fetchedRouteOrders, ...visibleRouteOrders]) {
+      const orderId = String(order?.id || "").trim();
+      if (orderId && !routeOrderById.has(orderId)) routeOrderById.set(orderId, order);
+    }
+    const routeOrders = (selectedRouteOrderIds.length
+      ? selectedRouteOrderIds.map((orderId) => routeOrderById.get(orderId)).filter(Boolean)
+      : fetchedRouteOrders
+    ).filter((order) => {
       if (selectedRouteOrderIdSet.size && !selectedRouteOrderIdSet.has(String(order?.id || "").trim())) return false;
+      if (selectedRouteOrderIdSet.size) return true;
       const status = String(order?.status || "").trim().toLowerCase();
       return !isCourierHistoryStatus(status) && status !== "recoger_en_sucursal";
     });
@@ -3690,6 +3707,29 @@ export default function ReturnsRequests() {
                 </p>
                 <Form method="post" className={styles.courierRouteModalForm}>
                   <input type="hidden" name="intent" value="plan_courier_routes" />
+                  <input
+                    type="hidden"
+                    name="routeOrdersJson"
+                    value={JSON.stringify(
+                      courierOrders.map((order) => ({
+                        id: order.id,
+                        orderNumber: order.orderNumber,
+                        courierLabel: order.courierLabel,
+                        customerName: order.customerName,
+                        customerPhone: order.customerPhone,
+                        pickupDate: order.pickupDate,
+                        pickupAddress: order.pickupAddress,
+                        pickupNeighborhood: order.pickupNeighborhood,
+                        pickupCity: order.pickupCity,
+                        pickupState: order.pickupState,
+                        pickupPostalCode: order.pickupPostalCode,
+                        pickupCountry: order.pickupCountry,
+                        createdAt: order.createdAt,
+                        updatedAt: order.updatedAt,
+                        status: order.status,
+                      })),
+                    )}
+                  />
                   {courierOrders.map((order) => (
                     <input key={order.id} type="hidden" name="routeOrderIds" value={String(order.id || "")} />
                   ))}
