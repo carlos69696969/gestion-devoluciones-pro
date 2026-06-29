@@ -2024,6 +2024,14 @@ export const loader = async ({ request }) => {
             ).values(),
           ]
       : [];
+  const routeSettings =
+    viewMode === VIEW_MODE.COURIER
+      ? await prisma.returnSettings.findUnique({
+          where: { shop: session.shop },
+          select: { branchAddress: true },
+        })
+      : null;
+  const routeStartAddress = String(routeSettings?.branchAddress || "").trim();
 
   const deliveryRequestIds = courierOrdersRaw
     .filter((requestRow) => requestRow.courierLabel === "Entrega")
@@ -2194,6 +2202,10 @@ export const loader = async ({ request }) => {
         ? courierOrderTimestampMs(b) - courierOrderTimestampMs(a)
         : courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
     );
+  const visibleCourierOrders =
+    viewMode === VIEW_MODE.COURIER
+      ? sortCourierRouteOrdersByProximity(courierOrders, routeStartAddress)
+      : courierOrders;
 
   let couriers =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.COURIERS || viewMode === VIEW_MODE.COURIER_HISTORY
@@ -2250,7 +2262,7 @@ export const loader = async ({ request }) => {
 
   return {
     requests,
-    courierOrders,
+    courierOrders: visibleCourierOrders,
     couriers,
     courierActivities,
     courierRouteSnapshots,
@@ -2321,7 +2333,15 @@ export const action = async ({ request }) => {
     }
 
     await clearUnstartedCourierRoutePlans(session.shop);
-    const routeGroups = distributeCourierRouteOrdersByZone(routeOrders, couriers).filter(
+    const routeSettings = await prisma.returnSettings.findUnique({
+      where: { shop: session.shop },
+      select: { branchAddress: true },
+    });
+    const routeGroups = distributeCourierRouteOrdersByZone(
+      routeOrders,
+      couriers,
+      String(routeSettings?.branchAddress || "").trim(),
+    ).filter(
       (group) => group.orders.length,
     );
     const activities = [];
@@ -3934,26 +3954,117 @@ function isCourierCompletedHistoryOrder(order) {
   );
 }
 
-function courierLocationSortKey(order) {
-  const postalCode = String(order?.pickupPostalCode || "").replace(/\D/g, "").padStart(5, "0");
-  const state = String(order?.pickupState || "").trim().toLowerCase();
-  const city = String(order?.pickupCity || "").trim().toLowerCase();
-  const neighborhood = String(order?.pickupNeighborhood || "").trim().toLowerCase();
-  const address = String(order?.pickupAddress || "").trim().toLowerCase();
-  return [state, city, postalCode, neighborhood, address, String(order?.orderNumber || "")].join("|");
+function normalizeRouteAddressText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function distributeCourierRouteOrdersByZone(orders, couriers) {
+function routeAddressTokens(value) {
+  const ignoredTokens = new Set([
+    "av",
+    "avenida",
+    "calle",
+    "blvd",
+    "boulevard",
+    "col",
+    "colonia",
+    "cp",
+    "mexico",
+    "ags",
+    "aguascalientes",
+  ]);
+  return normalizeRouteAddressText(value)
+    .split(" ")
+    .filter((token) => token.length > 2 && !ignoredTokens.has(token));
+}
+
+function postalCodeFromRouteAddress(value) {
+  const match = String(value || "").match(/\b\d{5}\b/);
+  return match ? Number(match[0]) : 0;
+}
+
+function routeAddressTextFromOrder(order) {
+  return [
+    order?.pickupAddress,
+    order?.pickupNeighborhood,
+    order?.pickupCity,
+    order?.pickupState,
+    order?.pickupPostalCode,
+    order?.pickupCountry || "Mexico",
+  ]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function routeAddressSignature(value) {
+  return {
+    normalized: normalizeRouteAddressText(value),
+    postalCode: postalCodeFromRouteAddress(value),
+    tokens: routeAddressTokens(value),
+  };
+}
+
+function routeAddressDistance(firstAddress, secondAddress) {
+  if (!firstAddress?.normalized || !secondAddress?.normalized) return Number.MAX_SAFE_INTEGER;
+  const firstTokenSet = new Set(firstAddress.tokens || []);
+  const secondTokens = secondAddress.tokens || [];
+  const sharedTokenCount = secondTokens.filter((token) => firstTokenSet.has(token)).length;
+  const postalDifference =
+    firstAddress.postalCode && secondAddress.postalCode
+      ? Math.abs(firstAddress.postalCode - secondAddress.postalCode)
+      : 50000;
+  return postalDifference * 10 - sharedTokenCount * 1000 + Math.abs(firstAddress.normalized.length - secondAddress.normalized.length);
+}
+
+function sortCourierRouteOrdersByProximity(orders, routeStartAddress = "") {
+  const pendingOrders = (Array.isArray(orders) ? orders : [])
+    .filter((order) => String(order?.id || "").trim())
+    .map((order) => ({
+      order,
+      signature: routeAddressSignature(routeAddressTextFromOrder(order)),
+    }));
+  const sortedOrders = [];
+  let currentSignature = routeAddressSignature(routeStartAddress);
+  if (!currentSignature.normalized && pendingOrders.length) {
+    currentSignature = pendingOrders[0].signature;
+  }
+
+  while (pendingOrders.length) {
+    let nearestIndex = 0;
+    let nearestDistance = Number.MAX_SAFE_INTEGER;
+    for (let index = 0; index < pendingOrders.length; index += 1) {
+      const distance = routeAddressDistance(currentSignature, pendingOrders[index].signature);
+      if (
+        distance < nearestDistance ||
+        (distance === nearestDistance &&
+          String(pendingOrders[index].order?.orderNumber || "").localeCompare(
+            String(pendingOrders[nearestIndex].order?.orderNumber || ""),
+            "es",
+            { numeric: true, sensitivity: "base" },
+          ) < 0)
+      ) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    }
+    const [nextOrder] = pendingOrders.splice(nearestIndex, 1);
+    sortedOrders.push(nextOrder.order);
+    currentSignature = nextOrder.signature;
+  }
+
+  return sortedOrders;
+}
+
+function distributeCourierRouteOrdersByZone(orders, couriers, routeStartAddress = "") {
   const cleanCouriers = (Array.isArray(couriers) ? couriers : []).filter((courier) => Number(courier?.id));
   if (!cleanCouriers.length) return [];
-  const sortedOrders = [...(Array.isArray(orders) ? orders : [])]
-    .filter((order) => String(order?.id || "").trim())
-    .sort((firstOrder, secondOrder) =>
-      courierLocationSortKey(firstOrder).localeCompare(courierLocationSortKey(secondOrder), "es", {
-        numeric: true,
-        sensitivity: "base",
-      }),
-    );
+  const sortedOrders = sortCourierRouteOrdersByProximity(orders, routeStartAddress);
   const baseSize = Math.floor(sortedOrders.length / cleanCouriers.length);
   const extraCount = sortedOrders.length % cleanCouriers.length;
   let offset = 0;
