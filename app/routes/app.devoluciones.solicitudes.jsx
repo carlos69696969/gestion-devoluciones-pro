@@ -3599,10 +3599,31 @@ export default function ReturnsRequests() {
                 <div className={styles.courierRoutePlanSummary}>
                   {plannedCourierRoutes.map((plan) => {
                     const courier = couriers.find((item) => Number(item.id) === Number(plan.courierId));
+                    const planOrderNumberSet = new Set((plan.orderNumbers || []).map((orderNumber) => String(orderNumber)));
+                    const planOrders = courierOrders.filter((order) =>
+                      planOrderNumberSet.has(String(order.orderNumber || "")),
+                    );
                     return (
-                      <span key={plan.routeId} className={styles.courierRoutePlanBadge}>
-                        {courier?.name || "Repartidor"}: {plan.count} orden(es)
-                      </span>
+                      <details key={plan.routeId} className={styles.courierRoutePlanDetails}>
+                        <summary className={styles.courierRoutePlanBadge}>
+                          {courier?.name || "Repartidor"}: {plan.count} orden(es)
+                        </summary>
+                        <div className={styles.courierRoutePlanOrders}>
+                          {planOrders.length ? (
+                            planOrders.map((order) => (
+                              <div key={`${plan.routeId}-${order.orderNumber}`} className={styles.courierRoutePlanOrder}>
+                                <strong>
+                                  #{order.orderNumber} · {order.courierLabel || "Orden"}
+                                </strong>
+                                <span>{order.customerName || "Cliente sin nombre"}</span>
+                                <span>{formatCourierAddress(order)}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <span className={styles.courierRoutePlanEmpty}>No se encontraron ordenes en esta ruta.</span>
+                          )}
+                        </div>
+                      </details>
                     );
                   })}
                 </div>
@@ -3827,17 +3848,20 @@ async function plannedCourierRouteSummary(shop, courierIds) {
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
-  const countByRouteId = new Map();
+  const orderNumbersByRouteId = new Map();
   for (const assignment of assignments) {
     const routeId = String(assignment.routeId || "");
-    countByRouteId.set(routeId, Number(countByRouteId.get(routeId) || 0) + 1);
+    const orderNumber = String(assignment.orderNumber || "").trim();
+    if (!orderNumbersByRouteId.has(routeId)) orderNumbersByRouteId.set(routeId, []);
+    if (orderNumber) orderNumbersByRouteId.get(routeId).push(orderNumber);
   }
   return [...latestPlanByCourierId.values()]
     .filter((activity) => !startedRouteIds.has(String(activity.routeId || "")))
     .map((activity) => ({
       courierId: activity.courierId,
       routeId: activity.routeId,
-      count: Number(countByRouteId.get(String(activity.routeId || "")) || 0),
+      orderNumbers: orderNumbersByRouteId.get(String(activity.routeId || "")) || [],
+      count: Number((orderNumbersByRouteId.get(String(activity.routeId || "")) || []).length),
     }));
 }
 
