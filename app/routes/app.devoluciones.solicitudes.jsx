@@ -2271,6 +2271,11 @@ export const action = async ({ request }) => {
       .getAll("courierIds")
       .map((courierId) => Number(courierId))
       .filter((courierId) => Number.isInteger(courierId) && courierId > 0);
+    const selectedRouteOrderIds = formData
+      .getAll("routeOrderIds")
+      .map((routeOrderId) => String(routeOrderId || "").trim())
+      .filter(Boolean);
+    const selectedRouteOrderIdSet = new Set(selectedRouteOrderIds);
     const couriers = await prisma.courier.findMany({
       where: selectedCourierIds.length
         ? { shop: session.shop, id: { in: selectedCourierIds } }
@@ -2290,6 +2295,7 @@ export const action = async ({ request }) => {
         courierLabel: "Devolución",
       })),
     ].filter((order) => {
+      if (selectedRouteOrderIdSet.size && !selectedRouteOrderIdSet.has(String(order?.id || "").trim())) return false;
       const status = String(order?.status || "").trim().toLowerCase();
       return !isCourierHistoryStatus(status) && status !== "recoger_en_sucursal";
     });
@@ -3684,6 +3690,9 @@ export default function ReturnsRequests() {
                 </p>
                 <Form method="post" className={styles.courierRouteModalForm}>
                   <input type="hidden" name="intent" value="plan_courier_routes" />
+                  {courierOrders.map((order) => (
+                    <input key={order.id} type="hidden" name="routeOrderIds" value={String(order.id || "")} />
+                  ))}
                   <div className={styles.courierRouteCourierList}>
                     {couriers.map((courier) => {
                       const courierId = String(courier.id);
