@@ -925,7 +925,9 @@
 
 .courierOrdersHeader {
   display: flex;
-  justify-content: flex-end;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
 }
 
@@ -940,6 +942,26 @@
   color: #005bd3;
   font-size: 13px;
   font-weight: 800;
+}
+
+.courierRoutePlanSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.courierRoutePlanBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid #c9d7ee;
+  border-radius: 999px;
+  background: #f5f7fa;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .courierField,

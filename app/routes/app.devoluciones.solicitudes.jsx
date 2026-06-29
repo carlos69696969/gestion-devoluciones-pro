@@ -43,6 +43,7 @@ const VIEW_MODE = {
   COURIERS: "couriers",
 };
 const COURIER_HISTORY_SINCE = new Date("2026-06-10T00:00:00-06:00");
+const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
 
 const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
@@ -2195,7 +2196,7 @@ export const loader = async ({ request }) => {
     );
 
   let couriers =
-    viewMode === VIEW_MODE.COURIERS || viewMode === VIEW_MODE.COURIER_HISTORY
+    viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.COURIERS || viewMode === VIEW_MODE.COURIER_HISTORY
       ? await prisma.courier.findMany({
           where: { shop: session.shop },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -2239,6 +2240,13 @@ export const loader = async ({ request }) => {
           orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
         })
       : [];
+  const plannedCourierRoutes =
+    viewMode === VIEW_MODE.COURIER
+      ? await plannedCourierRouteSummary(
+          session.shop,
+          couriers.map((courier) => courier.id),
+        )
+      : [];
 
   return {
     requests,
@@ -2246,6 +2254,7 @@ export const loader = async ({ request }) => {
     couriers,
     courierActivities,
     courierRouteSnapshots,
+    plannedCourierRoutes,
     viewMode,
     shop: session.shop,
   };
@@ -2256,6 +2265,67 @@ export const action = async ({ request }) => {
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
   const id = Number(formData.get("id") || 0);
+
+  if (intent === "plan_courier_routes") {
+    const couriers = await prisma.courier.findMany({
+      where: { shop: session.shop },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    if (!couriers.length) {
+      return { ok: false, error: "Primero agrega repartidores para poder distribuir las rutas." };
+    }
+    const routeOrders = [
+      ...(await fetchCourierOrders(admin)).map((requestRow) => ({
+        ...requestRow,
+        courierLabel: "Entrega",
+      })),
+      ...(await fetchPickupCourierOrders(session.shop)).map((requestRow) => ({
+        ...requestRow,
+        courierLabel: "Devolución",
+      })),
+    ].filter((order) => {
+      const status = String(order?.status || "").trim().toLowerCase();
+      return !isCourierHistoryStatus(status) && status !== "recoger_en_sucursal";
+    });
+    if (!routeOrders.length) {
+      return { ok: false, error: "No hay ordenes pendientes para distribuir." };
+    }
+
+    await clearUnstartedCourierRoutePlans(session.shop);
+    const routeGroups = distributeCourierRouteOrdersByZone(routeOrders, couriers).filter(
+      (group) => group.orders.length,
+    );
+    const activities = [];
+    for (const group of routeGroups) {
+      const routeId = crypto.randomUUID();
+      activities.push({
+        shop: session.shop,
+        courierId: group.courier.id,
+        courierName: group.courier.name,
+        requestId: `route:${routeId}`,
+        action: COURIER_ROUTE_PLANNED_ACTION,
+        routeId,
+      });
+      for (const order of group.orders) {
+        activities.push({
+          shop: session.shop,
+          courierId: group.courier.id,
+          courierName: group.courier.name,
+          requestId: String(order.id || ""),
+          orderNumber: String(order.orderNumber || "").trim() || null,
+          action: "courier_route_order_assigned",
+          routeId,
+        });
+      }
+    }
+    if (activities.length) {
+      await prisma.courierActivity.createMany({ data: activities });
+    }
+    return {
+      ok: true,
+      message: `Rutas distribuidas automaticamente para ${routeGroups.length} repartidor(es).`,
+    };
+  }
 
   if (intent === "create_courier") {
     const name = String(formData.get("name") || "").trim();
@@ -3350,6 +3420,7 @@ export default function ReturnsRequests() {
     couriers = [],
     courierActivities = [],
     courierRouteSnapshots = [],
+    plannedCourierRoutes = [],
     viewMode,
     shop,
   } = useLoaderData();
@@ -3522,7 +3593,31 @@ export default function ReturnsRequests() {
       {viewMode === VIEW_MODE.COURIER ? (
         <s-section heading="Ordenes repartidor">
           <div className={styles.courierOrdersHeader}>
-            <span className={styles.courierOrdersCount}>Numero de ordenes: {courierOrders.length}</span>
+            <div>
+              <span className={styles.courierOrdersCount}>Numero de ordenes: {courierOrders.length}</span>
+              {plannedCourierRoutes.length ? (
+                <div className={styles.courierRoutePlanSummary}>
+                  {plannedCourierRoutes.map((plan) => {
+                    const courier = couriers.find((item) => Number(item.id) === Number(plan.courierId));
+                    return (
+                      <span key={plan.routeId} className={styles.courierRoutePlanBadge}>
+                        {courier?.name || "Repartidor"}: {plan.count} orden(es)
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+            <Form method="post">
+              <input type="hidden" name="intent" value="plan_courier_routes" />
+              <button
+                className={`${styles.btn} ${styles.btnPrimary}`}
+                type="submit"
+                disabled={isSubmitting || couriers.length === 0 || courierOrders.length === 0}
+              >
+                Distribuir rutas automaticamente
+              </button>
+            </Form>
           </div>
           {courierOrders.length === 0 ? (
             <p>No hay ordenes pendientes por entregar.</p>
@@ -3626,6 +3721,124 @@ function isCourierCompletedHistoryOrder(order) {
     status === "rechazada" &&
     getReturnFailedAttemptCountFromReason(order?.rejectionReason) >= 3
   );
+}
+
+function courierLocationSortKey(order) {
+  const postalCode = String(order?.pickupPostalCode || "").replace(/\D/g, "").padStart(5, "0");
+  const state = String(order?.pickupState || "").trim().toLowerCase();
+  const city = String(order?.pickupCity || "").trim().toLowerCase();
+  const neighborhood = String(order?.pickupNeighborhood || "").trim().toLowerCase();
+  const address = String(order?.pickupAddress || "").trim().toLowerCase();
+  return [state, city, postalCode, neighborhood, address, String(order?.orderNumber || "")].join("|");
+}
+
+function distributeCourierRouteOrdersByZone(orders, couriers) {
+  const cleanCouriers = (Array.isArray(couriers) ? couriers : []).filter((courier) => Number(courier?.id));
+  if (!cleanCouriers.length) return [];
+  const sortedOrders = [...(Array.isArray(orders) ? orders : [])]
+    .filter((order) => String(order?.id || "").trim())
+    .sort((firstOrder, secondOrder) =>
+      courierLocationSortKey(firstOrder).localeCompare(courierLocationSortKey(secondOrder), "es", {
+        numeric: true,
+        sensitivity: "base",
+      }),
+    );
+  const baseSize = Math.floor(sortedOrders.length / cleanCouriers.length);
+  const extraCount = sortedOrders.length % cleanCouriers.length;
+  let offset = 0;
+
+  return cleanCouriers.map((courier, index) => {
+    const size = baseSize + (index < extraCount ? 1 : 0);
+    const courierOrders = sortedOrders.slice(offset, offset + size);
+    offset += size;
+    return {
+      courier,
+      orders: courierOrders,
+    };
+  });
+}
+
+async function clearUnstartedCourierRoutePlans(shop) {
+  const plannedActivities = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      action: COURIER_ROUTE_PLANNED_ACTION,
+      routeId: { not: null },
+    },
+    select: { routeId: true },
+  });
+  const plannedRouteIds = [
+    ...new Set(plannedActivities.map((activity) => String(activity.routeId || "").trim()).filter(Boolean)),
+  ];
+  if (!plannedRouteIds.length) return;
+
+  const startedActivities = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      routeId: { in: plannedRouteIds },
+      action: "courier_route_started",
+    },
+    select: { routeId: true },
+  });
+  const startedRouteIds = new Set(startedActivities.map((activity) => String(activity.routeId || "").trim()));
+  const unstartedRouteIds = plannedRouteIds.filter((routeId) => !startedRouteIds.has(routeId));
+  if (!unstartedRouteIds.length) return;
+
+  await prisma.courierActivity.deleteMany({
+    where: {
+      shop,
+      routeId: { in: unstartedRouteIds },
+      action: {
+        in: [COURIER_ROUTE_PLANNED_ACTION, "courier_route_order_assigned"],
+      },
+    },
+  });
+}
+
+async function plannedCourierRouteSummary(shop, courierIds) {
+  const ids = (Array.isArray(courierIds) ? courierIds : []).map(Number).filter(Boolean);
+  if (!ids.length) return [];
+  const plannedActivities = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      courierId: { in: ids },
+      action: COURIER_ROUTE_PLANNED_ACTION,
+      routeId: { not: null },
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
+  const latestPlanByCourierId = new Map();
+  for (const activity of plannedActivities) {
+    if (latestPlanByCourierId.has(activity.courierId)) continue;
+    latestPlanByCourierId.set(activity.courierId, activity);
+  }
+  const routeIds = [...new Set([...latestPlanByCourierId.values()].map((activity) => activity.routeId).filter(Boolean))];
+  if (!routeIds.length) return [];
+  const startedRoutes = await prisma.courierActivity.findMany({
+    where: { shop, routeId: { in: routeIds }, action: "courier_route_started" },
+    select: { routeId: true },
+  });
+  const startedRouteIds = new Set(startedRoutes.map((activity) => String(activity.routeId || "")));
+  const assignments = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      routeId: { in: routeIds.filter((routeId) => !startedRouteIds.has(String(routeId || ""))) },
+      action: "courier_route_order_assigned",
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const countByRouteId = new Map();
+  for (const assignment of assignments) {
+    const routeId = String(assignment.routeId || "");
+    countByRouteId.set(routeId, Number(countByRouteId.get(routeId) || 0) + 1);
+  }
+  return [...latestPlanByCourierId.values()]
+    .filter((activity) => !startedRouteIds.has(String(activity.routeId || "")))
+    .map((activity) => ({
+      courierId: activity.courierId,
+      routeId: activity.routeId,
+      count: Number(countByRouteId.get(String(activity.routeId || "")) || 0),
+    }));
 }
 
 function isCourierBranchReturnOrder(order, routeAction = "") {

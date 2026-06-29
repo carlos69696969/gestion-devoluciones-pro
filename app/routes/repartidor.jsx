@@ -52,6 +52,8 @@ const FINAL_PICKUP_REJECTION_REASON =
 const SECOND_PICKUP_FAILED_WARNING =
   "⚠️ Nota importante: Si mañana no logramos localizarte en tu domicilio por tercera ocasión, tu devolución será cancelada. 📦❌";
 
+const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
+
 function getFailedPickupMessage(request, rejectionReason) {
   if (getReturnRetryAttemptLabel(request) !== "segundo intento") return rejectionReason;
   return `${rejectionReason}\n\n${SECOND_PICKUP_FAILED_WARNING}`;
@@ -927,7 +929,42 @@ export const action = async ({ request }) => {
       const originalCourierName = resumedTransfer
         ? String(resumedTransfer.action || "").replace("courier_route_transferred_from:", "").trim() || courier.name
         : courier.name;
-      const routeId = resumedTransfer?.routeId || crypto.randomUUID();
+      const latestPlannedRoute = !resumedTransfer
+        ? await prisma.courierActivity.findFirst({
+            where: {
+              shop,
+              courierId: courier.id,
+              action: COURIER_ROUTE_PLANNED_ACTION,
+              routeId: { not: null },
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          })
+        : null;
+      const plannedRouteStarted = latestPlannedRoute?.routeId
+        ? await prisma.courierActivity.findFirst({
+            where: {
+              shop,
+              courierId: courier.id,
+              routeId: latestPlannedRoute.routeId,
+              action: "courier_route_started",
+            },
+            select: { id: true },
+          })
+        : null;
+      const plannedRouteFinished = latestPlannedRoute?.routeId
+        ? await prisma.courierActivity.findFirst({
+            where: {
+              shop,
+              courierId: courier.id,
+              routeId: latestPlannedRoute.routeId,
+              action: "courier_route_finished",
+            },
+            select: { id: true },
+          })
+        : null;
+      const plannedRoute =
+        latestPlannedRoute?.routeId && !plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
+      const routeId = resumedTransfer?.routeId || plannedRoute?.routeId || crypto.randomUUID();
       const sessionCandidatesForRoute = portalShop.sessionCandidates || portalShop.allSessionCandidates || [];
       if (resumedTransfer) {
         await prisma.courierActivity.create({
@@ -937,6 +974,17 @@ export const action = async ({ request }) => {
             courierName: String(resumedTransfer.courierName || "").trim() || courier.name,
             requestId: `route:${routeId}`,
             action: "courier_route_transfer_accepted",
+            routeId,
+          },
+        });
+      } else if (plannedRoute) {
+        await prisma.courierActivity.create({
+          data: {
+            shop,
+            courierId: courier.id,
+            courierName: courier.name,
+            requestId: `route:${routeId}`,
+            action: "courier_route_started",
             routeId,
           },
         });
