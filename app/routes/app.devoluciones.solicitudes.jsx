@@ -3616,8 +3616,10 @@ export default function ReturnsRequests() {
                 <div className={styles.courierRoutePlanSummary}>
                   {plannedCourierRoutes.map((plan) => {
                     const courier = couriers.find((item) => Number(item.id) === Number(plan.courierId));
+                    const planRequestIdSet = new Set((plan.requestIds || []).map((requestId) => String(requestId)));
                     const planOrderNumberSet = new Set((plan.orderNumbers || []).map((orderNumber) => String(orderNumber)));
                     const planOrders = courierOrders.filter((order) =>
+                      planRequestIdSet.has(String(order.id || "")) ||
                       planOrderNumberSet.has(String(order.orderNumber || "")),
                     );
                     return (
@@ -3936,20 +3938,29 @@ async function plannedCourierRouteSummary(shop, courierIds) {
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   const orderNumbersByRouteId = new Map();
+  const requestIdsByRouteId = new Map();
   for (const assignment of assignments) {
     const routeId = String(assignment.routeId || "");
+    const requestId = String(assignment.requestId || "").trim();
     const orderNumber = String(assignment.orderNumber || "").trim();
     if (!orderNumbersByRouteId.has(routeId)) orderNumbersByRouteId.set(routeId, []);
+    if (!requestIdsByRouteId.has(routeId)) requestIdsByRouteId.set(routeId, []);
+    if (requestId) requestIdsByRouteId.get(routeId).push(requestId);
     if (orderNumber) orderNumbersByRouteId.get(routeId).push(orderNumber);
   }
   return [...latestPlanByCourierId.values()]
     .filter((activity) => !startedRouteIds.has(String(activity.routeId || "")))
-    .map((activity) => ({
-      courierId: activity.courierId,
-      routeId: activity.routeId,
-      orderNumbers: orderNumbersByRouteId.get(String(activity.routeId || "")) || [],
-      count: Number((orderNumbersByRouteId.get(String(activity.routeId || "")) || []).length),
-    }));
+    .map((activity) => {
+      const routeId = String(activity.routeId || "");
+      const requestIds = requestIdsByRouteId.get(routeId) || [];
+      return {
+        courierId: activity.courierId,
+        routeId: activity.routeId,
+        requestIds,
+        orderNumbers: orderNumbersByRouteId.get(routeId) || [],
+        count: Number(requestIds.length),
+      };
+    });
 }
 
 function isCourierBranchReturnOrder(order, routeAction = "") {
