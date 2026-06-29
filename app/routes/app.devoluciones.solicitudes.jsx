@@ -3488,6 +3488,45 @@ export default function ReturnsRequests() {
     .filter((requestRow) => HISTORY_STATUSES.has(String(requestRow.status || "").toLowerCase()))
     .sort((a, b) => historyTimestampMs(b) - historyTimestampMs(a));
   const pickupGroups = buildPickupGroups(pickupRequests);
+  const courierRouteSearchParams = new URLSearchParams(location.search);
+  const selectedRouteCourierId = Number(courierRouteSearchParams.get("routeCourierId") || 0);
+  const selectedRouteId = String(courierRouteSearchParams.get("routeId") || "").trim();
+  const selectedCourierRoutePlan =
+    selectedRouteCourierId && selectedRouteId
+      ? plannedCourierRoutes.find(
+          (plan) =>
+            Number(plan.courierId) === selectedRouteCourierId &&
+            String(plan.routeId || "") === selectedRouteId,
+        )
+      : null;
+  const selectedCourierRouteCourier = selectedCourierRoutePlan
+    ? couriers.find((courier) => Number(courier.id) === Number(selectedCourierRoutePlan.courierId))
+    : null;
+  const selectedCourierRouteRequestIds = new Set(
+    (selectedCourierRoutePlan?.requestIds || []).map((requestId) => String(requestId)),
+  );
+  const selectedCourierRouteOrderNumbers = new Set(
+    (selectedCourierRoutePlan?.orderNumbers || []).map((orderNumber) => String(orderNumber)),
+  );
+  const selectedCourierRouteOrders = selectedCourierRoutePlan
+    ? courierOrders.filter(
+        (order) =>
+          selectedCourierRouteRequestIds.has(String(order.id || "")) ||
+          selectedCourierRouteOrderNumbers.has(String(order.orderNumber || "")),
+      )
+    : [];
+  const buildCourierRouteHref = ({ courierId = "", routeId = "" } = {}) => {
+    const nextParams = new URLSearchParams(location.search);
+    if (courierId && routeId) {
+      nextParams.set("routeCourierId", String(courierId));
+      nextParams.set("routeId", String(routeId));
+    } else {
+      nextParams.delete("routeCourierId");
+      nextParams.delete("routeId");
+    }
+    const query = nextParams.toString();
+    return query ? `${location.pathname}?${query}` : location.pathname;
+  };
 
   const pageHeading =
     viewMode === VIEW_MODE.PICKUP
@@ -3632,57 +3671,70 @@ export default function ReturnsRequests() {
 
       {viewMode === VIEW_MODE.COURIER ? (
         <s-section heading="Ordenes repartidor">
-          <div className={styles.courierOrdersHeader}>
-            <div>
-              <span className={styles.courierOrdersCount}>Numero de ordenes: {courierOrders.length}</span>
-              {plannedCourierRoutes.length ? (
-                <div className={styles.courierRoutePlanSummary}>
-                  {plannedCourierRoutes.map((plan) => {
-                    const courier = couriers.find((item) => Number(item.id) === Number(plan.courierId));
-                    const planRequestIdSet = new Set((plan.requestIds || []).map((requestId) => String(requestId)));
-                    const planOrderNumberSet = new Set((plan.orderNumbers || []).map((orderNumber) => String(orderNumber)));
-                    const planOrders = courierOrders.filter((order) =>
-                      planRequestIdSet.has(String(order.id || "")) ||
-                      planOrderNumberSet.has(String(order.orderNumber || "")),
-                    );
-                    return (
-                      <details key={plan.routeId} className={styles.courierRoutePlanDetails}>
-                        <summary className={styles.courierRoutePlanBadge}>
-                          {courier?.name || "Repartidor"}: {plan.count} orden(es)
-                        </summary>
-                        <div className={styles.courierRoutePlanOrders}>
-                          {planOrders.length ? (
-                            planOrders.map((order) => (
-                              <div key={`${plan.routeId}-${order.orderNumber}`} className={styles.courierRoutePlanOrder}>
-                                <strong>
-                                  #{order.orderNumber} · {order.courierLabel || "Orden"}
-                                </strong>
-                                <span>{order.customerName || "Cliente sin nombre"}</span>
-                                <span>{formatCourierAddress(order)}</span>
-                              </div>
-                            ))
-                          ) : (
-                            <span className={styles.courierRoutePlanEmpty}>No se encontraron ordenes en esta ruta.</span>
-                          )}
-                        </div>
-                      </details>
-                    );
-                  })}
+          {selectedCourierRoutePlan ? (
+            <div className={styles.courierRouteDetail}>
+              <Link className={styles.courierHistoryBackLink} to={buildCourierRouteHref()}>
+                ← Regresar
+              </Link>
+              <div className={styles.courierHistoryHeader}>
+                <div>
+                  <h3>{selectedCourierRouteCourier?.name || "Repartidor"}</h3>
+                  <p className={styles.courierHistoryDateTitle}>
+                    Ordenes asignadas: {selectedCourierRouteOrders.length}
+                  </p>
                 </div>
-              ) : null}
+              </div>
+              {selectedCourierRouteOrders.length ? (
+                <div className={styles.courierGrid}>
+                  {selectedCourierRouteOrders.map((request) => (
+                    <CourierOrderCard
+                      key={`${selectedCourierRoutePlan.routeId}-${request.id}`}
+                      request={request}
+                      adminCourierView
+                      hideTransferredCourierBadge
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p>No se encontraron ordenes en esta ruta.</p>
+              )}
             </div>
-            <button
-              className={`${styles.btn} ${styles.btnPrimary}`}
-              type="button"
-              disabled={isSubmitting || couriers.length === 0 || courierOrders.length === 0}
-              onClick={() => {
-                setSelectedCourierIds([]);
-                setShowCourierRouteModal(true);
-              }}
-            >
-              Distribuir rutas automaticamente
-            </button>
-          </div>
+          ) : (
+            <>
+              <div className={styles.courierOrdersHeader}>
+                <div>
+                  <span className={styles.courierOrdersCount}>Numero de ordenes: {courierOrders.length}</span>
+                  {plannedCourierRoutes.length ? (
+                    <div className={styles.courierRoutePlanSummary}>
+                      {plannedCourierRoutes.map((plan) => {
+                        const courier = couriers.find((item) => Number(item.id) === Number(plan.courierId));
+                        return (
+                          <Link
+                            key={plan.routeId}
+                            className={styles.courierRoutePlanBadge}
+                            to={buildCourierRouteHref({ courierId: plan.courierId, routeId: plan.routeId })}
+                          >
+                            {courier?.name || "Repartidor"}: {plan.count} orden(es)
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  className={`${styles.btn} ${styles.btnPrimary}`}
+                  type="button"
+                  disabled={isSubmitting || couriers.length === 0 || courierOrders.length === 0}
+                  onClick={() => {
+                    setSelectedCourierIds([]);
+                    setShowCourierRouteModal(true);
+                  }}
+                >
+                  Distribuir rutas automaticamente
+                </button>
+              </div>
+            </>
+          )}
           {showCourierRouteModal ? (
             <div className={styles.courierRouteModalBackdrop} role="presentation">
               <div
@@ -3778,9 +3830,9 @@ export default function ReturnsRequests() {
               </div>
             </div>
           ) : null}
-          {courierOrders.length === 0 ? (
+          {!selectedCourierRoutePlan && courierOrders.length === 0 ? (
             <p>No hay ordenes pendientes por entregar.</p>
-          ) : (
+          ) : !selectedCourierRoutePlan ? (
             <div className={styles.courierGrid}>
               {courierOrders.map((request) => (
                 <CourierOrderCard
@@ -3791,7 +3843,7 @@ export default function ReturnsRequests() {
                 />
               ))}
             </div>
-          )}
+          ) : null}
         </s-section>
       ) : null}
 
