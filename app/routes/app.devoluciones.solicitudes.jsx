@@ -3710,6 +3710,7 @@ export default function ReturnsRequests() {
                     <CourierOrderCard
                       key={`${selectedCourierRoutePlan.routeId}-${request.id}`}
                       request={request}
+                      sequenceNumber={Number(request.sequenceNumber || 0)}
                       adminCourierView
                       hideTransferredCourierBadge
                     />
@@ -3799,6 +3800,7 @@ export default function ReturnsRequests() {
                         createdAt: order.createdAt,
                         updatedAt: order.updatedAt,
                         status: order.status,
+                        sequenceNumber: order.sequenceNumber,
                       })),
                     )}
                   />
@@ -3858,6 +3860,7 @@ export default function ReturnsRequests() {
                 <CourierOrderCard
                   key={request.id}
                   request={request}
+                  sequenceNumber={Number(request.sequenceNumber || 0)}
                   adminCourierView
                   hideTransferredCourierBadge
                 />
@@ -4058,7 +4061,10 @@ function sortCourierRouteOrdersByProximity(orders, routeStartAddress = "") {
     currentSignature = nextOrder.signature;
   }
 
-  return sortedOrders;
+  return sortedOrders.map((order, index) => ({
+    ...order,
+    sequenceNumber: index + 1,
+  }));
 }
 
 function distributeCourierRouteOrdersByZone(orders, couriers, routeStartAddress = "") {
