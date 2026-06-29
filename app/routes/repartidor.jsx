@@ -965,7 +965,6 @@ export const action = async ({ request }) => {
       const plannedRoute =
         latestPlannedRoute?.routeId && !plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
       const routeId = resumedTransfer?.routeId || plannedRoute?.routeId || crypto.randomUUID();
-      const sessionCandidatesForRoute = portalShop.sessionCandidates || portalShop.allSessionCandidates || [];
       if (resumedTransfer) {
         await prisma.courierActivity.create({
           data: {
@@ -989,36 +988,15 @@ export const action = async ({ request }) => {
           },
         });
       } else {
-        const [deliveryResult, pickupResult] = await Promise.allSettled([
-          fetchCourierOrdersForShop({ shop, sessionCandidates: sessionCandidatesForRoute }),
-          fetchPickupCourierOrders(shop),
-        ]);
-        const routeOrders = [
-          ...(deliveryResult.status === "fulfilled" ? deliveryResult.value : []),
-          ...(pickupResult.status === "fulfilled" ? pickupResult.value : []),
-        ]
-          .filter(isCourierWorkableForCurrentRoute)
-          .sort((firstOrder, secondOrder) => courierOrderTimestampMs(firstOrder) - courierOrderTimestampMs(secondOrder));
-        await prisma.courierActivity.createMany({
-          data: [
-            {
-              shop,
-              courierId: courier.id,
-              courierName: courier.name,
-              requestId: `route:${routeId}`,
-              action: "courier_route_started",
-              routeId,
-            },
-            ...routeOrders.map((order) => ({
-              shop,
-              courierId: courier.id,
-              courierName: courier.name,
-              requestId: String(order.id || ""),
-              orderNumber: String(order.orderNumber || "").trim() || null,
-              action: "courier_route_order_assigned",
-              routeId,
-            })),
-          ],
+        await prisma.courierActivity.create({
+          data: {
+            shop,
+            courierId: courier.id,
+            courierName: courier.name,
+            requestId: `route:${routeId}`,
+            action: "courier_route_started",
+            routeId,
+          },
         });
       }
       url.searchParams.set("shop", shop);
@@ -1593,89 +1571,6 @@ export const loader = async ({ request }) => {
     return requestRow;
   });
 
-  if (dailyAccess.routeId && currentRouteStartedAt && !dailyAccess.transferredFromName && !routeHasFrozenSnapshot) {
-    const unassignedCurrentOrders = courierOrders.filter((requestRow) => {
-      const requestId = String(requestRow?.id || "").trim();
-      return requestId && !currentRouteRequestIds.has(requestId) && isCourierWorkableForCurrentRoute(requestRow);
-    });
-    if (unassignedCurrentOrders.length) {
-      await prisma.courierActivity.createMany({
-        data: unassignedCurrentOrders.map((requestRow) => ({
-          shop,
-          courierId: Number(dailyAccess.courierId),
-          courierName: String(dailyAccess.courierName || ""),
-          requestId: String(requestRow.id || ""),
-          orderNumber: String(requestRow.orderNumber || "").trim() || null,
-          action: "courier_route_order_assigned",
-          routeId: String(dailyAccess.routeId),
-        })),
-      });
-      for (const requestRow of unassignedCurrentOrders) {
-        const requestId = String(requestRow.id || "").trim();
-        currentRouteRequestIds.add(requestId);
-        currentRouteActionByRequestId.set(requestId, "courier_route_order_assigned");
-      }
-    }
-  }
-
-  if (dailyAccess.routeId && currentRouteStartedAt && !routeHasFrozenSnapshot) {
-    const unassignedReturnIds = courierOrders
-      .filter((requestRow) => {
-        const requestId = String(requestRow?.id || "").trim();
-        const status = String(requestRow?.status || "").trim().toLowerCase();
-        return (
-          requestId.startsWith("pickup-") &&
-          ["reintento_pendiente", "intento_fallido_1", "intento_fallido_2", "no_recibido"].includes(status) &&
-          !currentRouteRequestIds.has(requestId)
-        );
-      })
-      .map((requestRow) => String(requestRow.id || "").trim());
-    const retryActivities = unassignedReturnIds.length
-      ? await prisma.courierActivity.findMany({
-          where: {
-            shop,
-            requestId: { in: unassignedReturnIds },
-            action: {
-              in: ["courier_return_retry_pickup", "courier_return_pickup_attempt_failed"],
-            },
-            createdAt: { lte: currentRouteStartedAt },
-          },
-          select: { requestId: true },
-        })
-      : [];
-    const retriedBeforeRouteIds = new Set(
-      retryActivities.map((activity) => String(activity.requestId || "").trim()),
-    );
-    const legacyUnassignedReturns = courierOrders.filter((requestRow) => {
-      const requestId = String(requestRow?.id || "").trim();
-      const status = String(requestRow?.status || "").trim().toLowerCase();
-      return (
-        requestId.startsWith("pickup-") &&
-        ["reintento_pendiente", "intento_fallido_1", "intento_fallido_2", "no_recibido"].includes(status) &&
-        !currentRouteRequestIds.has(requestId) &&
-        retriedBeforeRouteIds.has(requestId)
-      );
-    });
-    if (legacyUnassignedReturns.length) {
-      await prisma.courierActivity.createMany({
-        data: legacyUnassignedReturns.map((requestRow) => ({
-          shop,
-          courierId: Number(dailyAccess.courierId),
-          courierName: String(dailyAccess.courierName || ""),
-          requestId: String(requestRow.id || ""),
-          orderNumber: String(requestRow.orderNumber || "").trim() || null,
-          action: "courier_route_order_assigned",
-          routeId: String(dailyAccess.routeId),
-        })),
-      });
-      for (const requestRow of legacyUnassignedReturns) {
-        const requestId = String(requestRow.id || "").trim();
-        currentRouteRequestIds.add(requestId);
-        currentRouteActionByRequestId.set(requestId, "courier_route_order_assigned");
-      }
-    }
-  }
-
   if (dailyAccess.routeId && currentRouteRequestIds.size) {
     const loadedRequestIds = new Set(
       courierOrders.map((requestRow) => String(requestRow?.id || "").trim()).filter(Boolean),
@@ -1752,23 +1647,6 @@ export const loader = async ({ request }) => {
   );
   const routeCourierOrders = courierOrders.map((requestRow) => {
     const requestId = String(requestRow?.id || "").trim();
-    if (!dailyAccess.transferredFromName && isCourierWorkableForCurrentRoute(requestRow)) {
-      const routeAction = currentRouteActionByRequestId.get(requestId);
-      if (shouldResetAssignedOrderForCurrentRoute(routeAction)) {
-        return {
-          ...requestRow,
-          status: "pendiente",
-          courierHistoryAt: "",
-          sequenceNumber: routeSequenceByRequestId.get(requestId) || 0,
-          currentRouteAction: routeAction || "",
-        };
-      }
-      return {
-        ...requestRow,
-        sequenceNumber: routeSequenceByRequestId.get(requestId) || 0,
-        currentRouteAction: routeAction || "",
-      };
-    }
     if (currentRouteRequestIds.has(requestId)) {
       const routeAction = currentRouteActionByRequestId.get(requestId);
       if (shouldResetAssignedOrderForCurrentRoute(routeAction)) {
