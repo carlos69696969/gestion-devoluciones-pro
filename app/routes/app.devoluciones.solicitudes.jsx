@@ -3476,20 +3476,26 @@ export default function ReturnsRequests() {
     shop,
   } = useLoaderData();
   const actionData = useActionData();
+  const courierRouteFetcher = useFetcher();
   const navigation = useNavigation();
   const location = useLocation();
   const isSubmitting = navigation.state === "submitting";
+  const isCourierRouteSubmitting = courierRouteFetcher.state !== "idle";
   const [showCourierRouteModal, setShowCourierRouteModal] = useState(false);
   const [selectedCourierIds, setSelectedCourierIds] = useState([]);
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
-  const canConfirmCourierRoutePlan = selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting;
+  const canConfirmCourierRoutePlan =
+    selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
+  const courierRouteActionData = courierRouteFetcher.data || null;
+  const pageErrorMessage = courierRouteActionData?.error || actionData?.error || "";
+  const pageSuccessMessage = courierRouteActionData?.message || actionData?.message || "";
 
   useEffect(() => {
-    if (actionData?.ok) {
+    if (actionData?.ok || courierRouteActionData?.ok) {
       setShowCourierRouteModal(false);
       setSelectedCourierIds([]);
     }
-  }, [actionData]);
+  }, [actionData, courierRouteActionData]);
 
   const reviewRequests = requests.filter(
     (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
@@ -3573,8 +3579,8 @@ export default function ReturnsRequests() {
 
   return (
     <s-page heading={pageHeading}>
-      {actionData?.error ? <p className={styles.errorMsg}>{actionData.error}</p> : null}
-      {actionData?.message ? <p className={styles.successMsg}>{actionData.message}</p> : null}
+      {pageErrorMessage ? <p className={styles.errorMsg}>{pageErrorMessage}</p> : null}
+      {pageSuccessMessage ? <p className={styles.successMsg}>{pageSuccessMessage}</p> : null}
 
       {viewMode === VIEW_MODE.BRANCH ? (
         <s-section heading="Entregas en sucursal">
@@ -3780,7 +3786,11 @@ export default function ReturnsRequests() {
                 <p className={styles.courierRouteModalText}>
                   Marca los repartidores que recibiran las rutas pendientes.
                 </p>
-                <Form method="post" action={buildCourierRouteHref()} className={styles.courierRouteModalForm}>
+                <courierRouteFetcher.Form
+                  method="post"
+                  action={buildCourierRouteHref()}
+                  className={styles.courierRouteModalForm}
+                >
                   <input type="hidden" name="intent" value="plan_courier_routes" />
                   <input
                     type="hidden"
@@ -3838,7 +3848,7 @@ export default function ReturnsRequests() {
                       className={styles.btn}
                       type="button"
                       onClick={() => setShowCourierRouteModal(false)}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || isCourierRouteSubmitting}
                     >
                       Cancelar
                     </button>
@@ -3850,7 +3860,7 @@ export default function ReturnsRequests() {
                       Confirmar distribucion
                     </button>
                   </div>
-                </Form>
+                </courierRouteFetcher.Form>
               </div>
             </div>
           ) : null}
