@@ -1619,60 +1619,6 @@ export const loader = async ({ request }) => {
         .filter((requestId) => requestId && !requestId.startsWith("route:")),
     ),
   ];
-  const activeRouteMarkers = dailyAccess.routeId
-    ? await prisma.courierActivity.findMany({
-        where: {
-          shop,
-          routeId: { not: null },
-          action: { in: [COURIER_ROUTE_PLANNED_ACTION, "courier_route_started"] },
-        },
-        select: { routeId: true },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      })
-    : [];
-  const finishedRouteMarkers = activeRouteMarkers.length
-    ? await prisma.courierActivity.findMany({
-        where: {
-          shop,
-          routeId: {
-            in: [
-              ...new Set(
-                activeRouteMarkers.map((activity) => String(activity.routeId || "").trim()).filter(Boolean),
-              ),
-            ],
-          },
-          action: "courier_route_finished",
-        },
-        select: { routeId: true },
-      })
-    : [];
-  const finishedRouteIds = new Set(finishedRouteMarkers.map((activity) => String(activity.routeId || "").trim()));
-  const activeRouteIds = [
-    ...new Set(
-      [
-        ...activeRouteMarkers.map((activity) => String(activity.routeId || "").trim()),
-        String(dailyAccess.routeId || "").trim(),
-      ].filter((routeId) => routeId && !finishedRouteIds.has(routeId)),
-    ),
-  ];
-  const globalRouteAssignments = activeRouteIds.length
-    ? await prisma.courierActivity.findMany({
-        where: {
-          shop,
-          routeId: { in: activeRouteIds },
-          action: "courier_route_order_assigned",
-        },
-        select: { requestId: true },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      })
-    : [];
-  const globalAssignedRouteRequestIds = [
-    ...new Set(
-      globalRouteAssignments
-        .map((activity) => String(activity.requestId || "").trim())
-        .filter((requestId) => requestId && !requestId.startsWith("route:")),
-    ),
-  ];
   const finalizedRouteRequestIds = [
     ...new Map(
       currentRouteActivities
@@ -1688,16 +1634,10 @@ export const loader = async ({ request }) => {
     )
     .map(([requestId]) => requestId);
   const routeSequenceIds = [
-    ...globalAssignedRouteRequestIds,
-    ...finalizedRouteRequestIds.filter((requestId) => !globalAssignedRouteRequestIds.includes(requestId)),
-    ...assignedRouteRequestIds.filter(
-      (requestId) =>
-        !globalAssignedRouteRequestIds.includes(requestId) &&
-        !finalizedRouteRequestIds.includes(requestId),
-    ),
+    ...assignedRouteRequestIds,
+    ...finalizedRouteRequestIds.filter((requestId) => !assignedRouteRequestIds.includes(requestId)),
     ...Array.from(currentRouteRequestIds).filter(
       (requestId) =>
-        !globalAssignedRouteRequestIds.includes(requestId) &&
         !finalizedRouteRequestIds.includes(requestId) &&
         !assignedRouteRequestIds.includes(requestId),
     ),
