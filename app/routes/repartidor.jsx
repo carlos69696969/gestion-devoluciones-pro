@@ -601,6 +601,7 @@ export const action = async ({ request }) => {
         return (
           activityRequestId &&
           !activityRequestId.startsWith("route:") &&
+          !activityRequestId.startsWith("session:") &&
           activity.action !== "courier_route_started" &&
           activity.action !== "courier_route_finished"
         );
@@ -1517,7 +1518,7 @@ export const loader = async ({ request }) => {
   const currentRouteRequestIds = new Set(
     currentRouteActivities
       .map((activity) => String(activity.requestId || "").trim())
-      .filter((requestId) => requestId && !requestId.startsWith("route:")),
+      .filter((requestId) => requestId && !requestId.startsWith("route:") && !requestId.startsWith("session:")),
   );
   const currentRouteActionByRequestId = new Map(
     currentRouteActivities
@@ -1727,7 +1728,7 @@ export const loader = async ({ request }) => {
       currentRouteActivities
         .filter((activity) => String(activity.action || "").trim() === "courier_route_order_assigned")
         .map((activity) => String(activity.requestId || "").trim())
-        .filter((requestId) => requestId && !requestId.startsWith("route:")),
+        .filter((requestId) => requestId && !requestId.startsWith("route:") && !requestId.startsWith("session:")),
     ),
   ];
   const currentRoutePlan = dailyAccess.routeId
@@ -1789,7 +1790,7 @@ export const loader = async ({ request }) => {
     ...new Set(
       batchRouteAssignments
         .map((activity) => String(activity.requestId || "").trim())
-        .filter((requestId) => requestId && !requestId.startsWith("route:")),
+        .filter((requestId) => requestId && !requestId.startsWith("route:") && !requestId.startsWith("session:")),
     ),
   ];
   const primaryRouteSequenceIds = batchRouteRequestIds.length ? batchRouteRequestIds : assignedRouteRequestIds;
@@ -1800,7 +1801,7 @@ export const loader = async ({ request }) => {
         .map((activity) => [String(activity.requestId || "").trim(), activity]),
     ).entries(),
   ]
-    .filter(([requestId]) => requestId && !requestId.startsWith("route:"))
+    .filter(([requestId]) => requestId && !requestId.startsWith("route:") && !requestId.startsWith("session:"))
     .sort(
       ([, firstActivity], [, secondActivity]) =>
         new Date(firstActivity.createdAt || "").getTime() -
