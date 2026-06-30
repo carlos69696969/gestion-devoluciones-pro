@@ -204,3 +204,20 @@ model DeliveryCodeAssignment {
   @@index([shop, active])
   @@index([shop, orderNumber])
 }
+
+model GoogleMapsGeocodeCache {
+  id                 Int      @id @default(autoincrement())
+  shop               String
+  addressKey         String
+  address            String
+  formattedAddress   String?
+  latitude           Float
+  longitude          Float
+  placeId            String?
+  source             String   @default("google")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([shop, addressKey])
+  @@index([shop, updatedAt])
+}

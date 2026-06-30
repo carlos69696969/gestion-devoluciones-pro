@@ -10,6 +10,7 @@ import {
   isCourierHistoryStatus,
   isCourierRouteStatus,
 } from "../utils/courier.shared";
+import { geocodeAddressWithCache, haversineDistanceMeters } from "../utils/googleMaps.server";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -2204,7 +2205,7 @@ export const loader = async ({ request }) => {
     );
   const visibleCourierOrders =
     viewMode === VIEW_MODE.COURIER
-      ? sortCourierRouteOrdersByProximity(courierOrders, routeStartAddress)
+      ? await sortCourierRouteOrdersByProximity(session.shop, courierOrders, routeStartAddress)
       : courierOrders;
 
   let couriers =
@@ -2337,11 +2338,12 @@ export const action = async ({ request }) => {
       where: { shop: session.shop },
       select: { branchAddress: true },
     });
-    const routeGroups = distributeCourierRouteOrdersByZone(
+    const routeGroups = (await distributeCourierRouteOrdersByZone(
+      session.shop,
       routeOrders,
       couriers,
       String(routeSettings?.branchAddress || "").trim(),
-    ).filter(
+    )).filter(
       (group) => group.orders.length,
     );
     const activities = [];
@@ -4025,7 +4027,59 @@ function routeAddressDistance(firstAddress, secondAddress) {
   return postalDifference * 10 - sharedTokenCount * 1000 + Math.abs(firstAddress.normalized.length - secondAddress.normalized.length);
 }
 
-function sortCourierRouteOrdersByProximity(orders, routeStartAddress = "") {
+async function sortCourierRouteOrdersByGoogleMapsProximity(shop, orders, routeStartAddress = "") {
+  const cleanShop = String(shop || "").trim();
+  if (!cleanShop || !String(process.env.GOOGLE_MAPS_API_KEY || "").trim()) return null;
+
+  const startPoint = await geocodeAddressWithCache(cleanShop, routeStartAddress);
+  if (!startPoint) return null;
+
+  const geocodedOrders = [];
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const orderId = String(order?.id || "").trim();
+    if (!orderId) continue;
+    const address = routeAddressTextFromOrder(order);
+    const point = await geocodeAddressWithCache(cleanShop, address);
+    if (!point) return null;
+    geocodedOrders.push({ order, point });
+  }
+  if (!geocodedOrders.length) return [];
+
+  const sortedOrders = [];
+  const pendingOrders = [...geocodedOrders];
+  let currentPoint = startPoint;
+
+  while (pendingOrders.length) {
+    let nearestIndex = 0;
+    let nearestDistance = Number.MAX_SAFE_INTEGER;
+    for (let index = 0; index < pendingOrders.length; index += 1) {
+      const distance = haversineDistanceMeters(currentPoint, pendingOrders[index].point);
+      if (
+        distance < nearestDistance ||
+        (distance === nearestDistance &&
+          String(pendingOrders[index].order?.orderNumber || "").localeCompare(
+            String(pendingOrders[nearestIndex].order?.orderNumber || ""),
+            "es",
+            { numeric: true, sensitivity: "base" },
+          ) < 0)
+      ) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    }
+    const [nextOrder] = pendingOrders.splice(nearestIndex, 1);
+    sortedOrders.push(nextOrder.order);
+    currentPoint = nextOrder.point;
+  }
+
+  return sortedOrders.map((order, index) => ({
+    ...order,
+    sequenceNumber: index + 1,
+    routeSortSource: "google_maps",
+  }));
+}
+
+function sortCourierRouteOrdersByProximityFallback(orders, routeStartAddress = "") {
   const pendingOrders = (Array.isArray(orders) ? orders : [])
     .filter((order) => String(order?.id || "").trim())
     .map((order) => ({
@@ -4064,13 +4118,19 @@ function sortCourierRouteOrdersByProximity(orders, routeStartAddress = "") {
   return sortedOrders.map((order, index) => ({
     ...order,
     sequenceNumber: index + 1,
+    routeSortSource: "text_fallback",
   }));
 }
 
-function distributeCourierRouteOrdersByZone(orders, couriers, routeStartAddress = "") {
+async function sortCourierRouteOrdersByProximity(shop, orders, routeStartAddress = "") {
+  const googleSortedOrders = await sortCourierRouteOrdersByGoogleMapsProximity(shop, orders, routeStartAddress);
+  return googleSortedOrders || sortCourierRouteOrdersByProximityFallback(orders, routeStartAddress);
+}
+
+async function distributeCourierRouteOrdersByZone(shop, orders, couriers, routeStartAddress = "") {
   const cleanCouriers = (Array.isArray(couriers) ? couriers : []).filter((courier) => Number(courier?.id));
   if (!cleanCouriers.length) return [];
-  const sortedOrders = sortCourierRouteOrdersByProximity(orders, routeStartAddress);
+  const sortedOrders = await sortCourierRouteOrdersByProximity(shop, orders, routeStartAddress);
   const baseSize = Math.floor(sortedOrders.length / cleanCouriers.length);
   const extraCount = sortedOrders.length % cleanCouriers.length;
   let offset = 0;
