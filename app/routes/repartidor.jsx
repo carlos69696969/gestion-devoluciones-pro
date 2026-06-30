@@ -53,6 +53,8 @@ const SECOND_PICKUP_FAILED_WARNING =
   "⚠️ Nota importante: Si mañana no logramos localizarte en tu domicilio por tercera ocasión, tu devolución será cancelada. 📦❌";
 
 const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
+const COURIER_ROUTE_SESSION_STARTED_ACTION = "courier_route_session_started";
+const COURIER_ROUTE_SESSION_ENDED_ACTION = "courier_route_session_ended";
 
 function getFailedPickupMessage(request, rejectionReason) {
   if (getReturnRetryAttemptLabel(request) !== "segundo intento") return rejectionReason;
@@ -267,6 +269,29 @@ async function generateUniqueCourierCode(shop) {
   throw new Error("No se pudo generar un nuevo codigo unico.");
 }
 
+async function findActiveCourierRouteSession({ prisma, shop, courierId, routeId, after = null }) {
+  const cleanRouteId = String(routeId || "").trim();
+  if (!shop || !courierId || !cleanRouteId) return null;
+  const routeSessionActions = [
+    COURIER_ROUTE_SESSION_STARTED_ACTION,
+    COURIER_ROUTE_SESSION_ENDED_ACTION,
+    "courier_route_finished",
+  ];
+  const activities = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      courierId: Number(courierId),
+      routeId: cleanRouteId,
+      action: { in: routeSessionActions },
+      ...(after ? { createdAt: { gte: after } } : {}),
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 1,
+  });
+  const latestActivity = activities[0] || null;
+  return latestActivity?.action === COURIER_ROUTE_SESSION_STARTED_ACTION ? latestActivity : null;
+}
+
 async function getCourierDailyAccess(request, shop) {
   const { default: prisma } = await import("../db.server");
   const { dailyAccessCookie } = courierPortalCookies(request);
@@ -335,6 +360,21 @@ async function getCourierDailyAccess(request, shop) {
         previousCourierName: originalCourierName,
         newCourierName: transferredOperatorName,
       };
+    }
+  }
+  if (access?.routeId && access?.accessSessionId) {
+    const activeRouteSession = await findActiveCourierRouteSession({
+      prisma,
+      shop,
+      courierId: courier.id,
+      routeId: access.routeId,
+      after: transfer?.createdAt ? new Date(transfer.createdAt) : null,
+    });
+    if (
+      !activeRouteSession ||
+      String(activeRouteSession.requestId || "").trim() !== `session:${String(access.accessSessionId || "").trim()}`
+    ) {
+      return null;
     }
   }
   access.courierName = originalCourierName;
@@ -868,6 +908,16 @@ export const action = async ({ request }) => {
             routeId: String(dailyAccess.routeId || ""),
           },
         }),
+        prisma.courierActivity.create({
+          data: {
+            shop,
+            courierId: Number(dailyAccess.courierId),
+            courierName: String(dailyAccess.courierName || ""),
+            requestId: `session:${String(dailyAccess.accessSessionId || "").trim() || "unknown"}`,
+            action: COURIER_ROUTE_SESSION_ENDED_ACTION,
+            routeId: String(dailyAccess.routeId || ""),
+          },
+        }),
       ];
       if (snapshotData && !existingSnapshot) {
         transactionSteps.push(prisma.courierRouteSnapshot.create({ data: snapshotData }));
@@ -962,9 +1012,32 @@ export const action = async ({ request }) => {
             select: { id: true },
           })
         : null;
+      const activeStartedRoute =
+        latestPlannedRoute?.routeId && plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
       const plannedRoute =
         latestPlannedRoute?.routeId && !plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
+      if (activeStartedRoute && !resumedTransfer) {
+        return {
+          ok: false,
+          loginError: "Esta cuenta ya inicio sesion en otro dispositivo. Finaliza o transfiere la ruta para permitir otro acceso.",
+        };
+      }
       const routeId = resumedTransfer?.routeId || plannedRoute?.routeId || crypto.randomUUID();
+      const transferStartedAt = resumedTransfer?.createdAt ? new Date(resumedTransfer.createdAt) : null;
+      const activeRouteSession = await findActiveCourierRouteSession({
+        prisma,
+        shop,
+        courierId: courier.id,
+        routeId,
+        after: transferStartedAt,
+      });
+      if (activeRouteSession) {
+        return {
+          ok: false,
+          loginError: "Esta cuenta ya inicio sesion en otro dispositivo. Finaliza o transfiere la ruta para permitir otro acceso.",
+        };
+      }
+      const accessSessionId = crypto.randomUUID();
       if (resumedTransfer) {
         await prisma.courierActivity.create({
           data: {
@@ -999,6 +1072,18 @@ export const action = async ({ request }) => {
           },
         });
       }
+      await prisma.courierActivity.create({
+        data: {
+          shop,
+          courierId: courier.id,
+          courierName: resumedTransfer
+            ? String(resumedTransfer.courierName || "").trim() || courier.name
+            : courier.name,
+          requestId: `session:${accessSessionId}`,
+          action: COURIER_ROUTE_SESSION_STARTED_ACTION,
+          routeId,
+        },
+      });
       url.searchParams.set("shop", shop);
       url.searchParams.set("tab", "pedidos");
       url.searchParams.delete("updated");
@@ -1017,6 +1102,7 @@ export const action = async ({ request }) => {
             : originalCourierName,
           dateKey: courierMexicoDateKey(new Date()),
           routeId,
+          accessSessionId,
           accessCode: code,
           transferredFromName: resumedTransfer
             ? String(resumedTransfer.action || "").replace("courier_route_transferred_from:", "")
