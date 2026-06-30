@@ -1619,6 +1619,69 @@ export const loader = async ({ request }) => {
         .filter((requestId) => requestId && !requestId.startsWith("route:")),
     ),
   ];
+  const currentRoutePlan = dailyAccess.routeId
+    ? await prisma.courierActivity.findFirst({
+        where: {
+          shop,
+          routeId: String(dailyAccess.routeId),
+          action: COURIER_ROUTE_PLANNED_ACTION,
+        },
+        select: { createdAt: true },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      })
+    : null;
+  const planBatchStartedAt = currentRoutePlan?.createdAt ? new Date(currentRoutePlan.createdAt) : null;
+  const planBatchRoutes = planBatchStartedAt
+    ? await prisma.courierActivity.findMany({
+        where: {
+          shop,
+          action: COURIER_ROUTE_PLANNED_ACTION,
+          routeId: { not: null },
+          createdAt: {
+            gte: new Date(planBatchStartedAt.getTime() - 15000),
+            lte: new Date(planBatchStartedAt.getTime() + 15000),
+          },
+        },
+        select: { routeId: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      })
+    : [];
+  const batchRouteIds = [
+    ...new Set(planBatchRoutes.map((activity) => String(activity.routeId || "").trim()).filter(Boolean)),
+  ];
+  const batchFinishedRoutes = batchRouteIds.length
+    ? await prisma.courierActivity.findMany({
+        where: {
+          shop,
+          routeId: { in: batchRouteIds },
+          action: "courier_route_finished",
+        },
+        select: { routeId: true },
+      })
+    : [];
+  const finishedBatchRouteIds = new Set(
+    batchFinishedRoutes.map((activity) => String(activity.routeId || "").trim()),
+  );
+  const activeBatchRouteIds = batchRouteIds.filter((routeId) => !finishedBatchRouteIds.has(routeId));
+  const batchRouteAssignments = activeBatchRouteIds.length
+    ? await prisma.courierActivity.findMany({
+        where: {
+          shop,
+          routeId: { in: activeBatchRouteIds },
+          action: "courier_route_order_assigned",
+        },
+        select: { requestId: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      })
+    : [];
+  const batchRouteRequestIds = [
+    ...new Set(
+      batchRouteAssignments
+        .map((activity) => String(activity.requestId || "").trim())
+        .filter((requestId) => requestId && !requestId.startsWith("route:")),
+    ),
+  ];
+  const primaryRouteSequenceIds = batchRouteRequestIds.length ? batchRouteRequestIds : assignedRouteRequestIds;
   const finalizedRouteRequestIds = [
     ...new Map(
       currentRouteActivities
@@ -1634,12 +1697,12 @@ export const loader = async ({ request }) => {
     )
     .map(([requestId]) => requestId);
   const routeSequenceIds = [
-    ...assignedRouteRequestIds,
-    ...finalizedRouteRequestIds.filter((requestId) => !assignedRouteRequestIds.includes(requestId)),
+    ...primaryRouteSequenceIds,
+    ...finalizedRouteRequestIds.filter((requestId) => !primaryRouteSequenceIds.includes(requestId)),
     ...Array.from(currentRouteRequestIds).filter(
       (requestId) =>
         !finalizedRouteRequestIds.includes(requestId) &&
-        !assignedRouteRequestIds.includes(requestId),
+        !primaryRouteSequenceIds.includes(requestId),
     ),
   ];
   const routeSequenceByRequestId = new Map(
