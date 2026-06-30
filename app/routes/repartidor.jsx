@@ -2026,7 +2026,12 @@ export default function RepartidorPublicPortal() {
     missingOrderNumbers.length > 0 && unconfirmedDeliveryOrders.length > 0;
   const confirmationOrders = (
     isSecondConfirmationPass ? unconfirmedDeliveryOrders : deliveryConfirmationOrders
-  ).slice().reverse();
+  )
+    .slice()
+    .sort(
+      (firstRequest, secondRequest) =>
+        Number(firstRequest.sequenceNumber || 0) - Number(secondRequest.sequenceNumber || 0),
+    );
   const requiresDeliveryConfirmation =
     !deliveryConfirmationComplete &&
     confirmationOrders.length > 0;
@@ -2062,10 +2067,7 @@ export default function RepartidorPublicPortal() {
               <input type="hidden" name="shop" value={shop || ""} />
               <div className={styles.confirmationList}>
                 {confirmationOrders.map((request) => {
-                  const sequence =
-                    deliveryConfirmationOrders.findIndex(
-                      (deliveryOrder) => String(deliveryOrder?.id || "") === String(request?.id || ""),
-                    ) + 1;
+                  const sequence = Number(request?.sequenceNumber || 0) || "";
                   return (
                     <div className={styles.confirmationListItem} key={request.id}>
                       <input type="hidden" name="visibleRequestIds" value={request.id} />
