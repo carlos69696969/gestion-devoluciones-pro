@@ -3889,18 +3889,14 @@ export default function ReturnsRequests() {
 
       {viewMode === VIEW_MODE.COURIER_HISTORY ? (
         <s-section heading="Historial repartidor">
-          {courierOrders.length === 0 ? (
-            <p>No hay ordenes finalizadas desde el 10 de junio de 2026.</p>
-          ) : (
-            <CourierHistoryDirectory
-              couriers={couriers}
-              activities={courierActivities}
-              snapshots={courierRouteSnapshots}
-              orders={courierOrders}
-              search={location.search}
-              shop={shop}
-            />
-          )}
+          <CourierHistoryDirectory
+            couriers={couriers}
+            activities={courierActivities}
+            snapshots={courierRouteSnapshots}
+            orders={courierOrders}
+            search={location.search}
+            shop={shop}
+          />
         </s-section>
       ) : null}
 
