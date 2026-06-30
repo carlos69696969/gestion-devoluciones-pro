@@ -1674,11 +1674,30 @@ export const loader = async ({ request }) => {
         !loadedRequestIds.has(requestId),
     );
     if (missingDeliveryRequestIds.length) {
-      const recoveredOrders = await fetchCourierOrdersByIdsForShop({
+      let recoveredOrders = await fetchCourierOrdersByIdsForShop({
         shop: resolvedShop,
         sessionCandidates: sessionCandidatesByShop.get(resolvedShop) || sessionCandidates,
         orderIds: missingDeliveryRequestIds,
       });
+      const recoveredOrderIds = new Set(
+        recoveredOrders.map((requestRow) => String(requestRow?.id || "").trim()).filter(Boolean),
+      );
+      const stillMissingDeliveryRequestIds = missingDeliveryRequestIds.filter(
+        (requestId) => !recoveredOrderIds.has(requestId),
+      );
+      if (stillMissingDeliveryRequestIds.length) {
+        const fallbackDeliveryOrders = await fetchCourierOrdersForShop({
+          shop: resolvedShop,
+          sessionCandidates: sessionCandidatesByShop.get(resolvedShop) || sessionCandidates,
+        });
+        const stillMissingDeliveryRequestIdSet = new Set(stillMissingDeliveryRequestIds);
+        recoveredOrders = [
+          ...recoveredOrders,
+          ...fallbackDeliveryOrders.filter((requestRow) =>
+            stillMissingDeliveryRequestIdSet.has(String(requestRow?.id || "").trim()),
+          ),
+        ];
+      }
       if (recoveredOrders.length) {
         courierOrders = [...courierOrders, ...recoveredOrders].sort(
           (a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
