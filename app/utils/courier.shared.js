@@ -141,7 +141,9 @@ export function getCourierRouteStatusFromTags(tags) {
     return attemptCount >= 3 ? "recoger_en_sucursal" : "no_entregado";
   }
   if (normalizedTags.has("entregado")) return "entregado";
-  if (normalizedTags.has("reintentar entrega")) return "reintento_pendiente";
+  if (normalizedTags.has("reprogramado") || normalizedTags.has("reintentar entrega")) {
+    return "reintento_pendiente";
+  }
   const step = getCourierRouteStepFromTags(tags);
   return step ? `en_ruta_${step}` : "pendiente";
 }

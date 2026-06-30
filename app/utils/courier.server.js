@@ -473,6 +473,7 @@ const COURIER_STATUS_TAGS = [
   "no entregado",
   "recoger en sucursal",
   "entregado",
+  "reprogramado",
   "reintentar entrega",
   "intento entrega 1",
   "intento entrega 2",
@@ -494,7 +495,9 @@ function getPreferredCourierStatusTag(tags) {
   if (normalizedTags.has("recoger en sucursal")) return "recoger en sucursal";
   const attemptCount = Math.max(0, Number(getCourierDeliveryAttemptCountFromTags(tags) || 0));
   if (normalizedTags.has("no entregado")) return attemptCount >= 3 ? "recoger en sucursal" : "no entregado";
-  if (normalizedTags.has("reintentar entrega")) return "reintentar entrega";
+  if (normalizedTags.has("reprogramado") || normalizedTags.has("reintentar entrega")) {
+    return "reprogramado";
+  }
   if (normalizedTags.has("en ruta 3")) return "en ruta 3";
   if (normalizedTags.has("en ruta 2")) return "en ruta 2";
   if (normalizedTags.has("en ruta")) return "en ruta";
@@ -1397,7 +1400,7 @@ export async function markCourierOrderForRetry({
     await replaceCourierOrderStatusTag({
       shopDomain,
       shopifyOrderId: orderGid,
-      statusTag: "reintentar entrega",
+      statusTag: "reprogramado",
     });
   } catch (error) {
     return {
@@ -1456,7 +1459,7 @@ export async function reprogramCourierDeliveryForNextRoute({
     await replaceCourierOrderStatusTag({
       shopDomain,
       shopifyOrderId: orderGid,
-      statusTag: "reintentar entrega",
+      statusTag: "reprogramado",
     });
   } catch (error) {
     return {
