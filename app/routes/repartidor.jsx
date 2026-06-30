@@ -2405,7 +2405,12 @@ export default function RepartidorPublicPortal() {
 
         {showBranchReturnConfirmation ? (
           <section className={`${styles.card} ${styles.confirmationCard}`}>
-            <h2 className={styles.cardTitle}>Confirma que entregaste estos pedidos en sucursal</h2>
+            <div className={styles.cardHeader}>
+              <h2 className={styles.cardTitle}>Confirma que entregaste estos pedidos en sucursal</h2>
+              <div className={styles.counterGroup} aria-label="Resumen de ordenes por entregar en sucursal">
+                <span className={styles.counterBadge}>Ordenes {branchReturnOrders.length}</span>
+              </div>
+            </div>
             <p className={styles.subtitle}>
               Marca todos los paquetes que entregaste fisicamente en la sucursal de Cariana.
             </p>
@@ -2446,7 +2451,7 @@ export default function RepartidorPublicPortal() {
               <input type="hidden" name="intent" value="courier_finish_route" />
               <input type="hidden" name="shop" value={shop || ""} />
               <div className={styles.confirmationList}>
-                {branchReturnOrders.map((request, index) => (
+                {branchReturnOrders.map((request) => (
                   <div className={styles.confirmationListItem} key={request.id}>
                     <input
                       aria-label={`Confirmar paquete ${request.orderNumber}`}
@@ -2455,7 +2460,9 @@ export default function RepartidorPublicPortal() {
                       value={request.id}
                       onChange={() => setBranchReturnConfirmationError("")}
                     />
-                    <span className={styles.orderSequenceBadge}>{index + 1}</span>
+                    <span className={styles.orderSequenceBadge}>
+                      {Number(request?.sequenceNumber || 0) || ""}
+                    </span>
                     <strong>
                       {isReturnOrder(request) ? "Devolucion" : "Entrega"} #{request.orderNumber}
                     </strong>
