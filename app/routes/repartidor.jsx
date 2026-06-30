@@ -1016,13 +1016,19 @@ export const action = async ({ request }) => {
         latestPlannedRoute?.routeId && plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
       const plannedRoute =
         latestPlannedRoute?.routeId && !plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
+      if (!resumedTransfer && !plannedRoute && !activeStartedRoute) {
+        return {
+          ok: false,
+          loginError: `${courier.name} aun no tiene ordenes asignadas. Tu cuenta todavia no esta activa.`,
+        };
+      }
       if (activeStartedRoute && !resumedTransfer) {
         return {
           ok: false,
           loginError: "Esta cuenta ya inicio sesion en otro dispositivo. Finaliza o transfiere la ruta para permitir otro acceso.",
         };
       }
-      const routeId = resumedTransfer?.routeId || plannedRoute?.routeId || crypto.randomUUID();
+      const routeId = resumedTransfer?.routeId || plannedRoute?.routeId;
       const transferStartedAt = resumedTransfer?.createdAt ? new Date(resumedTransfer.createdAt) : null;
       const activeRouteSession = await findActiveCourierRouteSession({
         prisma,
