@@ -3780,7 +3780,7 @@ export default function ReturnsRequests() {
                 <p className={styles.courierRouteModalText}>
                   Marca los repartidores que recibiran las rutas pendientes.
                 </p>
-                <Form method="post" className={styles.courierRouteModalForm}>
+                <Form method="post" action={buildCourierRouteHref()} className={styles.courierRouteModalForm}>
                   <input type="hidden" name="intent" value="plan_courier_routes" />
                   <input
                     type="hidden"
