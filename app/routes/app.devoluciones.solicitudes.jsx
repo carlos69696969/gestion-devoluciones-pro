@@ -1920,6 +1920,8 @@ export const loader = async ({ request }) => {
   const requestedViewMode = normalizeViewMode(url.searchParams.get("tipo"));
   const pathViewMode = normalizeViewMode(viewModeFromPathname(url.pathname));
   const viewMode = pathViewMode || requestedViewMode;
+  const requestedHistoryView = String(url.searchParams.get("historyView") || "").trim();
+  const shouldLoadCourierHistoryDetails = viewMode === VIEW_MODE.COURIER_HISTORY && Boolean(requestedHistoryView);
   const where = buildViewWhere(session.shop, viewMode);
   const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
   const itemSelect = {
@@ -1997,7 +1999,7 @@ export const loader = async ({ request }) => {
             ...requestRow,
             courierLabel: "Entrega",
           }))
-      : viewMode === VIEW_MODE.COURIER_HISTORY
+      : shouldLoadCourierHistoryDetails
         ? [
             ...new Map(
               [
@@ -2215,7 +2217,10 @@ export const loader = async ({ request }) => {
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         })
       : [];
-  if ([VIEW_MODE.COURIERS, VIEW_MODE.COURIER_HISTORY].includes(viewMode) && couriers.length) {
+  if (
+    (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryDetails) &&
+    couriers.length
+  ) {
     const transferEvents = await prisma.courierActivity.findMany({
       where: {
         shop: session.shop,
@@ -2239,7 +2244,7 @@ export const loader = async ({ request }) => {
   }
 
   const courierActivities =
-    viewMode === VIEW_MODE.COURIER_HISTORY
+    shouldLoadCourierHistoryDetails
       ? await prisma.courierActivity.findMany({
           where: { shop: session.shop },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -2247,7 +2252,7 @@ export const loader = async ({ request }) => {
       : [];
 
   const courierRouteSnapshots =
-    viewMode === VIEW_MODE.COURIER_HISTORY
+    shouldLoadCourierHistoryDetails
       ? await prisma.courierRouteSnapshot.findMany({
           where: { shop: session.shop },
           orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
