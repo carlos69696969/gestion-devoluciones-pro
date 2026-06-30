@@ -4142,15 +4142,16 @@ async function plannedCourierRouteSummary(shop, courierIds) {
   }
   const routeIds = [...new Set([...latestPlanByCourierId.values()].map((activity) => activity.routeId).filter(Boolean))];
   if (!routeIds.length) return [];
-  const startedRoutes = await prisma.courierActivity.findMany({
-    where: { shop, routeId: { in: routeIds }, action: "courier_route_started" },
+  const finishedRoutes = await prisma.courierActivity.findMany({
+    where: { shop, routeId: { in: routeIds }, action: "courier_route_finished" },
     select: { routeId: true },
   });
-  const startedRouteIds = new Set(startedRoutes.map((activity) => String(activity.routeId || "")));
+  const finishedRouteIds = new Set(finishedRoutes.map((activity) => String(activity.routeId || "")));
+  const activeRouteIds = routeIds.filter((routeId) => !finishedRouteIds.has(String(routeId || "")));
   const assignments = await prisma.courierActivity.findMany({
     where: {
       shop,
-      routeId: { in: routeIds.filter((routeId) => !startedRouteIds.has(String(routeId || ""))) },
+      routeId: { in: activeRouteIds },
       action: "courier_route_order_assigned",
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -4167,7 +4168,7 @@ async function plannedCourierRouteSummary(shop, courierIds) {
     if (orderNumber) orderNumbersByRouteId.get(routeId).push(orderNumber);
   }
   return [...latestPlanByCourierId.values()]
-    .filter((activity) => !startedRouteIds.has(String(activity.routeId || "")))
+    .filter((activity) => !finishedRouteIds.has(String(activity.routeId || "")))
     .map((activity) => {
       const routeId = String(activity.routeId || "");
       const requestIds = requestIdsByRouteId.get(routeId) || [];
