@@ -4454,13 +4454,37 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         [...currentOrders, ...todayActivityOrders].map((order) => [String(order.id || ""), order]),
       ).values(),
     ];
-    const dates = [
+    const legacyDates = [
       ...new Set([
-        todayDateKey,
-        ...courierSnapshots.map((snapshot) => snapshot.dateKey || mexicoActivityDateKey(snapshot.finishedAt)),
-        ...courierActivities.map((activity) => mexicoActivityDateKey(activity.createdAt)),
+        ...courierActivities
+          .filter((activity) => {
+            const requestId = String(activity.requestId || "").trim();
+            return !activity.routeId && requestId && !requestId.startsWith("route:") && orderByRequestId.has(requestId);
+          })
+          .map((activity) => mexicoActivityDateKey(activity.createdAt)),
       ]),
     ].filter(Boolean).sort().reverse();
+    const calendarItems = [
+      ...routeHistoryBlocks.map((activity) => {
+        const dateKey = activity.dateKey || mexicoActivityDateKey(activity.createdAt || activity.finishedAt);
+        return {
+          key: `${activity.isSnapshot ? "snapshot" : "activity"}:${activity.routeId}`,
+          dateKey,
+          routeId: activity.routeId,
+          sortAt: new Date(activity.createdAt || activity.finishedAt || `${dateKey}T12:00:00Z`).getTime(),
+          transferActivity: transferActivityForRoute(activity.routeId, dateKey),
+        };
+      }),
+      ...legacyDates
+        .filter((dateKey) => !routeHistoryBlocks.some((activity) => mexicoActivityDateKey(activity.createdAt || activity.finishedAt) === dateKey))
+        .map((dateKey) => ({
+          key: `legacy:${dateKey}`,
+          dateKey,
+          routeId: "",
+          sortAt: new Date(`${dateKey}T12:00:00Z`).getTime(),
+          transferActivity: transferActivityForRoute("", dateKey),
+        })),
+    ].sort((firstItem, secondItem) => secondItem.sortAt - firstItem.sortAt);
 
     if (historyView === "courier_day" && selectedDate) {
       const selectedSnapshot = selectedRouteId ? snapshotByRouteId.get(selectedRouteId) : null;
@@ -4761,45 +4785,22 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
       <div className={styles.courierHistoryDirectoryList}>
         <Link className={styles.courierHistoryBackLink} to={buildHistoryHref()}>← Regresar</Link>
         <h3>{courier ? `Historial del repartidor ${courier.name}` : "Historial del repartidor"}</h3>
-        {dates.length || routeHistoryBlocks.length ? (
+        {calendarItems.length ? (
           <div className={styles.courierCalendar}>
-            {routeHistoryBlocks.map((activity) => {
-              const dateKey = activity.dateKey || mexicoActivityDateKey(activity.createdAt || activity.finishedAt);
-              const routeTransferActivity = transferActivityForRoute(activity.routeId, dateKey);
+            {calendarItems.map((item) => {
               return (
                 <Link
-                  key={`${activity.isSnapshot ? "snapshot" : "activity"}:${activity.routeId}`}
+                  key={item.key}
                   className={styles.courierCalendarDay}
                   to={buildHistoryHref({
                     view: "courier_day",
                     courierId: selectedCourierId,
-                    date: dateKey,
-                    routeId: activity.routeId,
+                    date: item.dateKey,
+                    routeId: item.routeId,
                   })}
                 >
-                  {new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}
-                  {routeTransferActivity ? " · Ruta traspasada" : ""}
-                </Link>
-              );
-            })}
-            {dates.map((dateKey) => {
-              const dateTransferActivity = transferActivityForRoute("", dateKey);
-              const hasLegacyActivities = courierActivities.some(
-                (activity) => !activity.routeId && mexicoActivityDateKey(activity.createdAt) === dateKey,
-              );
-              if (!hasLegacyActivities && routeHistoryBlocks.some((activity) => mexicoActivityDateKey(activity.createdAt) === dateKey)) return null;
-              return (
-                <Link
-                  key={dateKey}
-                  className={styles.courierCalendarDay}
-                  to={buildHistoryHref({
-                    view: "courier_day",
-                    courierId: selectedCourierId,
-                    date: dateKey,
-                  })}
-                >
-                  {new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${dateKey}T12:00:00Z`))}
-                  {dateTransferActivity ? " · Ruta traspasada" : ""}
+                  {new Intl.DateTimeFormat("es-MX", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${item.dateKey}T12:00:00Z`))}
+                  {item.transferActivity ? " · Ruta traspasada" : ""}
                 </Link>
               );
             })}
