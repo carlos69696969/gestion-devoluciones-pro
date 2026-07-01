@@ -1921,7 +1921,11 @@ export const loader = async ({ request }) => {
   const pathViewMode = normalizeViewMode(viewModeFromPathname(url.pathname));
   const viewMode = pathViewMode || requestedViewMode;
   const requestedHistoryView = String(url.searchParams.get("historyView") || "").trim();
-  const shouldLoadCourierHistoryDetails = viewMode === VIEW_MODE.COURIER_HISTORY && Boolean(requestedHistoryView);
+  const requestedHistoryDate = String(url.searchParams.get("date") || "").trim();
+  const shouldLoadCourierHistoryActivity = viewMode === VIEW_MODE.COURIER_HISTORY && Boolean(requestedHistoryView);
+  const shouldLoadCourierHistoryOrders =
+    viewMode === VIEW_MODE.COURIER_HISTORY &&
+    (requestedHistoryView === "all" || requestedHistoryView === "courier_day" || Boolean(requestedHistoryDate));
   const where = buildViewWhere(session.shop, viewMode);
   const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
   const itemSelect = {
@@ -1999,7 +2003,7 @@ export const loader = async ({ request }) => {
             ...requestRow,
             courierLabel: "Entrega",
           }))
-      : shouldLoadCourierHistoryDetails
+      : shouldLoadCourierHistoryOrders
         ? [
             ...new Map(
               [
@@ -2218,7 +2222,7 @@ export const loader = async ({ request }) => {
         })
       : [];
   if (
-    (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryDetails) &&
+    (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryActivity) &&
     couriers.length
   ) {
     const transferEvents = await prisma.courierActivity.findMany({
@@ -2244,7 +2248,7 @@ export const loader = async ({ request }) => {
   }
 
   const courierActivities =
-    shouldLoadCourierHistoryDetails
+    shouldLoadCourierHistoryActivity
       ? await prisma.courierActivity.findMany({
           where: { shop: session.shop },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -2252,7 +2256,7 @@ export const loader = async ({ request }) => {
       : [];
 
   const courierRouteSnapshots =
-    shouldLoadCourierHistoryDetails
+    shouldLoadCourierHistoryActivity
       ? await prisma.courierRouteSnapshot.findMany({
           where: { shop: session.shop },
           orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
@@ -4416,7 +4420,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         continue;
       }
       const requestId = String(activity.requestId || "").trim();
-      if (!requestId || !orderByRequestId.has(requestId)) continue;
+      if (!requestId) continue;
       const current = routeOrderIdsByRouteId.get(activity.routeId) || new Set();
       current.add(requestId);
       routeOrderIdsByRouteId.set(activity.routeId, current);
@@ -4470,7 +4474,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         ...courierActivities
           .filter((activity) => {
             const requestId = String(activity.requestId || "").trim();
-            return !activity.routeId && requestId && !requestId.startsWith("route:") && orderByRequestId.has(requestId);
+            return !activity.routeId && requestId && !requestId.startsWith("route:");
           })
           .map((activity) => mexicoActivityDateKey(activity.createdAt)),
       ]),
