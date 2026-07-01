@@ -176,13 +176,13 @@ function appendSnapshotReasonEntry(rawValue, entry, at = new Date()) {
   entries.push({
     kind: String(entry?.kind || "legacy"),
     reason: String(entry?.reason || "").trim(),
+    courierName: String(entry?.courierName || "").trim(),
     at: (at instanceof Date ? at : new Date(at)).toISOString(),
   });
   return JSON.stringify({ entries });
 }
 
 function buildPickupSnapshotHistoryEvents(order) {
-  const courierName = String(order?.courierName || "").trim();
   const entries = parseSnapshotReasonEntries(order?.rejectionReason);
   const finalAttempt = Math.max(
     1,
@@ -210,7 +210,7 @@ function buildPickupSnapshotHistoryEvents(order) {
         id: `${kind || "pickup-event"}-${entry?.at || index}-${index}`,
         label,
         at: entry?.at || order?.updatedAt || order?.createdAt || "",
-        courierName,
+        courierName: String(entry?.courierName || "").trim(),
       };
     })
     .filter((event) => event.label && event.at)
@@ -737,6 +737,7 @@ export const action = async ({ request }) => {
               status: result.nextStatus || "reintento_pendiente",
               note: result.rescheduledDate ? `route_time_rescheduled:${result.rescheduledDate}` : "route_time_rescheduled",
               createdAt: finishedAt,
+              courierName: String(dailyAccess.courierName || ""),
             },
           ]);
         }
@@ -751,6 +752,7 @@ export const action = async ({ request }) => {
                   {
                     kind: "courier_route_time_reprogrammed",
                     reason: rescheduledDateLabel ? `Reprogramado para el ${rescheduledDateLabel}.` : "Reprogramado por falta de tiempo.",
+                    courierName: String(dailyAccess.courierName || ""),
                   },
                   finishedAt,
                 ),
@@ -823,7 +825,7 @@ export const action = async ({ request }) => {
                 id: `delivery-event-${event.id}`,
                 label: courierSnapshotEventLabel(event),
                 at: event.createdAt,
-                courierName: String(dailyAccess.courierName || ""),
+                courierName: String(event?.courierName || ""),
                 note: event.note || "",
                 routeTimeRescheduled: isRouteTimeCourierEvent(event),
               }))).map(markSnapshotEventTransfer);

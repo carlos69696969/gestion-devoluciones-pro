@@ -1035,9 +1035,9 @@ function activityForCourierHistoryEvent(event, activities = []) {
   return sortedCandidates[0] || null;
 }
 
-function activityCourierNameForEvent(event, activities = [], fallbackCourierName = "") {
+function activityCourierNameForEvent(event, activities = []) {
   const activity = activityForCourierHistoryEvent(event, activities);
-  return String(activity?.courierName || fallbackCourierName || "").trim();
+  return String(activity?.courierName || "").trim();
 }
 
 function transferredCourierNameForEvent(event, activities = [], transferActivityByRouteId) {
@@ -1054,15 +1054,16 @@ function transferredCourierNameForEvent(event, activities = [], transferActivity
 
 function enrichCourierHistoryEvents({ events, request, activitiesByRequestId, transferActivityByRouteId }) {
   const requestId = String(request?.id || "").trim();
-  const fallbackCourierName = String(request?.courierName || request?.assignedCourierName || "").trim();
   const activities = activitiesByRequestId?.get(requestId) || [];
-  return (events || []).map((event) => ({
-    ...event,
-    courierName: String(event?.courierName || "").trim() ||
-      activityCourierNameForEvent(event, activities, fallbackCourierName),
-    transferredCourierName: String(event?.transferredCourierName || "").trim() ||
-      transferredCourierNameForEvent(event, activities, transferActivityByRouteId),
-  }));
+  return (events || []).map((event) => {
+    const activityCourierName = activityCourierNameForEvent(event, activities);
+    return {
+      ...event,
+      courierName: activityCourierName || String(event?.courierName || "").trim(),
+      transferredCourierName: String(event?.transferredCourierName || "").trim() ||
+        transferredCourierNameForEvent(event, activities, transferActivityByRouteId),
+    };
+  });
 }
 
 function buildCourierHistoryDisplayItems(events, request) {
@@ -1086,7 +1087,7 @@ function buildCourierHistoryDisplayItems(events, request) {
     const routeTimeKey = String(event?.id || `${event?.at || ""}:${event?.label || ""}`);
     if (isRouteTimeRescheduledEvent && !shownRouteTimeKeys.has(routeTimeKey)) {
       shownRouteTimeKeys.add(routeTimeKey);
-      const courierName = String(event?.courierName || request?.courierName || request?.assignedCourierName || "").trim();
+      const courierName = String(event?.courierName || "").trim();
       const transferredCourierName = String(
         event?.transferredCourierName || request?.transferredCourierName || "",
       ).trim();
@@ -1107,7 +1108,7 @@ function buildCourierHistoryDisplayItems(events, request) {
     if (attempt && !shownAttemptKeys.has(attempt)) {
       shownAttemptKeys.add(attempt);
       const heading = courierAttemptHeading(attempt);
-      const courierName = String(event?.courierName || request?.courierName || request?.assignedCourierName || "").trim();
+      const courierName = String(event?.courierName || "").trim();
       const transferredCourierName = String(
         transferredCourierNameByAttempt.get(attempt) ||
           event?.transferredCourierName ||
