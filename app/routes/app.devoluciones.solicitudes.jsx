@@ -2257,7 +2257,7 @@ export const loader = async ({ request }) => {
       ? await prisma.courierActivity.findMany({
           where: {
             shop: session.shop,
-            ...(requestedHistoryView !== "all" && requestedHistoryCourierId
+            ...(!requestedHistoryRouteId && requestedHistoryView !== "all" && requestedHistoryCourierId
               ? { courierId: requestedHistoryCourierId }
               : {}),
           },
