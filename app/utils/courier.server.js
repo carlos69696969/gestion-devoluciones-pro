@@ -133,23 +133,25 @@ function normalizeDeliveryAttemptCount(value, fallback = 0) {
   return Math.min(Math.max(Math.trunc(parsed), 0), 3);
 }
 
-async function getReturnBranchDetails(shopDomain) {
+async function getReturnNotificationSettings(shopDomain) {
   const shop = normalizeShop(shopDomain);
   if (!shop) {
     return {
       branchAddress: "",
       branchHours: "",
+      pickupHours: "",
     };
   }
 
   const settings = await prisma.returnSettings.findUnique({
     where: { shop },
-    select: { branchAddress: true, branchHours: true },
+    select: { branchAddress: true, branchHours: true, pickupHours: true },
   });
 
   return {
     branchAddress: String(settings?.branchAddress || "").trim(),
     branchHours: String(settings?.branchHours || "").trim(),
+    pickupHours: String(settings?.pickupHours || "").trim(),
   };
 }
 
@@ -1054,10 +1056,11 @@ async function emitCourierDeliveryManualStatusNotification({
   }
 
   const attemptCount = Math.max(0, Number(requestRow.attemptCount || 0) || 0);
+  const notificationSettings = await getReturnNotificationSettings(shopDomain);
   const branchDetails =
     status === "no_entregado" && attemptCount >= 3
-      ? await getReturnBranchDetails(shopDomain)
-      : { branchAddress: "", branchHours: "" };
+      ? notificationSettings
+      : { branchAddress: "", branchHours: "", pickupHours: notificationSettings.pickupHours || "" };
 
   const endpoints = NOTIFICATIONS_API_KEY
     ? [
@@ -1103,6 +1106,7 @@ async function emitCourierDeliveryManualStatusNotification({
           attemptCount,
           branchAddress: branchDetails.branchAddress || null,
           branchHours: branchDetails.branchHours || null,
+          pickupHours: branchDetails.pickupHours || null,
           rescheduledDate: rescheduledDate || null,
           rescheduledDateLabel: rescheduledDateLabel || null,
           routeStep,
