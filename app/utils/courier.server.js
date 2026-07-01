@@ -143,10 +143,23 @@ async function getReturnNotificationSettings(shopDomain) {
     };
   }
 
-  const settings = await prisma.returnSettings.findUnique({
+  const exactSettings = await prisma.returnSettings.findUnique({
     where: { shop },
     select: { branchAddress: true, branchHours: true, pickupHours: true },
   });
+  const settings =
+    exactSettings ||
+    (await prisma.returnSettings.findFirst({
+      where: {
+        OR: [
+          { branchAddress: { not: "" } },
+          { branchHours: { not: "" } },
+          { pickupHours: { not: "" } },
+        ],
+      },
+      select: { branchAddress: true, branchHours: true, pickupHours: true },
+      orderBy: { updatedAt: "desc" },
+    }));
 
   return {
     branchAddress: String(settings?.branchAddress || "").trim(),
