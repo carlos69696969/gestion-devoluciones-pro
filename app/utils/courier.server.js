@@ -1330,26 +1330,31 @@ export async function markCourierOrderAsNotDelivered({
     };
   }
 
+  const rescheduledDate = nextCourierDeliveryDate(
+    await getLatestCourierDeliveryDate({
+      shopDomain,
+      requestId: orderGid,
+      orderNumber: requestRow.orderNumber,
+      fallbackDate: currentScheduledDate || new Date().toISOString(),
+    }),
+  );
+  const rescheduledDateLabel = formatCourierNotificationDate(rescheduledDate);
+
   await recordCourierDeliveryEvent({
     shopDomain,
     requestId: orderGid,
     orderNumber: requestRow.orderNumber,
     status: nextStatus,
     attemptCount: nextAttemptCount,
-    note: `scheduled_date:${nextCourierDeliveryDate(
-      await getLatestCourierDeliveryDate({
-        shopDomain,
-        requestId: orderGid,
-        orderNumber: requestRow.orderNumber,
-        fallbackDate: currentScheduledDate || new Date().toISOString(),
-      }),
-    )}`,
+    note: `scheduled_date:${rescheduledDate}`,
   });
 
   const notificationResult = await emitCourierDeliveryManualStatusNotification({
     shopDomain,
     requestRow,
     status: "no_entregado",
+    rescheduledDate,
+    rescheduledDateLabel,
   });
   if (!notificationResult?.ok) {
     return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
