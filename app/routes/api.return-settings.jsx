@@ -55,6 +55,21 @@ export const loader = async ({ request }) => {
     return jsonWithCors({ ok: false, error: "Falta shop" }, 400);
   }
 
+  const latestSettings = await prisma.returnSettings.findFirst({
+    where: {
+      OR: [
+        { branchAddress: { not: "" } },
+        { branchHours: { not: "" } },
+        { pickupHours: { not: "" } },
+      ],
+    },
+    select: {
+      branchAddress: true,
+      branchHours: true,
+      pickupHours: true,
+    },
+    orderBy: { updatedAt: "desc" },
+  });
   const exactSettings = await prisma.returnSettings.findUnique({
     where: { shop },
     select: {
@@ -63,23 +78,7 @@ export const loader = async ({ request }) => {
       pickupHours: true,
     },
   });
-  const settings =
-    exactSettings ||
-    (await prisma.returnSettings.findFirst({
-      where: {
-        OR: [
-          { branchAddress: { not: "" } },
-          { branchHours: { not: "" } },
-          { pickupHours: { not: "" } },
-        ],
-      },
-      select: {
-        branchAddress: true,
-        branchHours: true,
-        pickupHours: true,
-      },
-      orderBy: { updatedAt: "desc" },
-    }));
+  const settings = latestSettings || exactSettings;
 
   return jsonWithCors({
     ok: true,

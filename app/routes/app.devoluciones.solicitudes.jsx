@@ -203,6 +203,21 @@ async function emitOrderStatusNotification({ shopDomain, requestRow, status, not
     return;
   }
 
+  const latestSettings = await prisma.returnSettings.findFirst({
+    where: {
+      OR: [
+        { branchAddress: { not: "" } },
+        { branchHours: { not: "" } },
+        { pickupHours: { not: "" } },
+      ],
+    },
+    select: {
+      branchAddress: true,
+      branchHours: true,
+      pickupHours: true,
+    },
+    orderBy: { updatedAt: "desc" },
+  });
   const exactSettings = await prisma.returnSettings.findUnique({
     where: { shop: shopDomain },
     select: {
@@ -211,23 +226,7 @@ async function emitOrderStatusNotification({ shopDomain, requestRow, status, not
       pickupHours: true,
     },
   });
-  const settings =
-    exactSettings ||
-    (await prisma.returnSettings.findFirst({
-      where: {
-        OR: [
-          { branchAddress: { not: "" } },
-          { branchHours: { not: "" } },
-          { pickupHours: { not: "" } },
-        ],
-      },
-      select: {
-        branchAddress: true,
-        branchHours: true,
-        pickupHours: true,
-      },
-      orderBy: { updatedAt: "desc" },
-    }));
+  const settings = latestSettings || exactSettings;
   const endpoint = `${NOTIFICATIONS_API_BASE_URL}/api/orders/manual-status`;
   const headers = {
     "Content-Type": "application/json",
