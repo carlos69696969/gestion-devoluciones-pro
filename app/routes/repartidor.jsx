@@ -2044,8 +2044,13 @@ export default function RepartidorPublicPortal() {
       <main className={styles.page}>
         <div className={styles.accessContainer}>
           <section className={`${styles.card} ${styles.confirmationCard}`}>
-            <p className={styles.eyebrow}>Cariana repartidores</p>
-            <h1 className={styles.cardTitle}>Confirma tus entregas</h1>
+            <div className={styles.cardHeader}>
+              <div>
+                <p className={styles.eyebrow}>Cariana repartidores</p>
+                <h1 className={styles.cardTitle}>Confirma tus entregas</h1>
+              </div>
+              <span className={styles.counterBadge}>Ordenes {confirmationOrders.length}</span>
+            </div>
             <p className={`${styles.subtitle} ${isSecondConfirmationPass ? styles.confirmationWarning : ""}`}>
               {isSecondConfirmationPass
                 ? "Te faltan estas órdenes por confirmar. Revisa que sí las tengas."
