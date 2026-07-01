@@ -203,6 +203,31 @@ async function emitOrderStatusNotification({ shopDomain, requestRow, status, not
     return;
   }
 
+  const exactSettings = await prisma.returnSettings.findUnique({
+    where: { shop: shopDomain },
+    select: {
+      branchAddress: true,
+      branchHours: true,
+      pickupHours: true,
+    },
+  });
+  const settings =
+    exactSettings ||
+    (await prisma.returnSettings.findFirst({
+      where: {
+        OR: [
+          { branchAddress: { not: "" } },
+          { branchHours: { not: "" } },
+          { pickupHours: { not: "" } },
+        ],
+      },
+      select: {
+        branchAddress: true,
+        branchHours: true,
+        pickupHours: true,
+      },
+      orderBy: { updatedAt: "desc" },
+    }));
   const endpoint = `${NOTIFICATIONS_API_BASE_URL}/api/orders/manual-status`;
   const headers = {
     "Content-Type": "application/json",
@@ -219,6 +244,9 @@ async function emitOrderStatusNotification({ shopDomain, requestRow, status, not
         orderNumber: requestRow.orderNumber || null,
         customerEmail: requestRow.customerEmail || null,
         status,
+        branchAddress: settings?.branchAddress || null,
+        branchHours: settings?.branchHours || null,
+        pickupHours: settings?.pickupHours || null,
       }),
     });
 
