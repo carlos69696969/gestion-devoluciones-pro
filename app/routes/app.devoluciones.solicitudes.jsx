@@ -1922,10 +1922,14 @@ export const loader = async ({ request }) => {
   const viewMode = pathViewMode || requestedViewMode;
   const requestedHistoryView = String(url.searchParams.get("historyView") || "").trim();
   const requestedHistoryDate = String(url.searchParams.get("date") || "").trim();
+  const requestedHistoryRouteId = String(url.searchParams.get("routeId") || "").trim();
+  const requestedHistoryCourierId = Number(url.searchParams.get("courierId") || 0);
   const shouldLoadCourierHistoryActivity = viewMode === VIEW_MODE.COURIER_HISTORY && Boolean(requestedHistoryView);
   const shouldLoadCourierHistoryOrders =
     viewMode === VIEW_MODE.COURIER_HISTORY &&
-    (requestedHistoryView === "all" || requestedHistoryView === "courier_day" || Boolean(requestedHistoryDate));
+    (requestedHistoryView === "all" ||
+      (requestedHistoryView === "courier_day" && !requestedHistoryRouteId) ||
+      (Boolean(requestedHistoryDate) && !requestedHistoryRouteId));
   const where = buildViewWhere(session.shop, viewMode);
   const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
   const itemSelect = {
@@ -2250,7 +2254,12 @@ export const loader = async ({ request }) => {
   const courierActivities =
     shouldLoadCourierHistoryActivity
       ? await prisma.courierActivity.findMany({
-          where: { shop: session.shop },
+          where: {
+            shop: session.shop,
+            ...(requestedHistoryView !== "all" && requestedHistoryCourierId
+              ? { courierId: requestedHistoryCourierId }
+              : {}),
+          },
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         })
       : [];
@@ -2258,7 +2267,14 @@ export const loader = async ({ request }) => {
   const courierRouteSnapshots =
     shouldLoadCourierHistoryActivity
       ? await prisma.courierRouteSnapshot.findMany({
-          where: { shop: session.shop },
+          where: {
+            shop: session.shop,
+            ...(requestedHistoryRouteId
+              ? { routeId: requestedHistoryRouteId }
+              : requestedHistoryView !== "all" && requestedHistoryCourierId
+                ? { courierId: requestedHistoryCourierId }
+                : {}),
+          },
           orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
         })
       : [];
