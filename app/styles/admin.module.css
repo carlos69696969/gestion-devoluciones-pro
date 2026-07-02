@@ -937,7 +937,8 @@
 .branchPickupDeliverActions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 6px;
+  margin-top: -6px;
+  margin-bottom: 6px;
 }
 
 .courierBadgeStatusHistoryWarning {
