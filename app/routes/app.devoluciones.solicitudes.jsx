@@ -1607,6 +1607,9 @@ async function fetchOrderSnapshot(admin, orderId) {
         currentTotalPriceSet {
           shopMoney { amount currencyCode }
         }
+        currentSubtotalPriceSet {
+          shopMoney { amount currencyCode }
+        }
         lineItems(first: 100) {
           edges {
             node {
@@ -1641,6 +1644,7 @@ async function fetchOrderSnapshot(admin, orderId) {
   return {
     orderId: order.id,
     currentTotalPrice: Number(order.currentTotalPriceSet?.shopMoney?.amount || 0),
+    currentSubtotalPrice: Number(order.currentSubtotalPriceSet?.shopMoney?.amount || 0),
     currencyCode: String(order.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
     lineItems: (order.lineItems?.edges || []).map(({ node }) => ({
       id: node.id,
@@ -2015,7 +2019,7 @@ async function refundShopifyOrderToOriginalPayment({ admin, shopifyOrderId, note
   if (!refundLineItems.length) {
     throw new Error("No hay lineas para reembolsar.");
   }
-  const finalRefund = Number(snapshot.currentTotalPrice || subtotal || 0);
+  const finalRefund = Number(snapshot.currentSubtotalPrice || subtotal || 0);
   if (finalRefund <= 0) {
     throw new Error("No se encontro un monto valido para reembolsar.");
   }
@@ -3511,6 +3515,9 @@ async function fetchBranchPickupCourierOrders(admin) {
             currentTotalPriceSet {
               shopMoney { amount currencyCode }
             }
+            currentSubtotalPriceSet {
+              shopMoney { amount currencyCode }
+            }
             shippingAddress {
               name
               phone
@@ -3566,7 +3573,11 @@ async function fetchBranchPickupCourierOrders(admin) {
         orderNumber: String(orderNode.name || "").replace("#", ""),
         customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
         customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
-        estimatedRefund: Number(orderNode.currentTotalPriceSet?.shopMoney?.amount || 0),
+        estimatedRefund: Number(
+          orderNode.currentSubtotalPriceSet?.shopMoney?.amount ||
+            orderNode.currentTotalPriceSet?.shopMoney?.amount ||
+            0,
+        ),
         currencyCode: String(orderNode.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
         pickupDate: getInitialCourierScheduledDate(orderNode),
         pickupAddress: String(shipping?.address1 || "").trim(),
