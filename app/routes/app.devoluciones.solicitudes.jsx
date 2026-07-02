@@ -3971,9 +3971,11 @@ export default function ReturnsRequests() {
   } = useLoaderData();
   const actionData = useActionData();
   const courierRouteFetcher = useFetcher();
+  const branchPickupRefundFetcher = useFetcher();
   const navigation = useNavigation();
   const location = useLocation();
   const isSubmitting = navigation.state === "submitting";
+  const isBranchPickupRefundSubmitting = branchPickupRefundFetcher.state !== "idle";
   const isCourierRouteSubmitting = courierRouteFetcher.state !== "idle";
   const [showCourierRouteModal, setShowCourierRouteModal] = useState(false);
   const [selectedCourierIds, setSelectedCourierIds] = useState([]);
@@ -3985,11 +3987,12 @@ export default function ReturnsRequests() {
   const canConfirmCourierRoutePlan =
     selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
   const courierRouteActionData = courierRouteFetcher.data || null;
-  const pageErrorMessage = courierRouteActionData?.error || actionData?.error || "";
-  const pageSuccessMessage = courierRouteActionData?.message || actionData?.message || "";
+  const branchPickupRefundActionData = branchPickupRefundFetcher.data || null;
+  const pageErrorMessage = branchPickupRefundActionData?.error || courierRouteActionData?.error || actionData?.error || "";
+  const pageSuccessMessage = branchPickupRefundActionData?.message || courierRouteActionData?.message || actionData?.message || "";
 
   useEffect(() => {
-    if (actionData?.ok || courierRouteActionData?.ok) {
+    if (actionData?.ok || courierRouteActionData?.ok || branchPickupRefundActionData?.ok) {
       setShowCourierRouteModal(false);
       setSelectedCourierIds([]);
     }
@@ -3997,10 +4000,13 @@ export default function ReturnsRequests() {
       setBranchPickupDeliveryRequest(null);
       setBranchPickupDeliveryCode("");
     }
-    if (actionData?.ok && actionData?.refundedBranchPickupRequestId) {
+    if (
+      (actionData?.ok && actionData?.refundedBranchPickupRequestId) ||
+      (branchPickupRefundActionData?.ok && branchPickupRefundActionData?.refundedBranchPickupRequestId)
+    ) {
       setBranchPickupRefundRequest(null);
     }
-  }, [actionData, courierRouteActionData]);
+  }, [actionData, courierRouteActionData, branchPickupRefundActionData]);
 
   const reviewRequests = requests.filter(
     (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
@@ -4521,7 +4527,7 @@ export default function ReturnsRequests() {
                 {branchPickupRefundRequest.currencyCode || "MXN"}
               </strong>
             </p>
-            <Form method="post" action={`${location.pathname}${location.search}`} className={styles.deliveryCodeForm}>
+            <branchPickupRefundFetcher.Form method="post" action={`${location.pathname}${location.search}`} className={styles.deliveryCodeForm}>
               <input type="hidden" name="intent" value="branch_pickup_refund_expired" />
               <input type="hidden" name="requestId" value={String(branchPickupRefundRequest.id || "")} />
               <input type="hidden" name="orderNumber" value={String(branchPickupRefundRequest.orderNumber || "")} />
@@ -4546,7 +4552,7 @@ export default function ReturnsRequests() {
                 <button
                   className={`${styles.btn} ${styles.btnDanger}`}
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isBranchPickupRefundSubmitting}
                   onClick={(event) => {
                     if (!window.confirm(`¿Confirmas reembolsar el pedido #${branchPickupRefundRequest.orderNumber} al metodo de pago original?`)) {
                       event.preventDefault();
@@ -4556,7 +4562,7 @@ export default function ReturnsRequests() {
                   Confirmar reembolso
                 </button>
               </div>
-            </Form>
+            </branchPickupRefundFetcher.Form>
           </section>
         </div>
       ) : null}
