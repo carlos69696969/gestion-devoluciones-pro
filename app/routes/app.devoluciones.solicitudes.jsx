@@ -3722,7 +3722,7 @@ async function fetchCourierOrders(admin) {
       return (
         isCourierLocalDeliveryOrder(orderNode) &&
         !["FULFILLED", "RESTOCKED"].includes(status) &&
-        courierStatus !== "recoger_en_sucursal"
+        !["recoger_en_sucursal", "reembolsada", "entregado"].includes(courierStatus)
       );
     })
     .map((orderNode) => {

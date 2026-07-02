@@ -2278,7 +2278,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
         return (
           isCourierLocalDeliveryOrder(orderNode) &&
           !["FULFILLED", "RESTOCKED"].includes(fulfillmentStatus) &&
-          courierStatus !== "recoger_en_sucursal"
+          !["recoger_en_sucursal", "reembolsada", "entregado"].includes(courierStatus)
         );
       })
       .map(async (orderNode) => {
@@ -2346,7 +2346,9 @@ export async function fetchCourierOrdersByIdsForShop({ shop, sessionCandidates, 
       const courierOrders = await Promise.all(
         nodes.map((orderNode) => mapShopifyOrderNodeToCourierOrder({ shop, orderNode })),
       );
-      for (const courierOrder of courierOrders) {
+      for (const courierOrder of courierOrders.filter(
+        (order) => !["recoger_en_sucursal", "reembolsada", "entregado"].includes(String(order?.status || "").trim().toLowerCase()),
+      )) {
         const orderId = String(courierOrder?.id || "").trim();
         if (orderId) courierOrdersById.set(orderId, courierOrder);
       }
