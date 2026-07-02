@@ -1551,6 +1551,8 @@ function buildCourierHistoryEvents(request) {
       at: event.createdAt,
       atMs: parseEventMs(event.createdAt),
       note: event.note || "",
+      status: String(event.status || "").trim().toLowerCase(),
+      attempt: event.attempt,
     }));
   }
 
@@ -2736,6 +2738,33 @@ export const action = async ({ request }) => {
         requestId,
         orderNumber,
       });
+      if (displayedDeadline) {
+        try {
+          const branchPickupEvent = await prisma.courierEvent.findFirst({
+            where: {
+              shop: session.shop,
+              requestId,
+              status: "recoger_en_sucursal",
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            select: { id: true, note: true },
+          });
+          if (branchPickupEvent) {
+            const existingNote = String(branchPickupEvent.note || "").trim();
+            const deadlineNote = `branch_pickup_deadline_label:${displayedDeadline}`;
+            await prisma.courierEvent.update({
+              where: { id: branchPickupEvent.id },
+              data: {
+                note: existingNote
+                  ? `${existingNote.replace(/;?branch_pickup_deadline_label:[^;\n]+/i, "")};${deadlineNote}`
+                  : deadlineNote,
+              },
+            });
+          }
+        } catch (error) {
+          console.error("Branch pickup deadline event note could not be saved", error);
+        }
+      }
 
       const latestCourierActivity = await prisma.courierActivity.findFirst({
         where: {
@@ -3962,11 +3991,19 @@ function branchPickupDeadlineSourceDate(request, displayedScheduledDate) {
     .filter((event) => String(event?.status || "").trim().toLowerCase() === "recoger_en_sucursal")
     .sort((firstEvent, secondEvent) => parseEventMs(secondEvent?.at) - parseEventMs(firstEvent?.at))[0];
   return (
-    parseCourierDate(branchEvent?.at) ||
     parseCourierDate(displayedScheduledDate) ||
+    parseCourierDate(branchEvent?.at) ||
     parseCourierDate(request?.updatedAt) ||
     parseCourierDate(request?.createdAt)
   );
+}
+
+function branchPickupDeadlineLabelFromEvents(request) {
+  const branchEvent = [...(request?.historyEvents || [])]
+    .filter((event) => String(event?.status || "").trim().toLowerCase() === "recoger_en_sucursal")
+    .sort((firstEvent, secondEvent) => parseEventMs(secondEvent?.at) - parseEventMs(firstEvent?.at))[0];
+  const note = String(branchEvent?.note || "");
+  return note.match(/branch_pickup_deadline_label:([^;\n]+)/i)?.[1]?.trim() || "";
 }
 
 function branchPickupDeadlineFromValue(request) {
@@ -3974,6 +4011,8 @@ function branchPickupDeadlineFromValue(request) {
 }
 
 function formatBranchPickupDeadlineDate(request, displayedScheduledDate) {
+  const persistedDeadlineLabel = branchPickupDeadlineLabelFromEvents(request);
+  if (persistedDeadlineLabel) return persistedDeadlineLabel;
   const directDeadlineDate = branchPickupDeadlineFromValue(request);
   if (directDeadlineDate) return formatCourierScheduledDate(directDeadlineDate.toISOString());
   const sourceDate = branchPickupDeadlineSourceDate(request, displayedScheduledDate);
