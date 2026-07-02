@@ -5153,6 +5153,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                   statusOverride={courierHistoryPendingStatusOverride(request)}
                   showFinalAttemptBadge
                   adminCourierView
+                  courierHistoryView
                   hideTransferredCourierBadge
                 />
               </div>
