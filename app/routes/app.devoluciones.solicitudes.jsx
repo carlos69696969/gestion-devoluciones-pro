@@ -5,6 +5,9 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
+  markCourierOrderAsDelivered,
+} from "../utils/courier.server";
+import {
   compareCourierDisplayOrder,
   getCourierRouteStatusFromTags,
   isCourierHistoryStatus,
@@ -2334,6 +2337,79 @@ export const action = async ({ request }) => {
   const intent = String(formData.get("intent") || "");
   const id = Number(formData.get("id") || 0);
 
+  if (intent === "branch_pickup_mark_delivered") {
+    const requestId = String(formData.get("requestId") || "").trim();
+    const orderNumber = String(formData.get("orderNumber") || "").trim();
+    const submittedDeliveryCode = String(formData.get("deliveryCode") || "")
+      .replace(/\D/g, "")
+      .slice(0, 6);
+    const deliveryCodeAssignment = await prisma.deliveryCodeAssignment.findUnique({
+      where: {
+        shop_shopifyOrderId: {
+          shop: session.shop,
+          shopifyOrderId: requestId,
+        },
+      },
+      select: {
+        code: true,
+        active: true,
+      },
+    });
+    if (
+      submittedDeliveryCode.length !== 6 ||
+      !deliveryCodeAssignment?.active ||
+      String(deliveryCodeAssignment.code || "") !== submittedDeliveryCode
+    ) {
+      return {
+        ok: false,
+        error: "Clave incorrecta",
+        deliveryCodeError: true,
+        requestId,
+      };
+    }
+
+    const result = await markCourierOrderAsDelivered({
+      shopDomain: session.shop,
+      requestId,
+      orderNumber,
+      customerName: String(formData.get("customerName") || "").trim(),
+      customerEmail: String(formData.get("customerEmail") || "").trim(),
+      customerPhone: String(formData.get("customerPhone") || "").trim(),
+      currentAttemptCount: String(formData.get("currentAttemptCount") || "").trim(),
+    });
+    if (!result.ok) return result;
+
+    const latestCourierActivity = await prisma.courierActivity.findFirst({
+      where: {
+        shop: session.shop,
+        requestId,
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: {
+        courierId: true,
+        courierName: true,
+        routeId: true,
+      },
+    });
+    await prisma.courierActivity.create({
+      data: {
+        shop: session.shop,
+        courierId: Number(latestCourierActivity?.courierId || 0),
+        courierName: String(latestCourierActivity?.courierName || "Administrador").trim(),
+        requestId,
+        orderNumber: orderNumber || null,
+        action: "courier_mark_delivered",
+        routeId: String(latestCourierActivity?.routeId || "") || null,
+      },
+    });
+
+    return {
+      ok: true,
+      message: `Pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} marcado como entregado.`,
+      deliveredRequestId: requestId,
+    };
+  }
+
   if (intent === "plan_courier_routes") {
     const selectedCourierIds = formData
       .getAll("courierIds")
@@ -3558,6 +3634,8 @@ export default function ReturnsRequests() {
   const isCourierRouteSubmitting = courierRouteFetcher.state !== "idle";
   const [showCourierRouteModal, setShowCourierRouteModal] = useState(false);
   const [selectedCourierIds, setSelectedCourierIds] = useState([]);
+  const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
+  const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
   const canConfirmCourierRoutePlan =
     selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
@@ -3569,6 +3647,10 @@ export default function ReturnsRequests() {
     if (actionData?.ok || courierRouteActionData?.ok) {
       setShowCourierRouteModal(false);
       setSelectedCourierIds([]);
+    }
+    if (actionData?.ok && actionData?.deliveredRequestId) {
+      setBranchPickupDeliveryRequest(null);
+      setBranchPickupDeliveryCode("");
     }
   }, [actionData, courierRouteActionData]);
 
@@ -3976,17 +4058,90 @@ export default function ReturnsRequests() {
             <p>No hay ordenes para recoger en sucursal.</p>
           ) : (
             <div className={styles.courierGrid}>
-              {courierOrders.map((request) => (
+              {[...courierOrders].sort(
+                (a, b) =>
+                  (parseEventMs(b?.updatedAt || b?.createdAt) || courierOrderTimestampMs(b)) -
+                  (parseEventMs(a?.updatedAt || a?.createdAt) || courierOrderTimestampMs(a)),
+              ).map((request) => (
                 <CourierOrderCard
                   key={request.id}
                   request={request}
                   branchPickupView
                   hideTransferredCourierBadge
+                  isSubmitting={isSubmitting}
+                  onBranchPickupDeliver={(selectedRequest) => {
+                    setBranchPickupDeliveryRequest(selectedRequest);
+                    setBranchPickupDeliveryCode("");
+                  }}
                 />
               ))}
             </div>
           )}
         </s-section>
+      ) : null}
+
+      {viewMode === VIEW_MODE.BRANCH_PICKUP && branchPickupDeliveryRequest ? (
+        <div className={styles.reasonModalOverlay} role="dialog" aria-modal="true" aria-label="Clave de entrega">
+          <section className={`${styles.reasonModal} ${styles.deliveryCodeAdminModal}`}>
+            <p className={styles.reasonModalTitle}>Introduce la clave de entrega</p>
+            <p className={styles.deliveryCodeDescription}>
+              Solicita al cliente la clave de seis digitos del pedido #{branchPickupDeliveryRequest.orderNumber}.
+            </p>
+            <Form method="post" className={styles.deliveryCodeForm}>
+              <input type="hidden" name="intent" value="branch_pickup_mark_delivered" />
+              <input type="hidden" name="requestId" value={String(branchPickupDeliveryRequest.id || "")} />
+              <input type="hidden" name="orderNumber" value={String(branchPickupDeliveryRequest.orderNumber || "")} />
+              <input type="hidden" name="customerName" value={String(branchPickupDeliveryRequest.customerName || "")} />
+              <input type="hidden" name="customerEmail" value={String(branchPickupDeliveryRequest.customerEmail || "")} />
+              <input type="hidden" name="customerPhone" value={String(branchPickupDeliveryRequest.customerPhone || "")} />
+              <input
+                type="hidden"
+                name="currentAttemptCount"
+                value={String(branchPickupDeliveryRequest.attemptCount || 0)}
+              />
+              <input
+                className={styles.deliveryCodeInput}
+                name="deliveryCode"
+                value={branchPickupDeliveryCode}
+                onChange={(event) => setBranchPickupDeliveryCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                pattern="[0-9]{6}"
+                aria-label="Clave de entrega de seis digitos"
+                required
+              />
+              {actionData?.deliveryCodeError &&
+              actionData?.requestId === String(branchPickupDeliveryRequest.id || "") ? (
+                <p className={styles.errorMsg} role="alert">Clave incorrecta</p>
+              ) : null}
+              <div className={styles.reasonModalActions}>
+                <button
+                  className={styles.btn}
+                  type="button"
+                  onClick={() => {
+                    setBranchPickupDeliveryRequest(null);
+                    setBranchPickupDeliveryCode("");
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className={`${styles.btn} ${styles.btnSuccess}`}
+                  type="submit"
+                  disabled={isSubmitting || branchPickupDeliveryCode.length !== 6}
+                  onClick={(event) => {
+                    if (!window.confirm(`¿Confirmas entregar el pedido #${branchPickupDeliveryRequest.orderNumber}?`)) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  Confirmar entrega
+                </button>
+              </div>
+            </Form>
+          </section>
+        </div>
       ) : null}
 
       {viewMode === VIEW_MODE.COURIERS ? (
@@ -5089,6 +5244,8 @@ function CourierOrderCard({
   hideTransferredCourierBadge = false,
   courierHistoryView = false,
   branchPickupView = false,
+  isSubmitting = false,
+  onBranchPickupDeliver = null,
 }) {
   const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
   const visibleStatus = statusOverride || request.status;
@@ -5242,6 +5399,16 @@ function CourierOrderCard({
           <span className={`${styles.courierBadgeStatus} ${statusBadgeClass}`}>
             {isAdminReprogrammed ? displayStatus : courierHistoryStatusLabel(displayStatus)}
           </span>
+          {branchPickupView ? (
+            <button
+              className={`${styles.btn} ${styles.btnSuccess} ${styles.branchPickupDeliverButton}`}
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => onBranchPickupDeliver?.(request)}
+            >
+              Entregar
+            </button>
+          ) : null}
         </div>
       </div>
       <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
