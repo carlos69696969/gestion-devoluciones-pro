@@ -3949,6 +3949,8 @@ async function fetchPickupCourierHistoryOrders(shop) {
     pickupCountry: "Mexico",
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
+    receivedAt: requestRow.receivedAt,
+    refundedAt: requestRow.refundedAt,
     rejectionReason: requestRow.rejectionReason,
     status: String(requestRow.status || "").trim().toLowerCase(),
   }));
@@ -4777,23 +4779,48 @@ function courierHistoryOrderLocation(order) {
 }
 
 function courierHistoryOrderUpdatedMs(order) {
-  const historyEventMs = (order?.historyEvents || []).reduce(
-    (latestMs, event) => Math.max(latestMs, parseEventMs(event?.at || event?.createdAt)),
-    0,
-  );
-  const branchPickupHistoryEventMs = [
+  const finalDeliveryActions = new Set([
+    "courier_mark_delivered",
+    "courier_mark_not_delivered",
+    "courier_return_mark_received",
+    "courier_return_pickup_attempt_failed",
+    "courier_return_reject_after_failed_pickups",
+    "courier_branch_pickup_refunded",
+  ]);
+  const finalActivityMs = (order?.courierActivities || []).reduce((latestMs, activity) => {
+    const action = String(activity?.action || "").trim().toLowerCase();
+    return finalDeliveryActions.has(action)
+      ? Math.max(latestMs, parseEventMs(activity?.createdAt))
+      : latestMs;
+  }, 0);
+  if (finalActivityMs) return finalActivityMs;
+
+  const finalHistoryStatuses = new Set([
+    "entregado",
+    "recibida",
+    "recibido",
+    "rechazada",
+    "no_recibido",
+    "no_entregado",
+    "reembolsada",
+  ]);
+  const finalHistoryEventMs = [
+    ...(Array.isArray(order?.historyEvents) ? order.historyEvents : []),
     ...(Array.isArray(order?.branchPickupHistoryEvents) ? order.branchPickupHistoryEvents : []),
     ...(Array.isArray(order?.unfilteredHistoryEvents) ? order.unfilteredHistoryEvents : []),
-  ].reduce((latestMs, event) => Math.max(latestMs, parseEventMs(event?.at || event?.createdAt)), 0);
-  const courierActivityMs = (order?.courierActivities || []).reduce(
-    (latestMs, activity) => Math.max(latestMs, parseEventMs(activity?.createdAt)),
-    0,
-  );
+  ].reduce((latestMs, event) => {
+    const status = String(event?.status || "").trim().toLowerCase();
+    const label = String(event?.label || "").trim();
+    const isFinalEvent =
+      finalHistoryStatuses.has(status) ||
+      /\b(?:recibid[ao]|entregad[ao]|rechazad[ao]|reembolsad[ao]|no recibido|no entregado)\b/i.test(label);
+    return isFinalEvent ? Math.max(latestMs, parseEventMs(event?.at || event?.createdAt)) : latestMs;
+  }, 0);
+  if (finalHistoryEventMs) return finalHistoryEventMs;
+
   return Math.max(
-    historyEventMs,
-    branchPickupHistoryEventMs,
-    courierActivityMs,
     parseEventMs(order?.refundedAt),
+    parseEventMs(order?.receivedAt),
     parseEventMs(order?.finishedAt),
     parseEventMs(order?.courierHistoryAt),
     parseEventMs(order?.updatedAt),
