@@ -2653,6 +2653,7 @@ export const action = async ({ request }) => {
     const requestId = String(formData.get("requestId") || "").trim();
     const orderNumber = String(formData.get("orderNumber") || "").trim();
     const displayedDeadline = String(formData.get("deadline") || "").trim();
+    const isRefundTestMode = String(formData.get("branchPickupRefundTestMode") || "").trim() === "1";
     if (!requestId) return { ok: false, error: "Accion no valida." };
 
     try {
@@ -2665,7 +2666,7 @@ export const action = async ({ request }) => {
         return { ok: false, error: "Esta orden ya no esta pendiente por recoger en sucursal.", requestId };
       }
       const displayedScheduledDate = getInitialCourierScheduledDate(branchOrder);
-      if (!isBranchPickupDeadlineExpired(branchOrder, displayedScheduledDate)) {
+      if (!isRefundTestMode && !isBranchPickupDeadlineExpired(branchOrder, displayedScheduledDate)) {
         return { ok: false, error: "Aun no vence la fecha limite para reembolsar esta orden.", requestId };
       }
 
@@ -4520,10 +4521,15 @@ export default function ReturnsRequests() {
                 {branchPickupRefundRequest.currencyCode || "MXN"}
               </strong>
             </p>
-            <Form method="post" className={styles.deliveryCodeForm}>
+            <Form method="post" action={`${location.pathname}${location.search}`} className={styles.deliveryCodeForm}>
               <input type="hidden" name="intent" value="branch_pickup_refund_expired" />
               <input type="hidden" name="requestId" value={String(branchPickupRefundRequest.id || "")} />
               <input type="hidden" name="orderNumber" value={String(branchPickupRefundRequest.orderNumber || "")} />
+              <input
+                type="hidden"
+                name="branchPickupRefundTestMode"
+                value={branchPickupRefundTestMode ? "1" : "0"}
+              />
               <input
                 type="hidden"
                 name="deadline"
