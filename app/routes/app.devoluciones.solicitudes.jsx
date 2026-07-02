@@ -1194,7 +1194,11 @@ function isBranchPickupHistoryEvent(event) {
 
 function isBranchPickupHistoryOrder(request, events = []) {
   if (isReturnCourierLabel(request?.courierLabel)) return false;
-  return (events || []).some((event) => isBranchPickupHistoryEvent(event));
+  return [
+    ...(events || []),
+    ...(Array.isArray(request?.branchPickupHistoryEvents) ? request.branchPickupHistoryEvents : []),
+    ...(Array.isArray(request?.unfilteredHistoryEvents) ? request.unfilteredHistoryEvents : []),
+  ].some((event) => isBranchPickupHistoryEvent(event));
 }
 
 function enrichCourierHistoryEvents({ events, request, activitiesByRequestId, transferActivityByRouteId }) {
@@ -3987,7 +3991,11 @@ function formatCourierScheduledDate(pickupDate) {
 }
 
 function branchPickupDeadlineSourceDate(request, displayedScheduledDate) {
-  const branchEvent = [...(request?.historyEvents || [])]
+  const branchEvent = [
+    ...(Array.isArray(request?.historyEvents) ? request.historyEvents : []),
+    ...(Array.isArray(request?.branchPickupHistoryEvents) ? request.branchPickupHistoryEvents : []),
+    ...(Array.isArray(request?.unfilteredHistoryEvents) ? request.unfilteredHistoryEvents : []),
+  ]
     .filter((event) => String(event?.status || "").trim().toLowerCase() === "recoger_en_sucursal")
     .sort((firstEvent, secondEvent) => parseEventMs(secondEvent?.at) - parseEventMs(firstEvent?.at))[0];
   return (
@@ -3999,7 +4007,11 @@ function branchPickupDeadlineSourceDate(request, displayedScheduledDate) {
 }
 
 function branchPickupDeadlineLabelFromEvents(request) {
-  const branchEvent = [...(request?.historyEvents || [])]
+  const branchEvent = [
+    ...(Array.isArray(request?.historyEvents) ? request.historyEvents : []),
+    ...(Array.isArray(request?.branchPickupHistoryEvents) ? request.branchPickupHistoryEvents : []),
+    ...(Array.isArray(request?.unfilteredHistoryEvents) ? request.unfilteredHistoryEvents : []),
+  ]
     .filter((event) => String(event?.status || "").trim().toLowerCase() === "recoger_en_sucursal")
     .sort((firstEvent, secondEvent) => parseEventMs(secondEvent?.at) - parseEventMs(firstEvent?.at))[0];
   const note = String(branchEvent?.note || "");
@@ -5321,15 +5333,22 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
               ),
               selectedSnapshotCutoff,
             );
+            const enrichedSnapshotHistoryEvents = enrichCourierHistoryEvents({
+              events: historyEvents,
+              request: {
+                ...orderWithCourierName,
+                branchPickupHistoryEvents: storedSnapshotHistoryEvents,
+                unfilteredHistoryEvents: snapshotHistoryEvents,
+              },
+              activitiesByRequestId,
+              transferActivityByRouteId: transferActivityByRouteIdForHistory,
+            });
             return {
               ...orderWithCourierName,
               id,
-              historyEvents: enrichCourierHistoryEvents({
-                events: historyEvents,
-                request: orderWithCourierName,
-                activitiesByRequestId,
-                transferActivityByRouteId: transferActivityByRouteIdForHistory,
-              }),
+              historyEvents: enrichedSnapshotHistoryEvents,
+              branchPickupHistoryEvents: storedSnapshotHistoryEvents,
+              unfilteredHistoryEvents: snapshotHistoryEvents,
               sequenceNumber: Number(order?.sequenceNumber || index + 1),
             };
           })
