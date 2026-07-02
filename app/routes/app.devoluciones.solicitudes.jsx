@@ -1179,10 +1179,27 @@ function transferredCourierNameForEvent(event, activities = [], transferActivity
   return String(transferActivity?.courierName || "").trim();
 }
 
+function isBranchPickupHistoryEvent(event) {
+  const status = String(event?.status || "").trim().toLowerCase();
+  const action = String(event?.action || "").trim().toLowerCase();
+  const label = String(event?.label || "").trim();
+  return (
+    status === "recoger_en_sucursal" ||
+    action === "courier_branch_pickup_refunded" ||
+    /enviado a recoger en sucursal/i.test(label)
+  );
+}
+
+function isBranchPickupHistoryOrder(request, events = []) {
+  if (isReturnCourierLabel(request?.courierLabel)) return false;
+  return (events || []).some((event) => isBranchPickupHistoryEvent(event));
+}
+
 function enrichCourierHistoryEvents({ events, request, activitiesByRequestId, transferActivityByRouteId }) {
   const requestId = String(request?.id || "").trim();
   const activities = activitiesByRequestId?.get(requestId) || [];
-  return (events || []).map((event) => {
+  const branchPickupOrder = isBranchPickupHistoryOrder(request, events);
+  const enrichedEvents = (events || []).map((event) => {
     const activityCourierName = activityCourierNameForEvent(event, activities);
     return {
       ...event,
@@ -1191,6 +1208,42 @@ function enrichCourierHistoryEvents({ events, request, activitiesByRequestId, tr
         transferredCourierNameForEvent(event, activities, transferActivityByRouteId),
     };
   });
+  const branchFinalEvents = activities
+    .filter((activity) => {
+      const action = String(activity?.action || "").trim().toLowerCase();
+      return action === "courier_branch_pickup_refunded" || (branchPickupOrder && action === "courier_mark_delivered");
+    })
+    .map((activity) => {
+      const action = String(activity?.action || "").trim().toLowerCase();
+      return {
+        id: `branch-pickup-final-${activity.id || activity.createdAt || action}`,
+        label: action === "courier_branch_pickup_refunded" ? "Reembolsado" : "Entregado en sucursal",
+        at: activity.createdAt,
+        atMs: parseEventMs(activity.createdAt),
+        note: "",
+        status: action === "courier_branch_pickup_refunded" ? "reembolsada" : "entregado",
+        action,
+        courierName: String(activity?.courierName || "").trim(),
+        branchPickupFinal: true,
+      };
+    })
+    .filter((event) => event.atMs);
+  const branchFinalActions = new Set(branchFinalEvents.map((event) => event.action));
+  const filteredEnrichedEvents = branchPickupOrder
+    ? enrichedEvents.filter((event) => {
+        const status = String(event?.status || "").trim().toLowerCase();
+        const label = String(event?.label || "").trim();
+        if (branchFinalActions.has("courier_mark_delivered") && status === "entregado") return false;
+        if (
+          branchFinalActions.has("courier_mark_delivered") &&
+          /\b(?:primer|segundo|tercer)?\s*intento\s+entregado\b/i.test(label)
+        ) {
+          return false;
+        }
+        return true;
+      })
+    : enrichedEvents;
+  return mergeCourierHistoryEvents(filteredEnrichedEvents, branchFinalEvents);
 }
 
 function buildCourierHistoryDisplayItems(events, request, { hideTransferDetails = false } = {}) {
@@ -5702,6 +5755,7 @@ function CourierOrderCard({
     ? buildAdminCourierPresentation(request)
     : { events: request.historyEvents || [], scheduledDate: null };
   const displayHistoryEvents = dedupeCourierHistoryEvents(adminCourierPresentation.events);
+  const branchPickupHistoryOrder = courierHistoryView && isBranchPickupHistoryOrder(request, displayHistoryEvents);
   const latestReprogrammingEvent = latestCourierReprogrammingEvent(displayHistoryEvents);
   const isRouteTimeReprogrammed =
     Boolean(latestReprogrammingEvent?.routeTimeRescheduled) ||
@@ -5752,8 +5806,10 @@ function CourierOrderCard({
     request.courierLabel === "Devolución"
       ? request.pickupDate
       : adminCourierPresentation.scheduledDate || request.pickupDate;
-  const scheduledFieldLabel = branchPickupView ? "Programado por recoger antes de:" : "Programado:";
-  const scheduledFieldValue = branchPickupView
+  const scheduledFieldLabel = branchPickupView || branchPickupHistoryOrder
+    ? "Programado por recoger antes de:"
+    : "Programado:";
+  const scheduledFieldValue = branchPickupView || branchPickupHistoryOrder
     ? formatBranchPickupDeadlineDate(request, displayedScheduledDate)
     : formatCourierScheduledDate(displayedScheduledDate);
   const isBranchPickupExpired = branchPickupView && isBranchPickupDeadlineExpired(request, displayedScheduledDate);
