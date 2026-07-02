@@ -1201,6 +1201,32 @@ function isBranchPickupHistoryOrder(request, events = []) {
   ].some((event) => isBranchPickupHistoryEvent(event));
 }
 
+function isBranchPickupHistoryAttemptCandidate(request, events = []) {
+  if (isReturnCourierLabel(request?.courierLabel)) return false;
+  const status = String(request?.status || request?.currentStatus || "").trim().toLowerCase();
+  const attemptCount = Math.max(
+    Number(request?.attemptCount || 0),
+    courierAttemptFromHistoryEvents(events, 0),
+    courierAttemptFromHistoryEvents(request?.historyEvents || [], 0),
+  );
+  const labels = [
+    ...(events || []),
+    ...(Array.isArray(request?.historyEvents) ? request.historyEvents : []),
+    ...(Array.isArray(request?.branchPickupHistoryEvents) ? request.branchPickupHistoryEvents : []),
+    ...(Array.isArray(request?.unfilteredHistoryEvents) ? request.unfilteredHistoryEvents : []),
+  ]
+    .map((event) => String(event?.label || "").trim())
+    .join(" ");
+  return (
+    attemptCount >= 3 &&
+    (
+      ["no_entregado", "no_recibido", "recoger_en_sucursal", "reembolsada"].includes(status) ||
+      /\btercer intento\b/i.test(labels) ||
+      /\b3 intentos?\b/i.test(labels)
+    )
+  );
+}
+
 function enrichCourierHistoryEvents({ events, request, activitiesByRequestId, transferActivityByRouteId }) {
   const requestId = String(request?.id || "").trim();
   const activities = activitiesByRequestId?.get(requestId) || [];
@@ -5830,7 +5856,8 @@ function CourierOrderCard({
     courierHistoryView &&
     (
       isBranchPickupHistoryOrder(request, displayHistoryEvents) ||
-      isBranchPickupHistoryOrder(request, request.historyEvents || [])
+      isBranchPickupHistoryOrder(request, request.historyEvents || []) ||
+      isBranchPickupHistoryAttemptCandidate(request, displayHistoryEvents)
     );
   const latestReprogrammingEvent = latestCourierReprogrammingEvent(displayHistoryEvents);
   const isRouteTimeReprogrammed =
@@ -5884,6 +5911,7 @@ function CourierOrderCard({
       courierHistoryView &&
       (
         isBranchPickupHistoryOrder(request, effectiveHistoryEvents) ||
+        isBranchPickupHistoryAttemptCandidate(request, effectiveHistoryEvents) ||
         displayHistoryItems.some((item) => isBranchPickupHistoryEvent(item))
       )
     );

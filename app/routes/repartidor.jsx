@@ -827,6 +827,8 @@ export const action = async ({ request }) => {
                 at: event.createdAt,
                 courierName: String(event?.courierName || ""),
                 note: event.note || "",
+                status: String(event?.status || "").trim().toLowerCase(),
+                attempt: event.attempt,
                 routeTimeRescheduled: isRouteTimeCourierEvent(event),
               }))).map(markSnapshotEventTransfer);
           if (wasRouteTimeReprogrammedOnly) {
