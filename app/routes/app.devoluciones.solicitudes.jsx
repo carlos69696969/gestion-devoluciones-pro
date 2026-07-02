@@ -5934,8 +5934,7 @@ function CourierOrderCard({
     courierHistoryView &&
     (
       isBranchPickupHistoryOrder(request, displayHistoryEvents) ||
-      isBranchPickupHistoryOrder(request, request.historyEvents || []) ||
-      isBranchPickupHistoryAttemptCandidate(request, displayHistoryEvents)
+      isBranchPickupHistoryOrder(request, request.historyEvents || [])
     );
   const latestReprogrammingEvent = latestCourierReprogrammingEvent(displayHistoryEvents);
   const isRouteTimeReprogrammed =
@@ -5989,7 +5988,6 @@ function CourierOrderCard({
       courierHistoryView &&
       (
         isBranchPickupHistoryOrder(request, effectiveHistoryEvents) ||
-        isBranchPickupHistoryAttemptCandidate(request, effectiveHistoryEvents) ||
         displayHistoryItems.some((item) => isBranchPickupHistoryEvent(item))
       )
     );
