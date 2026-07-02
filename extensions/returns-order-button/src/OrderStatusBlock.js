@@ -121,6 +121,12 @@ function buildPortalUrl({ orderName, customerEmail, shopDomain, mode }) {
   return url.toString();
 }
 
+function isThirdDeliveryAttemptNotification(notification) {
+  const title = String(notification?.title || "").trim();
+  const message = String(notification?.message || "").trim();
+  return /tercer intento de entrega/i.test(`${title} ${message}`);
+}
+
 export default function extension() {
   const shopifyObj = globalThis?.shopify || {};
   const targetValue =
@@ -276,6 +282,9 @@ export default function extension() {
         latestOrderMessageBlock.parentNode.removeChild(latestOrderMessageBlock);
       }
       if (deliveryCode) {
+        deliveryCodeDescription.textContent = isThirdDeliveryAttemptNotification(latestOrderNotification)
+          ? "Entrega esta clave en sucursal para recibir tu pedido."
+          : "Entrega esta clave al repartidor para recibir tu pedido.";
         renderDeliveryCode(deliveryCode);
         if (!deliveryCodeBlock.parentNode) wrapper.appendChild(deliveryCodeBlock);
       } else if (!latestOrderMessageBlock.parentNode) {
