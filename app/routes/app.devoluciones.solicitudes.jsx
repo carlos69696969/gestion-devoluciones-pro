@@ -1227,6 +1227,39 @@ function isBranchPickupHistoryAttemptCandidate(request, events = []) {
   );
 }
 
+function branchPickupFinalStatusLabel(request, events = []) {
+  const normalizedStatus = String(request?.status || request?.currentStatus || "").trim().toLowerCase();
+  const allEvents = [
+    ...(events || []),
+    ...(Array.isArray(request?.historyEvents) ? request.historyEvents : []),
+    ...(Array.isArray(request?.branchPickupHistoryEvents) ? request.branchPickupHistoryEvents : []),
+    ...(Array.isArray(request?.unfilteredHistoryEvents) ? request.unfilteredHistoryEvents : []),
+  ];
+  if (
+    normalizedStatus === "reembolsada" ||
+    allEvents.some((event) => {
+      const action = String(event?.action || "").trim().toLowerCase();
+      const status = String(event?.status || "").trim().toLowerCase();
+      const label = String(event?.label || "").trim();
+      return action === "courier_branch_pickup_refunded" || status === "reembolsada" || /\breembolsad[ao]\b/i.test(label);
+    })
+  ) {
+    return "reembolsado";
+  }
+  if (
+    normalizedStatus === "entregado" ||
+    allEvents.some((event) => {
+      const action = String(event?.action || "").trim().toLowerCase();
+      const status = String(event?.status || "").trim().toLowerCase();
+      const label = String(event?.label || "").trim();
+      return action === "courier_mark_delivered" || status === "entregado" || /entregado en sucursal/i.test(label);
+    })
+  ) {
+    return "entregado en sucursal";
+  }
+  return "";
+}
+
 function enrichCourierHistoryEvents({ events, request, activitiesByRequestId, transferActivityByRouteId }) {
   const requestId = String(request?.id || "").trim();
   const activities = activitiesByRequestId?.get(requestId) || [];
@@ -5118,7 +5151,11 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
     const normalizedSearch = String(orderSearch || "").replace(/^#/, "").trim().toLowerCase();
     const completedOrders = orders
       .filter(isCourierCompletedHistoryOrder)
-      .sort((firstOrder, secondOrder) => courierHistoryOrderUpdatedMs(secondOrder) - courierHistoryOrderUpdatedMs(firstOrder));
+      .sort((firstOrder, secondOrder) => {
+        const updatedDifference = courierHistoryOrderUpdatedMs(secondOrder) - courierHistoryOrderUpdatedMs(firstOrder);
+        if (updatedDifference !== 0) return updatedDifference;
+        return Number(secondOrder?.orderNumber || 0) - Number(firstOrder?.orderNumber || 0);
+      });
     const searchResults = normalizedSearch
       ? orders.filter((order) =>
           String(order?.orderNumber || "").replace(/^#/, "").trim().toLowerCase().includes(normalizedSearch),
@@ -5926,6 +5963,9 @@ function CourierOrderCard({
   const scheduledFieldValue = branchPickupView || branchPickupHistoryOrder
     ? formatBranchPickupDeadlineDate(request, displayedScheduledDate)
     : formatCourierScheduledDate(displayedScheduledDate);
+  const branchPickupFinalStatus = branchPickupHistoryOrder
+    ? branchPickupFinalStatusLabel(request, effectiveHistoryEvents)
+    : "";
   const isBranchPickupExpired = branchPickupView && isBranchPickupDeadlineExpired(request, displayedScheduledDate);
   const shouldShowBranchPickupRefund = isBranchPickupExpired || (branchPickupView && branchPickupRefundTestMode);
   const branchPickupActionRequest = branchPickupView
@@ -5933,7 +5973,7 @@ function CourierOrderCard({
     : request;
   const attemptBadgeClass = ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
     ? courierHistoryView
-      ? styles.courierBadgeStatusHistoryWarning
+      ? styles.courierBadgeStatusFailed
       : normalizedVisibleStatus === "rechazada"
       ? styles.courierBadgeAttemptWarning
       : styles.courierBadgeStatusFailed
@@ -5944,6 +5984,8 @@ function CourierOrderCard({
       ? styles.courierBadgeStatusSuccess
     : courierHistoryView && isCourierHistoryReprogrammed && isRouteTimeReprogrammed
       ? styles.courierBadgeStatusTimeReprogrammed
+    : courierHistoryView && ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
+      ? styles.courierBadgeStatusFailed
     : courierHistoryView
       ? styles.courierBadgeStatusHistoryWarning
     : isAdminReprogrammed
@@ -5999,6 +6041,11 @@ function CourierOrderCard({
           <span className={`${styles.courierBadgeStatus} ${statusBadgeClass}`}>
             {isAdminReprogrammed ? displayStatus : courierHistoryStatusLabel(displayStatus)}
           </span>
+          {branchPickupFinalStatus ? (
+            <span className={`${styles.courierBadgeStatus} ${styles.courierBadgeStatusSuccess}`}>
+              {branchPickupFinalStatus}
+            </span>
+          ) : null}
         </div>
       </div>
       <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
