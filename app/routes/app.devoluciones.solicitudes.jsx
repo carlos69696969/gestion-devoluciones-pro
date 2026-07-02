@@ -5399,16 +5399,6 @@ function CourierOrderCard({
           <span className={`${styles.courierBadgeStatus} ${statusBadgeClass}`}>
             {isAdminReprogrammed ? displayStatus : courierHistoryStatusLabel(displayStatus)}
           </span>
-          {branchPickupView ? (
-            <button
-              className={`${styles.btn} ${styles.btnSuccess} ${styles.branchPickupDeliverButton}`}
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => onBranchPickupDeliver?.(request)}
-            >
-              Entregar
-            </button>
-          ) : null}
         </div>
       </div>
       <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
@@ -5418,6 +5408,18 @@ function CourierOrderCard({
       </p>
       <p className={styles.courierAddress}>{formatCourierAddress(request)}</p>
       <p className={styles.courierField}>{request.customerPhone || "-"}</p>
+      {branchPickupView ? (
+        <div className={styles.branchPickupDeliverActions}>
+          <button
+            className={`${styles.btn} ${styles.btnSuccess} ${styles.branchPickupDeliverButton}`}
+            type="button"
+            disabled={isSubmitting}
+            onClick={() => onBranchPickupDeliver?.(request)}
+          >
+            Entregar
+          </button>
+        </div>
+      ) : null}
       <details className={styles.courierHistoryDetails}>
         <summary className={styles.courierHistorySummary}>Ver más ↓</summary>
         <div className={styles.courierHistoryList}>
