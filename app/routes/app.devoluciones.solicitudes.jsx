@@ -5407,9 +5407,9 @@ function CourierOrderCard({
         <strong>{scheduledFieldLabel}</strong> {scheduledFieldValue}
       </p>
       <p className={styles.courierAddress}>{formatCourierAddress(request)}</p>
-      <p className={styles.courierField}>{request.customerPhone || "-"}</p>
       {branchPickupView ? (
-        <div className={styles.branchPickupDeliverActions}>
+        <div className={styles.branchPickupPhoneRow}>
+          <p className={styles.courierField}>{request.customerPhone || "-"}</p>
           <button
             className={`${styles.btn} ${styles.btnSuccess} ${styles.branchPickupDeliverButton}`}
             type="button"
@@ -5419,7 +5419,9 @@ function CourierOrderCard({
             Entregar
           </button>
         </div>
-      ) : null}
+      ) : (
+        <p className={styles.courierField}>{request.customerPhone || "-"}</p>
+      )}
       <details className={styles.courierHistoryDetails}>
         <summary className={styles.courierHistorySummary}>Ver más ↓</summary>
         <div className={styles.courierHistoryList}>

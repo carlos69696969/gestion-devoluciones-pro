@@ -934,11 +934,16 @@
   font-size: 13px;
 }
 
-.branchPickupDeliverActions {
+.branchPickupPhoneRow {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  margin-top: -6px;
-  margin-bottom: 6px;
+  gap: 12px;
+}
+
+.branchPickupPhoneRow .courierField {
+  flex: 1;
+  margin: 0;
 }
 
 .courierBadgeStatusHistoryWarning {
