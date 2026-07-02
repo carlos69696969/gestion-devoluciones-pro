@@ -3991,8 +3991,8 @@ function branchPickupDeadlineSourceDate(request, displayedScheduledDate) {
     .filter((event) => String(event?.status || "").trim().toLowerCase() === "recoger_en_sucursal")
     .sort((firstEvent, secondEvent) => parseEventMs(secondEvent?.at) - parseEventMs(firstEvent?.at))[0];
   return (
-    parseCourierDate(displayedScheduledDate) ||
     parseCourierDate(branchEvent?.at) ||
+    parseCourierDate(displayedScheduledDate) ||
     parseCourierDate(request?.updatedAt) ||
     parseCourierDate(request?.createdAt)
   );
@@ -5807,7 +5807,12 @@ function CourierOrderCard({
     ? buildAdminCourierPresentation(request)
     : { events: request.historyEvents || [], scheduledDate: null };
   const displayHistoryEvents = dedupeCourierHistoryEvents(adminCourierPresentation.events);
-  const branchPickupHistoryOrder = courierHistoryView && isBranchPickupHistoryOrder(request, displayHistoryEvents);
+  const initialBranchPickupHistoryOrder =
+    courierHistoryView &&
+    (
+      isBranchPickupHistoryOrder(request, displayHistoryEvents) ||
+      isBranchPickupHistoryOrder(request, request.historyEvents || [])
+    );
   const latestReprogrammingEvent = latestCourierReprogrammingEvent(displayHistoryEvents);
   const isRouteTimeReprogrammed =
     Boolean(latestReprogrammingEvent?.routeTimeRescheduled) ||
@@ -5854,6 +5859,15 @@ function CourierOrderCard({
     request,
     { hideTransferDetails: branchPickupView },
   );
+  const branchPickupHistoryOrder =
+    initialBranchPickupHistoryOrder ||
+    (
+      courierHistoryView &&
+      (
+        isBranchPickupHistoryOrder(request, effectiveHistoryEvents) ||
+        displayHistoryItems.some((item) => isBranchPickupHistoryEvent(item))
+      )
+    );
   const displayedScheduledDate =
     request.courierLabel === "Devolución"
       ? request.pickupDate
