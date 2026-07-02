@@ -1185,7 +1185,9 @@ function isBranchPickupHistoryEvent(event) {
   const label = String(event?.label || "").trim();
   return (
     status === "recoger_en_sucursal" ||
+    Boolean(event?.branchPickupFinal) ||
     action === "courier_branch_pickup_refunded" ||
+    action === "courier_branch_pickup_delivered" ||
     /enviado a recoger en sucursal/i.test(label)
   );
 }
@@ -3960,14 +3962,20 @@ function branchPickupDeadlineSourceDate(request, displayedScheduledDate) {
     .filter((event) => String(event?.status || "").trim().toLowerCase() === "recoger_en_sucursal")
     .sort((firstEvent, secondEvent) => parseEventMs(secondEvent?.at) - parseEventMs(firstEvent?.at))[0];
   return (
-    parseCourierDate(displayedScheduledDate) ||
     parseCourierDate(branchEvent?.at) ||
+    parseCourierDate(displayedScheduledDate) ||
     parseCourierDate(request?.updatedAt) ||
     parseCourierDate(request?.createdAt)
   );
 }
 
+function branchPickupDeadlineFromValue(request) {
+  return parseCourierDate(request?.branchPickupDeadlineAt) || parseCourierDate(request?.pickupDeadlineAt);
+}
+
 function formatBranchPickupDeadlineDate(request, displayedScheduledDate) {
+  const directDeadlineDate = branchPickupDeadlineFromValue(request);
+  if (directDeadlineDate) return formatCourierScheduledDate(directDeadlineDate.toISOString());
   const sourceDate = branchPickupDeadlineSourceDate(request, displayedScheduledDate);
   if (!sourceDate) return "-";
   const deadlineDate = new Date(sourceDate);
@@ -3976,6 +3984,11 @@ function formatBranchPickupDeadlineDate(request, displayedScheduledDate) {
 }
 
 function branchPickupDeadlineDateValue(request, displayedScheduledDate) {
+  const directDeadlineDate = branchPickupDeadlineFromValue(request);
+  if (directDeadlineDate) {
+    directDeadlineDate.setHours(23, 59, 59, 999);
+    return directDeadlineDate;
+  }
   const sourceDate = branchPickupDeadlineSourceDate(request, displayedScheduledDate);
   if (!sourceDate) return null;
   const deadlineDate = new Date(sourceDate);
