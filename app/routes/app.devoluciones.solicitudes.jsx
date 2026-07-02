@@ -2796,6 +2796,18 @@ export const action = async ({ request }) => {
         notePrefix: `Reembolso pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} no recogido en sucursal`,
       });
       await replaceShopifyOrderCourierStatusTag(admin, requestId, "reembolsada");
+      await prisma.deliveryCodeAssignment.updateMany({
+        where: {
+          shop: session.shop,
+          shopifyOrderId: requestId,
+          active: true,
+        },
+        data: {
+          code: null,
+          active: false,
+          releasedAt: new Date(),
+        },
+      });
       await emitBranchPickupRefundNotification({
         shopDomain: session.shop,
         requestId,
