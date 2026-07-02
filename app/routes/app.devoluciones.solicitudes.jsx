@@ -1093,7 +1093,7 @@ function enrichCourierHistoryEvents({ events, request, activitiesByRequestId, tr
   });
 }
 
-function buildCourierHistoryDisplayItems(events, request) {
+function buildCourierHistoryDisplayItems(events, request, { hideTransferDetails = false } = {}) {
   const items = [];
   const shownAttemptKeys = new Set();
   const shownRouteTimeKeys = new Set();
@@ -1120,6 +1120,7 @@ function buildCourierHistoryDisplayItems(events, request) {
       ).trim();
       const routeTransferredAtMs = parseEventMs(request?.routeTransferredAt);
       const wasHandledAfterTransfer =
+        !hideTransferDetails &&
         transferredCourierName &&
         (Boolean(event?.transferredCourierName) ||
           (routeTransferredAtMs && parseEventMs(event?.at) >= routeTransferredAtMs));
@@ -1144,6 +1145,7 @@ function buildCourierHistoryDisplayItems(events, request) {
       ).trim();
       const routeTransferredAtMs = parseEventMs(request?.routeTransferredAt);
       const wasHandledAfterTransfer =
+        !hideTransferDetails &&
         transferredCourierName &&
         (transferredCourierNameByAttempt.has(attempt) ||
           Boolean(event?.transferredCourierName) ||
@@ -3495,6 +3497,26 @@ function formatCourierScheduledDate(pickupDate) {
   return [weekday, day, month, year].filter(Boolean).join(" ");
 }
 
+function branchPickupDeadlineSourceDate(request, displayedScheduledDate) {
+  const branchEvent = [...(request?.historyEvents || [])]
+    .filter((event) => String(event?.status || "").trim().toLowerCase() === "recoger_en_sucursal")
+    .sort((firstEvent, secondEvent) => parseEventMs(secondEvent?.at) - parseEventMs(firstEvent?.at))[0];
+  return (
+    parseCourierDate(displayedScheduledDate) ||
+    parseCourierDate(branchEvent?.at) ||
+    parseCourierDate(request?.updatedAt) ||
+    parseCourierDate(request?.createdAt)
+  );
+}
+
+function formatBranchPickupDeadlineDate(request, displayedScheduledDate) {
+  const sourceDate = branchPickupDeadlineSourceDate(request, displayedScheduledDate);
+  if (!sourceDate) return "-";
+  const deadlineDate = new Date(sourceDate);
+  deadlineDate.setDate(deadlineDate.getDate() + 30);
+  return formatCourierScheduledDate(deadlineDate.toISOString());
+}
+
 function formatCourierAddress(request) {
   const parts = [
     request?.pickupAddress,
@@ -3955,7 +3977,12 @@ export default function ReturnsRequests() {
           ) : (
             <div className={styles.courierGrid}>
               {courierOrders.map((request) => (
-                <CourierOrderCard key={request.id} request={request} />
+                <CourierOrderCard
+                  key={request.id}
+                  request={request}
+                  branchPickupView
+                  hideTransferredCourierBadge
+                />
               ))}
             </div>
           )}
@@ -5061,6 +5088,7 @@ function CourierOrderCard({
   adminCourierView = false,
   hideTransferredCourierBadge = false,
   courierHistoryView = false,
+  branchPickupView = false,
 }) {
   const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
   const visibleStatus = statusOverride || request.status;
@@ -5099,9 +5127,15 @@ function CourierOrderCard({
     /route_time_rescheduled/i.test(String(latestReprogrammingEvent?.note || ""));
   const isCourierHistoryReprogrammed =
     courierHistoryView && normalizedVisibleStatus === "reintento_pendiente";
-  const filteredHistoryEvents = courierHistoryView
-    ? displayHistoryEvents.filter((event) => !isAttemptReprogrammingEvent(event))
-    : displayHistoryEvents;
+  const filteredHistoryEvents = branchPickupView
+    ? displayHistoryEvents.filter((event) => {
+        const label = String(event?.label || "").trim();
+        const note = String(event?.note || "").trim();
+        return !/ruta traspasada|traspasad[ao]/i.test(`${label} ${note}`);
+      })
+    : courierHistoryView
+      ? displayHistoryEvents.filter((event) => !isAttemptReprogrammingEvent(event))
+      : displayHistoryEvents;
   const needsCourierRouteTimeFallback =
     courierHistoryView &&
     normalizedVisibleStatus === "reintento_pendiente" &&
@@ -5130,11 +5164,16 @@ function CourierOrderCard({
       ? normalizeReturnCourierHistoryEvents(effectiveHistoryEvents)
       : effectiveHistoryEvents,
     request,
+    { hideTransferDetails: branchPickupView },
   );
   const displayedScheduledDate =
     request.courierLabel === "Devolución"
       ? request.pickupDate
       : adminCourierPresentation.scheduledDate || request.pickupDate;
+  const scheduledFieldLabel = branchPickupView ? "Programado por recoger antes de:" : "Programado:";
+  const scheduledFieldValue = branchPickupView
+    ? formatBranchPickupDeadlineDate(request, displayedScheduledDate)
+    : formatCourierScheduledDate(displayedScheduledDate);
   const attemptBadgeClass = ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
     ? courierHistoryView
       ? styles.courierBadgeStatusHistoryWarning
@@ -5154,6 +5193,8 @@ function CourierOrderCard({
       ? isRouteTimeReprogrammed
       ? styles.courierBadgeStatusTimeReprogrammed
       : styles.courierBadgeStatusReprogrammed
+    : branchPickupView && normalizedVisibleStatus === "recoger_en_sucursal"
+      ? styles.courierBadgeStatusBranchPickup
     : ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
       ? courierHistoryView
         ? styles.courierBadgeStatusHistoryWarning
@@ -5206,7 +5247,7 @@ function CourierOrderCard({
       <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
       <p className={styles.courierCustomerName}>{request.customerName}</p>
       <p className={styles.courierField}>
-        <strong>Programado:</strong> {formatCourierScheduledDate(displayedScheduledDate)}
+        <strong>{scheduledFieldLabel}</strong> {scheduledFieldValue}
       </p>
       <p className={styles.courierAddress}>{formatCourierAddress(request)}</p>
       <p className={styles.courierField}>{request.customerPhone || "-"}</p>
