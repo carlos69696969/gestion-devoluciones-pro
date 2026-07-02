@@ -34,6 +34,16 @@ const STATUS_LABEL = {
   completada: "completada",
 };
 
+const COURIER_STATUS_TAGS_FOR_ADMIN = [
+  "en ruta",
+  "en ruta 2",
+  "en ruta 3",
+  "no entregado",
+  "recoger en sucursal",
+  "entregado",
+  "reembolsada",
+];
+
 const VIEW_MODE = {
   PICKUP: "pickup",
   BRANCH: "branch",
@@ -923,6 +933,7 @@ function courierEventLabel(status, attempt) {
   if (normalized === "reintento_pendiente") return `${attemptLabel} reprogramado`;
   if (normalized === "recoger_en_sucursal") return "Enviado a recoger en sucursal";
   if (normalized === "entregado") return `${attemptLabel} entregado`;
+  if (normalized === "reembolsada") return "Reembolsado";
   return normalized.replace(/_/g, " ");
 }
 
@@ -1268,6 +1279,7 @@ function courierStatusFromActivityAction(action, fallbackStatus = "") {
     courier_return_mark_received: "recibida",
     courier_return_pickup_attempt_failed: "no_recibido",
     courier_return_reject_after_failed_pickups: "rechazada",
+    courier_branch_pickup_refunded: "reembolsada",
   };
   return statusByAction[normalizedAction] || fallbackStatus;
 }
@@ -1363,6 +1375,7 @@ function isCourierFinalActivityAction(action) {
     "courier_return_mark_received",
     "courier_return_pickup_attempt_failed",
     "courier_return_reject_after_failed_pickups",
+    "courier_branch_pickup_refunded",
   ].includes(String(action || "").trim().toLowerCase());
 }
 
@@ -1591,6 +1604,9 @@ async function fetchOrderSnapshot(admin, orderId) {
     query OrderForRefund($id: ID!) {
       order(id: $id) {
         id
+        currentTotalPriceSet {
+          shopMoney { amount currencyCode }
+        }
         lineItems(first: 100) {
           edges {
             node {
@@ -1624,6 +1640,8 @@ async function fetchOrderSnapshot(admin, orderId) {
   if (!order) throw new Error("No se encontro la orden en Shopify.");
   return {
     orderId: order.id,
+    currentTotalPrice: Number(order.currentTotalPriceSet?.shopMoney?.amount || 0),
+    currencyCode: String(order.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
     lineItems: (order.lineItems?.edges || []).map(({ node }) => ({
       id: node.id,
       title: node.title,
@@ -1945,6 +1963,137 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
   }
 
   return { refundLineItems: refundableLines, subtotal };
+}
+
+function mapOrderItemsToFullRefundLineItems(orderLineItems) {
+  const refundLineItems = [];
+  let subtotal = 0;
+  for (const line of orderLineItems || []) {
+    const quantity = Math.max(0, Number(line.quantity || 0));
+    if (!line?.id || quantity <= 0) continue;
+    subtotal += Number(line.unitPrice || 0) * quantity;
+    refundLineItems.push({
+      lineItemId: line.id,
+      quantity,
+      restockType: "NO_RESTOCK",
+    });
+  }
+  return { refundLineItems, subtotal };
+}
+
+async function replaceShopifyOrderCourierStatusTag(admin, shopifyOrderId, statusTag) {
+  const cleanStatusTag = String(statusTag || "").trim();
+  if (!shopifyOrderId || !cleanStatusTag) return;
+  const response = await admin.graphql(
+    `#graphql
+    mutation ReplaceCourierStatusTags($id: ID!, $addTags: [String!]!, $removeTags: [String!]!) {
+      tagsAdd(id: $id, tags: $addTags) { userErrors { field message } }
+      tagsRemove(id: $id, tags: $removeTags) { userErrors { field message } }
+    }`,
+    {
+      variables: {
+        id: shopifyOrderId,
+        addTags: [cleanStatusTag],
+        removeTags: COURIER_STATUS_TAGS_FOR_ADMIN.filter((tag) => tag !== cleanStatusTag),
+      },
+    },
+  );
+  const payload = await response.json();
+  const topErrors = payload?.errors || [];
+  const userErrors = [
+    ...(payload?.data?.tagsAdd?.userErrors || []),
+    ...(payload?.data?.tagsRemove?.userErrors || []),
+  ];
+  if (topErrors.length || userErrors.length) {
+    throw new Error(topErrors[0]?.message || userErrors[0]?.message || "No se pudo actualizar el estado de la orden.");
+  }
+}
+
+async function refundShopifyOrderToOriginalPayment({ admin, shopifyOrderId, notePrefix }) {
+  const snapshot = await fetchOrderSnapshot(admin, shopifyOrderId);
+  const { refundLineItems, subtotal } = mapOrderItemsToFullRefundLineItems(snapshot.lineItems);
+  if (!refundLineItems.length) {
+    throw new Error("No hay lineas para reembolsar.");
+  }
+  const finalRefund = Number(snapshot.currentTotalPrice || subtotal || 0);
+  if (finalRefund <= 0) {
+    throw new Error("No se encontro un monto valido para reembolsar.");
+  }
+  const parentTransaction = pickParentTransaction(snapshot.transactions);
+  if (!parentTransaction?.id || !parentTransaction?.gateway) {
+    throw new Error("No se encontro una transaccion de pago valida para reembolsar al metodo original.");
+  }
+  const response = await admin.graphql(
+    `#graphql
+    mutation RefundBranchPickupOrder($input: RefundInput!) {
+      refundCreate(input: $input) {
+        refund { id }
+        userErrors { field message }
+      }
+    }`,
+    {
+      variables: {
+        input: {
+          orderId: shopifyOrderId,
+          note: notePrefix || "Reembolso por pedido no recogido en sucursal",
+          notify: false,
+          refundLineItems,
+          transactions: [
+            {
+              orderId: shopifyOrderId,
+              kind: "REFUND",
+              gateway: parentTransaction.gateway,
+              parentId: parentTransaction.id,
+              amount: Number(finalRefund).toFixed(2),
+            },
+          ],
+        },
+      },
+    },
+  );
+  const payload = await response.json();
+  const topErrors = payload?.errors || [];
+  const userErrors = payload?.data?.refundCreate?.userErrors || [];
+  if (topErrors.length || userErrors.length) {
+    throw new Error(topErrors[0]?.message || userErrors[0]?.message || "No se pudo procesar el reembolso.");
+  }
+  return {
+    refundId: String(payload?.data?.refundCreate?.refund?.id || ""),
+    finalRefund,
+    currencyCode: snapshot.currencyCode || "MXN",
+  };
+}
+
+async function fetchBranchPickupOrderForDeadline(admin, shopifyOrderId) {
+  const response = await admin.graphql(
+    `#graphql
+    query BranchPickupOrderForDeadline($id: ID!) {
+      order(id: $id) {
+        id
+        name
+        createdAt
+        updatedAt
+        displayFulfillmentStatus
+        tags
+        customAttributes {
+          key
+          value
+        }
+        shippingLines(first: 5) {
+          nodes {
+            title
+            code
+            deliveryCategory
+          }
+        }
+      }
+    }`,
+    { variables: { id: shopifyOrderId } },
+  );
+  const payload = await response.json();
+  const errors = payload?.errors || [];
+  if (errors.length) throw new Error(errors[0]?.message || "No se pudo consultar la orden en Shopify.");
+  return payload?.data?.order || null;
 }
 
 export const loader = async ({ request }) => {
@@ -2408,6 +2557,73 @@ export const action = async ({ request }) => {
       message: `Pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} marcado como entregado.`,
       deliveredRequestId: requestId,
     };
+  }
+
+  if (intent === "branch_pickup_refund_expired") {
+    const requestId = String(formData.get("requestId") || "").trim();
+    const orderNumber = String(formData.get("orderNumber") || "").trim();
+    const displayedDeadline = String(formData.get("deadline") || "").trim();
+    if (!requestId) return { ok: false, error: "Accion no valida." };
+
+    try {
+      const branchOrder = await fetchBranchPickupOrderForDeadline(admin, requestId);
+      if (!branchOrder || !isCourierLocalDeliveryOrder(branchOrder)) {
+        return { ok: false, error: "No se encontro la orden para recoger en sucursal.", requestId };
+      }
+      const branchOrderStatus = getCourierRouteStatusFromTags(branchOrder.tags);
+      if (branchOrderStatus !== "recoger_en_sucursal") {
+        return { ok: false, error: "Esta orden ya no esta pendiente por recoger en sucursal.", requestId };
+      }
+      const displayedScheduledDate = getInitialCourierScheduledDate(branchOrder);
+      if (!isBranchPickupDeadlineExpired(branchOrder, displayedScheduledDate)) {
+        return { ok: false, error: "Aun no vence la fecha limite para reembolsar esta orden.", requestId };
+      }
+
+      const refundResult = await refundShopifyOrderToOriginalPayment({
+        admin,
+        shopifyOrderId: requestId,
+        notePrefix: `Reembolso pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} no recogido en sucursal`,
+      });
+      await replaceShopifyOrderCourierStatusTag(admin, requestId, "reembolsada");
+
+      const latestCourierActivity = await prisma.courierActivity.findFirst({
+        where: {
+          shop: session.shop,
+          requestId,
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: {
+          courierId: true,
+          courierName: true,
+          routeId: true,
+        },
+      });
+      await prisma.courierActivity.create({
+        data: {
+          shop: session.shop,
+          courierId: Number(latestCourierActivity?.courierId || 0),
+          courierName: String(latestCourierActivity?.courierName || "Administrador").trim(),
+          requestId,
+          orderNumber: orderNumber || null,
+          action: "courier_branch_pickup_refunded",
+          routeId: String(latestCourierActivity?.routeId || "") || null,
+        },
+      });
+
+      return {
+        ok: true,
+        message: `Pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} reembolsado por ${toMoney(refundResult.finalRefund)} ${refundResult.currencyCode || "MXN"}.`,
+        refundedBranchPickupRequestId: requestId,
+        deadline: displayedDeadline,
+        shopifyRefundId: refundResult.refundId,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: String(error?.message || error || "No se pudo procesar el reembolso."),
+        requestId,
+      };
+    }
   }
 
   if (intent === "plan_courier_routes") {
@@ -3204,6 +3420,9 @@ async function fetchCourierOrders(admin) {
             updatedAt
             displayFulfillmentStatus
             tags
+            currentTotalPriceSet {
+              shopMoney { amount currencyCode }
+            }
             shippingAddress {
               name
               phone
@@ -3259,6 +3478,8 @@ async function fetchCourierOrders(admin) {
         orderNumber: String(orderNode.name || "").replace("#", ""),
         customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
         customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
+        estimatedRefund: Number(orderNode.currentTotalPriceSet?.shopMoney?.amount || 0),
+        currencyCode: String(orderNode.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
         pickupDate: getInitialCourierScheduledDate(orderNode),
         pickupAddress: String(shipping?.address1 || "").trim(),
         pickupNeighborhood: String(shipping?.address2 || "").trim(),
@@ -3287,6 +3508,9 @@ async function fetchBranchPickupCourierOrders(admin) {
             updatedAt
             displayFulfillmentStatus
             tags
+            currentTotalPriceSet {
+              shopMoney { amount currencyCode }
+            }
             shippingAddress {
               name
               phone
@@ -3342,6 +3566,8 @@ async function fetchBranchPickupCourierOrders(admin) {
         orderNumber: String(orderNode.name || "").replace("#", ""),
         customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
         customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
+        estimatedRefund: Number(orderNode.currentTotalPriceSet?.shopMoney?.amount || 0),
+        currencyCode: String(orderNode.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
         pickupDate: getInitialCourierScheduledDate(orderNode),
         pickupAddress: String(shipping?.address1 || "").trim(),
         pickupNeighborhood: String(shipping?.address2 || "").trim(),
@@ -3411,7 +3637,7 @@ async function fetchCourierHistoryOrders(admin) {
     .filter(
       (orderNode) =>
         isCourierLocalDeliveryOrder(orderNode) &&
-        getCourierRouteStatusFromTags(orderNode?.tags) === "entregado" &&
+        ["entregado", "reembolsada"].includes(getCourierRouteStatusFromTags(orderNode?.tags)) &&
         new Date(orderNode.updatedAt || orderNode.createdAt).getTime() >= COURIER_HISTORY_SINCE.getTime(),
     )
     .map((orderNode) => {
@@ -3431,7 +3657,7 @@ async function fetchCourierHistoryOrders(admin) {
         pickupCountry: String(shipping?.country || "Mexico").trim() || "Mexico",
         createdAt: orderNode.createdAt,
         updatedAt: orderNode.updatedAt || orderNode.createdAt,
-        status: "entregado",
+        status: getCourierRouteStatusFromTags(orderNode.tags),
       };
     });
 }
@@ -3593,6 +3819,20 @@ function formatBranchPickupDeadlineDate(request, displayedScheduledDate) {
   return formatCourierScheduledDate(deadlineDate.toISOString());
 }
 
+function branchPickupDeadlineDateValue(request, displayedScheduledDate) {
+  const sourceDate = branchPickupDeadlineSourceDate(request, displayedScheduledDate);
+  if (!sourceDate) return null;
+  const deadlineDate = new Date(sourceDate);
+  deadlineDate.setDate(deadlineDate.getDate() + 30);
+  deadlineDate.setHours(23, 59, 59, 999);
+  return deadlineDate;
+}
+
+function isBranchPickupDeadlineExpired(request, displayedScheduledDate) {
+  const deadlineDate = branchPickupDeadlineDateValue(request, displayedScheduledDate);
+  return Boolean(deadlineDate) && Date.now() > deadlineDate.getTime();
+}
+
 function formatCourierAddress(request) {
   const parts = [
     request?.pickupAddress,
@@ -3636,6 +3876,7 @@ export default function ReturnsRequests() {
   const [selectedCourierIds, setSelectedCourierIds] = useState([]);
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
+  const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
   const canConfirmCourierRoutePlan =
     selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
@@ -3651,6 +3892,9 @@ export default function ReturnsRequests() {
     if (actionData?.ok && actionData?.deliveredRequestId) {
       setBranchPickupDeliveryRequest(null);
       setBranchPickupDeliveryCode("");
+    }
+    if (actionData?.ok && actionData?.refundedBranchPickupRequestId) {
+      setBranchPickupRefundRequest(null);
     }
   }, [actionData, courierRouteActionData]);
 
@@ -4073,6 +4317,9 @@ export default function ReturnsRequests() {
                     setBranchPickupDeliveryRequest(selectedRequest);
                     setBranchPickupDeliveryCode("");
                   }}
+                  onBranchPickupRefund={(selectedRequest) => {
+                    setBranchPickupRefundRequest(selectedRequest);
+                  }}
                 />
               ))}
             </div>
@@ -4144,6 +4391,55 @@ export default function ReturnsRequests() {
         </div>
       ) : null}
 
+      {viewMode === VIEW_MODE.BRANCH_PICKUP && branchPickupRefundRequest ? (
+        <div className={styles.reasonModalOverlay} role="dialog" aria-modal="true" aria-label="Confirmar reembolso">
+          <section className={`${styles.reasonModal} ${styles.deliveryCodeAdminModal}`}>
+            <p className={styles.reasonModalTitle}>Confirmar reembolso</p>
+            <p className={styles.deliveryCodeDescription}>
+              El pedido #{branchPickupRefundRequest.orderNumber} venció para recoger en sucursal.
+            </p>
+            <p className={styles.branchPickupRefundAmount}>
+              Monto a reembolsar:{" "}
+              <strong>
+                ${toMoney(branchPickupRefundRequest.estimatedRefund || 0)}{" "}
+                {branchPickupRefundRequest.currencyCode || "MXN"}
+              </strong>
+            </p>
+            <Form method="post" className={styles.deliveryCodeForm}>
+              <input type="hidden" name="intent" value="branch_pickup_refund_expired" />
+              <input type="hidden" name="requestId" value={String(branchPickupRefundRequest.id || "")} />
+              <input type="hidden" name="orderNumber" value={String(branchPickupRefundRequest.orderNumber || "")} />
+              <input
+                type="hidden"
+                name="deadline"
+                value={String(branchPickupRefundRequest.branchPickupDeadlineLabel || "")}
+              />
+              <div className={styles.reasonModalActions}>
+                <button
+                  className={styles.btn}
+                  type="button"
+                  onClick={() => setBranchPickupRefundRequest(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className={`${styles.btn} ${styles.btnDanger}`}
+                  type="submit"
+                  disabled={isSubmitting}
+                  onClick={(event) => {
+                    if (!window.confirm(`¿Confirmas reembolsar el pedido #${branchPickupRefundRequest.orderNumber} al metodo de pago original?`)) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  Confirmar reembolso
+                </button>
+              </div>
+            </Form>
+          </section>
+        </div>
+      ) : null}
+
       {viewMode === VIEW_MODE.COURIERS ? (
         <CouriersSection couriers={couriers} isSubmitting={isSubmitting} />
       ) : null}
@@ -4163,7 +4459,7 @@ function mexicoActivityDateKey(value) {
 function courierHistoryOrderLocation(order) {
   const status = String(order?.status || "").trim().toLowerCase();
   if (status === "recoger_en_sucursal") return "Recoger en sucursal";
-  if (["entregado", "recibido", "recibida"].includes(status)) return "Historial repartidor";
+  if (["entregado", "recibido", "recibida", "reembolsada"].includes(status)) return "Historial repartidor";
   if (
     isReturnCourierLabel(order?.courierLabel) &&
     status === "rechazada" &&
@@ -4192,7 +4488,7 @@ function courierHistoryOrderUpdatedMs(order) {
 
 function isCourierCompletedHistoryOrder(order) {
   const status = String(order?.status || "").trim().toLowerCase();
-  if (["entregado", "recibido", "recibida"].includes(status)) return true;
+  if (["entregado", "recibido", "recibida", "reembolsada"].includes(status)) return true;
   return (
     isReturnCourierLabel(order?.courierLabel) &&
     status === "rechazada" &&
@@ -4486,7 +4782,7 @@ async function plannedCourierRouteSummary(shop, courierIds) {
 function isCourierBranchReturnOrder(order, routeAction = "") {
   const normalizedAction = String(routeAction || "").trim().toLowerCase();
   const status = String(order?.status || order?.currentStatus || "").trim().toLowerCase();
-  if (!isReturnCourierLabel(order?.courierLabel) && ["entregado", "recibido", "recibida"].includes(status)) {
+  if (!isReturnCourierLabel(order?.courierLabel) && ["entregado", "recibido", "recibida", "reembolsada"].includes(status)) {
     return false;
   }
   if (normalizedAction) {
@@ -5246,6 +5542,7 @@ function CourierOrderCard({
   branchPickupView = false,
   isSubmitting = false,
   onBranchPickupDeliver = null,
+  onBranchPickupRefund = null,
 }) {
   const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
   const visibleStatus = statusOverride || request.status;
@@ -5331,6 +5628,10 @@ function CourierOrderCard({
   const scheduledFieldValue = branchPickupView
     ? formatBranchPickupDeadlineDate(request, displayedScheduledDate)
     : formatCourierScheduledDate(displayedScheduledDate);
+  const isBranchPickupExpired = branchPickupView && isBranchPickupDeadlineExpired(request, displayedScheduledDate);
+  const branchPickupActionRequest = branchPickupView
+    ? { ...request, branchPickupDeadlineLabel: scheduledFieldValue }
+    : request;
   const attemptBadgeClass = ["no_entregado", "rechazada", "no_recibido"].includes(normalizedVisibleStatus)
     ? courierHistoryView
       ? styles.courierBadgeStatusHistoryWarning
@@ -5340,7 +5641,7 @@ function CourierOrderCard({
     : styles.courierBadgeAttempt;
   const statusBadgeClass = courierHistoryView && normalizedVisibleStatus === "pendiente"
     ? styles.courierBadgeStatusPending
-    : ["entregado", "recibido", "recibida"].includes(normalizedVisibleStatus)
+    : ["entregado", "recibido", "recibida", "reembolsada"].includes(normalizedVisibleStatus)
       ? styles.courierBadgeStatusSuccess
     : courierHistoryView && isCourierHistoryReprogrammed && isRouteTimeReprogrammed
       ? styles.courierBadgeStatusTimeReprogrammed
@@ -5411,12 +5712,18 @@ function CourierOrderCard({
         <div className={styles.branchPickupPhoneRow}>
           <p className={styles.courierField}>{request.customerPhone || "-"}</p>
           <button
-            className={`${styles.btn} ${styles.btnSuccess} ${styles.branchPickupDeliverButton}`}
+            className={`${styles.btn} ${
+              isBranchPickupExpired ? styles.btnDanger : styles.btnSuccess
+            } ${styles.branchPickupDeliverButton}`}
             type="button"
             disabled={isSubmitting}
-            onClick={() => onBranchPickupDeliver?.(request)}
+            onClick={() =>
+              isBranchPickupExpired
+                ? onBranchPickupRefund?.(branchPickupActionRequest)
+                : onBranchPickupDeliver?.(branchPickupActionRequest)
+            }
           >
-            Entregar
+            {isBranchPickupExpired ? "Reembolsar" : "Entregar"}
           </button>
         </div>
       ) : (

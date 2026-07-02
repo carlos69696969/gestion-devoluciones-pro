@@ -92,6 +92,7 @@ export function isCourierHistoryStatus(status) {
     "intento_fallido_2",
     "intento_fallido_3",
     "rechazada",
+    "reembolsada",
   ].includes(normalized);
 }
 
@@ -137,6 +138,7 @@ export function getCourierRouteStatusFromTags(tags) {
   const normalizedTags = new Set((Array.isArray(tags) ? tags : []).map(normalizeCourierTag));
   const attemptCount = getCourierDeliveryAttemptCountFromTags(tags);
   if (normalizedTags.has("recoger en sucursal")) return "recoger_en_sucursal";
+  if (normalizedTags.has("reembolsada")) return "reembolsada";
   if (normalizedTags.has("no entregado")) {
     return attemptCount >= 3 ? "recoger_en_sucursal" : "no_entregado";
   }
