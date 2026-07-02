@@ -4778,11 +4778,24 @@ function courierHistoryOrderLocation(order) {
 
 function courierHistoryOrderUpdatedMs(order) {
   const historyEventMs = (order?.historyEvents || []).reduce(
-    (latestMs, event) => Math.max(latestMs, parseEventMs(event?.at)),
+    (latestMs, event) => Math.max(latestMs, parseEventMs(event?.at || event?.createdAt)),
+    0,
+  );
+  const branchPickupHistoryEventMs = [
+    ...(Array.isArray(order?.branchPickupHistoryEvents) ? order.branchPickupHistoryEvents : []),
+    ...(Array.isArray(order?.unfilteredHistoryEvents) ? order.unfilteredHistoryEvents : []),
+  ].reduce((latestMs, event) => Math.max(latestMs, parseEventMs(event?.at || event?.createdAt)), 0);
+  const courierActivityMs = (order?.courierActivities || []).reduce(
+    (latestMs, activity) => Math.max(latestMs, parseEventMs(activity?.createdAt)),
     0,
   );
   return Math.max(
     historyEventMs,
+    branchPickupHistoryEventMs,
+    courierActivityMs,
+    parseEventMs(order?.refundedAt),
+    parseEventMs(order?.finishedAt),
+    parseEventMs(order?.courierHistoryAt),
     parseEventMs(order?.updatedAt),
     parseEventMs(order?.createdAt),
     courierOrderTimestampMs(order),
@@ -6041,13 +6054,15 @@ function CourierOrderCard({
           <span className={`${styles.courierBadgeStatus} ${statusBadgeClass}`}>
             {isAdminReprogrammed ? displayStatus : courierHistoryStatusLabel(displayStatus)}
           </span>
-          {branchPickupFinalStatus ? (
-            <span className={`${styles.courierBadgeStatus} ${styles.courierBadgeStatusSuccess}`}>
-              {branchPickupFinalStatus}
-            </span>
-          ) : null}
         </div>
       </div>
+      {branchPickupFinalStatus ? (
+        <div className={styles.courierFinalStatusRow}>
+          <span className={`${styles.courierBadgeStatus} ${styles.courierBadgeStatusSuccess}`}>
+            {branchPickupFinalStatus}
+          </span>
+        </div>
+      ) : null}
       <h3 className={styles.courierOrderNumber}>#{request.orderNumber}</h3>
       <p className={styles.courierCustomerName}>{request.customerName}</p>
       <p className={styles.courierField}>

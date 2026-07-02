@@ -881,6 +881,12 @@
   flex-wrap: wrap;
 }
 
+.courierFinalStatusRow {
+  display: flex;
+  justify-content: flex-end;
+  margin: 4px 0 0;
+}
+
 .courierBadgeAttempt {
   background: #eff6ff;
   border-color: #bfdbfe;
