@@ -3,7 +3,10 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { fetchCourierOrdersForShop } from "../utils/courier.server";
+import {
+  fetchBranchPickupCourierOrdersForShop,
+  fetchCourierOrdersForShop,
+} from "../utils/courier.server";
 
 const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
@@ -79,7 +82,6 @@ export const loader = async ({ request }) => {
 
   const uniqueRequests = {
     pickup: new Set(),
-    courier: new Set(),
     branch: new Set(),
     review: new Set(),
     refunds: new Set(),
@@ -102,7 +104,6 @@ export const loader = async ({ request }) => {
       if (isPickupRequest) {
         const requestKey = `request:${row.id}`;
         uniqueRequests.pickup.add(requestKey);
-        uniqueRequests.courier.add(requestKey);
       } else {
         uniqueRequests.branch.add(signature);
       }
@@ -119,7 +120,16 @@ export const loader = async ({ request }) => {
     console.error("No se pudieron contar las entregas del repartidor", error);
     return [];
   });
-  navCounts.courier += deliveryCourierOrders.length;
+  navCounts.courier = deliveryCourierOrders.length;
+
+  const branchPickupCourierOrders = await fetchBranchPickupCourierOrdersForShop({
+    shop: session.shop,
+    sessionCandidates: [session],
+  }).catch((error) => {
+    console.error("No se pudieron contar las ordenes para recoger en sucursal", error);
+    return [];
+  });
+  navCounts.branchPickup = branchPickupCourierOrders.length;
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "", navCounts, shop: session.shop };
@@ -164,7 +174,9 @@ export default function App() {
           {withCount("Ordenes repartidor", navCounts?.courier || 0)}
         </s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/courier_history")}>Historial repartidor</s-link>
-        <s-link href={withEmbedParams("/app/devoluciones/solicitudes/branch_pickup")}>Recoger en sucursal</s-link>
+        <s-link href={withEmbedParams("/app/devoluciones/solicitudes/branch_pickup")}>
+          {withCount("Recoger en sucursal", navCounts?.branchPickup || 0)}
+        </s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/couriers")}>Repartidores</s-link>
       </s-app-nav>
       <Outlet />

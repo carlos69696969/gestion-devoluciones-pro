@@ -2390,6 +2390,49 @@ export async function fetchCourierOrdersForShop({ shop, sessionCandidates }) {
   return [];
 }
 
+export async function fetchBranchPickupCourierOrdersForShop({ shop, sessionCandidates }) {
+  const candidates = Array.isArray(sessionCandidates) ? sessionCandidates : [];
+  let lastError = null;
+  const courierOrdersById = new Map();
+
+  for (const sessionCandidate of candidates) {
+    try {
+      const accessToken = String(sessionCandidate?.accessToken || "").trim();
+      if (!accessToken) continue;
+      const nodes = await fetchCourierOrdersByQuery({
+        shop,
+        accessToken,
+        queryString: "tag:'recoger en sucursal'",
+      });
+      const courierOrders = await Promise.all(
+        nodes
+          .filter((orderNode) => {
+            const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
+            const courierStatus = getCourierRouteStatusFromTags(orderNode?.tags);
+            return (
+              isCourierLocalDeliveryOrder(orderNode) &&
+              !["FULFILLED", "RESTOCKED"].includes(fulfillmentStatus) &&
+              courierStatus === "recoger_en_sucursal"
+            );
+          })
+          .map((orderNode) => mapShopifyOrderNodeToCourierOrder({ shop, orderNode })),
+      );
+      for (const courierOrder of courierOrders) {
+        const orderId = String(courierOrder?.id || "").trim();
+        if (orderId) courierOrdersById.set(orderId, courierOrder);
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (courierOrdersById.size > 0) {
+    return Array.from(courierOrdersById.values());
+  }
+  if (lastError) throw lastError;
+  return [];
+}
+
 export async function fetchPickupCourierOrders(shop, routeRequestIds = []) {
   if (!shop) return [];
 
