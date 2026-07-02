@@ -929,6 +929,61 @@
   color: #b45309;
 }
 
+.branchPickupTestHeader {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 10px;
+}
+
+.branchPickupTestSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+}
+
+.branchPickupTestSwitch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.branchPickupTestSlider {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #e5e7eb;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.branchPickupTestSlider::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  transition: transform 0.18s ease;
+}
+
+.branchPickupTestSwitch input:checked + .branchPickupTestSlider {
+  border-color: #005bd3;
+  background: #005bd3;
+}
+
+.branchPickupTestSwitch input:checked + .branchPickupTestSlider::after {
+  transform: translateX(18px);
+}
+
 .branchPickupDeliverButton {
   padding: 7px 14px;
   font-size: 13px;
