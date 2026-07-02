@@ -65,6 +65,7 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail, sessionT
           ...fallback,
           limitDate: fallback?.limitDate || primary?.limitDate || "",
           isDelivered: Boolean(fallback?.isDelivered || primary?.isDelivered),
+          isBranchPickup: Boolean(fallback?.isBranchPickup || primary?.isBranchPickup),
           hasEligibleItems:
             typeof fallback?.hasEligibleItems === "boolean"
               ? fallback.hasEligibleItems
@@ -84,6 +85,7 @@ async function getEligibility({ shopDomain, orderNumber, customerEmail, sessionT
       hasConfirmedReturns: hasConfirmedReturnsFromProbe,
       limitDate: effective?.limitDate || "",
       isDelivered: Boolean(effective?.isDelivered),
+      isBranchPickup: Boolean(effective?.isBranchPickup),
       deliveryCode: String(primary?.deliveryCode || effective?.deliveryCode || "").trim(),
       latestOrderNotification:
         primary?.latestOrderNotification ||
@@ -282,7 +284,8 @@ export default function extension() {
         latestOrderMessageBlock.parentNode.removeChild(latestOrderMessageBlock);
       }
       if (deliveryCode) {
-        deliveryCodeDescription.textContent = isThirdDeliveryAttemptNotification(latestOrderNotification)
+        deliveryCodeDescription.textContent =
+          Boolean(eligibility?.isBranchPickup) || isThirdDeliveryAttemptNotification(latestOrderNotification)
           ? "Entrega esta clave en sucursal para recibir tu pedido."
           : "Entrega esta clave al repartidor para recibir tu pedido.";
         renderDeliveryCode(deliveryCode);

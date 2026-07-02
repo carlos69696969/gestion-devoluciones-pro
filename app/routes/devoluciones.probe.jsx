@@ -82,6 +82,11 @@ function isRefundedDeliveryOrder(orderNode) {
   return tags.some((tag) => String(tag || "").trim().toLowerCase() === "reembolsada");
 }
 
+function isBranchPickupDeliveryOrder(orderNode) {
+  const tags = Array.isArray(orderNode?.tags) ? orderNode.tags : [];
+  return tags.some((tag) => String(tag || "").trim().toLowerCase() === "recoger en sucursal");
+}
+
 async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
   const response = await fetch(`https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
     method: "POST",
@@ -139,7 +144,7 @@ async function resolveDeliveryStatus({ prisma, requestedShop, orderNumber, custo
     allSessions.some((session) => String(session.shop || "").trim().toLowerCase() === candidate),
   );
   if (preferredShops.length && !preferredHasSession) {
-    return { isDelivered: false, isRefunded: false, limitDate: "", shop: "", shopifyOrderId: "" };
+    return { isDelivered: false, isRefunded: false, isBranchPickup: false, limitDate: "", shop: "", shopifyOrderId: "" };
   }
   const candidateShops = preferredShops.length
     ? preferredShops
@@ -206,13 +211,14 @@ async function resolveDeliveryStatus({ prisma, requestedShop, orderNumber, custo
     return {
       isDelivered: Boolean(deliveredAt),
       isRefunded: isRefundedDeliveryOrder(match),
+      isBranchPickup: isBranchPickupDeliveryOrder(match),
       limitDate: limitDate ? limitDate.toISOString() : "",
       shop: shopCandidate,
       shopifyOrderId: String(match?.id || "").trim(),
     };
   }
 
-  return { isDelivered: false, isRefunded: false, limitDate: "", shop: "", shopifyOrderId: "" };
+  return { isDelivered: false, isRefunded: false, isBranchPickup: false, limitDate: "", shop: "", shopifyOrderId: "" };
 }
 
 async function resolveDeliveryCode({ prisma, delivery, orderNumber, canDisplayCode }) {
@@ -332,7 +338,7 @@ export const loader = async ({ request }) => {
   const effectiveShop = authenticatedShop || shop;
 
   if (!orderNumber) {
-    return jsonWithCors({ hasExistingReturns: false, isDelivered: false, isRefunded: false, limitDate: "" });
+    return jsonWithCors({ hasExistingReturns: false, isDelivered: false, isRefunded: false, isBranchPickup: false, limitDate: "" });
   }
 
   const baseWhere = {
@@ -391,6 +397,7 @@ export const loader = async ({ request }) => {
     hasExistingReturns,
     isDelivered: Boolean(delivery?.isDelivered),
     isRefunded: Boolean(delivery?.isRefunded),
+    isBranchPickup: Boolean(delivery?.isBranchPickup),
     limitDate: String(delivery?.limitDate || ""),
     deliveryCode,
     latestOrderNotification,
