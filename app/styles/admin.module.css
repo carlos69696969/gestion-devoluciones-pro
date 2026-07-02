@@ -776,6 +776,12 @@
   box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
 }
 
+.courierCardCompactHistory {
+  position: relative;
+  padding: 10px 14px 8px;
+  gap: 2px;
+}
+
 .courierCardDelivery {
   border-left-color: #047857;
 }
@@ -885,6 +891,22 @@
   display: flex;
   justify-content: flex-end;
   margin: 4px 0 0;
+}
+
+.courierCardCompactHistory .courierFinalStatusRow {
+  position: absolute;
+  top: 42px;
+  right: 14px;
+  margin: 0;
+}
+
+.courierCardCompactHistory .courierOrderNumber {
+  margin-top: 6px;
+}
+
+.courierCardCompactHistory .courierHistoryDetails {
+  margin-top: 2px;
+  padding-top: 6px;
 }
 
 .courierBadgeAttempt {

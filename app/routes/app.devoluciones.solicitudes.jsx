@@ -6043,7 +6043,7 @@ function CourierOrderCard({
     <article
       className={`${styles.courierCard} ${
         isReturnCourierLabel(request.courierLabel) ? styles.courierCardReturn : styles.courierCardDelivery
-      }`}
+      } ${courierHistoryView ? styles.courierCardCompactHistory : ""}`}
     >
       <div className={styles.courierHeader}>
         <div className={styles.courierOrderBadgeGroup}>
