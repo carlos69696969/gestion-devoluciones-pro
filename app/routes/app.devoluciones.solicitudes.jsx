@@ -286,6 +286,92 @@ async function emitOrderStatusNotification({ shopDomain, requestRow, status, not
   }
 }
 
+function buildBranchPickupRefundNotificationCopy(orderNumber) {
+  const cleanOrderNumber = String(orderNumber || "").replace(/^#/, "").trim() || "****";
+  return {
+    title: "Reembolso procesado ✅",
+    message: `💰 El reembolso de tu pedido #${cleanOrderNumber} ya fue procesado, debido a que venció el plazo de 30 días para recoger tu pedido en nuestra sucursal. El reembolso se verá reflejado en tu cuenta en un plazo de 5 a 10 días hábiles, dependiendo de los tiempos de procesamiento de tu banco.\n\n¡Te agradecemos por confiar en Cariana! ✨`,
+  };
+}
+
+async function emitBranchPickupRefundNotification({ shopDomain, requestId, orderNumber }) {
+  if (!shopDomain || !requestId || !NOTIFICATIONS_API_BASE_URL) {
+    return;
+  }
+  const copy = buildBranchPickupRefundNotificationCopy(orderNumber);
+  const endpoints = NOTIFICATIONS_API_KEY
+    ? [
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/api/orders/manual-status`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+            "x-api-key": NOTIFICATIONS_API_KEY,
+          },
+        },
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/proxy/orders/manual-status`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+          },
+        },
+      ]
+    : [
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/proxy/orders/manual-status`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+          },
+        },
+      ];
+
+  let lastFailure = null;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint.url, {
+        method: "POST",
+        headers: endpoint.headers,
+        body: JSON.stringify({
+          shopDomain,
+          orderId: requestId,
+          orderNumber,
+          status: "refund_processed",
+          title: copy.title,
+          message: copy.message,
+        }),
+      });
+      const responsePayload = await response.json().catch(() => null);
+      if (response.ok && !responsePayload?.result?.skipped) {
+        return;
+      }
+      lastFailure = {
+        endpoint: endpoint.url,
+        status: response.status,
+        detail: String(
+          responsePayload?.error ||
+            responsePayload?.detail ||
+            responsePayload?.result?.reason ||
+            "No se pudo enviar la notificacion de reembolso.",
+        ).slice(0, 300),
+      };
+    } catch (error) {
+      lastFailure = {
+        endpoint: endpoint.url,
+        error: String(error?.message || error || "unknown"),
+      };
+    }
+  }
+
+  console.error("Failed to emit branch pickup refund notification", {
+    shopDomain,
+    orderNumber,
+    requestId,
+    ...lastFailure,
+  });
+}
+
 const PICKUP_FAILED_REASON_OPTIONS = [
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨",
   "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
@@ -2589,6 +2675,11 @@ export const action = async ({ request }) => {
         notePrefix: `Reembolso pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} no recogido en sucursal`,
       });
       await replaceShopifyOrderCourierStatusTag(admin, requestId, "reembolsada");
+      await emitBranchPickupRefundNotification({
+        shopDomain: session.shop,
+        requestId,
+        orderNumber,
+      });
 
       const latestCourierActivity = await prisma.courierActivity.findFirst({
         where: {
