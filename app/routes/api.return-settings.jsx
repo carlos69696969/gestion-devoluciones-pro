@@ -1,7 +1,11 @@
 import prisma from "../db.server";
 
-const INTERNAL_API_KEY =
-  process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "";
+const INTERNAL_API_KEYS = [
+  process.env.NOTIFICATIONS_API_KEY,
+  process.env.APP_INTERNAL_API_KEY,
+]
+  .map(normalize)
+  .filter(Boolean);
 
 function jsonWithCors(data, status = 200) {
   return Response.json(data, {
@@ -30,8 +34,9 @@ function resolveShop(request) {
 }
 
 function isAuthorized(request) {
-  if (!INTERNAL_API_KEY) return false;
-  return normalize(request.headers.get("x-api-key")) === INTERNAL_API_KEY;
+  const requestApiKey = normalize(request.headers.get("x-api-key"));
+  if (!INTERNAL_API_KEYS.length || !requestApiKey) return false;
+  return INTERNAL_API_KEYS.includes(requestApiKey);
 }
 
 export const loader = async ({ request }) => {
