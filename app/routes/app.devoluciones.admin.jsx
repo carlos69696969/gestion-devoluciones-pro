@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -322,8 +323,20 @@ export default function ReturnsAdmin() {
   const maintenance = actionData?.maintenance || initialMaintenance;
   const maintenanceInputs = maintenance?.inputs || initialMaintenance?.inputs || {};
   const maintenancePreview = maintenance?.preview || initialMaintenance?.preview || {};
-  const feedback = actionData?.message || actionData?.error || "";
-  const feedbackClassName = actionData?.ok ? styles.successMsg : styles.errorMsg;
+  const maintenanceFeedback =
+    actionData?.intent && actionData.intent !== "update_settings" ? actionData?.message || actionData?.error || "" : "";
+  const maintenanceFeedbackClassName = actionData?.ok ? styles.successMsg : styles.errorMsg;
+  const settingsFeedback =
+    actionData?.intent === "update_settings" ? actionData?.message || actionData?.error || "" : "";
+  const settingsFeedbackClassName = actionData?.ok ? styles.successMsg : styles.errorMsg;
+  const [visibleSettingsFeedback, setVisibleSettingsFeedback] = useState("");
+
+  useEffect(() => {
+    if (!settingsFeedback) return;
+    setVisibleSettingsFeedback(settingsFeedback);
+    const timeoutId = window.setTimeout(() => setVisibleSettingsFeedback(""), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [settingsFeedback]);
 
   return (
     <s-page heading="Panel admin de devoluciones">
@@ -419,6 +432,11 @@ export default function ReturnsAdmin() {
                   Guardar configuracion
                 </button>
               </div>
+              {visibleSettingsFeedback ? (
+                <p className={settingsFeedbackClassName} role="status" aria-live="polite">
+                  {visibleSettingsFeedback}
+                </p>
+              ) : null}
             </div>
           </div>
         </Form>
@@ -514,7 +532,7 @@ export default function ReturnsAdmin() {
               </div>
             </Form>
 
-            {feedback ? <p className={feedbackClassName}>{feedback}</p> : null}
+            {maintenanceFeedback ? <p className={maintenanceFeedbackClassName}>{maintenanceFeedback}</p> : null}
           </div>
         </div>
       </s-section>
