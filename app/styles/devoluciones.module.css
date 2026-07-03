@@ -490,6 +490,31 @@
   box-shadow: 0 0 0 3px rgba(0, 91, 211, 0.24);
 }
 
+@media (max-width: 520px) {
+  .container {
+    padding: 8px 6px 44px;
+  }
+
+  .card {
+    padding: 8px;
+  }
+
+  .completedGrid {
+    gap: 8px;
+  }
+
+  .completedCard {
+    padding: 8px;
+  }
+
+  .statusTimelineCurrent,
+  .summary {
+    margin-left: -2px;
+    margin-right: -2px;
+    padding: 8px;
+  }
+}
+
 .statusTimelineList {
   margin-top: 8px;
   border: 1px solid var(--border);
