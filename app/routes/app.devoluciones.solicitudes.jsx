@@ -2320,7 +2320,7 @@ export const loader = async ({ request }) => {
   const shouldLoadCourierHistoryOrders =
     viewMode === VIEW_MODE.COURIER_HISTORY &&
     (requestedHistoryView === "all" ||
-      (requestedHistoryView === "courier_day" && !requestedHistoryRouteId) ||
+      requestedHistoryView === "courier_day" ||
       (Boolean(requestedHistoryDate) && !requestedHistoryRouteId));
   const where = buildViewWhere(session.shop, viewMode);
   const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
