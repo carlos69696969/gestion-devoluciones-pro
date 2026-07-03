@@ -31,6 +31,7 @@ const NOTIFICATIONS_API_KEY = String(
   process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "",
 ).trim();
 const COURIER_DUPLICATE_ACTION_WINDOW_MS = 2 * 60 * 1000;
+const BRANCH_PICKUP_DEADLINE_DAYS = 30;
 const STATUS_RECEIVED_KIND = "status_received";
 const PICKUP_FAILED_REASON_FIRST =
   "No logramos completar la recoleccion. Visitamos tu domicilio, pero no obtuvimos respuesta. Nuestro equipo volvera a intentarlo.";
@@ -45,6 +46,18 @@ const RETURN_EVENT_BY_INTENT = {
 
 function normalizeShop(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function addDays(dateValue, days) {
+  const date = new Date(dateValue);
+  if (!Number.isFinite(date.getTime())) return null;
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+function toIsoDateTime(value) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : "";
 }
 
 function returnItemKey(item) {
@@ -1074,6 +1087,12 @@ async function emitCourierDeliveryManualStatusNotification({
     status === "no_entregado" && attemptCount >= 3
       ? notificationSettings
       : { branchAddress: "", branchHours: "", pickupHours: notificationSettings.pickupHours || "" };
+  const branchPickupDeadlineAt =
+    status === "no_entregado" && attemptCount >= 3
+      ? toIsoDateTime(requestRow.branchPickupDeadlineAt || requestRow.pickupDeadlineAt) ||
+        addDays(new Date(), BRANCH_PICKUP_DEADLINE_DAYS)?.toISOString() ||
+        ""
+      : "";
 
   const endpoints = NOTIFICATIONS_API_KEY
     ? [
@@ -1120,6 +1139,7 @@ async function emitCourierDeliveryManualStatusNotification({
           branchAddress: branchDetails.branchAddress || null,
           branchHours: branchDetails.branchHours || null,
           pickupHours: branchDetails.pickupHours || null,
+          branchPickupDeadlineAt: branchPickupDeadlineAt || null,
           rescheduledDate: rescheduledDate || null,
           rescheduledDateLabel: rescheduledDateLabel || null,
           routeStep,
