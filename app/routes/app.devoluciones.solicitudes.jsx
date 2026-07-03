@@ -42,6 +42,8 @@ const COURIER_STATUS_TAGS_FOR_ADMIN = [
   "recoger en sucursal",
   "entregado",
   "reembolsada",
+  "reprogramado",
+  "RPFDT",
 ];
 
 const VIEW_MODE = {

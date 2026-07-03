@@ -488,6 +488,7 @@ const COURIER_STATUS_TAGS = [
   "recoger en sucursal",
   "entregado",
   "reprogramado",
+  "RPFDT",
   "reintentar entrega",
   "intento entrega 1",
   "intento entrega 2",
@@ -509,7 +510,7 @@ function getPreferredCourierStatusTag(tags) {
   if (normalizedTags.has("recoger en sucursal")) return "recoger en sucursal";
   const attemptCount = Math.max(0, Number(getCourierDeliveryAttemptCountFromTags(tags) || 0));
   if (normalizedTags.has("no entregado")) return attemptCount >= 3 ? "recoger en sucursal" : "no entregado";
-  if (normalizedTags.has("reprogramado") || normalizedTags.has("reintentar entrega")) {
+  if (normalizedTags.has("reprogramado") || normalizedTags.has("rpfdt") || normalizedTags.has("reintentar entrega")) {
     return "reprogramado";
   }
   if (normalizedTags.has("en ruta 3")) return "en ruta 3";
@@ -1480,7 +1481,7 @@ export async function reprogramCourierDeliveryForNextRoute({
     await replaceCourierOrderStatusTag({
       shopDomain,
       shopifyOrderId: orderGid,
-      statusTag: "reprogramado",
+      statusTag: "RPFDT",
     });
   } catch (error) {
     return {
