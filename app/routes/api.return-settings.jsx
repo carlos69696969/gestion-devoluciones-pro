@@ -57,7 +57,7 @@ export const loader = async ({ request }) => {
     });
   }
 
-  if (!isAuthorized(request)) {
+  if (request.method !== "GET" && !isAuthorized(request)) {
     return jsonWithCors({ ok: false, error: "No autorizado" }, 401);
   }
 
