@@ -1922,6 +1922,7 @@ export default function RepartidorPublicPortal() {
   const deliveryCodeSubmissionRef = useRef({ requestId: "", started: false });
   const [showBranchReturnConfirmation, setShowBranchReturnConfirmation] = useState(false);
   const [branchReturnConfirmationError, setBranchReturnConfirmationError] = useState("");
+  const [customerNoteRequest, setCustomerNoteRequest] = useState(null);
   useEffect(() => {
     const submission = deliveryCodeSubmissionRef.current;
     if (!submission.requestId) return;
@@ -2561,6 +2562,15 @@ export default function RepartidorPublicPortal() {
                       >
                         {request.courierLabel}
                       </span>
+                      {String(request?.customerNote || "").trim() ? (
+                        <button
+                          type="button"
+                          className={styles.noteBadgeButton}
+                          onClick={() => setCustomerNoteRequest(request)}
+                        >
+                          Nota
+                        </button>
+                      ) : null}
                     </div>
                     <div className={styles.statusGroup}>
                       {!isReturnOrder(request) && getDeliveryAttemptLabel(request, activeTab) ? (
@@ -2814,6 +2824,27 @@ export default function RepartidorPublicPortal() {
             </div>
             <div className={styles.reasonModalActions}>
               <button type="button" className={styles.actionButton} onClick={() => setFailedPickupRequest(null)}>
+                Cerrar
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {customerNoteRequest ? (
+        <div className={styles.modalBackdrop} role="presentation" onClick={() => setCustomerNoteRequest(null)}>
+          <section
+            className={styles.reasonModal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="customer-note-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="customer-note-title" className={styles.reasonModalTitle}>
+              Nota del pedido #{customerNoteRequest.orderNumber}
+            </h2>
+            <p className={styles.customerNoteText}>{customerNoteRequest.customerNote}</p>
+            <div className={styles.reasonModalActions}>
+              <button type="button" className={styles.actionButton} onClick={() => setCustomerNoteRequest(null)}>
                 Cerrar
               </button>
             </div>

@@ -303,6 +303,28 @@
   line-height: 1;
 }
 
+.noteBadgeButton {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid #005bd3;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #005bd3;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.noteBadgeButton:hover {
+  background: #e0ecff;
+  border-color: #004299;
+}
+
 .tabRow {
   display: flex;
   flex-wrap: wrap;
@@ -570,6 +592,17 @@
 .reasonOptionText {
   color: #4b5563;
   line-height: 1.45;
+}
+
+.customerNoteText {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f6f6f7;
+  color: #202223;
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .reasonModalActions {

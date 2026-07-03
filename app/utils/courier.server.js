@@ -2122,6 +2122,7 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
               node {
                 id
                 name
+                note
                 createdAt
                 updatedAt
                 displayFulfillmentStatus
@@ -2188,6 +2189,7 @@ async function fetchCourierOrdersByIds({ shop, accessToken, orderIds }) {
             ... on Order {
               id
               name
+              note
               createdAt
               updatedAt
               displayFulfillmentStatus
@@ -2268,6 +2270,7 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
     customerName: String(shipping?.name || billing?.name || "Cliente").trim(),
     customerEmail: "",
     customerPhone: String(shipping?.phone || billing?.phone || "-").trim() || "-",
+    customerNote: String(orderNode?.note || "").trim(),
     pickupDate: scheduledDate,
     pickupAddress: String(shipping?.address1 || "").trim(),
     pickupNeighborhood: String(shipping?.address2 || "").trim(),
