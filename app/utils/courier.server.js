@@ -158,7 +158,7 @@ async function getReturnNotificationSettings(shopDomain) {
     where: { shop },
     select: { branchAddress: true, branchHours: true, pickupHours: true },
   });
-  const settings = latestSettings || exactSettings;
+  const settings = exactSettings || latestSettings;
 
   return {
     branchAddress: String(settings?.branchAddress || "").trim(),

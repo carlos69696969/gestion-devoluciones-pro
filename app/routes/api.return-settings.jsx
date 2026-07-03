@@ -83,7 +83,7 @@ export const loader = async ({ request }) => {
       pickupHours: true,
     },
   });
-  const settings = latestSettings || exactSettings;
+  const settings = exactSettings || latestSettings;
 
   return jsonWithCors({
     ok: true,

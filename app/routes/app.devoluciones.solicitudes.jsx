@@ -241,7 +241,7 @@ async function emitOrderStatusNotification({ shopDomain, requestRow, status, not
       pickupHours: true,
     },
   });
-  const settings = latestSettings || exactSettings;
+  const settings = exactSettings || latestSettings;
   const endpoint = `${NOTIFICATIONS_API_BASE_URL}/api/orders/manual-status`;
   const headers = {
     "Content-Type": "application/json",
