@@ -455,15 +455,15 @@
 }
 
 .actionButtonSuccess {
-  background: #e3f1df;
-  border-color: #008060;
-  color: #008060;
+  background: #ecfdf3;
+  border-color: #a7f3d0;
+  color: #047857;
 }
 
 .actionButtonSuccess:hover {
-  background: #d1ead0;
-  border-color: #006e52;
-  color: #006e52;
+  background: #ecfdf3;
+  border-color: #a7f3d0;
+  color: #047857;
 }
 
 .actionButtonDanger {
