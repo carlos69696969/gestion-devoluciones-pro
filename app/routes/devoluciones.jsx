@@ -429,6 +429,18 @@ function toMXN(value) {
   return Number(value || 0).toFixed(2);
 }
 
+function formatSummaryDateTime(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "numeric",
+    month: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function normalizeOrderNumber(value) {
   return String(value || "").replace("#", "").trim();
 }
@@ -2058,14 +2070,11 @@ function CompletedReturnSummary({ requestItem }) {
       ) : null}
 
       <div className={styles.summary}>
+        <p><strong>Fecha de solicitud:</strong> {formatSummaryDateTime(requestItem.createdAt)}</p>
         <p><strong>Metodo:</strong> {requestItem.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}</p>
         <p><strong>Subtotal (sin impuestos):</strong> ${toMXN(requestItem.estimatedRefund)} MXN</p>
         <p><strong>Costo devolucion:</strong> ${toMXN(requestItem.returnCost)} MXN</p>
         <p><strong>Reembolso final:</strong> ${toMXN(requestItem.finalRefund)} MXN</p>
-        <p><strong>Fecha de solicitud:</strong> {new Date(requestItem.createdAt).toLocaleString("es-MX")}</p>
-        {requestItem.receivedAt ? (
-          <p><strong>Fecha recibida:</strong> {new Date(requestItem.receivedAt).toLocaleString("es-MX")}</p>
-        ) : null}
         {requestItem.returnedToCustomerAt ? (
           <p><strong>Fecha devuelta al cliente:</strong> {new Date(requestItem.returnedToCustomerAt).toLocaleString("es-MX")}</p>
         ) : null}
