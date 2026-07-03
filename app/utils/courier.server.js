@@ -2278,7 +2278,7 @@ export async function fetchCourierOrdersByToken({ shop, accessToken }) {
         return (
           isCourierLocalDeliveryOrder(orderNode) &&
           !["FULFILLED", "RESTOCKED"].includes(fulfillmentStatus) &&
-          courierStatus !== "recoger_en_sucursal"
+          !["recoger_en_sucursal", "reembolsada", "entregado"].includes(courierStatus)
         );
       })
       .map(async (orderNode) => {
