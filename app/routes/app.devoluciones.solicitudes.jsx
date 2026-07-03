@@ -4163,10 +4163,12 @@ export default function ReturnsRequests() {
   } = useLoaderData();
   const actionData = useActionData();
   const courierRouteFetcher = useFetcher();
+  const branchPickupDeliveryFetcher = useFetcher();
   const branchPickupRefundFetcher = useFetcher();
   const navigation = useNavigation();
   const location = useLocation();
   const isSubmitting = navigation.state === "submitting";
+  const isBranchPickupDeliverySubmitting = branchPickupDeliveryFetcher.state !== "idle";
   const isBranchPickupRefundSubmitting = branchPickupRefundFetcher.state !== "idle";
   const isCourierRouteSubmitting = courierRouteFetcher.state !== "idle";
   const [showCourierRouteModal, setShowCourierRouteModal] = useState(false);
@@ -4179,16 +4181,31 @@ export default function ReturnsRequests() {
   const canConfirmCourierRoutePlan =
     selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
   const courierRouteActionData = courierRouteFetcher.data || null;
+  const branchPickupDeliveryActionData = branchPickupDeliveryFetcher.data || null;
   const branchPickupRefundActionData = branchPickupRefundFetcher.data || null;
-  const pageErrorMessage = branchPickupRefundActionData?.error || courierRouteActionData?.error || actionData?.error || "";
-  const pageSuccessMessage = branchPickupRefundActionData?.message || courierRouteActionData?.message || actionData?.message || "";
+  const pageErrorMessage =
+    branchPickupDeliveryActionData?.error ||
+    branchPickupRefundActionData?.error ||
+    courierRouteActionData?.error ||
+    actionData?.error ||
+    "";
+  const pageSuccessMessage =
+    branchPickupDeliveryActionData?.message ||
+    branchPickupRefundActionData?.message ||
+    courierRouteActionData?.message ||
+    actionData?.message ||
+    "";
+  const [visiblePageSuccessMessage, setVisiblePageSuccessMessage] = useState("");
 
   useEffect(() => {
-    if (actionData?.ok || courierRouteActionData?.ok || branchPickupRefundActionData?.ok) {
+    if (actionData?.ok || courierRouteActionData?.ok || branchPickupDeliveryActionData?.ok || branchPickupRefundActionData?.ok) {
       setShowCourierRouteModal(false);
       setSelectedCourierIds([]);
     }
-    if (actionData?.ok && actionData?.deliveredRequestId) {
+    if (
+      (actionData?.ok && actionData?.deliveredRequestId) ||
+      (branchPickupDeliveryActionData?.ok && branchPickupDeliveryActionData?.deliveredRequestId)
+    ) {
       setBranchPickupDeliveryRequest(null);
       setBranchPickupDeliveryCode("");
     }
@@ -4198,7 +4215,14 @@ export default function ReturnsRequests() {
     ) {
       setBranchPickupRefundRequest(null);
     }
-  }, [actionData, courierRouteActionData, branchPickupRefundActionData]);
+  }, [actionData, courierRouteActionData, branchPickupDeliveryActionData, branchPickupRefundActionData]);
+
+  useEffect(() => {
+    if (!pageSuccessMessage) return;
+    setVisiblePageSuccessMessage(pageSuccessMessage);
+    const timeoutId = window.setTimeout(() => setVisiblePageSuccessMessage(""), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [pageSuccessMessage]);
 
   const reviewRequests = requests.filter(
     (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
@@ -4283,7 +4307,7 @@ export default function ReturnsRequests() {
   return (
     <s-page heading={pageHeading}>
       {pageErrorMessage ? <p className={styles.errorMsg}>{pageErrorMessage}</p> : null}
-      {pageSuccessMessage ? <p className={styles.successMsg}>{pageSuccessMessage}</p> : null}
+      {visiblePageSuccessMessage ? <p className={styles.successMsg}>{visiblePageSuccessMessage}</p> : null}
 
       {viewMode === VIEW_MODE.BRANCH ? (
         <s-section heading="Entregas en sucursal">
@@ -4648,7 +4672,7 @@ export default function ReturnsRequests() {
             <p className={styles.deliveryCodeDescription}>
               Solicita al cliente la clave de seis digitos del pedido #{branchPickupDeliveryRequest.orderNumber}.
             </p>
-            <Form method="post" className={styles.deliveryCodeForm}>
+            <branchPickupDeliveryFetcher.Form method="post" className={styles.deliveryCodeForm}>
               <input type="hidden" name="intent" value="branch_pickup_mark_delivered" />
               <input type="hidden" name="requestId" value={String(branchPickupDeliveryRequest.id || "")} />
               <input type="hidden" name="orderNumber" value={String(branchPickupDeliveryRequest.orderNumber || "")} />
@@ -4672,8 +4696,8 @@ export default function ReturnsRequests() {
                 aria-label="Clave de entrega de seis digitos"
                 required
               />
-              {actionData?.deliveryCodeError &&
-              actionData?.requestId === String(branchPickupDeliveryRequest.id || "") ? (
+              {branchPickupDeliveryActionData?.deliveryCodeError &&
+              branchPickupDeliveryActionData?.requestId === String(branchPickupDeliveryRequest.id || "") ? (
                 <p className={styles.errorMsg} role="alert">Clave incorrecta</p>
               ) : null}
               <div className={styles.reasonModalActions}>
@@ -4690,7 +4714,7 @@ export default function ReturnsRequests() {
                 <button
                   className={`${styles.btn} ${styles.btnSuccess}`}
                   type="submit"
-                  disabled={isSubmitting || branchPickupDeliveryCode.length !== 6}
+                  disabled={isSubmitting || isBranchPickupDeliverySubmitting || branchPickupDeliveryCode.length !== 6}
                   onClick={(event) => {
                     if (!window.confirm(`¿Confirmas entregar el pedido #${branchPickupDeliveryRequest.orderNumber}?`)) {
                       event.preventDefault();
@@ -4700,7 +4724,7 @@ export default function ReturnsRequests() {
                   Confirmar entrega
                 </button>
               </div>
-            </Form>
+            </branchPickupDeliveryFetcher.Form>
           </section>
         </div>
       ) : null}
