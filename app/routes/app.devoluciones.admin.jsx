@@ -9,6 +9,12 @@ const DEFAULT_EVIDENCE_DAYS = 120;
 const DEFAULT_PURGE_DAYS = 180;
 const DEFAULT_BATCH_SIZE = 200;
 const MAX_BATCH_SIZE = 500;
+const NOTIFICATIONS_API_BASE_URL = String(
+  process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
+).replace(/\/+$/, "");
+const NOTIFICATIONS_API_KEY = String(
+  process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "",
+).trim();
 
 function parsePositiveInt(value, fallback, min = 1, max = Number.MAX_SAFE_INTEGER) {
   const parsed = Number(value);
@@ -169,6 +175,40 @@ async function getOrCreateSettings(shop) {
   return prisma.returnSettings.create({ data: { shop } });
 }
 
+async function syncReturnSettingsToNotifications(shopDomain, settings) {
+  if (!shopDomain || !NOTIFICATIONS_API_BASE_URL || !NOTIFICATIONS_API_KEY) return;
+
+  try {
+    const response = await fetch(`${NOTIFICATIONS_API_BASE_URL}/api/return-settings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-shop-domain": shopDomain,
+        "x-api-key": NOTIFICATIONS_API_KEY,
+      },
+      body: JSON.stringify({
+        shopDomain,
+        branchAddress: settings.branchAddress,
+        branchHours: settings.branchHours,
+        pickupHours: settings.pickupHours,
+      }),
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      console.error("No se pudo sincronizar la configuracion con notificaciones", {
+        shopDomain,
+        status: response.status,
+        detail: String(detail || "").slice(0, 300),
+      });
+    }
+  } catch (error) {
+    console.error("No se pudo sincronizar la configuracion con notificaciones", {
+      shopDomain,
+      error: String(error?.message || error || "unknown"),
+    });
+  }
+}
+
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const settings = await getOrCreateSettings(session.shop);
@@ -187,32 +227,26 @@ export const action = async ({ request }) => {
   const intent = String(formData.get("intent") || "");
 
   if (intent === "update_settings") {
+    const nextSettings = {
+      pickupCost: Number(formData.get("pickupCost") || 0),
+      returnWindowDays: Number(formData.get("returnWindowDays") || 30),
+      returnReasons: String(formData.get("returnReasons") || ""),
+      evidenceReasons: String(formData.get("evidenceReasons") || ""),
+      branchInstructions: String(formData.get("branchInstructions") || ""),
+      branchAddress: String(formData.get("branchAddress") || ""),
+      branchHours: String(formData.get("branchHours") || ""),
+      pickupInstructions: String(formData.get("pickupInstructions") || ""),
+      pickupHours: String(formData.get("pickupHours") || ""),
+    };
     await prisma.returnSettings.upsert({
       where: { shop: session.shop },
-      update: {
-        pickupCost: Number(formData.get("pickupCost") || 0),
-        returnWindowDays: Number(formData.get("returnWindowDays") || 30),
-        returnReasons: String(formData.get("returnReasons") || ""),
-        evidenceReasons: String(formData.get("evidenceReasons") || ""),
-        branchInstructions: String(formData.get("branchInstructions") || ""),
-        branchAddress: String(formData.get("branchAddress") || ""),
-        branchHours: String(formData.get("branchHours") || ""),
-        pickupInstructions: String(formData.get("pickupInstructions") || ""),
-        pickupHours: String(formData.get("pickupHours") || ""),
-      },
+      update: nextSettings,
       create: {
         shop: session.shop,
-        pickupCost: Number(formData.get("pickupCost") || 0),
-        returnWindowDays: Number(formData.get("returnWindowDays") || 30),
-        returnReasons: String(formData.get("returnReasons") || ""),
-        evidenceReasons: String(formData.get("evidenceReasons") || ""),
-        branchInstructions: String(formData.get("branchInstructions") || ""),
-        branchAddress: String(formData.get("branchAddress") || ""),
-        branchHours: String(formData.get("branchHours") || ""),
-        pickupInstructions: String(formData.get("pickupInstructions") || ""),
-        pickupHours: String(formData.get("pickupHours") || ""),
+        ...nextSettings,
       },
     });
+    await syncReturnSettingsToNotifications(session.shop, nextSettings);
     return { ok: true, intent, message: "Configuracion guardada." };
   }
 
