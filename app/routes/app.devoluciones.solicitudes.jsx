@@ -5940,7 +5940,7 @@ function CourierOrderCard({
   const retryAttemptNumber =
     isReturnCourierLabel(request.courierLabel) ? returnRetryAttemptNumber(request, normalizedVisibleStatus) : 0;
   const showReturnRetryAttemptBadge = false;
-  const adminCourierPresentation = adminCourierView
+  const adminCourierPresentation = adminCourierView || branchPickupView
     ? buildAdminCourierPresentation(request)
     : { events: request.historyEvents || [], scheduledDate: null };
   const displayHistoryEvents = dedupeCourierHistoryEvents(adminCourierPresentation.events);
