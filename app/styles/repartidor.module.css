@@ -310,10 +310,10 @@
   justify-content: center;
   min-height: 26px;
   padding: 0 10px;
-  border: 1px solid #005bd3;
+  border: 1px solid #1f2124;
   border-radius: 999px;
-  background: #eef4ff;
-  color: #005bd3;
+  background: #1f2124;
+  color: #fff;
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
@@ -321,8 +321,8 @@
 }
 
 .noteBadgeButton:hover {
-  background: #e0ecff;
-  border-color: #004299;
+  background: #000;
+  border-color: #000;
 }
 
 .tabRow {
@@ -452,6 +452,18 @@
 
 .actionButtonSecondary {
   border-color: #d1d5db;
+}
+
+.actionButtonSuccess {
+  background: #e3f1df;
+  border-color: #008060;
+  color: #008060;
+}
+
+.actionButtonSuccess:hover {
+  background: #d1ead0;
+  border-color: #006e52;
+  color: #006e52;
 }
 
 .actionButtonDanger {

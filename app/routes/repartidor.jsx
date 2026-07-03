@@ -2772,7 +2772,7 @@ export default function RepartidorPublicPortal() {
                             <>
                               <button
                                 type="button"
-                                className={styles.actionButton}
+                                className={`${styles.actionButton} ${styles.actionButtonSuccess}`}
                                 disabled={isSubmitting}
                                 onClick={() => {
                                   setDeliveryCodeInput("");
