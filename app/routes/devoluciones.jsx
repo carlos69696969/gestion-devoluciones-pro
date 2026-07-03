@@ -1763,7 +1763,6 @@ export default function PublicReturnsPortal() {
       <div className={styles.container}>
         <div className={styles.header}>
           <div>
-            <h1 className={styles.h1}>Portal de devoluciones</h1>
             {info ? <p className={`${styles.notice} ${styles.noticeMuted}`}>{info}</p> : null}
             {error ? <p className={`${styles.notice} ${styles.noticeError}`}>{error}</p> : null}
             {message ? (
@@ -1822,10 +1821,6 @@ export default function PublicReturnsPortal() {
 function CompletedReturnsSection({ completedTitle, completedText, completedRefundText, completedRequests }) {
   return (
     <section className={styles.card}>
-      <h2 className={styles.cardTitle}>{completedTitle}</h2>
-      <p className={styles.cardMeta}>{completedText}</p>
-      {completedRefundText ? <p className={`${styles.cardMeta} ${styles.refundProcessedText}`}>{completedRefundText}</p> : null}
-      <div className={styles.divider} />
       <div className={styles.completedGrid}>
         {completedRequests.map((requestItem) => (
           <CompletedReturnSummary key={requestItem.id} requestItem={requestItem} />
@@ -1967,9 +1962,6 @@ function CompletedReturnSummary({ requestItem }) {
   return (
     <article className={styles.completedCard}>
       <h3 className={styles.completedTitle}>Pedido #{requestItem.orderNumber}</h3>
-      <p className={styles.completedMeta}>
-        Cliente: {requestItem.customerName} | Email: {requestItem.customerEmail} | Telefono: {requestItem.customerPhone}
-      </p>
       <p className={styles.completedStatus}>
         Estado de devolucion:{" "}
         <strong
@@ -2031,11 +2023,6 @@ function CompletedReturnSummary({ requestItem }) {
             </div>
           ))}
         </div>
-      ) : null}
-      {isReceived ? (
-        <p className={`${styles.completedStatus} ${styles.receivedHintText}`}>
-          Recibimos tu producto con exito, lo revisaremos. Una vez finalicemos realizaremos tu reembolso, regresa mas tarde para ver el estado de tu devolucion.
-        </p>
       ) : null}
       {isFailedPickupAttempt ? (
         <p className={`${styles.completedStatus} ${styles.failedPickupHintText}`}>
