@@ -492,11 +492,11 @@
 
 @media (max-width: 520px) {
   .container {
-    padding: 6px 2px 44px;
+    padding: 2px 0 44px;
   }
 
   .card {
-    padding: 6px;
+    padding: 4px;
   }
 
   .completedGrid {
@@ -504,13 +504,13 @@
   }
 
   .completedCard {
-    padding: 6px;
+    padding: 5px;
   }
 
   .statusTimelineCurrent,
   .summary {
-    margin-left: -4px;
-    margin-right: -4px;
+    margin-left: -5px;
+    margin-right: -5px;
     padding: 8px;
   }
 }
