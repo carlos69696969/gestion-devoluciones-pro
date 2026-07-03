@@ -2653,18 +2653,6 @@ export default function RepartidorPublicPortal() {
                   </p>
                   <p className={adminStyles.courierAddress}>{formatCourierAddress(request)}</p>
                   <p className={adminStyles.courierField}>{request.customerPhone || "-"}</p>
-                  {activeTab === "historial" && !isReturnOrder(request) && isNotDeliveredStatus(request) ? (
-                    <div className={styles.historyActionRow}>
-                      {renderCourierActionForm(
-                        request,
-                        "Reeintentar",
-                        "courier_retry_delivery",
-                        "reeintentar entrega",
-                        `${styles.actionButton} ${styles.actionButtonRetry}`,
-                        "Esta accion devolvera la orden al flujo de ruta para intentar la entrega nuevamente.",
-                      )}
-                    </div>
-                  ) : null}
                   {activeTab === "historial" &&
                   isReturnOrder(request) &&
                   isReturnPickupFailedStatus(request) &&
