@@ -12,9 +12,13 @@ const MAX_BATCH_SIZE = 500;
 const NOTIFICATIONS_API_BASE_URL = String(
   process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
 ).replace(/\/+$/, "");
-const NOTIFICATIONS_API_KEY = String(
-  process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "",
-).trim();
+const NOTIFICATIONS_API_KEYS = Array.from(
+  new Set(
+    [process.env.NOTIFICATIONS_API_KEY, process.env.APP_INTERNAL_API_KEY]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean),
+  ),
+);
 
 function parsePositiveInt(value, fallback, min = 1, max = Number.MAX_SAFE_INTEGER) {
   const parsed = Number(value);
@@ -176,36 +180,37 @@ async function getOrCreateSettings(shop) {
 }
 
 async function syncReturnSettingsToNotifications(shopDomain, settings) {
-  if (!shopDomain || !NOTIFICATIONS_API_BASE_URL || !NOTIFICATIONS_API_KEY) return;
+  if (!shopDomain || !NOTIFICATIONS_API_BASE_URL || !NOTIFICATIONS_API_KEYS.length) return;
 
-  try {
-    const response = await fetch(`${NOTIFICATIONS_API_BASE_URL}/api/return-settings`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-shop-domain": shopDomain,
-        "x-api-key": NOTIFICATIONS_API_KEY,
-      },
-      body: JSON.stringify({
-        shopDomain,
-        branchAddress: settings.branchAddress,
-        branchHours: settings.branchHours,
-        pickupHours: settings.pickupHours,
-      }),
-    });
-    if (!response.ok) {
+  for (const apiKey of NOTIFICATIONS_API_KEYS) {
+    try {
+      const response = await fetch(`${NOTIFICATIONS_API_BASE_URL}/api/return-settings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-shop-domain": shopDomain,
+          "x-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          shopDomain,
+          branchAddress: settings.branchAddress,
+          branchHours: settings.branchHours,
+          pickupHours: settings.pickupHours,
+        }),
+      });
+      if (response.ok) return;
       const detail = await response.text().catch(() => "");
       console.error("No se pudo sincronizar la configuracion con notificaciones", {
         shopDomain,
         status: response.status,
         detail: String(detail || "").slice(0, 300),
       });
+    } catch (error) {
+      console.error("No se pudo sincronizar la configuracion con notificaciones", {
+        shopDomain,
+        error: String(error?.message || error || "unknown"),
+      });
     }
-  } catch (error) {
-    console.error("No se pudo sincronizar la configuracion con notificaciones", {
-      shopDomain,
-      error: String(error?.message || error || "unknown"),
-    });
   }
 }
 
