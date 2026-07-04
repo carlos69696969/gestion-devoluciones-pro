@@ -2656,13 +2656,13 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                   <p><strong>Cliente:</strong> {order.customerName || "Cliente"}</p>
                   {order.customerPhone ? <p><strong>Telefono:</strong> {order.customerPhone}</p> : null}
                   <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={settings.branchAddress} /></p>
-                  <p><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.branchInstructions}</p>
+                  <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.branchInstructions}</p>
                   <p><strong>Horarios de entrega:</strong> {settings.branchHours}</p>
                 </div>
               ) : (
                 <div className={styles.summary} style={{ marginTop: 12 }}>
                   <h3 className={styles.sectionTitle}>Recoleccion a domicilio</h3>
-                  <p><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
+                  <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
                   <p><strong>Horario de recoleccion:</strong> {pickupHoursOnlyLabel(settings.pickupHours)}</p>
                   <div className={styles.summary} style={{ marginTop: 12, background: "#fff" }}>
                     <h3 className={styles.sectionTitle} style={{ marginTop: 0 }}>
@@ -2770,7 +2770,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                 {returnMethod === "branch" ? (
                   <>
                     <p><strong>Direccion sucursal:</strong> <BranchAddressLink address={settings.branchAddress} /></p>
-                    <p><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.branchInstructions}</p>
+                    <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.branchInstructions}</p>
                     <p><strong>Horarios de entrega:</strong> {settings.branchHours}</p>
                   </>
                 ) : (
@@ -2782,7 +2782,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                         .join(", ") || "-"}
                     </p>
                     <p><strong>Dia:</strong> {pickup.pickupDate || "-"}</p>
-                    <p><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
+                    <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
                     <p><strong>Instrucciones del cliente:</strong> {pickup.pickupNotes || "-"}</p>
                     <p><strong>Costo recoleccion:</strong> ${toMXN(returnCost)} MXN</p>
                     <p><strong>Total final a reembolsar:</strong> ${toMXN(finalRefund)} MXN</p>
