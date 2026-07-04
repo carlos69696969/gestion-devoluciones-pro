@@ -2008,7 +2008,15 @@ function CompletedReturnSummary({ requestItem }) {
     : "";
   return (
     <article className={styles.completedCard}>
-      <h3 className={styles.completedTitle}>Pedido #{requestItem.orderNumber}</h3>
+      <button
+        type="button"
+        className={styles.completedBackTitle}
+        onClick={() => window.history.back()}
+        aria-label={`Regresar al pedido #${requestItem.orderNumber}`}
+      >
+        <span aria-hidden="true">←</span>
+        <span>Pedido #{requestItem.orderNumber}</span>
+      </button>
       <p className={styles.completedStatus}>
         Estado de devolucion:{" "}
         <strong
