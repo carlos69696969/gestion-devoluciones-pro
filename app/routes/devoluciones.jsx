@@ -2058,13 +2058,6 @@ function CompletedReturnSummary({ requestItem }) {
           {failedAttemptLabel}: {requestItem.rejectionReason || "No se encontro al cliente en el domicilio para entregar el paquete."}
         </p>
       ) : null}
-      {isApproved ? (
-        <p className={`${styles.completedStatus} ${styles.approvedHintText}`}>
-          {requestItem.returnMethod === "pickup"
-            ? "Tu solicitud de devolucion fue aprobada, recogeremos tu producto en tu domicilio en la fecha establecida por ti."
-            : "Tu solicitud de devolucion fue aprobada, lleva tu producto a la sucursal de devoluciones."}
-        </p>
-      ) : null}
       {isReview ? (
         <p className={`${styles.completedStatus} ${styles.reviewHintText}`}>
           Tu solicitud esta siendo revisada por nuestro equipo, regresa mas tarde para revisar el estado de tu solicitud.
@@ -2169,7 +2162,7 @@ function CompletedReturnSummary({ requestItem }) {
             <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={requestItem.branchAddress} /></p>
             <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.branchInstructions || "-"}</p>
             {requestItem.branchDeliveryDeadlineAt ? (
-              <p><strong>Fecha limite de entrega:</strong> {new Date(requestItem.branchDeliveryDeadlineAt).toLocaleDateString("es-MX")}</p>
+              <p><strong>Fecha limite de entrega:</strong> {formatReturnPortalDate(requestItem.branchDeliveryDeadlineAt)}</p>
             ) : null}
             <p><strong>Horarios de entrega:</strong> {requestItem.branchHours || "-"}</p>
           </>
