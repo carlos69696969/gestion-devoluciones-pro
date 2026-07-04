@@ -815,6 +815,12 @@ function timelineToneFromReasonEntry(entry) {
   return "default";
 }
 
+function branchApprovedPortalMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim();
+  const prefix = orderNumber ? `📦Pedido #${orderNumber}. ` : "📦";
+  return `${prefix}Tu solicitud de devolución fue aprobada. Por favor, lleva tu producto a la sucursal de devoluciones antes de la fecha limite de entrega siguiendo las instrucciones de entrega.`;
+}
+
 function timelineStatusDescription(status, requestRow) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") {
@@ -823,7 +829,7 @@ function timelineStatusDescription(status, requestRow) {
   if (normalized === "aprobada") {
     return requestRow.returnMethod === "pickup"
       ? "Tu solicitud fue aprobada. Recogeremos tu producto en el domicilio y fecha indicados."
-      : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.";
+      : branchApprovedPortalMessage(requestRow);
   }
   if (normalized === "en_ruta") {
     return "Tu recoleccion ya va en ruta hacia tu domicilio. Nuestro equipo se dirige para continuar el proceso.";
@@ -915,7 +921,7 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
       requestRow.receivedAt || requestRow.updatedAt || requestRow.createdAt,
       requestRow.returnMethod === "pickup"
         ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
-        : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.",
+        : branchApprovedPortalMessage(requestRow),
       "approved",
     );
   }
@@ -925,7 +931,7 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
       requestRow.createdAt,
       requestRow.returnMethod === "pickup"
         ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
-        : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.",
+        : branchApprovedPortalMessage(requestRow),
       "approved",
     );
   }
@@ -955,7 +961,9 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
     if (hideCourierProgress && (kind.startsWith("courier_en_route_") || kind.startsWith("courier_retry_"))) continue;
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
-    const note = kind === "courier_route_time_reprogrammed"
+    const note = kind === STATUS_APPROVED_KIND && requestRow.returnMethod !== "pickup"
+      ? branchApprovedPortalMessage(requestRow)
+      : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestRow, routeTimeRescheduleDateFromReason(entry.reason))
       : kind === RETURNED_TO_CUSTOMER_KIND
         ? RETURNED_TO_CUSTOMER_MESSAGE
@@ -3163,7 +3171,7 @@ export const action = async ({ request }) => {
     const approvedMessage =
       requestRow.returnMethod === "pickup"
         ? "Tu solicitud fue aprobada. Recogeremos tu producto en el domicilio y fecha indicados."
-        : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.";
+        : branchApprovedPortalMessage(requestRow);
     await prisma.returnRequest.update({
       where: { id },
       data: {
