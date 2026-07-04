@@ -441,6 +441,16 @@ function formatReturnPortalDate(value) {
   return `${values.day}/${values.month}/${values.year}`;
 }
 
+function formatReturnPortalDateTime(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
+  const time = new Intl.DateTimeFormat("es-MX", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+  return `${formatReturnPortalDate(value)}, ${time}`;
+}
+
 function formatReturnPortalWeekdayDate(value) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const date = match
@@ -2022,7 +2032,7 @@ function CompletedReturnSummary({ requestItem }) {
           <p className={styles.statusTimelineTitle}>Estado actual</p>
           <p className={styles.statusTimelineCurrentLine}>
             <strong className={timelineToneClassName(currentTimelineEvent.tone)}>{currentTimelineEvent.label}</strong>{" "}
-            <span>{new Date(currentTimelineEvent.at).toLocaleString("es-MX")}</span>
+            <span>{formatReturnPortalDateTime(currentTimelineEvent.at)}</span>
           </p>
           {currentTimelineEvent.note ? (
             <p className={styles.statusTimelineItemNote}>
@@ -2045,7 +2055,7 @@ function CompletedReturnSummary({ requestItem }) {
           {timelineEvents.map((event) => (
             <div key={event.id} className={styles.statusTimelineItem}>
               <p className={`${styles.statusTimelineItemTitle} ${timelineToneClassName(event.tone)}`}>{event.label}</p>
-              <p className={styles.statusTimelineItemAt}>{new Date(event.at).toLocaleString("es-MX")}</p>
+              <p className={styles.statusTimelineItemAt}>{formatReturnPortalDateTime(event.at)}</p>
               {event.note ? (
                 <p className={styles.statusTimelineItemNote}>{event.note}</p>
               ) : null}
@@ -2138,10 +2148,10 @@ function CompletedReturnSummary({ requestItem }) {
         <p><strong>Costo devolucion:</strong> ${toMXN(requestItem.returnCost)} MXN</p>
         <p><strong>Reembolso final:</strong> ${toMXN(requestItem.finalRefund)} MXN</p>
         {requestItem.returnedToCustomerAt ? (
-          <p><strong>Fecha devuelta al cliente:</strong> {new Date(requestItem.returnedToCustomerAt).toLocaleString("es-MX")}</p>
+          <p><strong>Fecha devuelta al cliente:</strong> {formatReturnPortalDateTime(requestItem.returnedToCustomerAt)}</p>
         ) : null}
         {requestItem.refundedAt ? (
-          <p><strong>Fecha reembolsada:</strong> {new Date(requestItem.refundedAt).toLocaleString("es-MX")}</p>
+          <p><strong>Fecha reembolsada:</strong> {formatReturnPortalDateTime(requestItem.refundedAt)}</p>
         ) : null}
 
         {requestItem.returnMethod === "pickup" ? (
