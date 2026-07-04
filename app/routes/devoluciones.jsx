@@ -2786,6 +2786,9 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                 ) : (
                   <p>-</p>
                 )}
+                {returnMethod === "branch" ? (
+                  <p><strong>Fecha limite de entrega:</strong> {formatReturnPortalDate(limitDateObj)}</p>
+                ) : null}
                 <p><strong>Monto estimado a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
                 {returnMethod === "branch" ? (
                   <>
