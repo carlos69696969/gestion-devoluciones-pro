@@ -642,6 +642,31 @@ function formatReturnRescheduleDate(rawValue) {
   return `${values.day}/${capitalizedMonth}/${values.year}`;
 }
 
+function formatRefundQueueDate(rawValue) {
+  const date = new Date(rawValue);
+  if (!Number.isFinite(date.getTime())) return "-";
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.day}/${String(values.month || "").toLowerCase()}/${values.year}`;
+}
+
+function formatRefundQueueDateTime(rawValue) {
+  const date = new Date(rawValue);
+  if (!Number.isFinite(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "numeric",
+    month: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
+}
+
 function latestRouteTimeRescheduleDate(requestRow) {
   const entries = parseReasonEntries(requestRow?.rejectionReason);
   for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -866,7 +891,7 @@ function parseEventMs(value) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-function buildStatusTimeline(requestRow, hideCourierProgress = false) {
+function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCourierRouteStarts = false } = {}) {
   const events = [];
   const entryKinds = new Set(
     (requestRow.timelineEntries || []).map((entry) => String(entry?.kind || "").toLowerCase()).filter(Boolean),
@@ -929,6 +954,7 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false) {
 
   for (const entry of requestRow.timelineEntries || []) {
     const kind = String(entry?.kind || "").toLowerCase();
+    if (hideCourierRouteStarts && kind.startsWith("courier_en_route_")) continue;
     if (hideCourierProgress && (kind.startsWith("courier_en_route_") || kind.startsWith("courier_retry_"))) continue;
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
@@ -4381,7 +4407,13 @@ export default function ReturnsRequests() {
           ) : (
             <div className={`${styles.wrap} ${styles.reqGrid}`}>
               {refundQueueRequests.map((request) => (
-                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+                <RequestCard
+                  key={request.id}
+                  request={request}
+                  isSubmitting={isSubmitting}
+                  hideCourierRouteStarts
+                  useRefundQueueDateFormat
+                />
               ))}
             </div>
           )}
@@ -6185,6 +6217,8 @@ function RequestCard({
   isSubmitting,
   enableLazyMedia = false,
   hideCourierProgress = false,
+  hideCourierRouteStarts = false,
+  useRefundQueueDateFormat = false,
   hidePickupActions = false,
   showPickupRescheduleStatus = false,
 }) {
@@ -6199,7 +6233,9 @@ function RequestCard({
   const mediaFetcher = useFetcher();
   const location = useLocation();
   const currentFormAction = `${location.pathname}${location.search}`;
-  const timelineEvents = detailsOpen ? buildStatusTimeline(request, hideCourierProgress) : [];
+  const timelineEvents = detailsOpen
+    ? buildStatusTimeline(request, hideCourierProgress, { hideCourierRouteStarts })
+    : [];
   const currentTimelineEvent = timelineEvents[0] || null;
   const olderTimelineEvents = timelineEvents.slice(1);
   const internalStatus = String(request.status || "").toLowerCase();
@@ -6321,7 +6357,9 @@ function RequestCard({
           </div>
           <div className={styles.kvRow}>
             <span className={styles.kvKey}>Fecha solicitud</span>
-            <span className={styles.kvVal}>{new Date(request.createdAt).toLocaleString("es-MX")}</span>
+            <span className={styles.kvVal}>
+              {useRefundQueueDateFormat ? formatRefundQueueDate(request.createdAt) : new Date(request.createdAt).toLocaleString("es-MX")}
+            </span>
           </div>
           {!isPickupMethod && request.branchDeliveryDeadlineAt ? (
             <div className={styles.kvRow}>
@@ -6338,7 +6376,9 @@ function RequestCard({
           {request.receivedAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Recibida</span>
-              <span className={styles.kvVal}>{new Date(request.receivedAt).toLocaleString("es-MX")}</span>
+              <span className={styles.kvVal}>
+                {useRefundQueueDateFormat ? formatRefundQueueDate(request.receivedAt) : new Date(request.receivedAt).toLocaleString("es-MX")}
+              </span>
             </div>
           ) : null}
           {request.returnedToCustomerAt ? (
@@ -6366,7 +6406,11 @@ function RequestCard({
             <p className={styles.statusTimelineTitle}>Estado actual</p>
             <p className={styles.statusTimelineCurrentLine}>
               <strong className={timelineToneClassName(currentTimelineEvent.tone)}>{currentTimelineEvent.label}</strong>{" "}
-              <span>{new Date(currentTimelineEvent.at).toLocaleString("es-MX")}</span>
+              <span>
+                {useRefundQueueDateFormat
+                  ? formatRefundQueueDateTime(currentTimelineEvent.at)
+                  : new Date(currentTimelineEvent.at).toLocaleString("es-MX")}
+              </span>
             </p>
             {currentTimelineEvent.note ? (
               <p className={styles.statusTimelineItemNote}>{currentTimelineEvent.note}</p>
@@ -6378,7 +6422,9 @@ function RequestCard({
             {olderTimelineEvents.map((event) => (
               <div key={event.id} className={styles.statusTimelineItem}>
                 <p className={`${styles.statusTimelineItemTitle} ${timelineToneClassName(event.tone)}`}>{event.label}</p>
-                <p className={styles.statusTimelineItemAt}>{new Date(event.at).toLocaleString("es-MX")}</p>
+                <p className={styles.statusTimelineItemAt}>
+                  {useRefundQueueDateFormat ? formatRefundQueueDateTime(event.at) : new Date(event.at).toLocaleString("es-MX")}
+                </p>
                 {event.note ? <p className={styles.statusTimelineItemNote}>{event.note}</p> : null}
               </div>
             ))}
