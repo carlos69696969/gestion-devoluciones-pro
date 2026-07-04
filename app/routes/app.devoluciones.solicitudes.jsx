@@ -4450,6 +4450,8 @@ export default function ReturnsRequests() {
                     isSubmitting={isSubmitting}
                     enableLazyMedia
                     hideCourierProgress
+                    useRefundQueueDateFormat
+                    useRefundQueueDateTimeSummary
                   />
                 ))}
               </div>
