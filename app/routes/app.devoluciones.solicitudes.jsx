@@ -4424,7 +4424,13 @@ export default function ReturnsRequests() {
           ) : (
             <div className={`${styles.wrap} ${styles.reqGrid}`}>
               {returnToCustomerQueueRequests.map((request) => (
-                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+                <RequestCard
+                  key={request.id}
+                  request={request}
+                  isSubmitting={isSubmitting}
+                  useRefundQueueDateFormat
+                  useRefundQueueDateTimeSummary
+                />
               ))}
             </div>
           )}
@@ -6216,6 +6222,7 @@ function RequestCard({
   hideCourierProgress = false,
   hideCourierRouteStarts = false,
   useRefundQueueDateFormat = false,
+  useRefundQueueDateTimeSummary = false,
   hidePickupActions = false,
   showPickupRescheduleStatus = false,
 }) {
@@ -6355,7 +6362,11 @@ function RequestCard({
           <div className={styles.kvRow}>
             <span className={styles.kvKey}>Fecha solicitud</span>
             <span className={styles.kvVal}>
-              {useRefundQueueDateFormat ? formatRefundQueueDate(request.createdAt) : new Date(request.createdAt).toLocaleString("es-MX")}
+              {useRefundQueueDateTimeSummary
+                ? formatRefundQueueDateTime(request.createdAt)
+                : useRefundQueueDateFormat
+                  ? formatRefundQueueDate(request.createdAt)
+                  : new Date(request.createdAt).toLocaleString("es-MX")}
             </span>
           </div>
           {!isPickupMethod && request.branchDeliveryDeadlineAt ? (
@@ -6374,7 +6385,11 @@ function RequestCard({
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Recibida</span>
               <span className={styles.kvVal}>
-                {useRefundQueueDateFormat ? formatRefundQueueDate(request.receivedAt) : new Date(request.receivedAt).toLocaleString("es-MX")}
+                {useRefundQueueDateTimeSummary
+                  ? formatRefundQueueDateTime(request.receivedAt)
+                  : useRefundQueueDateFormat
+                    ? formatRefundQueueDate(request.receivedAt)
+                    : new Date(request.receivedAt).toLocaleString("es-MX")}
               </span>
             </div>
           ) : null}
@@ -6393,7 +6408,9 @@ function RequestCard({
           {request.pickupDeadlineAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Fecha limite para recoger</span>
-              <span className={styles.kvVal}>{new Date(request.pickupDeadlineAt).toLocaleString("es-MX")}</span>
+              <span className={styles.kvVal}>
+                {useRefundQueueDateFormat ? formatRefundQueueDateTime(request.pickupDeadlineAt) : new Date(request.pickupDeadlineAt).toLocaleString("es-MX")}
+              </span>
             </div>
           ) : null}
         </div>
@@ -6541,7 +6558,7 @@ function RequestCard({
 
       {status === "por_devolver" && request.pickupDeadlineAt ? (
         <p className={styles.meta}>
-          Fecha limite para recoger en sucursal: {new Date(request.pickupDeadlineAt).toLocaleString("es-MX")}
+          Fecha limite para recoger en sucursal: {useRefundQueueDateFormat ? formatRefundQueueDateTime(request.pickupDeadlineAt) : new Date(request.pickupDeadlineAt).toLocaleString("es-MX")}
         </p>
       ) : null}
 
