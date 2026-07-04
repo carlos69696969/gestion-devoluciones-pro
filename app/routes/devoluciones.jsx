@@ -722,6 +722,12 @@ function timelineToneFromReasonEntry(entry) {
   return "default";
 }
 
+function branchApprovedPortalMessage(requestItem) {
+  const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim();
+  const prefix = orderNumber ? `📦Pedido #${orderNumber}. ` : "📦";
+  return `${prefix}Tu solicitud de devolución fue aprobada. Por favor, lleva tu producto a la sucursal de devoluciones antes de la fecha limite de entrega siguiendo las instrucciones de entrega.`;
+}
+
 function timelineStatusDescription(status, requestItem) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") {
@@ -730,7 +736,7 @@ function timelineStatusDescription(status, requestItem) {
   if (normalized === "aprobada") {
     return requestItem.returnMethod === "pickup"
       ? "Tu solicitud fue aprobada. Recogeremos tu producto en el domicilio y fecha indicados."
-      : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.";
+      : branchApprovedPortalMessage(requestItem);
   }
   if (normalized === "recibida") {
     return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰";
@@ -843,7 +849,7 @@ function buildStatusTimeline(requestItem) {
       requestItem.receivedAt || requestItem.updatedAt || requestItem.createdAt,
       requestItem.returnMethod === "pickup"
         ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
-        : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.",
+        : branchApprovedPortalMessage(requestItem),
       "approved",
     );
   }
@@ -853,7 +859,7 @@ function buildStatusTimeline(requestItem) {
       requestItem.createdAt,
       requestItem.returnMethod === "pickup"
         ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
-        : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.",
+        : branchApprovedPortalMessage(requestItem),
       "approved",
     );
   }
@@ -882,7 +888,9 @@ function buildStatusTimeline(requestItem) {
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
     const kind = String(entry?.kind || "").toLowerCase();
-    const note = kind === "courier_route_time_reprogrammed"
+    const note = kind === STATUS_APPROVED_KIND && requestItem.returnMethod !== "pickup"
+      ? branchApprovedPortalMessage(requestItem)
+      : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestItem, routeTimeRescheduleDateFromReason(entry.reason))
       : kind === RETURNED_TO_CUSTOMER_KIND
         ? RETURNED_TO_CUSTOMER_MESSAGE
@@ -1679,7 +1687,7 @@ export const action = async ({ request }) => {
     ? "Tu solicitud esta siendo revisada por nuestro equipo."
     : payload.returnMethod === "pickup"
       ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio en la fecha establecida por ti."
-      : "Tu solicitud fue aprobada. Lleva tu producto a la sucursal de devoluciones.";
+      : branchApprovedPortalMessage(payload.order);
   const initialTimelineEntries = [
     {
       kind: REQUEST_CREATED_KIND,
