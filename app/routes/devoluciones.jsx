@@ -2656,6 +2656,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
               {returnMethod === "branch" ? (
                 <div className={styles.summary} style={{ marginTop: 12 }}>
                   <h3 className={styles.sectionTitle}>Entrega en sucursal</h3>
+                  <p><strong>Fecha limite de entrega:</strong> {formatReturnPortalDate(limitDateObj)}</p>
                   <p><strong>Cliente:</strong> {order.customerName || "Cliente"}</p>
                   {order.customerPhone ? <p><strong>Telefono:</strong> {order.customerPhone}</p> : null}
                   <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={settings.branchAddress} /></p>
