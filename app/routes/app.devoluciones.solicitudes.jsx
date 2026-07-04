@@ -6408,7 +6408,7 @@ function RequestCard({
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Fecha limite para recoger</span>
               <span className={styles.kvVal}>
-                {useRefundQueueDateFormat ? formatRefundQueueDateTime(request.pickupDeadlineAt) : new Date(request.pickupDeadlineAt).toLocaleString("es-MX")}
+                {useRefundQueueDateFormat ? formatRefundQueueDate(request.pickupDeadlineAt) : new Date(request.pickupDeadlineAt).toLocaleString("es-MX")}
               </span>
             </div>
           ) : null}
