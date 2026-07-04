@@ -2014,7 +2014,7 @@ function CompletedReturnSummary({ requestItem }) {
         onClick={() => window.history.back()}
         aria-label={`Regresar al pedido #${requestItem.orderNumber}`}
       >
-        <span aria-hidden="true">←</span>
+        <span className={styles.completedBackIcon} aria-hidden="true">←</span>
         <span>Pedido #{requestItem.orderNumber}</span>
       </button>
       <p className={styles.completedStatus}>
