@@ -2084,7 +2084,7 @@ function CompletedReturnSummary({ requestItem }) {
 
         {requestItem.returnMethod === "pickup" ? (
           <>
-            <p><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.pickupInstructions || "-"}</p>
+            <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.pickupInstructions || "-"}</p>
             <p>
               <strong>Direccion de recoleccion:</strong>{" "}
               {[requestItem.pickupAddress, requestItem.pickupNeighborhood, requestItem.pickupCity, requestItem.pickupState, requestItem.pickupPostalCode]
@@ -2098,7 +2098,7 @@ function CompletedReturnSummary({ requestItem }) {
         ) : (
           <>
             <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={requestItem.branchAddress} /></p>
-            <p><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.branchInstructions || "-"}</p>
+            <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.branchInstructions || "-"}</p>
             {requestItem.branchDeliveryDeadlineAt ? (
               <p><strong>Fecha limite de entrega:</strong> {new Date(requestItem.branchDeliveryDeadlineAt).toLocaleDateString("es-MX")}</p>
             ) : null}

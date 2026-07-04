@@ -404,6 +404,10 @@
   line-height: 1.45;
 }
 
+.instructionsText {
+  white-space: pre-wrap;
+}
+
 .completedGrid {
   display: grid;
   gap: 12px;
