@@ -2029,16 +2029,16 @@ function CompletedReturnSummary({ requestItem }) {
               {currentTimelineEvent.note}
             </p>
           ) : null}
+          {timelineEvents.length > 1 ? (
+            <button
+              type="button"
+              className={styles.statusTimelineInlineToggle}
+              onClick={() => setShowAllStates((prev) => !prev)}
+            >
+              {showAllStates ? "Ver menos" : "Ver mas"}
+            </button>
+          ) : null}
         </div>
-      ) : null}
-      {timelineEvents.length > 1 ? (
-        <button
-          type="button"
-          className={styles.statusTimelineToggle}
-          onClick={() => setShowAllStates((prev) => !prev)}
-        >
-          {showAllStates ? "Ocultar estados" : "Ver todos los estados"}
-        </button>
       ) : null}
       {showAllStates ? (
         <div className={styles.statusTimelineList}>
@@ -2085,44 +2085,6 @@ function CompletedReturnSummary({ requestItem }) {
           Recoge tu paquete en nuestra sucursal con tu nombre y numero de pedido: <BranchAddressLink address={requestItem.branchAddress} />. Horario: {requestItem.branchHours || "-"}. Tienes 30 dias para recogerlo. Fecha limite: {pickupDeadlineLabel || "-"}.
         </p>
       ) : null}
-
-      <div className={styles.summary}>
-        <p><strong>Fecha de solicitud:</strong> {formatReturnPortalDate(requestItem.createdAt)}</p>
-        <p><strong>Metodo:</strong> {requestItem.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}</p>
-        <p><strong>Subtotal (sin impuestos):</strong> ${toMXN(requestItem.estimatedRefund)} MXN</p>
-        <p><strong>Costo devolucion:</strong> ${toMXN(requestItem.returnCost)} MXN</p>
-        <p><strong>Reembolso final:</strong> ${toMXN(requestItem.finalRefund)} MXN</p>
-        {requestItem.returnedToCustomerAt ? (
-          <p><strong>Fecha devuelta al cliente:</strong> {new Date(requestItem.returnedToCustomerAt).toLocaleString("es-MX")}</p>
-        ) : null}
-        {requestItem.refundedAt ? (
-          <p><strong>Fecha reembolsada:</strong> {new Date(requestItem.refundedAt).toLocaleString("es-MX")}</p>
-        ) : null}
-
-        {requestItem.returnMethod === "pickup" ? (
-          <>
-            <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.pickupInstructions || "-"}</p>
-            <p>
-              <strong>Direccion de recoleccion:</strong>{" "}
-              {[requestItem.pickupAddress, requestItem.pickupNeighborhood, requestItem.pickupCity, requestItem.pickupState, requestItem.pickupPostalCode]
-                .filter((value) => value && value !== "-")
-                .join(", ") || "-"}
-            </p>
-            <p><strong>Dia de recoleccion:</strong> {formatReturnPortalWeekdayDate(requestItem.pickupDate)}</p>
-            <p><strong>Horario de recoleccion:</strong> {pickupHoursOnlyLabel(requestItem.pickupHours)}</p>
-            {requestItem.pickupNotes ? <p><strong>Instrucciones del cliente:</strong> {requestItem.pickupNotes}</p> : null}
-          </>
-        ) : (
-          <>
-            <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={requestItem.branchAddress} /></p>
-            <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.branchInstructions || "-"}</p>
-            {requestItem.branchDeliveryDeadlineAt ? (
-              <p><strong>Fecha limite de entrega:</strong> {new Date(requestItem.branchDeliveryDeadlineAt).toLocaleDateString("es-MX")}</p>
-            ) : null}
-            <p><strong>Horarios de entrega:</strong> {requestItem.branchHours || "-"}</p>
-          </>
-        )}
-      </div>
 
       <h4 className={styles.orderDetailTitle}>Productos devueltos</h4>
       <ul className={styles.productList}>
@@ -2175,6 +2137,44 @@ function CompletedReturnSummary({ requestItem }) {
           </li>
         ))}
       </ul>
+
+      <div className={styles.summary}>
+        <p><strong>Fecha de solicitud:</strong> {formatReturnPortalDate(requestItem.createdAt)}</p>
+        <p><strong>Metodo:</strong> {requestItem.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}</p>
+        <p><strong>Subtotal (sin impuestos):</strong> ${toMXN(requestItem.estimatedRefund)} MXN</p>
+        <p><strong>Costo devolucion:</strong> ${toMXN(requestItem.returnCost)} MXN</p>
+        <p><strong>Reembolso final:</strong> ${toMXN(requestItem.finalRefund)} MXN</p>
+        {requestItem.returnedToCustomerAt ? (
+          <p><strong>Fecha devuelta al cliente:</strong> {new Date(requestItem.returnedToCustomerAt).toLocaleString("es-MX")}</p>
+        ) : null}
+        {requestItem.refundedAt ? (
+          <p><strong>Fecha reembolsada:</strong> {new Date(requestItem.refundedAt).toLocaleString("es-MX")}</p>
+        ) : null}
+
+        {requestItem.returnMethod === "pickup" ? (
+          <>
+            <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.pickupInstructions || "-"}</p>
+            <p>
+              <strong>Direccion de recoleccion:</strong>{" "}
+              {[requestItem.pickupAddress, requestItem.pickupNeighborhood, requestItem.pickupCity, requestItem.pickupState, requestItem.pickupPostalCode]
+                .filter((value) => value && value !== "-")
+                .join(", ") || "-"}
+            </p>
+            <p><strong>Dia de recoleccion:</strong> {formatReturnPortalWeekdayDate(requestItem.pickupDate)}</p>
+            <p><strong>Horario de recoleccion:</strong> {pickupHoursOnlyLabel(requestItem.pickupHours)}</p>
+            {requestItem.pickupNotes ? <p><strong>Instrucciones del cliente:</strong> {requestItem.pickupNotes}</p> : null}
+          </>
+        ) : (
+          <>
+            <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={requestItem.branchAddress} /></p>
+            <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.branchInstructions || "-"}</p>
+            {requestItem.branchDeliveryDeadlineAt ? (
+              <p><strong>Fecha limite de entrega:</strong> {new Date(requestItem.branchDeliveryDeadlineAt).toLocaleDateString("es-MX")}</p>
+            ) : null}
+            <p><strong>Horarios de entrega:</strong> {requestItem.branchHours || "-"}</p>
+          </>
+        )}
+      </div>
 
       <ImageViewer image={viewerImage} onClose={() => setViewerImage(null)} />
 
