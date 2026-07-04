@@ -657,14 +657,11 @@ function formatRefundQueueDate(rawValue) {
 function formatRefundQueueDateTime(rawValue) {
   const date = new Date(rawValue);
   if (!Number.isFinite(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "numeric",
-    month: "numeric",
-    year: "numeric",
+  return `${formatRefundQueueDate(rawValue)}, ${new Intl.DateTimeFormat("es-MX", {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
-  }).format(date);
+  }).format(date)}`;
 }
 
 function latestRouteTimeRescheduleDate(requestRow) {
@@ -6437,7 +6434,7 @@ function RequestCard({
             {[request.pickupAddress, request.pickupCity, request.pickupState, request.pickupPostalCode]
               .filter(Boolean)
               .join(", ") || "-"}
-            {" | "}Dia: {request.pickupDate || "-"}
+            {" | "}Dia: {useRefundQueueDateFormat ? formatRefundQueueDate(request.pickupDate) : request.pickupDate || "-"}
             {request.pickupNotes ? ` | Notas: ${request.pickupNotes}` : ""}
           </p>
         ) : (
