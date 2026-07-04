@@ -4429,7 +4429,6 @@ export default function ReturnsRequests() {
                   request={request}
                   isSubmitting={isSubmitting}
                   useRefundQueueDateFormat
-                  useRefundQueueDateTimeSummary
                 />
               ))}
             </div>
@@ -6558,7 +6557,7 @@ function RequestCard({
 
       {status === "por_devolver" && request.pickupDeadlineAt ? (
         <p className={styles.meta}>
-          Fecha limite para recoger en sucursal: {useRefundQueueDateFormat ? formatRefundQueueDateTime(request.pickupDeadlineAt) : new Date(request.pickupDeadlineAt).toLocaleString("es-MX")}
+          Fecha limite para recoger en sucursal: {useRefundQueueDateFormat ? formatRefundQueueDate(request.pickupDeadlineAt) : new Date(request.pickupDeadlineAt).toLocaleString("es-MX")}
         </p>
       ) : null}
 
