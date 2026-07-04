@@ -4344,6 +4344,7 @@ export default function ReturnsRequests() {
                   request={request}
                   isSubmitting={isSubmitting}
                   enableLazyMedia
+                  useRefundQueueDateFormat
                 />
               ))}
             </div>
@@ -6373,7 +6374,11 @@ function RequestCard({
           {!isPickupMethod && request.branchDeliveryDeadlineAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Fecha limite de entrega</span>
-              <span className={styles.kvVal}>{new Date(request.branchDeliveryDeadlineAt).toLocaleDateString("es-MX")}</span>
+              <span className={styles.kvVal}>
+                {useRefundQueueDateFormat
+                  ? formatRefundQueueDate(request.branchDeliveryDeadlineAt)
+                  : new Date(request.branchDeliveryDeadlineAt).toLocaleDateString("es-MX")}
+              </span>
             </div>
           ) : null}
           {isHistoryStatus && closedAt ? (
