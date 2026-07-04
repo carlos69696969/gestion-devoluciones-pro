@@ -6615,7 +6615,15 @@ function RequestCard({
         ) : null}
 
         {canMarkReceived && !hidePickupActions ? (
-          <Form method="post" action={currentFormAction}>
+          <Form
+            method="post"
+            action={currentFormAction}
+            onSubmit={(event) => {
+              if (!window.confirm(`¿Confirmas marcar como recibida la devolución del pedido #${request.orderNumber}?`)) {
+                event.preventDefault();
+              }
+            }}
+          >
             <input type="hidden" name="intent" value="mark_received" />
             <input type="hidden" name="id" value={request.id} />
             <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
