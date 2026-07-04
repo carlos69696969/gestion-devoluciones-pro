@@ -6379,7 +6379,9 @@ function RequestCard({
           {isHistoryStatus && closedAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Fecha de cierre</span>
-              <span className={styles.kvVal}>{new Date(closedAt).toLocaleString("es-MX")}</span>
+              <span className={styles.kvVal}>
+                {useRefundQueueDateTimeSummary ? formatRefundQueueDateTime(closedAt) : new Date(closedAt).toLocaleString("es-MX")}
+              </span>
             </div>
           ) : null}
           {request.receivedAt ? (
