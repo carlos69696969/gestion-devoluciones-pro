@@ -460,7 +460,7 @@
   height: 28px;
   font-size: 42px;
   line-height: 1;
-  transform: translateY(2px);
+  transform: translateY(-2px);
 }
 
 .completedBackTitle:focus-visible {
