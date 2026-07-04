@@ -2035,7 +2035,7 @@ function CompletedReturnSummary({ requestItem }) {
               className={styles.statusTimelineInlineToggle}
               onClick={() => setShowAllStates((prev) => !prev)}
             >
-              {showAllStates ? "Ver menos" : "Ver más"}
+              {showAllStates ? "Ver menos" : "Ver todos los estados"}
             </button>
           ) : null}
         </div>
