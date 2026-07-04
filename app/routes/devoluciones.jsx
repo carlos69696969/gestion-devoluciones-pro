@@ -429,16 +429,33 @@ function toMXN(value) {
   return Number(value || 0).toFixed(2);
 }
 
-function formatSummaryDateTime(value) {
+function formatReturnPortalDate(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("es-MX", {
+  const parts = new Intl.DateTimeFormat("es-MX", {
     day: "numeric",
-    month: "numeric",
+    month: "long",
     year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.day}/${values.month}/${values.year}`;
+}
+
+function formatReturnPortalWeekdayDate(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = match
+    ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12))
+    : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    timeZone: match ? "UTC" : undefined,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.weekday} ${values.day}/${values.month}/${values.year}`;
 }
 
 function normalizeOrderNumber(value) {
@@ -2070,7 +2087,7 @@ function CompletedReturnSummary({ requestItem }) {
       ) : null}
 
       <div className={styles.summary}>
-        <p><strong>Fecha de solicitud:</strong> {formatSummaryDateTime(requestItem.createdAt)}</p>
+        <p><strong>Fecha de solicitud:</strong> {formatReturnPortalDate(requestItem.createdAt)}</p>
         <p><strong>Metodo:</strong> {requestItem.returnMethod === "pickup" ? "Recoleccion a domicilio" : "Entrega en sucursal"}</p>
         <p><strong>Subtotal (sin impuestos):</strong> ${toMXN(requestItem.estimatedRefund)} MXN</p>
         <p><strong>Costo devolucion:</strong> ${toMXN(requestItem.returnCost)} MXN</p>
@@ -2091,7 +2108,7 @@ function CompletedReturnSummary({ requestItem }) {
                 .filter((value) => value && value !== "-")
                 .join(", ") || "-"}
             </p>
-            <p><strong>Dia de recoleccion:</strong> {requestItem.pickupDate || "-"}</p>
+            <p><strong>Dia de recoleccion:</strong> {formatReturnPortalWeekdayDate(requestItem.pickupDate)}</p>
             <p><strong>Horario de recoleccion:</strong> {pickupHoursOnlyLabel(requestItem.pickupHours)}</p>
             {requestItem.pickupNotes ? <p><strong>Instrucciones del cliente:</strong> {requestItem.pickupNotes}</p> : null}
           </>
