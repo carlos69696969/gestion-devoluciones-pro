@@ -991,8 +991,10 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
     if (hideCourierProgress && (kind.startsWith("courier_en_route_") || kind.startsWith("courier_retry_"))) continue;
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
-    const note = kind === STATUS_APPROVED_KIND && requestRow.returnMethod !== "pickup"
-      ? branchApprovedPortalMessage(requestRow)
+    const note = kind === STATUS_APPROVED_KIND
+      ? requestRow.returnMethod === "pickup"
+        ? pickupApprovedPortalMessage(requestRow)
+        : branchApprovedPortalMessage(requestRow)
       : kind === STATUS_REVIEW_KIND
       ? reviewReturnPortalMessage(requestRow)
       : kind === STATUS_RECEIVED_KIND

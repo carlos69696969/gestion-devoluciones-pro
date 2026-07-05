@@ -917,8 +917,10 @@ function buildStatusTimeline(requestItem) {
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
     const kind = String(entry?.kind || "").toLowerCase();
-    const note = kind === STATUS_APPROVED_KIND && requestItem.returnMethod !== "pickup"
-      ? branchApprovedPortalMessage(requestItem)
+    const note = kind === STATUS_APPROVED_KIND
+      ? requestItem.returnMethod === "pickup"
+        ? pickupApprovedPortalMessage(requestItem)
+        : branchApprovedPortalMessage(requestItem)
       : kind === STATUS_REVIEW_KIND
       ? reviewReturnPortalMessage(requestItem)
       : kind === STATUS_RECEIVED_KIND
