@@ -752,6 +752,11 @@ function reviewReturnPortalMessage(requestItem) {
   return `📦 Pedido #${orderNumber}. Nuestro equipo ya comenzó el proceso de verificación de tu producto. Revisaremos la descripción y las fotografías del problema reportado. Una vez que validemos tu solicitud, te notificaremos el resultado. Regresa más tarde para consultar el estado de tu devolución.`;
 }
 
+function pickupApprovedPortalMessage(requestItem) {
+  const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `📦Pedido #${orderNumber}. Tu solicitud fue aprobada exitosamente. Nuestro equipo recogerá tu pedido en el domicilio y fecha indicados por ti. 🚚 Gracias por confiar y ser parte de Cariana. 💙`;
+}
+
 function timelineStatusDescription(status, requestItem) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") {
@@ -759,7 +764,7 @@ function timelineStatusDescription(status, requestItem) {
   }
   if (normalized === "aprobada") {
     return requestItem.returnMethod === "pickup"
-      ? "Tu solicitud fue aprobada. Recogeremos tu producto en el domicilio y fecha indicados."
+      ? pickupApprovedPortalMessage(requestItem)
       : branchApprovedPortalMessage(requestItem);
   }
   if (normalized === "recibida") {
@@ -872,7 +877,7 @@ function buildStatusTimeline(requestItem) {
       "Devolucion aprobada",
       requestItem.receivedAt || requestItem.updatedAt || requestItem.createdAt,
       requestItem.returnMethod === "pickup"
-        ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
+        ? pickupApprovedPortalMessage(requestItem)
         : branchApprovedPortalMessage(requestItem),
       "approved",
     );
@@ -882,7 +887,7 @@ function buildStatusTimeline(requestItem) {
       "Devolucion aprobada",
       requestItem.createdAt,
       requestItem.returnMethod === "pickup"
-        ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
+        ? pickupApprovedPortalMessage(requestItem)
         : branchApprovedPortalMessage(requestItem),
       "approved",
     );
@@ -1714,7 +1719,7 @@ export const action = async ({ request }) => {
   const initialStatusMessage = requiresReview
     ? reviewReturnPortalMessage(payload.order)
     : payload.returnMethod === "pickup"
-      ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio en la fecha establecida por ti."
+      ? pickupApprovedPortalMessage(payload.order)
       : branchApprovedPortalMessage(payload.order);
   const initialTimelineEntries = [
     {

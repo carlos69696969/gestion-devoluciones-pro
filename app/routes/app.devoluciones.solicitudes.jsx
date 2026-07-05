@@ -643,6 +643,20 @@ function formatReturnRescheduleDate(rawValue) {
 }
 
 function formatRefundQueueDate(rawValue) {
+  const isoDateMatch = String(rawValue || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDateMatch) {
+    const date = new Date(
+      Date.UTC(Number(isoDateMatch[1]), Number(isoDateMatch[2]) - 1, Number(isoDateMatch[3]), 12),
+    );
+    const parts = new Intl.DateTimeFormat("es-MX", {
+      timeZone: "UTC",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.day}/${String(values.month || "").toLowerCase()}/${values.year}`;
+  }
   const date = new Date(rawValue);
   if (!Number.isFinite(date.getTime())) return "-";
   const parts = new Intl.DateTimeFormat("es-MX", {
@@ -832,6 +846,11 @@ function reviewReturnPortalMessage(requestRow) {
   return `📦 Pedido #${orderNumber}. Nuestro equipo ya comenzó el proceso de verificación de tu producto. Revisaremos la descripción y las fotografías del problema reportado. Una vez que validemos tu solicitud, te notificaremos el resultado. Regresa más tarde para consultar el estado de tu devolución.`;
 }
 
+function pickupApprovedPortalMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `📦Pedido #${orderNumber}. Tu solicitud fue aprobada exitosamente. Nuestro equipo recogerá tu pedido en el domicilio y fecha indicados por ti. 🚚 Gracias por confiar y ser parte de Cariana. 💙`;
+}
+
 function timelineStatusDescription(status, requestRow) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") {
@@ -839,7 +858,7 @@ function timelineStatusDescription(status, requestRow) {
   }
   if (normalized === "aprobada") {
     return requestRow.returnMethod === "pickup"
-      ? "Tu solicitud fue aprobada. Recogeremos tu producto en el domicilio y fecha indicados."
+      ? pickupApprovedPortalMessage(requestRow)
       : branchApprovedPortalMessage(requestRow);
   }
   if (normalized === "en_ruta") {
@@ -931,7 +950,7 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
       "Devolucion aprobada",
       requestRow.receivedAt || requestRow.updatedAt || requestRow.createdAt,
       requestRow.returnMethod === "pickup"
-        ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
+        ? pickupApprovedPortalMessage(requestRow)
         : branchApprovedPortalMessage(requestRow),
       "approved",
     );
@@ -941,7 +960,7 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
       "Devolucion aprobada",
       requestRow.createdAt,
       requestRow.returnMethod === "pickup"
-        ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio."
+        ? pickupApprovedPortalMessage(requestRow)
         : branchApprovedPortalMessage(requestRow),
       "approved",
     );
@@ -3185,7 +3204,7 @@ export const action = async ({ request }) => {
   if (intent === "approve_request") {
     const approvedMessage =
       requestRow.returnMethod === "pickup"
-        ? "Tu solicitud fue aprobada. Recogeremos tu producto en el domicilio y fecha indicados."
+        ? pickupApprovedPortalMessage(requestRow)
         : branchApprovedPortalMessage(requestRow);
     await prisma.returnRequest.update({
       where: { id },
@@ -4397,6 +4416,8 @@ export default function ReturnsRequests() {
                         hideCourierProgress
                         hidePickupActions
                         showPickupRescheduleStatus
+                        useRefundQueueDateFormat
+                        useRefundQueueDateTimeSummary
                       />
                     ))}
                   </div>
