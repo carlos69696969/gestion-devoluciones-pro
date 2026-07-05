@@ -139,7 +139,7 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, requiresRev
       phone: requestRow.customerPhone || null,
     },
     note: requiresReview
-      ? "Tu solicitud esta siendo revisada por nuestro equipo."
+      ? reviewReturnPortalMessage(requestRow)
       : "Tu solicitud fue aprobada automaticamente.",
     source: "portal_devoluciones_public",
     return_method: requestRow.returnMethod || null,
@@ -747,10 +747,15 @@ function receivedReturnPortalMessage(requestItem) {
   return `${prefix}Producto recibido. Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰`;
 }
 
+function reviewReturnPortalMessage(requestItem) {
+  const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `📦 Pedido #${orderNumber}. Nuestro equipo ya comenzó el proceso de verificación de tu producto. Revisaremos la descripción y las fotografías del problema reportado. Una vez que validemos tu solicitud, te notificaremos el resultado. Regresa más tarde para consultar el estado de tu devolución.`;
+}
+
 function timelineStatusDescription(status, requestItem) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") {
-    return "Tu solicitud esta siendo revisada por nuestro equipo.";
+    return reviewReturnPortalMessage(requestItem);
   }
   if (normalized === "aprobada") {
     return requestItem.returnMethod === "pickup"
@@ -860,7 +865,7 @@ function buildStatusTimeline(requestItem) {
   };
 
   if (requestItem.requiresReview && !entryKinds.has(STATUS_REVIEW_KIND)) {
-    pushEvent("Solicitud en revision", requestItem.createdAt, "Tu solicitud esta siendo revisada por nuestro equipo.", "review");
+    pushEvent("Solicitud en revision", requestItem.createdAt, reviewReturnPortalMessage(requestItem), "review");
   }
   if (requestItem.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND) && hasReachedApprovedPhase(requestItem.status)) {
     pushEvent(
@@ -909,6 +914,8 @@ function buildStatusTimeline(requestItem) {
     const kind = String(entry?.kind || "").toLowerCase();
     const note = kind === STATUS_APPROVED_KIND && requestItem.returnMethod !== "pickup"
       ? branchApprovedPortalMessage(requestItem)
+      : kind === STATUS_REVIEW_KIND
+      ? reviewReturnPortalMessage(requestItem)
       : kind === STATUS_RECEIVED_KIND
       ? receivedReturnPortalMessage(requestItem)
       : kind === "courier_route_time_reprogrammed"
@@ -1705,7 +1712,7 @@ export const action = async ({ request }) => {
   const createdTimelineAt = new Date().toISOString();
   const initialStatusKind = requiresReview ? STATUS_REVIEW_KIND : STATUS_APPROVED_KIND;
   const initialStatusMessage = requiresReview
-    ? "Tu solicitud esta siendo revisada por nuestro equipo."
+    ? reviewReturnPortalMessage(payload.order)
     : payload.returnMethod === "pickup"
       ? "Tu solicitud fue aprobada. Recogeremos tu producto en tu domicilio en la fecha establecida por ti."
       : branchApprovedPortalMessage(payload.order);
@@ -2105,11 +2112,6 @@ function CompletedReturnSummary({ requestItem }) {
           {failedAttemptLabel}: {requestItem.rejectionReason || "No se encontro al cliente en el domicilio para entregar el paquete."}
         </p>
       ) : null}
-      {isReview ? (
-        <p className={`${styles.completedStatus} ${styles.reviewHintText}`}>
-          Tu solicitud esta siendo revisada por nuestro equipo, regresa mas tarde para revisar el estado de tu solicitud.
-        </p>
-      ) : null}
       {requestItem.rejectionReason && isRejectedOrDenied && !requestItem.wasReturnedToCustomer ? (
         <p className={styles.completedStatus}>
           Motivo de denegacion: <strong>{requestItem.rejectionReason}</strong>
@@ -2153,7 +2155,7 @@ function CompletedReturnSummary({ requestItem }) {
                 <p className={styles.productLineMeta}>Motivo: {item.reason || "-"}</p>
               </div>
             </div>
-            {item.details ? <p className={styles.productLineMeta}>Descripcion: {item.details}</p> : null}
+            {item.details ? <p className={styles.productLineDetails}><strong>Descripcion:</strong> {item.details}</p> : null}
             {item.photoDataUrls?.length ? (
               <div className={styles.evidencePhotos}>
                 {item.photoDataUrls.map((src, idx) => (

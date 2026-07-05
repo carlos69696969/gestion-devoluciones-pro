@@ -326,6 +326,13 @@
   font-size: 13px;
 }
 
+.productLineDetails {
+  margin: 6px 0 0;
+  color: #202223;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .evidencePhotos {
   display: flex;
   flex-wrap: wrap;

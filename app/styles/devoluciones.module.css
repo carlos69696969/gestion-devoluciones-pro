@@ -772,6 +772,13 @@
   font-size: 14px;
 }
 
+.productLineDetails {
+  margin: 6px 0 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .evidencePhotos {
   margin-top: 8px;
   display: grid;

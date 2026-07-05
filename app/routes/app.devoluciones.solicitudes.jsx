@@ -827,10 +827,15 @@ function receivedReturnPortalMessage(requestRow) {
   return `${prefix}Producto recibido. Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰`;
 }
 
+function reviewReturnPortalMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `📦 Pedido #${orderNumber}. Nuestro equipo ya comenzó el proceso de verificación de tu producto. Revisaremos la descripción y las fotografías del problema reportado. Una vez que validemos tu solicitud, te notificaremos el resultado. Regresa más tarde para consultar el estado de tu devolución.`;
+}
+
 function timelineStatusDescription(status, requestRow) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") {
-    return "Tu solicitud esta siendo revisada por nuestro equipo.";
+    return reviewReturnPortalMessage(requestRow);
   }
   if (normalized === "aprobada") {
     return requestRow.returnMethod === "pickup"
@@ -919,7 +924,7 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
   };
 
   if (requestRow.requiresReview && !entryKinds.has(STATUS_REVIEW_KIND)) {
-    pushEvent("Solicitud en revision", requestRow.createdAt, "Tu solicitud esta siendo revisada por nuestro equipo.", "review");
+    pushEvent("Solicitud en revision", requestRow.createdAt, reviewReturnPortalMessage(requestRow), "review");
   }
   if (requestRow.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND) && hasReachedApprovedPhase(requestRow.status)) {
     pushEvent(
@@ -969,6 +974,8 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
     if (!label) continue;
     const note = kind === STATUS_APPROVED_KIND && requestRow.returnMethod !== "pickup"
       ? branchApprovedPortalMessage(requestRow)
+      : kind === STATUS_REVIEW_KIND
+      ? reviewReturnPortalMessage(requestRow)
       : kind === STATUS_RECEIVED_KIND
       ? receivedReturnPortalMessage(requestRow)
       : kind === "courier_route_time_reprogrammed"
@@ -6545,7 +6552,7 @@ function RequestCard({
                     <p className={styles.productLineMeta}>Motivo: {item.reason}</p>
                   </div>
                 </div>
-                {item.details ? <p className={styles.productLineMeta}>Descripcion: {item.details}</p> : null}
+                {item.details ? <p className={styles.productLineDetails}><strong>Descripcion:</strong> {item.details}</p> : null}
                 {photos.length ? (
                   <div className={styles.evidencePhotos}>
                     {photos.map((src, idx) => (
