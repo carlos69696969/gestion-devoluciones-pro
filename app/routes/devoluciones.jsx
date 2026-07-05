@@ -2815,7 +2815,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                     <p><strong>Direccion sucursal:</strong> <BranchAddressLink address={settings.branchAddress} /></p>
                     <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.branchInstructions}</p>
                     <p><strong>Horario de sucursal:</strong> {settings.branchHours}</p>
-                    <p><strong>Total a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
+                    <p><strong>Subtotal a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
                   </>
                 ) : (
                   <>
@@ -2828,7 +2828,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                     <p><strong>Dia:</strong> {formatReturnPortalDateKey(pickup.pickupDate)}</p>
                     <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
                     <p><strong>Instrucciones del cliente:</strong> {pickup.pickupNotes || "-"}</p>
-                    <p><strong>Total a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
+                    <p><strong>Subtotal a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
                     <p><strong>Costo recoleccion:</strong> ${toMXN(returnCost)} MXN</p>
                     <p><strong>Total final a reembolsar:</strong> ${toMXN(finalRefund)} MXN</p>
                   </>
