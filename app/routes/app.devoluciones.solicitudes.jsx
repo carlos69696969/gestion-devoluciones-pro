@@ -821,6 +821,12 @@ function branchApprovedPortalMessage(requestRow) {
   return `${prefix}Tu solicitud de devolución fue aprobada. Por favor, lleva tu producto a la sucursal de devoluciones antes de la fecha limite de entrega siguiendo las instrucciones de entrega.`;
 }
 
+function receivedReturnPortalMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim();
+  const prefix = orderNumber ? `📦Pedido #${orderNumber}. ` : "📦";
+  return `${prefix}Producto recibido. Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰`;
+}
+
 function timelineStatusDescription(status, requestRow) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") {
@@ -838,7 +844,7 @@ function timelineStatusDescription(status, requestRow) {
     return buildReturnRouteTimeRescheduleMessage(requestRow);
   }
   if (normalized === "recibida") {
-    return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰";
+    return receivedReturnPortalMessage(requestRow);
   }
   if (normalized === "reembolsada" || normalized === "completada") {
     return "Tu reembolso ya fue procesado al metodo de pago original.";
@@ -939,7 +945,7 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
     pushEvent(
       "Recibimos tu producto",
       requestRow.receivedAt,
-      "Recibimos tu producto. Estamos revisandolo para continuar el proceso.",
+      receivedReturnPortalMessage(requestRow),
       "received",
     );
   }
@@ -963,6 +969,8 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
     if (!label) continue;
     const note = kind === STATUS_APPROVED_KIND && requestRow.returnMethod !== "pickup"
       ? branchApprovedPortalMessage(requestRow)
+      : kind === STATUS_RECEIVED_KIND
+      ? receivedReturnPortalMessage(requestRow)
       : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestRow, routeTimeRescheduleDateFromReason(entry.reason))
       : kind === RETURNED_TO_CUSTOMER_KIND
@@ -3263,7 +3271,7 @@ export const action = async ({ request }) => {
         receivedAt: new Date(),
         rejectionReason: appendTimelineMetaEntry(requestRow.rejectionReason, {
           kind: STATUS_RECEIVED_KIND,
-          reason: "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰",
+          reason: receivedReturnPortalMessage(requestRow),
         }),
       },
     });
@@ -3271,7 +3279,7 @@ export const action = async ({ request }) => {
       shopDomain: session.shop,
       requestRow,
       intent,
-      note: "Recibimos tu producto para validar la devolucion.",
+      note: receivedReturnPortalMessage(requestRow),
     });
     return { ok: true, message: "Solicitud marcada como recibida." };
   }

@@ -728,6 +728,12 @@ function branchApprovedPortalMessage(requestItem) {
   return `${prefix}Tu solicitud de devolución fue aprobada. Por favor, lleva tu producto a la sucursal de devoluciones antes de la fecha limite de entrega siguiendo las instrucciones de entrega.`;
 }
 
+function receivedReturnPortalMessage(requestItem) {
+  const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim();
+  const prefix = orderNumber ? `📦Pedido #${orderNumber}. ` : "📦";
+  return `${prefix}Producto recibido. Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰`;
+}
+
 function timelineStatusDescription(status, requestItem) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "en_revision") {
@@ -739,7 +745,7 @@ function timelineStatusDescription(status, requestItem) {
       : branchApprovedPortalMessage(requestItem);
   }
   if (normalized === "recibida") {
-    return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰";
+    return receivedReturnPortalMessage(requestItem);
   }
   if (normalized === "reintento_pendiente") {
     return buildReturnRouteTimeRescheduleMessage(requestItem);
@@ -867,7 +873,7 @@ function buildStatusTimeline(requestItem) {
     pushEvent(
       "Recibimos tu producto",
       requestItem.receivedAt,
-      "Recibimos tu producto. Estamos revisandolo para continuar el proceso.",
+      receivedReturnPortalMessage(requestItem),
       "received",
     );
   }
@@ -890,6 +896,8 @@ function buildStatusTimeline(requestItem) {
     const kind = String(entry?.kind || "").toLowerCase();
     const note = kind === STATUS_APPROVED_KIND && requestItem.returnMethod !== "pickup"
       ? branchApprovedPortalMessage(requestItem)
+      : kind === STATUS_RECEIVED_KIND
+      ? receivedReturnPortalMessage(requestItem)
       : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestItem, routeTimeRescheduleDateFromReason(entry.reason))
       : kind === RETURNED_TO_CUSTOMER_KIND
