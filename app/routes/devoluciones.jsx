@@ -441,6 +441,19 @@ function formatReturnPortalDate(value) {
   return `${values.day}/${values.month}/${values.year}`;
 }
 
+function formatReturnPortalDateKey(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return formatReturnPortalDate(value);
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.day}/${values.month}/${values.year}`;
+}
 function formatReturnPortalDateTime(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "-";
@@ -2797,12 +2810,12 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                 {returnMethod === "branch" ? (
                   <p><strong>Fecha limite de entrega:</strong> {formatReturnPortalDate(limitDateObj)}</p>
                 ) : null}
-                <p><strong>Monto estimado a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
                 {returnMethod === "branch" ? (
                   <>
                     <p><strong>Direccion sucursal:</strong> <BranchAddressLink address={settings.branchAddress} /></p>
                     <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.branchInstructions}</p>
                     <p><strong>Horarios de entrega:</strong> {settings.branchHours}</p>
+                    <p><strong>Monto estimado a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
                   </>
                 ) : (
                   <>
@@ -2812,9 +2825,10 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
                         .filter(Boolean)
                         .join(", ") || "-"}
                     </p>
-                    <p><strong>Dia:</strong> {pickup.pickupDate || "-"}</p>
+                    <p><strong>Dia:</strong> {formatReturnPortalDateKey(pickup.pickupDate)}</p>
                     <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
                     <p><strong>Instrucciones del cliente:</strong> {pickup.pickupNotes || "-"}</p>
+                    <p><strong>Monto estimado a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
                     <p><strong>Costo recoleccion:</strong> ${toMXN(returnCost)} MXN</p>
                     <p><strong>Total final a reembolsar:</strong> ${toMXN(finalRefund)} MXN</p>
                   </>
