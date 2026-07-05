@@ -195,6 +195,7 @@
 .input,
 .select,
 .textarea {
+  box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 12px;
