@@ -3203,7 +3203,7 @@ export const action = async ({ request }) => {
       intent,
       note: approvedMessage,
     });
-    return { ok: true, message: "Solicitud aprobada." };
+    return { ok: true, message: "Solicitud aprobada correctamente." };
   }
 
   if (intent === "reject_request") {
@@ -6596,7 +6596,17 @@ function RequestCard({
       <div className={styles.actionRow}>
         {status === "en_revision" ? (
           <>
-            <Form method="post" action={currentFormAction}>
+            <Form
+              method="post"
+              action={currentFormAction}
+              onSubmit={(event) => {
+                const orderLabel = request.orderNumber ? ` #${request.orderNumber}` : "";
+                const confirmed = window.confirm(
+                  `Estas seguro de aprobar la solicitud del pedido${orderLabel}?`,
+                );
+                if (!confirmed) event.preventDefault();
+              }}
+            >
               <input type="hidden" name="intent" value="approve_request" />
               <input type="hidden" name="id" value={request.id} />
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
