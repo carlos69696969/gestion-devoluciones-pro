@@ -2119,11 +2119,6 @@ function CompletedReturnSummary({ requestItem }) {
           {failedAttemptLabel}: {requestItem.rejectionReason || "No se encontro al cliente en el domicilio para entregar el paquete."}
         </p>
       ) : null}
-      {requestItem.rejectionReason && isRejectedOrDenied && !requestItem.wasReturnedToCustomer ? (
-        <p className={styles.completedStatus}>
-          Motivo de denegacion: <strong>{requestItem.rejectionReason}</strong>
-        </p>
-      ) : null}
       {requestItem.wasReturnedToCustomer ? (
         <p className={`${styles.completedStatus} ${styles.returnedToCustomerHintText}`}>
           {RETURNED_TO_CUSTOMER_MESSAGE}
