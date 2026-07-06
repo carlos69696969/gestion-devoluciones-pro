@@ -118,6 +118,7 @@ const RETURN_EVENT_BY_INTENT = {
   deny_received: "return_rejected",
   mark_returned_to_customer: "return_rejected",
   mark_not_returned: "return_rejected",
+  mark_never_arrived: "return_expired",
   process_refund: "refund_completed",
 };
 
