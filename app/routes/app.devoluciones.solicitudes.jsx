@@ -6321,7 +6321,7 @@ function RequestCard({
     ? buildStatusTimeline(request, hideCourierProgress, { hideCourierRouteStarts })
     : [];
   const currentTimelineEvent = timelineEvents[0] || null;
-  const olderTimelineEvents = timelineEvents.slice(1);
+  const olderTimelineEvents = timelineEvents.slice(1).filter((event) => String(event.note || "").trim());
   const internalStatus = String(request.status || "").toLowerCase();
   const status = internalStatus === "en_ruta" || internalStatus.startsWith("en_ruta_") ? "aprobada" : internalStatus;
   const isPickupMethod = request.returnMethod === "pickup";

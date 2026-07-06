@@ -2036,6 +2036,7 @@ function CompletedReturnSummary({ requestItem }) {
   const [showAllStates, setShowAllStates] = useState(false);
   const timelineEvents = useMemo(() => buildStatusTimeline(requestItem), [requestItem]);
   const currentTimelineEvent = timelineEvents[0] || null;
+  const visibleTimelineEvents = timelineEvents.filter((event, index) => index === 0 || String(event.note || "").trim());
   const normalizedStatus = String(requestItem.status || "").toLowerCase();
   const isFailedPickupAttempt =
     normalizedStatus === "intento_fallido_1" || normalizedStatus === "intento_fallido_2";
@@ -2101,7 +2102,7 @@ function CompletedReturnSummary({ requestItem }) {
               {currentTimelineEvent.note}
             </p>
           ) : null}
-          {timelineEvents.length > 1 ? (
+          {visibleTimelineEvents.length > 1 ? (
             <button
               type="button"
               className={styles.statusTimelineInlineToggle}
@@ -2114,7 +2115,7 @@ function CompletedReturnSummary({ requestItem }) {
       ) : null}
       {showAllStates ? (
         <div className={styles.statusTimelineList}>
-          {timelineEvents.map((event) => (
+          {visibleTimelineEvents.map((event) => (
             <div key={event.id} className={styles.statusTimelineItem}>
               <p className={`${styles.statusTimelineItemTitle} ${timelineToneClassName(event.tone)}`}>{event.label}</p>
               <p className={styles.statusTimelineItemAt}>{formatReturnPortalDateTime(event.at)}</p>
