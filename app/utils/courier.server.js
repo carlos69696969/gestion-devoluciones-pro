@@ -665,13 +665,36 @@ export function getCourierNextRouteStatus(status) {
   return `en_ruta_${currentStep + 1}`;
 }
 
+function formatCourierEstimatedArrivalLabel(date = new Date()) {
+  const estimatedArrival = new Date(date.getTime() + 45 * 60 * 1000);
+  const formattedTime = new Intl.DateTimeFormat("es-MX", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "America/Mexico_City",
+  })
+    .format(estimatedArrival)
+    .replace(/\s*a\.\s*m\./i, " a.m.")
+    .replace(/\s*p\.\s*m\./i, " p.m.");
+  const mexicoHour = Number(
+    new Intl.DateTimeFormat("es-MX", {
+      hour: "numeric",
+      hour12: false,
+      timeZone: "America/Mexico_City",
+    }).format(estimatedArrival),
+  );
+  const hour12 = mexicoHour % 12 || 12;
+  return `${hour12 === 1 ? "la" : "las"} ${formattedTime}`;
+}
+
 export async function emitCourierReturnRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
   if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
     return { ok: false, error: "No se pudo preparar la notificacion." };
   }
 
   const title = "\u{1F69A} \u00a1Vamos en camino!";
-  const message = `Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya se dirige a tu domicilio para recoger tu devoluci\u00f3n. \u{1F4E6} Ten tu paquete listo y correctamente sellado. \u{1F4DD} No olvides colocar tu n\u00famero de pedido y nombre del comprador en el exterior del paquete.`;
+  const estimatedArrivalLabel = formatCourierEstimatedArrivalLabel();
+  const message = `\u{1F4E6} Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya se dirige a tu domicilio para recoger tu devoluci\u00f3n. Llegar\u00e1 aproximadamente antes de ${estimatedArrivalLabel}. Ten tu paquete listo y correctamente sellado. \u{1F4DD} No olvides colocar tu n\u00famero de pedido y nombre del comprador en el exterior del paquete.`;
   const eventPayload = {
     status: "order_in_transit",
     event: "order_in_transit",
