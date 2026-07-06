@@ -43,22 +43,15 @@ function courierPortalCookies(request) {
   };
 }
 
-const PICKUP_FAILED_REASON_OPTIONS = [
-  "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨",
-  "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
-];
-const FINAL_PICKUP_REJECTION_REASON =
-  "❌🚚 Después de 3 intentos de recolección en el domicilio registrado, no fue posible recibir el producto. Por esta razón, la solicitud de devolución fue rechazada automáticamente.";
-const SECOND_PICKUP_FAILED_WARNING =
-  "⚠️ Nota importante: Si mañana no logramos localizarte en tu domicilio por tercera ocasión, tu devolución será cancelada. 📦❌";
+const DEFAULT_PICKUP_FAILED_REASON =
+  "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨";
 
 const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
 const COURIER_ROUTE_SESSION_STARTED_ACTION = "courier_route_session_started";
 const COURIER_ROUTE_SESSION_ENDED_ACTION = "courier_route_session_ended";
 
 function getFailedPickupMessage(request, rejectionReason) {
-  if (getReturnRetryAttemptLabel(request) !== "segundo intento") return rejectionReason;
-  return `${rejectionReason}\n\n${SECOND_PICKUP_FAILED_WARNING}`;
+  return rejectionReason;
 }
 
 export const headers = () => ({
@@ -2330,13 +2323,13 @@ export default function RepartidorPublicPortal() {
     </Form>
   );
 
-  const renderFailedPickupReasonForm = (request, rejectionReason, index) => {
+  const renderFailedPickupReasonForm = (request, rejectionReason = DEFAULT_PICKUP_FAILED_REASON) => {
     const failedPickupMessage = getFailedPickupMessage(request, rejectionReason);
     return (
       <Form
       method="post"
       onSubmit={(event) => {
-        if (!confirmCourierAction(request, "intento de devolucion fallido", "Se enviara el mensaje seleccionado al cliente.")) {
+        if (!confirmCourierAction(request, "devolucion no entregada", "Se enviara la notificacion al cliente.")) {
           event.preventDefault();
           return;
         }
@@ -2347,9 +2340,7 @@ export default function RepartidorPublicPortal() {
       <input
         type="hidden"
         name="intent"
-        value={getReturnRetryAttemptLabel(request) === "tercer intento"
-          ? "courier_return_reject_after_failed_pickups"
-          : "courier_return_pickup_attempt_failed"}
+        value="courier_return_pickup_attempt_failed"
       />
       <input type="hidden" name="requestId" value={String(request.id || "")} />
       <input type="hidden" name="orderNumber" value={String(request.orderNumber || "")} />
@@ -2359,9 +2350,8 @@ export default function RepartidorPublicPortal() {
       <input type="hidden" name="currentStatus" value={String(request.status || "")} />
       <input type="hidden" name="currentAttemptCount" value={String(request.attemptCount || 0)} />
         <input type="hidden" name="rejectionReason" value={failedPickupMessage} />
-        <button type="submit" className={styles.reasonOptionButton}>
-          <span className={styles.reasonOptionLabel}>Mensaje automatico {index + 1}</span>
-          <span className={styles.reasonOptionText}>{failedPickupMessage}</span>
+        <button type="submit" className={`${styles.actionButton} ${styles.actionButtonDanger}`} disabled={isSubmitting}>
+          Confirmar no entregado
         </button>
       </Form>
     );
@@ -2800,17 +2790,13 @@ export default function RepartidorPublicPortal() {
             onClick={(event) => event.stopPropagation()}
           >
             <h2 id="failed-pickup-reason-title" className={styles.reasonModalTitle}>
-              Selecciona un mensaje completo
+              Confirmar devolucion no entregada
             </h2>
-            <div className={styles.reasonOptionList}>
-              {(getReturnRetryAttemptLabel(failedPickupRequest) === "tercer intento"
-                ? [FINAL_PICKUP_REJECTION_REASON]
-                : PICKUP_FAILED_REASON_OPTIONS
-              ).map((option, index) => (
-                <div key={option}>{renderFailedPickupReasonForm(failedPickupRequest, option, index)}</div>
-              ))}
-            </div>
+            <p className={styles.reasonOptionText}>
+              Se enviara al cliente el mensaje automatico de recoleccion no completada.
+            </p>
             <div className={styles.reasonModalActions}>
+              {renderFailedPickupReasonForm(failedPickupRequest)}
               <button type="button" className={styles.actionButton} onClick={() => setFailedPickupRequest(null)}>
                 Cerrar
               </button>
