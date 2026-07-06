@@ -3248,7 +3248,7 @@ export const action = async ({ request }) => {
       intent,
       note: rejectionReason,
     });
-    return { ok: true, message: "Solicitud rechazada." };
+    return { ok: true, message: "Devolucion rechazada correctamente." };
   }
 
   if (intent === "mark_in_route") {
@@ -6636,7 +6636,18 @@ function RequestCard({
                 Aprobar
               </button>
             </Form>
-            <Form method="post" action={currentFormAction} className={styles.rejectForm}>
+            <Form
+              method="post"
+              action={currentFormAction}
+              className={styles.rejectForm}
+              onSubmit={(event) => {
+                const orderLabel = request.orderNumber ? ` #${request.orderNumber}` : "";
+                const confirmed = window.confirm(
+                  `Estas seguro de rechazar la devolucion del pedido${orderLabel}?`,
+                );
+                if (!confirmed) event.preventDefault();
+              }}
+            >
               <input type="hidden" name="intent" value="reject_request" />
               <input type="hidden" name="id" value={request.id} />
               <input
