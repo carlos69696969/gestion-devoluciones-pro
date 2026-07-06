@@ -4446,6 +4446,7 @@ export default function ReturnsRequests() {
                         hideInRouteAction
                         hidePickupActions
                         showPickupRescheduleStatus
+                        showPickupDateSummary
                         useRefundQueueDateFormat
                         useRefundQueueDateTimeSummary
                       />
@@ -6302,6 +6303,7 @@ function RequestCard({
   hideInRouteAction = false,
   hidePickupActions = false,
   showPickupRescheduleStatus = false,
+  showPickupDateSummary = false,
   branchDeliveryTestMode = false,
 }) {
   const [viewerImage, setViewerImage] = useState(null);
@@ -6440,7 +6442,9 @@ function RequestCard({
           <div className={styles.kvRow}>
             <span className={styles.kvKey}>Fecha solicitud</span>
             <span className={styles.kvVal}>
-              {isHistoryStatus && useRefundQueueDateFormat
+              {showPickupDateSummary && isPickupMethod
+                ? formatRefundQueueDate(request.createdAt)
+                : isHistoryStatus && useRefundQueueDateFormat
                 ? formatRefundQueueDate(request.createdAt)
                 : useRefundQueueDateTimeSummary
                 ? formatRefundQueueDateTime(request.createdAt)
@@ -6449,6 +6453,14 @@ function RequestCard({
                   : new Date(request.createdAt).toLocaleString("es-MX")}
             </span>
           </div>
+          {showPickupDateSummary && isPickupMethod ? (
+            <div className={styles.kvRow}>
+              <span className={styles.kvKey}>Dia de recoleccion</span>
+              <span className={styles.kvVal}>
+                {useRefundQueueDateFormat ? formatRefundQueueDate(request.pickupDate) : request.pickupDate || "-"}
+              </span>
+            </div>
+          ) : null}
           {!isPickupMethod && request.branchDeliveryDeadlineAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Fecha limite de entrega</span>
@@ -6537,7 +6549,7 @@ function RequestCard({
             {[request.pickupAddress, request.pickupCity, request.pickupState, request.pickupPostalCode]
               .filter(Boolean)
               .join(", ") || "-"}
-            {" | "}Dia: {useRefundQueueDateFormat ? formatRefundQueueDate(request.pickupDate) : request.pickupDate || "-"}
+            {showPickupDateSummary ? "" : ` | Dia: ${useRefundQueueDateFormat ? formatRefundQueueDate(request.pickupDate) : request.pickupDate || "-"}`}
             {request.pickupNotes ? ` | Notas: ${request.pickupNotes}` : ""}
           </p>
         ) : (
