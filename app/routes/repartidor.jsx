@@ -2651,21 +2651,6 @@ export default function RepartidorPublicPortal() {
                   <p className={adminStyles.courierField}>{request.customerPhone || "-"}</p>
                   {activeTab === "historial" &&
                   isReturnOrder(request) &&
-                  isReturnPickupFailedStatus(request) &&
-                  String(request.status || "").toLowerCase() !== "intento_fallido_3" ? (
-                    <div className={styles.historyActionRow}>
-                      {renderCourierActionForm(
-                        request,
-                        "Reintentar",
-                        "courier_return_retry_pickup",
-                        "reintentar devolucion",
-                        `${styles.actionButton} ${styles.actionButtonRetry}`,
-                        "Esta accion devolvera la devolucion a En ruta como pendiente para que despues puedas marcarla en ruta manualmente.",
-                      )}
-                    </div>
-                  ) : null}
-                  {activeTab === "historial" &&
-                  isReturnOrder(request) &&
                   String(request.status || "").toLowerCase() === "intento_fallido_3" ? (
                     <div className={styles.historyActionRow}>
                       {renderCourierActionForm(
