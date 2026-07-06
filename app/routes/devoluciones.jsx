@@ -2042,10 +2042,6 @@ function CompletedReturnSummary({ requestItem }) {
   const isSecondFailedPickupAttempt = normalizedStatus === "intento_fallido_2";
   const isPendingToReturn = normalizedStatus === "por_devolver";
   const isReprogrammed = normalizedStatus === "reintento_pendiente";
-  const failedAttemptLabel =
-    normalizedStatus === "intento_fallido_2"
-      ? "Segundo intento de devolucion fallido"
-      : "Intento de devolucion fallido";
   const isRejectedOrDenied = ["rechazada", "denegada", "por_devolver", "reembolso_denegado", "no_devuelto"].includes(
     normalizedStatus,
   );
@@ -2128,11 +2124,6 @@ function CompletedReturnSummary({ requestItem }) {
             </div>
           ))}
         </div>
-      ) : null}
-      {isFailedPickupAttempt ? (
-        <p className={`${styles.completedStatus} ${styles.failedPickupHintText}`}>
-          {failedAttemptLabel}: {requestItem.rejectionReason || "No se encontro al cliente en el domicilio para entregar el paquete."}
-        </p>
       ) : null}
       {requestItem.wasReturnedToCustomer ? (
         <p className={`${styles.completedStatus} ${styles.returnedToCustomerHintText}`}>
