@@ -1907,7 +1907,6 @@ export default function RepartidorPublicPortal() {
   const revalidator = useRevalidator();
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
-  const [failedPickupRequest, setFailedPickupRequest] = useState(null);
   const [deliveryCodeRequest, setDeliveryCodeRequest] = useState(null);
   const [deliveryCodeInput, setDeliveryCodeInput] = useState("");
   const [deliveryCodeError, setDeliveryCodeError] = useState("");
@@ -2323,7 +2322,12 @@ export default function RepartidorPublicPortal() {
     </Form>
   );
 
-  const renderFailedPickupReasonForm = (request, rejectionReason = DEFAULT_PICKUP_FAILED_REASON) => {
+  const renderFailedPickupReasonForm = (
+    request,
+    rejectionReason = DEFAULT_PICKUP_FAILED_REASON,
+    buttonLabel = "No recibido",
+    buttonClassName = `${styles.actionButton} ${styles.actionButtonDanger}`,
+  ) => {
     const failedPickupMessage = getFailedPickupMessage(request, rejectionReason);
     return (
       <Form
@@ -2333,7 +2337,6 @@ export default function RepartidorPublicPortal() {
           event.preventDefault();
           return;
         }
-        setFailedPickupRequest(null);
       }}
     >
       <input type="hidden" name="shop" value={shop || ""} />
@@ -2350,8 +2353,8 @@ export default function RepartidorPublicPortal() {
       <input type="hidden" name="currentStatus" value={String(request.status || "")} />
       <input type="hidden" name="currentAttemptCount" value={String(request.attemptCount || 0)} />
         <input type="hidden" name="rejectionReason" value={failedPickupMessage} />
-        <button type="submit" className={`${styles.actionButton} ${styles.actionButtonDanger}`} disabled={isSubmitting}>
-          Confirmar no entregado
+        <button type="submit" className={buttonClassName} disabled={isSubmitting}>
+          {buttonLabel}
         </button>
       </Form>
     );
@@ -2709,13 +2712,7 @@ export default function RepartidorPublicPortal() {
                                 "courier_return_mark_received",
                                 "recibido",
                               )}
-                              <button
-                                type="button"
-                                className={`${styles.actionButton} ${styles.actionButtonDanger}`}
-                                onClick={() => setFailedPickupRequest(request)}
-                              >
-                                No recibido
-                              </button>
+                              {renderFailedPickupReasonForm(request)}
                             </>
                           ) : null}
                         </>
@@ -2780,27 +2777,6 @@ export default function RepartidorPublicPortal() {
           </section>
         ) : null}
       </div>
-      {failedPickupRequest ? (
-        <div className={styles.modalBackdrop} role="presentation" onClick={() => setFailedPickupRequest(null)}>
-          <section
-            className={styles.reasonModal}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="failed-pickup-reason-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h2 id="failed-pickup-reason-title" className={styles.reasonModalTitle}>
-              Confirmar devolucion no entregada
-            </h2>
-            <div className={styles.reasonModalActions}>
-              {renderFailedPickupReasonForm(failedPickupRequest)}
-              <button type="button" className={styles.actionButton} onClick={() => setFailedPickupRequest(null)}>
-                Cerrar
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
       {customerNoteRequest ? (
         <div className={styles.modalBackdrop} role="presentation" onClick={() => setCustomerNoteRequest(null)}>
           <section
