@@ -714,6 +714,7 @@ function timelineLabelFromReasonEntry(entry) {
   if (kind === "attempt_failed_2") return "Segundo intento";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "Devolucion rechazada";
   if (kind === "denied_after_received") return "Reembolso denegado";
+  if (kind === "never_arrived_branch") return "No devuelto";
   if (kind === NOT_RETURNED_KIND) return "No devuelto";
   if (kind === RETURNED_TO_CUSTOMER_KIND) return "Devolucion devuelta al cliente";
   return "";
@@ -730,6 +731,7 @@ function timelineToneFromReasonEntry(entry) {
   if (kind === "attempt_failed_1" || kind === "attempt_failed_2") return "attempt";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "rejected";
   if (kind === "denied_after_received") return "denied";
+  if (kind === "never_arrived_branch") return "denied";
   if (kind === NOT_RETURNED_KIND) return "denied";
   if (kind === RETURNED_TO_CUSTOMER_KIND) return "refunded";
   return "default";
@@ -755,6 +757,11 @@ function reviewReturnPortalMessage(requestItem) {
 function pickupApprovedPortalMessage(requestItem) {
   const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim() || "****";
   return `📦Pedido #${orderNumber}. Tu solicitud fue aprobada exitosamente. Nuestro equipo recogerá tu pedido en el domicilio y fecha indicados por ti. 🚚 Gracias por confiar y ser parte de Cariana. 💙`;
+}
+
+function expiredReturnPortalMessage(requestItem) {
+  const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `Pedido #${orderNumber}. Estimado cliente, la fecha límite para entregar tu devolución ha expirado. Lamentablemente, ya no podremos aceptar el producto.`;
 }
 
 function timelineStatusDescription(status, requestItem) {
@@ -786,7 +793,7 @@ function timelineStatusDescription(status, requestItem) {
     return "Tu solicitud fue rechazada. Revisa el motivo para mas detalle.";
   }
   if (normalized === "no_devuelto") {
-    return "Se marco como no devuelto por no recoger dentro del plazo.";
+    return expiredReturnPortalMessage(requestItem);
   }
   return "";
 }
@@ -927,6 +934,8 @@ function buildStatusTimeline(requestItem) {
       ? receivedReturnPortalMessage(requestItem)
       : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestItem, routeTimeRescheduleDateFromReason(entry.reason))
+      : kind === "never_arrived_branch"
+      ? expiredReturnPortalMessage(requestItem)
       : kind === RETURNED_TO_CUSTOMER_KIND
         ? RETURNED_TO_CUSTOMER_MESSAGE
         : normalizeDisplayedReasonText(entry.reason);
@@ -937,8 +946,11 @@ function buildStatusTimeline(requestItem) {
   const isInternalRouteStatus = String(requestItem.status || "").toLowerCase() === "en_ruta" ||
     String(requestItem.status || "").toLowerCase().startsWith("en_ruta_");
   const hasExplicitRejectedStatus = ["review_rejected", "rejected_after_attempts"].some((kind) => entryKinds.has(kind));
+  const hasExplicitNotReturnedStatus = ["never_arrived_branch", NOT_RETURNED_KIND].some((kind) => entryKinds.has(kind));
   const shouldSkipCurrentStatusFallback =
-    isInternalRouteStatus || (String(requestItem.status || "").toLowerCase() === "rechazada" && hasExplicitRejectedStatus);
+    isInternalRouteStatus ||
+    (String(requestItem.status || "").toLowerCase() === "rechazada" && hasExplicitRejectedStatus) ||
+    (String(requestItem.status || "").toLowerCase() === "no_devuelto" && hasExplicitNotReturnedStatus);
   if (!shouldSkipCurrentStatusFallback && (!currentStatusKind || !entryKinds.has(currentStatusKind))) {
     pushEvent(
       timelineLabelFromStatus(requestItem.status),

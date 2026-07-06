@@ -793,6 +793,7 @@ function timelineLabelFromReasonEntry(entry) {
   if (kind === "attempt_failed_2") return "Segundo intento";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "Devolucion rechazada";
   if (kind === "denied_after_received") return "Reembolso denegado";
+  if (kind === "never_arrived_branch") return "No devuelto";
   if (kind === NOT_RETURNED_KIND) return "No devuelto";
   if (kind === RETURNED_TO_CUSTOMER_KIND) return "Devolucion devuelta al cliente";
   return "";
@@ -825,6 +826,7 @@ function timelineToneFromReasonEntry(entry) {
   if (kind === "attempt_failed_1" || kind === "attempt_failed_2" || kind === "attempt_failed_3") return "attempt";
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "rejected";
   if (kind === "denied_after_received") return "denied";
+  if (kind === "never_arrived_branch") return "denied";
   if (kind === RETURNED_TO_CUSTOMER_KIND) return "pending";
   if (kind === NOT_RETURNED_KIND) return "denied";
   return "default";
@@ -850,6 +852,11 @@ function reviewReturnPortalMessage(requestRow) {
 function pickupApprovedPortalMessage(requestRow) {
   const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
   return `📦Pedido #${orderNumber}. Tu solicitud fue aprobada exitosamente. Nuestro equipo recogerá tu pedido en el domicilio y fecha indicados por ti. 🚚 Gracias por confiar y ser parte de Cariana. 💙`;
+}
+
+function expiredReturnPortalMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `Pedido #${orderNumber}. Estimado cliente, la fecha límite para entregar tu devolución ha expirado. Lamentablemente, ya no podremos aceptar el producto.`;
 }
 
 function timelineStatusDescription(status, requestRow) {
@@ -886,7 +893,7 @@ function timelineStatusDescription(status, requestRow) {
     return rejectionReason || "Tu solicitud fue rechazada. Revisa el motivo para mas detalle.";
   }
   if (normalized === "no_devuelto") {
-    return "Se marco como no devuelto por no recoger dentro del plazo.";
+    return expiredReturnPortalMessage(requestRow);
   }
   return "";
 }
@@ -1002,6 +1009,8 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
       ? receivedReturnPortalMessage(requestRow)
       : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestRow, routeTimeRescheduleDateFromReason(entry.reason))
+      : kind === "never_arrived_branch"
+      ? expiredReturnPortalMessage(requestRow)
       : kind === RETURNED_TO_CUSTOMER_KIND
         ? RETURNED_TO_CUSTOMER_MESSAGE
         : normalizeDisplayedReasonText(entry.reason);
@@ -1009,7 +1018,10 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
   }
 
   const currentStatusKind = timelineKindFromStatus(requestRow.status);
-  if (!currentStatusKind || !entryKinds.has(currentStatusKind)) {
+  const hasExplicitNotReturnedStatus = ["never_arrived_branch", NOT_RETURNED_KIND].some((kind) => entryKinds.has(kind));
+  const shouldSkipCurrentStatusFallback =
+    String(requestRow.status || "").toLowerCase() === "no_devuelto" && hasExplicitNotReturnedStatus;
+  if (!shouldSkipCurrentStatusFallback && (!currentStatusKind || !entryKinds.has(currentStatusKind))) {
     pushEvent(
       timelineLabelFromStatus(requestRow.status),
       requestRow.updatedAt,
@@ -6426,7 +6438,9 @@ function RequestCard({
           <div className={styles.kvRow}>
             <span className={styles.kvKey}>Fecha solicitud</span>
             <span className={styles.kvVal}>
-              {useRefundQueueDateTimeSummary
+              {isHistoryStatus && useRefundQueueDateFormat
+                ? formatRefundQueueDate(request.createdAt)
+                : useRefundQueueDateTimeSummary
                 ? formatRefundQueueDateTime(request.createdAt)
                 : useRefundQueueDateFormat
                   ? formatRefundQueueDate(request.createdAt)
@@ -6447,7 +6461,7 @@ function RequestCard({
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Fecha de cierre</span>
               <span className={styles.kvVal}>
-                {useRefundQueueDateTimeSummary ? formatRefundQueueDateTime(closedAt) : new Date(closedAt).toLocaleString("es-MX")}
+                {useRefundQueueDateFormat ? formatRefundQueueDate(closedAt) : new Date(closedAt).toLocaleDateString("es-MX")}
               </span>
             </div>
           ) : null}
@@ -6475,7 +6489,7 @@ function RequestCard({
               <span className={styles.kvVal}>{new Date(request.refundedAt).toLocaleString("es-MX")}</span>
             </div>
           ) : null}
-          {request.pickupDeadlineAt ? (
+          {request.pickupDeadlineAt && status !== "no_devuelto" ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Fecha limite para recoger</span>
               <span className={styles.kvVal}>
