@@ -936,7 +936,10 @@ function buildStatusTimeline(requestItem) {
   const currentStatusKind = timelineKindFromStatus(requestItem.status);
   const isInternalRouteStatus = String(requestItem.status || "").toLowerCase() === "en_ruta" ||
     String(requestItem.status || "").toLowerCase().startsWith("en_ruta_");
-  if (!isInternalRouteStatus && (!currentStatusKind || !entryKinds.has(currentStatusKind))) {
+  const hasExplicitRejectedStatus = ["review_rejected", "rejected_after_attempts"].some((kind) => entryKinds.has(kind));
+  const shouldSkipCurrentStatusFallback =
+    isInternalRouteStatus || (String(requestItem.status || "").toLowerCase() === "rechazada" && hasExplicitRejectedStatus);
+  if (!shouldSkipCurrentStatusFallback && (!currentStatusKind || !entryKinds.has(currentStatusKind))) {
     pushEvent(
       timelineLabelFromStatus(requestItem.status),
       requestItem.updatedAt,
