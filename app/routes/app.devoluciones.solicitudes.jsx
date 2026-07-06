@@ -3314,6 +3314,7 @@ export const action = async ({ request }) => {
   }
 
   if (intent === "mark_never_arrived") {
+    const isBranchDeliveryTestMode = String(formData.get("branchDeliveryTestMode") || "").trim() === "1";
     if (String(requestRow.returnMethod || "").toLowerCase() === "pickup") {
       return { ok: false, error: "Solo aplica a solicitudes de entrega en sucursal." };
     }
@@ -3325,7 +3326,7 @@ export const action = async ({ request }) => {
       Boolean(branchDeliveryDeadlineDate) &&
       Number.isFinite(branchDeliveryDeadlineDate.getTime()) &&
       new Date().getTime() > branchDeliveryDeadlineDate.getTime();
-    if (!isBranchDeliveryDeadlineExpired) {
+    if (!isBranchDeliveryTestMode && !isBranchDeliveryDeadlineExpired) {
       return { ok: false, error: "Aun no vence la fecha limite de entrega para marcar esta solicitud como nunca llego." };
     }
     await prisma.returnRequest.update({
@@ -4245,6 +4246,7 @@ export default function ReturnsRequests() {
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
   const [branchPickupRefundTestMode, setBranchPickupRefundTestMode] = useState(false);
+  const [branchDeliveryTestMode, setBranchDeliveryTestMode] = useState(false);
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
   const canConfirmCourierRoutePlan =
     selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
@@ -4379,6 +4381,17 @@ export default function ReturnsRequests() {
 
       {viewMode === VIEW_MODE.BRANCH ? (
         <s-section heading="Entregas en sucursal">
+          <div className={styles.branchPickupTestHeader}>
+            <label className={styles.branchPickupTestSwitch}>
+              <input
+                type="checkbox"
+                checked={branchDeliveryTestMode}
+                onChange={(event) => setBranchDeliveryTestMode(event.target.checked)}
+              />
+              <span className={styles.branchPickupTestSlider} aria-hidden="true" />
+              Modo prueba
+            </label>
+          </div>
           {branchRequests.length === 0 ? (
             <p>No hay solicitudes de entrega en sucursal.</p>
           ) : (
@@ -4390,6 +4403,7 @@ export default function ReturnsRequests() {
                   isSubmitting={isSubmitting}
                   enableLazyMedia
                   useRefundQueueDateFormat
+                  branchDeliveryTestMode={branchDeliveryTestMode}
                 />
               ))}
             </div>
@@ -6274,6 +6288,7 @@ function RequestCard({
   useRefundQueueDateTimeSummary = false,
   hidePickupActions = false,
   showPickupRescheduleStatus = false,
+  branchDeliveryTestMode = false,
 }) {
   const [viewerImage, setViewerImage] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -6298,7 +6313,7 @@ function RequestCard({
   const canMarkInRoute = isPickupMethod && status === "aprobada";
   const canMarkReceived = status === "aprobada" || status === "en_ruta" || isPickupFailedAttempt;
   const canMarkNeverArrived =
-    !isPickupMethod && status === "aprobada" && Boolean(request.isBranchDeliveryDeadlineExpired);
+    !isPickupMethod && status === "aprobada" && (Boolean(request.isBranchDeliveryDeadlineExpired) || branchDeliveryTestMode);
   const canRegisterPickupFailedAttempt =
     isPickupMethod && (status === "aprobada" || status === "en_ruta" || status === "intento_fallido_1");
   const canRejectAfterFailedPickups = isPickupMethod && status === "intento_fallido_2";
@@ -6699,9 +6714,19 @@ function RequestCard({
         ) : null}
 
         {canMarkNeverArrived ? (
-          <Form method="post" action={currentFormAction} className={styles.actionRight}>
+          <Form
+            method="post"
+            action={currentFormAction}
+            className={styles.actionRight}
+            onSubmit={(event) => {
+              if (!window.confirm(`¿Confirmas marcar como nunca llegó el pedido #${request.orderNumber}?`)) {
+                event.preventDefault();
+              }
+            }}
+          >
             <input type="hidden" name="intent" value="mark_never_arrived" />
             <input type="hidden" name="id" value={request.id} />
+            <input type="hidden" name="branchDeliveryTestMode" value={branchDeliveryTestMode ? "1" : "0"} />
             <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
               Nunca llego
             </button>
