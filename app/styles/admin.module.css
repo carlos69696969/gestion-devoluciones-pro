@@ -535,6 +535,15 @@
   min-height: 100px;
 }
 
+.rejectForm .rejectReasonTextarea {
+  width: 360px;
+  min-height: 42px;
+  max-height: 112px;
+  line-height: 1.35;
+  resize: none;
+  overflow-y: auto;
+}
+
 .reasonModalOverlay {
   position: fixed;
   inset: 0;
@@ -1540,5 +1549,6 @@
   .grid2 { grid-template-columns: 1fr; }
   .statusForm .select { width: 100%; }
   .rejectForm .input { width: 100%; }
+  .rejectForm .rejectReasonTextarea { width: 100%; }
   .courierCodeField { grid-template-columns: 1fr; }
 }
