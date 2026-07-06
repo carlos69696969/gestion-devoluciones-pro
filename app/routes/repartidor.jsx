@@ -2792,9 +2792,6 @@ export default function RepartidorPublicPortal() {
             <h2 id="failed-pickup-reason-title" className={styles.reasonModalTitle}>
               Confirmar devolucion no entregada
             </h2>
-            <p className={styles.reasonOptionText}>
-              Se enviara al cliente el mensaje automatico de recoleccion no completada.
-            </p>
             <div className={styles.reasonModalActions}>
               {renderFailedPickupReasonForm(failedPickupRequest)}
               <button type="button" className={styles.actionButton} onClick={() => setFailedPickupRequest(null)}>
