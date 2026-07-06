@@ -45,13 +45,16 @@ function courierPortalCookies(request) {
 
 const DEFAULT_PICKUP_FAILED_REASON =
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨";
+const SECOND_PICKUP_FAILED_WARNING =
+  "⚠️ Nota importante: Si mañana no logramos localizarte en tu domicilio por tercera ocasión, tu devolución será cancelada. 📦❌";
 
 const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
 const COURIER_ROUTE_SESSION_STARTED_ACTION = "courier_route_session_started";
 const COURIER_ROUTE_SESSION_ENDED_ACTION = "courier_route_session_ended";
 
 function getFailedPickupMessage(request, rejectionReason) {
-  return rejectionReason;
+  if (getReturnRetryAttemptLabel(request) !== "segundo intento") return rejectionReason;
+  return `${rejectionReason}\n\n${SECOND_PICKUP_FAILED_WARNING}`;
 }
 
 export const headers = () => ({
