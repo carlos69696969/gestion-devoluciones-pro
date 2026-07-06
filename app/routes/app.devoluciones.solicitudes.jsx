@@ -4443,6 +4443,7 @@ export default function ReturnsRequests() {
                         isSubmitting={isSubmitting}
                         enableLazyMedia
                         hideCourierProgress
+                        hideInRouteAction
                         hidePickupActions
                         showPickupRescheduleStatus
                         useRefundQueueDateFormat
@@ -6298,6 +6299,7 @@ function RequestCard({
   hideCourierRouteStarts = false,
   useRefundQueueDateFormat = false,
   useRefundQueueDateTimeSummary = false,
+  hideInRouteAction = false,
   hidePickupActions = false,
   showPickupRescheduleStatus = false,
   branchDeliveryTestMode = false,
@@ -6322,7 +6324,7 @@ function RequestCard({
   const status = internalStatus === "en_ruta" || internalStatus.startsWith("en_ruta_") ? "aprobada" : internalStatus;
   const isPickupMethod = request.returnMethod === "pickup";
   const isPickupFailedAttempt = isPickupFailedAttemptStatus(status);
-  const canMarkInRoute = isPickupMethod && status === "aprobada";
+  const canMarkInRoute = isPickupMethod && status === "aprobada" && !hideInRouteAction;
   const canMarkReceived = status === "aprobada" || status === "en_ruta" || isPickupFailedAttempt;
   const canMarkNeverArrived =
     !isPickupMethod && status === "aprobada" && (Boolean(request.isBranchDeliveryDeadlineExpired) || branchDeliveryTestMode);
