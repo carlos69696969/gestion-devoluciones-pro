@@ -2038,11 +2038,12 @@ function CompletedReturnSummary({ requestItem }) {
   const currentTimelineEvent = timelineEvents[0] || null;
   const visibleTimelineEvents = timelineEvents.filter((event, index) => index === 0 || String(event.note || "").trim());
   const normalizedStatus = String(requestItem.status || "").toLowerCase();
+  const isCurrentReprogrammed = currentTimelineEvent?.tone === "reprogrammed";
   const isFailedPickupAttempt =
     normalizedStatus === "intento_fallido_1" || normalizedStatus === "intento_fallido_2";
   const isSecondFailedPickupAttempt = normalizedStatus === "intento_fallido_2";
   const isPendingToReturn = normalizedStatus === "por_devolver";
-  const isReprogrammed = normalizedStatus === "reintento_pendiente";
+  const isReprogrammed = normalizedStatus === "reintento_pendiente" || isCurrentReprogrammed;
   const isRejectedOrDenied = ["rechazada", "denegada", "por_devolver", "reembolso_denegado", "no_devuelto"].includes(
     normalizedStatus,
   );
@@ -2053,6 +2054,7 @@ function CompletedReturnSummary({ requestItem }) {
   const pickupDeadlineLabel = requestItem.pickupDeadlineAt
     ? new Date(requestItem.pickupDeadlineAt).toLocaleDateString("es-MX")
     : "";
+  const displayStatusLabel = isCurrentReprogrammed ? "reprogramada" : requestItem.statusLabel;
   return (
     <article className={styles.completedCard}>
       <button
@@ -2087,7 +2089,7 @@ function CompletedReturnSummary({ requestItem }) {
                   : ""
           }
         >
-          {requestItem.statusLabel}
+          {displayStatusLabel}
         </strong>
       </p>
       {currentTimelineEvent ? (
