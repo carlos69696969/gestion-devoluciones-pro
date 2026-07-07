@@ -3552,7 +3552,7 @@ export const action = async ({ request }) => {
       title: "Reembolso denegado ❌",
       message: deniedRefundMessage,
     });
-    return { ok: true, message: "Reembolso denegado y enviado a devoluciones pendientes por recoger." };
+    return { ok: true, message: "Devolucion denegada correctamente." };
   }
 
   if (intent === "mark_returned_to_customer") {
@@ -3708,7 +3708,7 @@ export const action = async ({ request }) => {
         intent,
         note: "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙",
       });
-      return { ok: true, message: "Reembolso procesado al metodo de pago original." };
+      return { ok: true, message: "Reembolso procesado correctamente." };
     } catch (error) {
       const message = String(error?.message || error || "No se pudo procesar el reembolso.");
       await prisma.returnRequest.update({
