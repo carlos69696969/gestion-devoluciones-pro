@@ -10,9 +10,11 @@ import {
 
 const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
+  "en_ruta",
+  "reintento_pendiente",
   "intento_fallido_1",
   "intento_fallido_2",
-  "intento_fallido_3",
+  "no_recibido",
   "en_ruta_1",
   "en_ruta_2",
   "en_ruta_3",
@@ -20,9 +22,11 @@ const METHOD_QUEUE_STATUSES = new Set([
 const MENU_COUNT_STATUSES = [
   "en_revision",
   "aprobada",
+  "en_ruta",
+  "reintento_pendiente",
   "intento_fallido_1",
   "intento_fallido_2",
-  "intento_fallido_3",
+  "no_recibido",
   "en_ruta_1",
   "en_ruta_2",
   "en_ruta_3",
