@@ -130,15 +130,20 @@ function buildReturnReference(requestRow) {
   return id ? `DEV-${id}` : "";
 }
 
-function buildReturnEventPayload({ requestRow, intent, note }) {
+function buildReturnEventPayload({ requestRow, intent, note, title = "", message = "" }) {
   const mappedStatus = RETURN_EVENT_BY_INTENT[intent];
   if (!mappedStatus || !requestRow) return null;
 
   const returnReference = buildReturnReference(requestRow);
+  const cleanMessage = String(message || "").trim();
   return {
     status: mappedStatus,
     event: mappedStatus,
     action: intent,
+    title: String(title || "").trim(),
+    message: cleanMessage,
+    portal_status_message: cleanMessage || String(note || "").trim(),
+    current_status_message: cleanMessage || String(note || "").trim(),
     return_reference: returnReference,
     return_id: requestRow.id || null,
     order_number: requestRow.orderNumber || null,
@@ -155,11 +160,11 @@ function buildReturnEventPayload({ requestRow, intent, note }) {
   };
 }
 
-async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, note = "" }) {
+async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, note = "", title = "", message = "" }) {
   if (!shopDomain || !NOTIFICATIONS_API_BASE_URL) {
     return;
   }
-  const eventPayload = buildReturnEventPayload({ requestRow, intent, note });
+  const eventPayload = buildReturnEventPayload({ requestRow, intent, note, title, message });
   if (!eventPayload) return;
 
   const endpoints = NOTIFICATIONS_API_KEY
@@ -212,6 +217,62 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, not
     intent,
     ...lastFailure,
   });
+}
+
+async function loadBranchReturnSettings(shopDomain) {
+  const latestSettings = await prisma.returnSettings.findFirst({
+    where: {
+      OR: [
+        { branchAddress: { not: "" } },
+        { branchHours: { not: "" } },
+        { pickupHours: { not: "" } },
+      ],
+    },
+    select: {
+      branchAddress: true,
+      branchHours: true,
+      pickupHours: true,
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+  const exactSettings = shopDomain
+    ? await prisma.returnSettings.findUnique({
+        where: { shop: shopDomain },
+        select: {
+          branchAddress: true,
+          branchHours: true,
+          pickupHours: true,
+        },
+      })
+    : null;
+  return exactSettings || latestSettings || {};
+}
+
+function formatDeniedRefundPickupDeadline(rawValue) {
+  const date = new Date(rawValue);
+  if (!Number.isFinite(date.getTime())) return "-";
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.day} de ${String(values.month || "").toLowerCase()} de ${values.year}`;
+}
+
+function buildDeniedRefundPickupMessage({ requestRow, reason, pickupDeadlineAt, branchAddress, branchHours }) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  const cleanReason = String(reason || "").trim();
+  const reasonText = cleanReason ? `${cleanReason} ` : "";
+  return [
+    `📦 Pedido #${orderNumber}. ${reasonText}Tu devolución estará disponible para recoger antes del ${formatDeniedRefundPickupDeadline(pickupDeadlineAt)}.`,
+    `📍 Dirección de la sucursal: ${String(branchAddress || "-").trim() || "-"}`,
+    `🕒 Horario de la sucursal: ${String(branchHours || "-").trim() || "-"}`,
+    "Para recoger tu devolución, será necesario presentar:",
+    "✅ Número de pedido.",
+    "✅ Nombre del comprador.",
+    "Agradecemos tu comprensión.",
+  ].join("\n");
 }
 
 async function emitOrderStatusNotification({ shopDomain, requestRow, status, note = "" }) {
@@ -720,7 +781,7 @@ function appendReasonEntry(rawValue, entry) {
   entries.push({
     kind: String(entry?.kind || "legacy"),
     reason: String(entry?.reason || "").trim(),
-    at: new Date().toISOString(),
+    at: String(entry?.at || "").trim() || new Date().toISOString(),
   });
   return JSON.stringify({ entries });
 }
@@ -3461,13 +3522,24 @@ export const action = async ({ request }) => {
     if (!rejectionReason) {
       return { ok: false, error: "Escribe el motivo de denegacion." };
     }
+    const deniedAt = new Date();
+    const pickupDeadlineDate = addDays(deniedAt.toISOString(), PICKUP_DEADLINE_DAYS);
+    const branchSettings = await loadBranchReturnSettings(session.shop);
+    const deniedRefundMessage = buildDeniedRefundPickupMessage({
+      requestRow,
+      reason: rejectionReason,
+      pickupDeadlineAt: pickupDeadlineDate?.toISOString?.() || "",
+      branchAddress: branchSettings?.branchAddress,
+      branchHours: branchSettings?.branchHours,
+    });
     await prisma.returnRequest.update({
       where: { id },
       data: {
         status: "por_devolver",
         rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
           kind: "denied_after_received",
-          reason: rejectionReason,
+          reason: deniedRefundMessage,
+          at: deniedAt.toISOString(),
         }),
         refundError: null,
       },
@@ -3476,7 +3548,9 @@ export const action = async ({ request }) => {
       shopDomain: session.shop,
       requestRow,
       intent,
-      note: rejectionReason,
+      note: deniedRefundMessage,
+      title: "Reembolso denegado ❌",
+      message: deniedRefundMessage,
     });
     return { ok: true, message: "Reembolso denegado y enviado a devoluciones pendientes por recoger." };
   }
