@@ -1615,34 +1615,48 @@ function isAttemptReprogrammingEvent(event) {
   );
 }
 
-function courierResultStatusFromHistoryEvents(historyEvents = []) {
+function latestCourierResultEventFromHistoryEvents(historyEvents = []) {
   const events = [...(historyEvents || [])].reverse();
   for (const event of events) {
     const label = String(event?.label || "").trim().toLowerCase();
-    if (/\bno (?:recibido|entregado)\b/.test(label)) return "no_recibido";
-    if (/\bentregado\b/.test(label)) return "entregado";
-    if (/\brecibido\b/.test(label)) return "recibida";
-    if (/\brechazad[ao]\b/.test(label)) return "rechazada";
+    if (/\bno (?:recibido|entregado)\b/.test(label)) return { status: "no_recibido", event };
+    if (/\bentregado\b/.test(label)) return { status: "entregado", event };
+    if (/\brecibido\b/.test(label)) return { status: "recibida", event };
+    if (/\brechazad[ao]\b/.test(label)) return { status: "rechazada", event };
   }
+  return null;
+}
+
+function courierResultStatusFromHistoryEvents(historyEvents = []) {
+  const resultEvent = latestCourierResultEventFromHistoryEvents(historyEvents);
+  if (resultEvent) return resultEvent.status;
   return "";
 }
 
 function courierHistoryPendingStatusOverride(order) {
   const normalizedStatus = String(order?.status || "").trim().toLowerCase();
   const normalizedCurrentStatus = String(order?.currentStatus || "").trim().toLowerCase();
-  const historyResultStatus = courierResultStatusFromHistoryEvents(order?.historyEvents);
+  const historyResultEvent = latestCourierResultEventFromHistoryEvents(order?.historyEvents);
+  const historyResultStatus = historyResultEvent?.status || "";
+  const routeTimeReprogrammedEvent = latestCourierReprogrammingEvent(order?.historyEvents);
+  const isRouteTimeReprogrammed =
+    Boolean(routeTimeReprogrammedEvent?.routeTimeRescheduled) ||
+    /falta de tiempo/i.test(String(routeTimeReprogrammedEvent?.label || "")) ||
+    /route_time_rescheduled/i.test(String(routeTimeReprogrammedEvent?.note || ""));
+  const routeTimeReprogrammedMs = parseEventMs(routeTimeReprogrammedEvent?.at || routeTimeReprogrammedEvent?.createdAt);
+  const historyResultMs = parseEventMs(historyResultEvent?.event?.at || historyResultEvent?.event?.createdAt);
+  if (
+    isRouteTimeReprogrammed &&
+    (!historyResultStatus || routeTimeReprogrammedMs >= historyResultMs)
+  ) {
+    return "reintento_pendiente";
+  }
   if (
     ["entregado", "recibida", "rechazada"].includes(historyResultStatus) ||
     (isReturnCourierLabel(order?.courierLabel) && historyResultStatus === "no_recibido")
   ) {
     return historyResultStatus;
   }
-  const routeTimeReprogrammedEvent = latestCourierReprogrammingEvent(order?.historyEvents);
-  const isRouteTimeReprogrammed =
-    Boolean(routeTimeReprogrammedEvent?.routeTimeRescheduled) ||
-    /falta de tiempo/i.test(String(routeTimeReprogrammedEvent?.label || "")) ||
-    /route_time_rescheduled/i.test(String(routeTimeReprogrammedEvent?.note || ""));
-  if (isRouteTimeReprogrammed) return "reintento_pendiente";
   if (
     ["no_entregado", "no_recibido"].includes(normalizedStatus) &&
     (
@@ -6180,6 +6194,9 @@ function CourierOrderCard({
       ? styles.courierBadgeAttemptWarning
       : styles.courierBadgeStatusFailed
     : styles.courierBadgeAttempt;
+  const shouldShowFinalAttemptBadge =
+    showFinalAttemptBadge &&
+    !(courierHistoryView && isCourierHistoryReprogrammed && isRouteTimeReprogrammed);
   const statusBadgeClass = courierHistoryView && normalizedVisibleStatus === "pendiente"
     ? styles.courierBadgeStatusPending
     : ["entregado", "recibido", "recibida", "reembolsada"].includes(normalizedVisibleStatus)
@@ -6230,7 +6247,7 @@ function CourierOrderCard({
           ) : null}
         </div>
         <div className={styles.courierStatusGroup}>
-          {showFinalAttemptBadge && finalAttempt > 0 ? (
+          {shouldShowFinalAttemptBadge && finalAttempt > 0 ? (
             <span className={`${styles.courierBadgeStatus} ${attemptBadgeClass}`}>
               {courierAttemptCountLabel(finalAttempt)}
             </span>
