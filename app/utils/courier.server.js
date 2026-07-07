@@ -667,26 +667,34 @@ export function getCourierNextRouteStatus(status) {
   return `en_ruta_${currentStep + 1}`;
 }
 
-function formatCourierEstimatedArrivalLabel(date = new Date()) {
-  const estimatedArrival = new Date(date.getTime() + 45 * 60 * 1000);
-  const formattedTime = new Intl.DateTimeFormat("es-MX", {
+function formatCourierRouteTime(date) {
+  return new Intl.DateTimeFormat("es-MX", {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
     timeZone: "America/Mexico_City",
   })
-    .format(estimatedArrival)
+    .format(date)
     .replace(/\s*a\.\s*m\./i, " a.m.")
     .replace(/\s*p\.\s*m\./i, " p.m.");
+}
+
+function courierHourArticle(date) {
   const mexicoHour = Number(
     new Intl.DateTimeFormat("es-MX", {
       hour: "numeric",
       hour12: false,
       timeZone: "America/Mexico_City",
-    }).format(estimatedArrival),
+    }).format(date),
   );
   const hour12 = mexicoHour % 12 || 12;
-  return `${hour12 === 1 ? "la" : "las"} ${formattedTime}`;
+  return hour12 === 1 ? "la" : "las";
+}
+
+function formatCourierEstimatedArrivalRangeLabel(date = new Date()) {
+  const rangeStart = new Date(date.getTime() + 10 * 60 * 1000);
+  const rangeEnd = new Date(date.getTime() + 45 * 60 * 1000);
+  return `${formatCourierRouteTime(rangeStart)} y ${courierHourArticle(rangeEnd)} ${formatCourierRouteTime(rangeEnd)}`;
 }
 
 export async function emitCourierReturnRouteNotification({ shopDomain, requestRow, routeStep = 1 }) {
@@ -695,8 +703,8 @@ export async function emitCourierReturnRouteNotification({ shopDomain, requestRo
   }
 
   const title = "\u{1F69A} \u00a1Vamos en camino!";
-  const estimatedArrivalLabel = formatCourierEstimatedArrivalLabel();
-  const message = `\u{1F4E6} Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya se dirige a tu domicilio para recoger tu devoluci\u00f3n. Llegar\u00e1 aproximadamente antes de ${estimatedArrivalLabel}. Ten tu paquete listo y correctamente sellado. \u{1F4DD} No olvides colocar tu n\u00famero de pedido y nombre del comprador en el exterior del paquete.`;
+  const estimatedArrivalLabel = formatCourierEstimatedArrivalRangeLabel();
+  const message = `\u{1F4E6} Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya se dirige a tu domicilio para recoger tu devoluci\u00f3n. Llegar\u00e1 aproximadamente entre ${estimatedArrivalLabel}. Ten tu paquete listo y correctamente sellado. \u{1F4DD} No olvides colocar tu n\u00famero de pedido y nombre del comprador en el exterior del paquete.`;
   const eventPayload = {
     status: "order_in_transit",
     event: "order_in_transit",
