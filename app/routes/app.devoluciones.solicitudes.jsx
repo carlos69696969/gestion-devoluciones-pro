@@ -265,7 +265,7 @@ function buildDeniedRefundPickupMessage({ requestRow, reason, pickupDeadlineAt, 
   const cleanReason = String(reason || "").trim();
   const reasonText = cleanReason ? `${cleanReason} ` : "";
   return [
-    `📦 Pedido #${orderNumber}. ${reasonText}por ese motivo se denego tu reembolso. Tu devolución estará disponible para recoger antes del ${formatDeniedRefundPickupDeadline(pickupDeadlineAt)}.`,
+    `📦 Pedido #${orderNumber}. ${reasonText}por ese motivo se denego tu reembolso. Tienes 30 dias para recoger tu devolucion, tienes hasta el ${formatDeniedRefundPickupDeadline(pickupDeadlineAt)} para recoger tu devolución en nuestra sucursal.`,
     `📍 Dirección de la sucursal: ${String(branchAddress || "-").trim() || "-"}`,
     `🕒 Horario de la sucursal: ${String(branchHours || "-").trim() || "-"}`,
     "Para recoger tu devolución, será necesario presentar:",
