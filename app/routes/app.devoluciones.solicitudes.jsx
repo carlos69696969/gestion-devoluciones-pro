@@ -698,9 +698,11 @@ function routeTimeRescheduleDateFromReason(reason) {
 function buildReturnRouteTimeRescheduleMessage(requestRow, dateOverride = "") {
   const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
   const dateLabel = dateOverride || latestRouteTimeRescheduleDate(requestRow);
+  const pickupHours = String(requestRow?.pickupHours || "").trim();
+  const pickupHoursText = pickupHours ? ` en un horario de ${pickupHours}` : "";
   return (
     `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, ` +
-    `tu devolución ha sido reprogramada para mañana${dateLabel ? ` ${dateLabel}` : ""}.\n` +
+    `tu devolución ha sido reprogramada para mañana${dateLabel ? ` ${dateLabel}` : ""}${pickupHoursText}.\n` +
     "Agradecemos tu comprensión y por confiar siempre en Cariana . ✨"
   );
 }
@@ -4008,6 +4010,11 @@ async function fetchCourierHistoryOrders(admin) {
 }
 
 async function fetchPickupCourierHistoryOrders(shop) {
+  const settings = await prisma.returnSettings.findUnique({
+    where: { shop },
+    select: { pickupHours: true },
+  });
+  const pickupHours = String(settings?.pickupHours || "").trim();
   const requestRows = await prisma.returnRequest.findMany({
     where: {
       shop,
@@ -4047,11 +4054,17 @@ async function fetchPickupCourierHistoryOrders(shop) {
     receivedAt: requestRow.receivedAt,
     refundedAt: requestRow.refundedAt,
     rejectionReason: requestRow.rejectionReason,
+    pickupHours,
     status: String(requestRow.status || "").trim().toLowerCase(),
   }));
 }
 
 async function fetchPickupCourierOrders(shop) {
+  const settings = await prisma.returnSettings.findUnique({
+    where: { shop },
+    select: { pickupHours: true },
+  });
+  const pickupHours = String(settings?.pickupHours || "").trim();
   const requestRows = await prisma.returnRequest.findMany({
     where: {
       shop,
@@ -4115,6 +4128,7 @@ async function fetchPickupCourierOrders(shop) {
     createdAt: requestRow.createdAt,
     updatedAt: requestRow.updatedAt,
     rejectionReason: requestRow.rejectionReason,
+    pickupHours,
     status: String(requestRow.status || "pendiente").trim() || "pendiente",
     }))
     .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));

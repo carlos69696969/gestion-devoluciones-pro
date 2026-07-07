@@ -2049,9 +2049,12 @@ export async function reprogramCourierReturnForNextRoute({
   const requestRow = lookup.requestRow;
   const nextRescheduledDate = rescheduledDate || nextCourierRouteRescheduleDate(requestRow.pickupDate);
   const rescheduledDateLabel = formatCourierNotificationDate(nextRescheduledDate);
+  const notificationSettings = await getReturnNotificationSettings(requestRow.shop);
+  const pickupHours = String(notificationSettings?.pickupHours || "").trim();
+  const pickupHoursText = pickupHours ? ` en un horario de ${pickupHours}` : "";
   const orderNumber = String(requestRow.orderNumber || "").replace(/^#/, "").trim() || "****";
   const message =
-    `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, tu devolución ha sido reprogramado para mañana ${rescheduledDateLabel}.\n` +
+    `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, tu devolución ha sido reprogramado para mañana ${rescheduledDateLabel}${pickupHoursText}.\n` +
     "Agradecemos tu comprensión y por confiar  siempre en Cariana . ✨";
 
   await prisma.returnRequest.update({
