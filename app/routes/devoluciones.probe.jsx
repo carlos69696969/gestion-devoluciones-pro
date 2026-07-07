@@ -310,6 +310,15 @@ async function fetchLatestOrderNotification({ shop, orderNumber, isDelivered }) 
   }
 }
 
+function buildBranchPickupFallbackNotification(orderNumber) {
+  const resolvedOrderNumber = normalizeOrderNumber(orderNumber) || "****";
+  return {
+    title: "Pedido listo para recoger en sucursal 📦",
+    message: `Tu pedido #${resolvedOrderNumber} está disponible para recoger en sucursal. Presenta tu clave de entrega para recibir tu pedido.`,
+    createdAt: "",
+  };
+}
+
 async function authenticatedCustomerAccountShop(request) {
   if (!String(request.headers.get("Authorization") || "").startsWith("Bearer ")) return "";
   try {
@@ -392,6 +401,11 @@ export const loader = async ({ request }) => {
     orderNumber,
     isDelivered: Boolean(delivery?.isDelivered),
   });
+  const effectiveLatestOrderNotification =
+    latestOrderNotification ||
+    (delivery?.isBranchPickup && !delivery?.isDelivered
+      ? buildBranchPickupFallbackNotification(orderNumber)
+      : null);
 
   return jsonWithCors({
     hasExistingReturns,
@@ -400,6 +414,6 @@ export const loader = async ({ request }) => {
     isBranchPickup: Boolean(delivery?.isBranchPickup),
     limitDate: String(delivery?.limitDate || ""),
     deliveryCode,
-    latestOrderNotification,
+    latestOrderNotification: effectiveLatestOrderNotification,
   });
 };
