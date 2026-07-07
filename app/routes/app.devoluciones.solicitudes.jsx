@@ -6919,14 +6919,31 @@ function RequestCard({
 
         {status === "recibida" ? (
           <>
-            <Form method="post" action={currentFormAction}>
+            <Form
+              method="post"
+              action={currentFormAction}
+              onSubmit={(event) => {
+                if (!window.confirm(`¿Confirmas procesar el reembolso del pedido #${request.orderNumber}?`)) {
+                  event.preventDefault();
+                }
+              }}
+            >
               <input type="hidden" name="intent" value="process_refund" />
               <input type="hidden" name="id" value={request.id} />
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
                 Procesar reembolso
               </button>
             </Form>
-            <Form method="post" action={currentFormAction} className={styles.rejectForm}>
+            <Form
+              method="post"
+              action={currentFormAction}
+              className={styles.rejectForm}
+              onSubmit={(event) => {
+                if (!window.confirm(`¿Confirmas denegar la devolución del pedido #${request.orderNumber}?`)) {
+                  event.preventDefault();
+                }
+              }}
+            >
               <input type="hidden" name="intent" value="deny_received" />
               <input type="hidden" name="id" value={request.id} />
               <input
