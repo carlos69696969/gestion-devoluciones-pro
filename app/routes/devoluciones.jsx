@@ -2055,9 +2055,6 @@ function CompletedReturnSummary({ requestItem }) {
   const isApproved = normalizedStatus === "aprobada";
   const isReceived = normalizedStatus === "recibida";
   const isRefunded = normalizedStatus === "reembolsada";
-  const pickupDeadlineLabel = requestItem.pickupDeadlineAt
-    ? new Date(requestItem.pickupDeadlineAt).toLocaleDateString("es-MX")
-    : "";
   const displayStatusLabel = isCurrentReprogrammed ? "reprogramada" : requestItem.statusLabel;
   return (
     <article className={styles.completedCard}>
@@ -2139,7 +2136,7 @@ function CompletedReturnSummary({ requestItem }) {
       ) : null}
       {isPendingToReturn ? (
         <p className={`${styles.completedStatus} ${styles.returnedToCustomerHintText}`}>
-          Recoge tu paquete en nuestra sucursal con tu nombre y numero de pedido: <BranchAddressLink address={requestItem.branchAddress} />. Horario: {requestItem.branchHours || "-"}. Tienes 30 dias para recogerlo. Fecha limite: {pickupDeadlineLabel || "-"}.
+          Direccion: <BranchAddressLink address={requestItem.branchAddress} />
         </p>
       ) : null}
 
