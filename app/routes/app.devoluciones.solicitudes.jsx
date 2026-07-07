@@ -2703,6 +2703,7 @@ export const loader = async ({ request }) => {
       reasonEntries: visibleReasonEntries,
       wasReturnedToCustomer,
       returnedToCustomerAt,
+      returnToCustomerSortAt: pendingPickupSinceAt || requestRow.updatedAt?.toISOString?.() || requestRow.createdAt?.toISOString?.() || "",
       pickupDeadlineAt,
       isPickupDeadlineExpired,
       branchDeliveryDeadlineAt,
@@ -4418,9 +4419,13 @@ export default function ReturnsRequests() {
   const refundQueueRequests = requests.filter((requestRow) =>
     REFUND_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
   );
-  const returnToCustomerQueueRequests = requests.filter((requestRow) =>
-    RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase()),
-  );
+  const returnToCustomerQueueRequests = requests
+    .filter((requestRow) => RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase()))
+    .sort((a, b) => {
+      const bMs = new Date(b.returnToCustomerSortAt || b.updatedAt || b.createdAt || 0).getTime();
+      const aMs = new Date(a.returnToCustomerSortAt || a.updatedAt || a.createdAt || 0).getTime();
+      return (Number.isFinite(bMs) ? bMs : 0) - (Number.isFinite(aMs) ? aMs : 0);
+    });
   const pickupRequests = activeRequests.filter((request) => request.returnMethod === "pickup");
   const branchRequests = activeRequests.filter((request) => request.returnMethod !== "pickup");
   const historyRequests = requests
