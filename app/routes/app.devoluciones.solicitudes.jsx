@@ -557,7 +557,7 @@ function normalizeDisplayedReasonText(rawValue) {
     return "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙";
   }
   if (lowered === "recibimos tu producto. estamos validando para finalizar el proceso.") {
-    return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰";
+    return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰 Regresa mas tarde para ver el estado de tu devolucion.";
   }
   if (
     lowered.includes("devolucion fue regresada con ecxito") ||
@@ -841,7 +841,7 @@ function branchApprovedPortalMessage(requestRow) {
 function receivedReturnPortalMessage(requestRow) {
   const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim();
   const prefix = orderNumber ? `📦Pedido #${orderNumber}. ` : "📦";
-  return `${prefix}Producto recibido. Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰`;
+  return `${prefix}Producto recibido. Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰 Regresa mas tarde para ver el estado de tu devolucion.`;
 }
 
 function reviewReturnPortalMessage(requestRow) {
