@@ -7025,11 +7025,17 @@ function RequestCard({
             >
               <input type="hidden" name="intent" value="deny_received" />
               <input type="hidden" name="id" value={request.id} />
-              <input
-                className={styles.input}
+              <textarea
+                className={`${styles.textarea} ${styles.rejectReasonTextarea}`}
                 name="rejectionReason"
                 placeholder="Motivo de denegacion (obligatorio)"
                 defaultValue=""
+                rows={1}
+                onInput={(event) => {
+                  const field = event.currentTarget;
+                  field.style.height = "auto";
+                  field.style.height = `${Math.min(field.scrollHeight, 112)}px`;
+                }}
               />
               <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
                 Denegar devolucion
