@@ -37,6 +37,8 @@ const PICKUP_FAILED_REASON_FIRST =
   "No logramos completar la recoleccion. Visitamos tu domicilio, pero no obtuvimos respuesta. Nuestro equipo volvera a intentarlo.";
 const PICKUP_FAILED_REASON_SECOND =
   "Recoleccion reagendada. Nos comunicamos contigo y acordamos realizar un nuevo intento, ya que no te encontrabas en el domicilio indicado.";
+const PICKUP_REJECTED_AFTER_THIRD_ATTEMPT_REASON =
+  "❌🚚 Después de 3 intentos de recolección en el domicilio registrado, no fue posible recibir el producto. Por esta razón, la solicitud de devolución fue rechazada automáticamente.";
 const RETURN_EVENT_BY_INTENT = {
   courier_return_mark_received: "return_picked_up",
   courier_return_pickup_attempt_failed: "return_pickup_scheduled",
@@ -1935,10 +1937,44 @@ export async function markCourierReturnPickupAttemptFailed({ requestId, rejectio
   const rejectionReason =
     String(selectedRejectionReason || "").trim() ||
     (nextStatus === "intento_fallido_1" ? PICKUP_FAILED_REASON_FIRST : PICKUP_FAILED_REASON_SECOND);
-  const nextPickupDate = getNextPickupDate(requestRow.pickupDate);
-  const reprogrammedReason = `Reprogramado para el ${formatPickupDateForMessage(nextPickupDate)}.\n\n${rejectionReason}`;
   const attemptCount = Number(nextStatus.replace("intento_fallido_", "")) || 0;
   const failedEntryKind = `attempt_failed_${attemptCount}`;
+
+  if (attemptCount >= 3) {
+    const finalRejectionReason = PICKUP_REJECTED_AFTER_THIRD_ATTEMPT_REASON;
+    const hasRejectedEntry = hasRecentReasonEntry(requestRow.rejectionReason, "rejected_after_attempts");
+    if (!hasRejectedEntry) {
+      await prisma.returnRequest.update({
+        where: { id: requestRow.id },
+        data: {
+          status: "rechazada",
+          rejectionReason: appendReasonEntry(
+            appendReasonEntry(requestRow.rejectionReason, {
+              kind: failedEntryKind,
+              reason: finalRejectionReason,
+            }),
+            {
+              kind: "rejected_after_attempts",
+              reason: finalRejectionReason,
+            },
+          ),
+          refundError: null,
+        },
+      });
+    }
+
+    await emitCourierReturnActionNotification({
+      shopDomain: requestRow.shop,
+      requestRow,
+      intent: "courier_return_reject_after_failed_pickups",
+      note: finalRejectionReason,
+    });
+
+    return { ok: true, requestRow, nextStatus: "rechazada", attemptCount: 3 };
+  }
+
+  const nextPickupDate = getNextPickupDate(requestRow.pickupDate);
+  const reprogrammedReason = `Reprogramado para el ${formatPickupDateForMessage(nextPickupDate)}.\n\n${rejectionReason}`;
 
   if (hasRecentReasonEntry(requestRow.rejectionReason, failedEntryKind)) {
     return { ok: true, requestRow, nextStatus, attemptCount };
@@ -2050,7 +2086,7 @@ export async function rejectCourierReturnAfterFailedPickups({ requestId, rejecti
 
   const rejectionReason =
     String(selectedRejectionReason || "").trim() ||
-    "❌🚚 Después de 3 intentos de recolección en el domicilio registrado, no fue posible recibir el producto. Por esta razón, la solicitud de devolución fue rechazada automáticamente.";
+    PICKUP_REJECTED_AFTER_THIRD_ATTEMPT_REASON;
 
   await prisma.returnRequest.update({
     where: { id: requestRow.id },
