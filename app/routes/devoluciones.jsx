@@ -654,9 +654,11 @@ function routeTimeRescheduleDateFromReason(reason) {
 function buildReturnRouteTimeRescheduleMessage(requestItem, dateOverride = "") {
   const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim() || "****";
   const dateLabel = dateOverride || latestRouteTimeRescheduleDate(requestItem);
+  const pickupHours = String(requestItem?.pickupHours || "").trim();
+  const pickupHoursText = pickupHours && pickupHours !== "-" ? ` en un horario de ${pickupHours}` : "";
   return (
     `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, ` +
-    `tu devolución ha sido reprogramada para mañana${dateLabel ? ` ${dateLabel}` : ""}.\n` +
+    `tu devolución ha sido reprogramada para mañana${dateLabel ? ` ${dateLabel}` : ""}${pickupHoursText}.\n` +
     "Agradecemos tu comprensión y por confiar siempre en Cariana . ✨"
   );
 }
@@ -947,10 +949,12 @@ function buildStatusTimeline(requestItem) {
     String(requestItem.status || "").toLowerCase().startsWith("en_ruta_");
   const hasExplicitRejectedStatus = ["review_rejected", "rejected_after_attempts"].some((kind) => entryKinds.has(kind));
   const hasExplicitNotReturnedStatus = ["never_arrived_branch", NOT_RETURNED_KIND].some((kind) => entryKinds.has(kind));
+  const hasExplicitRouteTimeReprogrammedStatus = entryKinds.has("courier_route_time_reprogrammed");
   const shouldSkipCurrentStatusFallback =
     isInternalRouteStatus ||
     (String(requestItem.status || "").toLowerCase() === "rechazada" && hasExplicitRejectedStatus) ||
-    (String(requestItem.status || "").toLowerCase() === "no_devuelto" && hasExplicitNotReturnedStatus);
+    (String(requestItem.status || "").toLowerCase() === "no_devuelto" && hasExplicitNotReturnedStatus) ||
+    (String(requestItem.status || "").toLowerCase() === "reintento_pendiente" && hasExplicitRouteTimeReprogrammedStatus);
   if (!shouldSkipCurrentStatusFallback && (!currentStatusKind || !entryKinds.has(currentStatusKind))) {
     pushEvent(
       timelineLabelFromStatus(requestItem.status),
