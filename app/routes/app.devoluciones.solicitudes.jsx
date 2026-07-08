@@ -101,7 +101,7 @@ const TIMELINE_META_KINDS = new Set([
   RETURNED_TO_CUSTOMER_KIND,
   NOT_RETURNED_KIND,
 ]);
-const NOT_RETURNED_REASON = "El cliente no recogio su paquete en sucursal dentro de 60 dias.";
+const NOT_RETURNED_REASON = "El cliente no recogió su paquete de devolución en sucursal en 60 días.";
 const PICKUP_DEADLINE_DAYS = 30;
 const NOT_RETURNED_ACTION_DEADLINE_DAYS = 60;
 const NOTIFICATIONS_API_BASE_URL = String(
@@ -3637,12 +3637,6 @@ export const action = async ({ request }) => {
           reason: NOT_RETURNED_REASON,
         }),
       },
-    });
-    await emitReturnNotificationEvent({
-      shopDomain: session.shop,
-      requestRow,
-      intent,
-      note: NOT_RETURNED_REASON,
     });
     return {
       ok: true,
