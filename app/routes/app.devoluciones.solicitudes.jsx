@@ -4699,7 +4699,7 @@ export default function ReturnsRequests() {
                   isSubmitting={isSubmitting}
                   hideCourierRouteStarts
                   hidePendingReturnStatus
-                  notReturnedTestMode={notReturnedTestMode}
+                  forceShowNotReturnedAction={notReturnedTestMode}
                   useRefundQueueDateFormat
                 />
               ))}
@@ -6505,7 +6505,7 @@ function RequestCard({
   showPickupRescheduleStatus = false,
   showPickupDateSummary = false,
   branchDeliveryTestMode = false,
-  notReturnedTestMode = false,
+  forceShowNotReturnedAction = false,
   cardSuccessMessage = "",
   onRefundActionSuccess = null,
 }) {
@@ -6544,7 +6544,7 @@ function RequestCard({
   const isNotReturnedActionAvailable =
     Boolean(notReturnedDeadlineMs) && new Date().getTime() > notReturnedDeadlineMs;
   const canMarkNotReturned =
-    status === "por_devolver" && (Boolean(isNotReturnedActionAvailable) || Boolean(notReturnedTestMode));
+    status === "por_devolver" && (Boolean(isNotReturnedActionAvailable) || Boolean(forceShowNotReturnedAction));
   const remainingPickupAttempts = status === "aprobada" ? 2 : status === "intento_fallido_1" ? 1 : 0;
   const failedAttemptButtonLabel =
     remainingPickupAttempts === 1
@@ -7161,7 +7161,7 @@ function RequestCard({
           <Form method="post" action={currentFormAction}>
             <input type="hidden" name="intent" value="mark_not_returned" />
             <input type="hidden" name="id" value={request.id} />
-            <input type="hidden" name="notReturnedTestMode" value={notReturnedTestMode ? "1" : "0"} />
+            <input type="hidden" name="notReturnedTestMode" value={forceShowNotReturnedAction ? "1" : "0"} />
             <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
               No devuelto
             </button>
