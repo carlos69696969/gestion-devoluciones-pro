@@ -4667,6 +4667,7 @@ export default function ReturnsRequests() {
                   key={request.id}
                   request={request}
                   isSubmitting={isSubmitting}
+                  hideCourierRouteStarts
                   useRefundQueueDateFormat
                 />
               ))}
