@@ -901,7 +901,7 @@ export default function ReturnsPortal() {
       </s-section>
 
       {hasResults ? (
-        <s-section heading={`Resultado${requests.length > 1 ? "s" : ""}${resultSectionLabel ? ` - ${resultSectionLabel}` : ""}`}>
+        <s-section heading={`Seccion${requests.length > 1 ? "es" : ""}${resultSectionLabel ? ` - ${resultSectionLabel}` : ""}`}>
           <div className={`${styles.wrap} ${styles.reqGrid}`}>
             {requests.map((request) => (
               <ResultCard key={request.id} request={request} />
