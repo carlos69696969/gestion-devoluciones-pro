@@ -252,6 +252,7 @@ function formatDeniedRefundPickupDeadline(rawValue) {
   const date = new Date(rawValue);
   if (!Number.isFinite(date.getTime())) return "-";
   const parts = new Intl.DateTimeFormat("es-MX", {
+    timeZone: "America/Mexico_City",
     day: "numeric",
     month: "long",
     year: "numeric",
