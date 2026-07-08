@@ -6713,7 +6713,11 @@ function RequestCard({
           {request.returnedToCustomerAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Devuelta al cliente</span>
-              <span className={styles.kvVal}>{new Date(request.returnedToCustomerAt).toLocaleString("es-MX")}</span>
+              <span className={styles.kvVal}>
+                {useRefundQueueDateTimeSummary || useRefundQueueDateFormat || isHistoryStatus
+                  ? formatRefundQueueDateTime(request.returnedToCustomerAt)
+                  : new Date(request.returnedToCustomerAt).toLocaleString("es-MX")}
+              </span>
             </div>
           ) : null}
           {request.refundedAt ? (
@@ -6742,7 +6746,7 @@ function RequestCard({
             <p className={styles.statusTimelineCurrentLine}>
               <strong className={timelineToneClassName(currentTimelineEvent.tone)}>{currentTimelineEvent.label}</strong>{" "}
               <span>
-                {useRefundQueueDateFormat
+                {useRefundQueueDateFormat || isHistoryStatus
                   ? formatRefundQueueDateTime(currentTimelineEvent.at)
                   : new Date(currentTimelineEvent.at).toLocaleString("es-MX")}
               </span>
@@ -6758,7 +6762,9 @@ function RequestCard({
               <div key={event.id} className={styles.statusTimelineItem}>
                 <p className={`${styles.statusTimelineItemTitle} ${timelineToneClassName(event.tone)}`}>{event.label}</p>
                 <p className={styles.statusTimelineItemAt}>
-                  {useRefundQueueDateFormat ? formatRefundQueueDateTime(event.at) : new Date(event.at).toLocaleString("es-MX")}
+                  {useRefundQueueDateFormat || isHistoryStatus
+                    ? formatRefundQueueDateTime(event.at)
+                    : new Date(event.at).toLocaleString("es-MX")}
                 </p>
                 {event.note ? <p className={styles.statusTimelineItemNote}>{event.note}</p> : null}
               </div>
