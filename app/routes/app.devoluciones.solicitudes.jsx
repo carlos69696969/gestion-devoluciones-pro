@@ -101,8 +101,9 @@ const TIMELINE_META_KINDS = new Set([
   RETURNED_TO_CUSTOMER_KIND,
   NOT_RETURNED_KIND,
 ]);
-const NOT_RETURNED_REASON = "El cliente no recogio su paquete en sucursal dentro de 30 dias.";
+const NOT_RETURNED_REASON = "El cliente no recogio su paquete en sucursal dentro de 60 dias.";
 const PICKUP_DEADLINE_DAYS = 30;
+const NOT_RETURNED_ACTION_DEADLINE_DAYS = 60;
 const NOTIFICATIONS_API_BASE_URL = String(
   process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
 ).replace(/\/+$/, "");
@@ -3607,15 +3608,16 @@ export const action = async ({ request }) => {
     if (String(requestRow.status || "").toLowerCase() !== "por_devolver") {
       return { ok: false, error: "Solo aplica a solicitudes pendientes por recoger." };
     }
+    const isNotReturnedTestMode = String(formData.get("notReturnedTestMode") || "").trim() === "1";
     const pendingPickupSinceAt =
       latestEntryAtFromKinds(requestRow.rejectionReason, ["denied_after_received"]) ||
       requestRow.updatedAt?.toISOString?.() ||
       "";
-    const pickupDeadlineDate = addDays(pendingPickupSinceAt, PICKUP_DEADLINE_DAYS);
-    if (!pickupDeadlineDate || new Date().getTime() <= pickupDeadlineDate.getTime()) {
+    const notReturnedDeadlineDate = addDays(pendingPickupSinceAt, NOT_RETURNED_ACTION_DEADLINE_DAYS);
+    if (!isNotReturnedTestMode && (!notReturnedDeadlineDate || new Date().getTime() <= notReturnedDeadlineDate.getTime())) {
       return {
         ok: false,
-        error: "Aun no se cumplen los 30 dias para marcar esta solicitud como no devuelta.",
+        error: "Aun no se cumplen los 60 dias para marcar esta solicitud como no devuelta.",
       };
     }
     await prisma.returnRequest.update({
@@ -4389,6 +4391,7 @@ export default function ReturnsRequests() {
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
   const [branchPickupRefundTestMode, setBranchPickupRefundTestMode] = useState(false);
   const [branchDeliveryTestMode, setBranchDeliveryTestMode] = useState(false);
+  const [notReturnedTestMode, setNotReturnedTestMode] = useState(false);
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
   const canConfirmCourierRoutePlan =
     selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
@@ -4674,6 +4677,17 @@ export default function ReturnsRequests() {
 
       {viewMode === VIEW_MODE.TO_RETURN ? (
         <s-section heading="Solicitudes pendientes por recoger en sucursal">
+          <div className={styles.branchPickupTestHeader}>
+            <label className={styles.branchPickupTestSwitch}>
+              <input
+                type="checkbox"
+                checked={notReturnedTestMode}
+                onChange={(event) => setNotReturnedTestMode(event.target.checked)}
+              />
+              <span className={styles.branchPickupTestSlider} aria-hidden="true" />
+              Modo prueba No devuelto
+            </label>
+          </div>
           {returnToCustomerQueueRequests.length === 0 ? (
             <p>No hay solicitudes pendientes por recoger.</p>
           ) : (
@@ -4685,6 +4699,7 @@ export default function ReturnsRequests() {
                   isSubmitting={isSubmitting}
                   hideCourierRouteStarts
                   hidePendingReturnStatus
+                  notReturnedTestMode={notReturnedTestMode}
                   useRefundQueueDateFormat
                 />
               ))}
@@ -6490,6 +6505,7 @@ function RequestCard({
   showPickupRescheduleStatus = false,
   showPickupDateSummary = false,
   branchDeliveryTestMode = false,
+  notReturnedTestMode = false,
   cardSuccessMessage = "",
   onRefundActionSuccess = null,
 }) {
@@ -6521,7 +6537,14 @@ function RequestCard({
     isPickupMethod && (status === "aprobada" || status === "en_ruta" || status === "intento_fallido_1");
   const canRejectAfterFailedPickups = isPickupMethod && status === "intento_fallido_2";
   const canMarkReturnedToCustomer = status === "por_devolver";
-  const canMarkNotReturned = status === "por_devolver" && Boolean(request.isPickupDeadlineExpired);
+  const pendingReturnSinceMs = new Date(request.returnToCustomerSortAt || request.updatedAt || request.createdAt || 0).getTime();
+  const notReturnedDeadlineMs = Number.isFinite(pendingReturnSinceMs)
+    ? pendingReturnSinceMs + NOT_RETURNED_ACTION_DEADLINE_DAYS * 24 * 60 * 60 * 1000
+    : 0;
+  const isNotReturnedActionAvailable =
+    Boolean(notReturnedDeadlineMs) && new Date().getTime() > notReturnedDeadlineMs;
+  const canMarkNotReturned =
+    status === "por_devolver" && (Boolean(isNotReturnedActionAvailable) || Boolean(notReturnedTestMode));
   const remainingPickupAttempts = status === "aprobada" ? 2 : status === "intento_fallido_1" ? 1 : 0;
   const failedAttemptButtonLabel =
     remainingPickupAttempts === 1
@@ -7138,6 +7161,7 @@ function RequestCard({
           <Form method="post" action={currentFormAction}>
             <input type="hidden" name="intent" value="mark_not_returned" />
             <input type="hidden" name="id" value={request.id} />
+            <input type="hidden" name="notReturnedTestMode" value={notReturnedTestMode ? "1" : "0"} />
             <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
               No devuelto
             </button>
