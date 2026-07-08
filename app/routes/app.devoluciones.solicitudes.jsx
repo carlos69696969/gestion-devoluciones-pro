@@ -4433,6 +4433,8 @@ export default function ReturnsRequests() {
   const hasVisibleRefundSuccessCard =
     Boolean(visibleRefundCardSuccess?.requestId) &&
     refundQueueRequests.some((requestRow) => String(requestRow.id) === visibleRefundCardSuccess.requestId);
+  const visibleRefundSectionSuccessMessage =
+    visibleRefundCardSuccess && !hasVisibleRefundSuccessCard ? visibleRefundCardSuccess.message : "";
   const returnToCustomerQueueRequests = requests
     .filter((requestRow) => RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase()))
     .sort((a, b) => {
@@ -4510,7 +4512,7 @@ export default function ReturnsRequests() {
   return (
     <s-page heading={pageHeading}>
       {pageErrorMessage ? <p className={styles.errorMsg}>{pageErrorMessage}</p> : null}
-      {visiblePageSuccessMessage && (!visibleRefundCardSuccess || !hasVisibleRefundSuccessCard) ? (
+      {visiblePageSuccessMessage && !visibleRefundCardSuccess ? (
         <p className={styles.successMsg}>{visiblePageSuccessMessage}</p>
       ) : null}
 
@@ -4598,6 +4600,9 @@ export default function ReturnsRequests() {
 
       {viewMode === VIEW_MODE.REFUNDS ? (
         <s-section heading="Solicitudes listas para procesar reembolsos">
+          {visibleRefundSectionSuccessMessage ? (
+            <p className={styles.successMsg}>{visibleRefundSectionSuccessMessage}</p>
+          ) : null}
           {refundQueueRequests.length === 0 ? (
             <p>No hay solicitudes listas para procesar reembolsos.</p>
           ) : (
