@@ -1001,7 +1001,11 @@ function parseEventMs(value) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCourierRouteStarts = false } = {}) {
+function buildStatusTimeline(
+  requestRow,
+  hideCourierProgress = false,
+  { hideCourierRouteStarts = false, hidePendingReturnStatus = false } = {},
+) {
   const events = [];
   const entryKinds = new Set(
     (requestRow.timelineEntries || []).map((entry) => String(entry?.kind || "").toLowerCase()).filter(Boolean),
@@ -1090,8 +1094,11 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
 
   const currentStatusKind = timelineKindFromStatus(requestRow.status);
   const hasExplicitNotReturnedStatus = ["never_arrived_branch", NOT_RETURNED_KIND].some((kind) => entryKinds.has(kind));
+  const shouldSkipPendingReturnStatus =
+    hidePendingReturnStatus && String(requestRow.status || "").toLowerCase() === "por_devolver";
   const shouldSkipCurrentStatusFallback =
-    String(requestRow.status || "").toLowerCase() === "no_devuelto" && hasExplicitNotReturnedStatus;
+    shouldSkipPendingReturnStatus ||
+    (String(requestRow.status || "").toLowerCase() === "no_devuelto" && hasExplicitNotReturnedStatus);
   if (!shouldSkipCurrentStatusFallback && (!currentStatusKind || !entryKinds.has(currentStatusKind))) {
     pushEvent(
       timelineLabelFromStatus(requestRow.status),
@@ -4668,6 +4675,7 @@ export default function ReturnsRequests() {
                   request={request}
                   isSubmitting={isSubmitting}
                   hideCourierRouteStarts
+                  hidePendingReturnStatus
                   useRefundQueueDateFormat
                 />
               ))}
@@ -6465,6 +6473,7 @@ function RequestCard({
   enableLazyMedia = false,
   hideCourierProgress = false,
   hideCourierRouteStarts = false,
+  hidePendingReturnStatus = false,
   useRefundQueueDateFormat = false,
   useRefundQueueDateTimeSummary = false,
   hideInRouteAction = false,
@@ -6487,7 +6496,7 @@ function RequestCard({
   const location = useLocation();
   const currentFormAction = `${location.pathname}${location.search}`;
   const timelineEvents = detailsOpen
-    ? buildStatusTimeline(request, hideCourierProgress, { hideCourierRouteStarts })
+    ? buildStatusTimeline(request, hideCourierProgress, { hideCourierRouteStarts, hidePendingReturnStatus })
     : [];
   const currentTimelineEvent = timelineEvents[0] || null;
   const olderTimelineEvents = timelineEvents.slice(1).filter((event) => String(event.note || "").trim());
