@@ -358,11 +358,23 @@ async function emitOrderStatusNotification({ shopDomain, requestRow, status, not
   }
 }
 
-function buildBranchPickupRefundNotificationCopy(orderNumber) {
+function formatBranchPickupRefundAmount(amount, currencyCode = "MXN") {
+  const numeric = Number(amount || 0);
+  const normalizedAmount = Number.isFinite(numeric) ? numeric : 0;
+  const formattedAmount = new Intl.NumberFormat("es-ES", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(normalizedAmount);
+  const currency = String(currencyCode || "MXN").trim().toUpperCase() || "MXN";
+  return `${formattedAmount} ${currency}$`;
+}
+
+function buildBranchPickupRefundNotificationCopy(orderNumber, refundAmount, currencyCode = "MXN") {
   const cleanOrderNumber = String(orderNumber || "").replace(/^#/, "").trim() || "****";
+  const amountLabel = formatBranchPickupRefundAmount(refundAmount, currencyCode);
   return {
     title: "Reembolso procesado ✅",
-    message: `💰 El reembolso de tu pedido #${cleanOrderNumber} ya fue procesado, debido a que venció el plazo de 30 días para recoger tu pedido en nuestra sucursal. El reembolso se verá reflejado en tu cuenta en un plazo de 5 a 10 días hábiles, dependiendo de los tiempos de procesamiento de tu banco.\n\n¡Te agradecemos por confiar en Cariana! ✨`,
+    message: `💰 El reembolso de tu pedido #${cleanOrderNumber} ya fue procesado por la cantidad de ${amountLabel}, debido a que venció el plazo de 30 días para recoger tu pedido en nuestra sucursal. El reembolso se verá reflejado en tu cuenta en un plazo de 5 a 10 días hábiles, dependiendo de los tiempos de procesamiento de tu banco.\n\n¡Te agradecemos por confiar en Cariana! ✨`,
   };
 }
 
@@ -371,11 +383,11 @@ function buildRefundProcessedMessage(requestRow, finalRefund) {
   return `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de $${toMoney(finalRefund)} MXN. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙`;
 }
 
-async function emitBranchPickupRefundNotification({ shopDomain, requestId, orderNumber }) {
+async function emitBranchPickupRefundNotification({ shopDomain, requestId, orderNumber, refundAmount, currencyCode }) {
   if (!shopDomain || !requestId || !NOTIFICATIONS_API_BASE_URL) {
     return;
   }
-  const copy = buildBranchPickupRefundNotificationCopy(orderNumber);
+  const copy = buildBranchPickupRefundNotificationCopy(orderNumber, refundAmount, currencyCode);
   const endpoints = NOTIFICATIONS_API_KEY
     ? [
         {
@@ -2455,6 +2467,7 @@ async function refundShopifyOrderToOriginalPayment({ admin, shopifyOrderId, note
   return {
     refundId: String(payload?.data?.refundCreate?.refund?.id || ""),
     finalRefund,
+    refundedSubtotal: finalRefund,
     currencyCode: snapshot.currencyCode || "MXN",
   };
 }
@@ -2998,6 +3011,8 @@ export const action = async ({ request }) => {
         shopDomain: session.shop,
         requestId,
         orderNumber,
+        refundAmount: refundResult.refundedSubtotal,
+        currencyCode: refundResult.currencyCode,
       });
       if (displayedDeadline) {
         try {
