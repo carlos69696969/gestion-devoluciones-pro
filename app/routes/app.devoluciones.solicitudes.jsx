@@ -81,7 +81,8 @@ const BRANCH_PICKUP_STATUSES = new Set([
   "denegada",
 ]);
 const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"]);
-const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolucion fue regresada con éxito.";
+const RETURNED_TO_CUSTOMER_NOTIFICATION_TITLE = "Devolución entregada ✅";
+const RETURNED_TO_CUSTOMER_MESSAGE = "Te regresamos tu devolución con éxito en nuestra sucursal. Agradecemos tu comprensión.";
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
 const NOT_RETURNED_KIND = "not_returned_after_30_days";
 const REQUEST_CREATED_KIND = "request_created";
@@ -158,6 +159,11 @@ function buildReturnEventPayload({ requestRow, intent, note, title = "", message
     source: "portal_devoluciones",
     return_method: requestRow.returnMethod || null,
   };
+}
+
+function buildReturnedToCustomerMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `📦 Pedido #${orderNumber}. ${RETURNED_TO_CUSTOMER_MESSAGE}`;
 }
 
 async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, note = "", title = "", message = "" }) {
@@ -1087,7 +1093,7 @@ function buildStatusTimeline(
       : kind === "never_arrived_branch"
       ? expiredReturnPortalMessage(requestRow)
       : kind === RETURNED_TO_CUSTOMER_KIND
-        ? RETURNED_TO_CUSTOMER_MESSAGE
+        ? normalizeDisplayedReasonText(entry.reason) || RETURNED_TO_CUSTOMER_MESSAGE
         : normalizeDisplayedReasonText(entry.reason);
     pushEvent(label, entry.at, note, timelineToneFromReasonEntry(entry));
   }
@@ -3575,13 +3581,14 @@ export const action = async ({ request }) => {
     if (String(requestRow.status || "").toLowerCase() !== "por_devolver") {
       return { ok: false, error: "Solo puedes confirmar devoluciones pendientes por recoger." };
     }
+    const returnedToCustomerMessage = buildReturnedToCustomerMessage(requestRow);
     await prisma.returnRequest.update({
       where: { id },
       data: {
         status: "reembolso_denegado",
         rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
           kind: RETURNED_TO_CUSTOMER_KIND,
-          reason: RETURNED_TO_CUSTOMER_MESSAGE,
+          reason: returnedToCustomerMessage,
         }),
       },
     });
@@ -3589,7 +3596,9 @@ export const action = async ({ request }) => {
       shopDomain: session.shop,
       requestRow,
       intent,
-      note: RETURNED_TO_CUSTOMER_MESSAGE,
+      note: returnedToCustomerMessage,
+      title: RETURNED_TO_CUSTOMER_NOTIFICATION_TITLE,
+      message: returnedToCustomerMessage,
     });
     return { ok: true, message: "Devolucion marcada como devuelta al cliente y enviada al historial." };
   }

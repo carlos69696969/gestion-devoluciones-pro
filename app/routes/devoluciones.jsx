@@ -29,7 +29,7 @@ const EVIDENCE_IMAGE_MAX_BYTES = 450 * 1024;
 const EVIDENCE_IMAGE_QUALITY_START = 0.82;
 const EVIDENCE_IMAGE_QUALITY_MIN = 0.58;
 const RETURNED_TO_CUSTOMER_MESSAGE =
-  "📦 Tu devolución ya fue recogida en nuestra sucursal de devoluciones. Gracias por recoger tu devolución.";
+  "Te regresamos tu devolución con éxito en nuestra sucursal. Agradecemos tu comprensión.";
 const TIMELINE_META_KINDS = new Set([
   REQUEST_CREATED_KIND,
   STATUS_REVIEW_KIND,
@@ -946,7 +946,7 @@ function buildStatusTimeline(requestItem) {
       : kind === "never_arrived_branch"
       ? expiredReturnPortalMessage(requestItem)
       : kind === RETURNED_TO_CUSTOMER_KIND
-        ? RETURNED_TO_CUSTOMER_MESSAGE
+        ? normalizeDisplayedReasonText(entry.reason) || RETURNED_TO_CUSTOMER_MESSAGE
         : normalizeDisplayedReasonText(entry.reason);
     pushEvent(label, entry.at, note, timelineToneFromReasonEntry(entry));
   }

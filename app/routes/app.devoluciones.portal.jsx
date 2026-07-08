@@ -43,7 +43,7 @@ const TIMELINE_META_KINDS = new Set([
   RETURNED_TO_CUSTOMER_KIND,
   NOT_RETURNED_KIND,
 ]);
-const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolucion fue regresada con éxito.";
+const RETURNED_TO_CUSTOMER_MESSAGE = "Te regresamos tu devolución con éxito en nuestra sucursal. Agradecemos tu comprensión.";
 const PICKUP_DEADLINE_DAYS = 30;
 
 function normalizeOrderNumber(value) {
@@ -502,7 +502,7 @@ function buildStatusTimeline(requestRow) {
               : kind === "never_arrived_branch"
                 ? expiredReturnPortalMessage(requestRow)
                 : kind === RETURNED_TO_CUSTOMER_KIND
-                  ? RETURNED_TO_CUSTOMER_MESSAGE
+                  ? normalizeDisplayedReasonText(entry.reason) || RETURNED_TO_CUSTOMER_MESSAGE
                   : normalizeDisplayedReasonText(entry.reason);
     pushEvent(label, entry.at, note, timelineToneFromReasonEntry(entry));
   }
