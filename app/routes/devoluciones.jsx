@@ -1864,7 +1864,9 @@ export default function PublicReturnsPortal() {
   const showNewRequestForm =
     autoOrder && isDelivered && !isExpired && effectivePortalMode === "new" && hasEligibleItems;
   const showSummaryView =
-    autoOrder && isDelivered && !isExpired && effectivePortalMode === "summary" && hasExistingReturns;
+    autoOrder && isDelivered && effectivePortalMode === "summary" && hasExistingReturns;
+  const showExpiredNewRequestBlock =
+    autoOrder && isDelivered && isExpired && effectivePortalMode === "new";
 
   return (
     <main className={styles.page}>
@@ -1873,7 +1875,7 @@ export default function PublicReturnsPortal() {
           <div>
             {info ? <p className={`${styles.notice} ${styles.noticeMuted}`}>{info}</p> : null}
             {error ? <p className={`${styles.notice} ${styles.noticeError}`}>{error}</p> : null}
-            {message ? (
+            {message && !isExpired ? (
               <p
                 className={`${styles.notice} ${
                   isExpired || hasDeniedStatus ? styles.noticeError : styles.noticeSuccess
@@ -1904,12 +1906,10 @@ export default function PublicReturnsPortal() {
           </section>
         ) : null}
 
-        {autoOrder && isDelivered && isExpired ? (
+        {showExpiredNewRequestBlock ? (
           <section className={styles.card}>
             <h2 className={styles.cardTitle}>Periodo vencido</h2>
-            <p className={styles.cardMeta}>
-              No puedes continuar. Fecha limite: {new Date(limitDate).toLocaleDateString("es-MX")}.
-            </p>
+            <p className={styles.cardMeta}>{message || `Tu periodo de devolucion vencio el ${new Date(limitDate).toLocaleDateString("es-MX")}.`}</p>
           </section>
         ) : null}
 
