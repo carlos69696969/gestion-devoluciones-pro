@@ -1101,9 +1101,12 @@ function buildStatusTimeline(
 
   const currentStatusKind = timelineKindFromStatus(requestRow.status);
   const hasExplicitNotReturnedStatus = ["never_arrived_branch", NOT_RETURNED_KIND].some((kind) => entryKinds.has(kind));
+  const shouldSkipReturnedToCustomerDeniedFallback =
+    String(requestRow.status || "").toLowerCase() === "reembolso_denegado" && entryKinds.has(RETURNED_TO_CUSTOMER_KIND);
   const shouldSkipPendingReturnStatus =
     hidePendingReturnStatus && String(requestRow.status || "").toLowerCase() === "por_devolver";
   const shouldSkipCurrentStatusFallback =
+    shouldSkipReturnedToCustomerDeniedFallback ||
     shouldSkipPendingReturnStatus ||
     (String(requestRow.status || "").toLowerCase() === "no_devuelto" && hasExplicitNotReturnedStatus);
   if (!shouldSkipCurrentStatusFallback && (!currentStatusKind || !entryKinds.has(currentStatusKind))) {
