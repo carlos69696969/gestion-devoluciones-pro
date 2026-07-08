@@ -359,6 +359,11 @@ function buildBranchPickupRefundNotificationCopy(orderNumber) {
   };
 }
 
+function buildRefundProcessedMessage(requestRow, finalRefund) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de $${toMoney(finalRefund)} MXN. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙`;
+}
+
 async function emitBranchPickupRefundNotification({ shopDomain, requestId, orderNumber }) {
   if (!shopDomain || !requestId || !NOTIFICATIONS_API_BASE_URL) {
     return;
@@ -3689,6 +3694,7 @@ export const action = async ({ request }) => {
       }
 
       const refundId = String(payload?.data?.refundCreate?.refund?.id || "");
+      const refundProcessedMessage = buildRefundProcessedMessage(requestRow, finalRefund);
       await prisma.returnRequest.update({
         where: { id },
         data: {
@@ -3696,7 +3702,7 @@ export const action = async ({ request }) => {
           refundedAt: new Date(),
           rejectionReason: appendTimelineMetaEntry(requestRow.rejectionReason, {
             kind: STATUS_REFUNDED_KIND,
-            reason: "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙",
+            reason: refundProcessedMessage,
           }),
           shopifyRefundId: refundId || null,
           refundedSubtotal: subtotal,
@@ -3708,7 +3714,9 @@ export const action = async ({ request }) => {
         shopDomain: session.shop,
         requestRow,
         intent,
-        note: "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙",
+        note: refundProcessedMessage,
+        title: "Reembolso procesado ✅",
+        message: refundProcessedMessage,
       });
       return { ok: true, message: "Reembolso procesado correctamente.", refundActionRequestId: id };
     } catch (error) {
