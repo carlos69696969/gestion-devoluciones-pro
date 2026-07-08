@@ -6491,8 +6491,6 @@ function RequestCard({
   const pickupRescheduleAttempt = showPickupRescheduleStatus ? pickupRescheduleAttemptLabel(status) : "";
   const isDeniedReturnedToCustomer = status === "reembolso_denegado" && request.wasReturnedToCustomer;
   const isHistoryStatus = HISTORY_STATUSES.has(status);
-  const closedAt =
-    status === "reembolsada" && request.refundedAt ? request.refundedAt : request.updatedAt || null;
   const renderedItems = request.items.map((item) => {
     const lazyMedia = lazyMediaByItemId[item.id] || {};
     return {
@@ -6620,14 +6618,6 @@ function RequestCard({
               </span>
             </div>
           ) : null}
-          {isHistoryStatus && closedAt ? (
-            <div className={styles.kvRow}>
-              <span className={styles.kvKey}>Fecha de cierre</span>
-              <span className={styles.kvVal}>
-                {useRefundQueueDateFormat ? formatRefundQueueDate(closedAt) : new Date(closedAt).toLocaleDateString("es-MX")}
-              </span>
-            </div>
-          ) : null}
           {request.receivedAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Recibida</span>
@@ -6648,8 +6638,12 @@ function RequestCard({
           ) : null}
           {request.refundedAt ? (
             <div className={styles.kvRow}>
-              <span className={styles.kvKey}>Reembolsada</span>
-              <span className={styles.kvVal}>{new Date(request.refundedAt).toLocaleString("es-MX")}</span>
+              <span className={styles.kvKey}>Reembolsado</span>
+              <span className={styles.kvVal}>
+                {useRefundQueueDateTimeSummary || useRefundQueueDateFormat
+                  ? formatRefundQueueDateTime(request.refundedAt)
+                  : new Date(request.refundedAt).toLocaleString("es-MX")}
+              </span>
             </div>
           ) : null}
           {request.pickupDeadlineAt && status !== "no_devuelto" ? (
