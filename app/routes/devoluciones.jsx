@@ -2136,7 +2136,7 @@ function CompletedReturnSummary({ requestItem }) {
       ) : null}
       {isPendingToReturn ? (
         <p className={`${styles.completedStatus} ${styles.returnedToCustomerHintText}`}>
-          Direccion: <BranchAddressLink address={requestItem.branchAddress} />
+          Direccion de sucursal: <BranchAddressLink address={requestItem.branchAddress} />
         </p>
       ) : null}
 
