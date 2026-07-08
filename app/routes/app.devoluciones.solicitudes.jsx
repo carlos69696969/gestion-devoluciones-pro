@@ -1,5 +1,5 @@
 ﻿/* eslint-disable react/prop-types */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Form, Link, useActionData, useFetcher, useLoaderData, useLocation, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -4393,6 +4393,30 @@ export default function ReturnsRequests() {
     "";
   const [visiblePageSuccessMessage, setVisiblePageSuccessMessage] = useState("");
   const [visibleRefundCardSuccess, setVisibleRefundCardSuccess] = useState(null);
+  const refundSuccessTimeoutRef = useRef(null);
+
+  const showRefundActionSuccess = (requestId, message) => {
+    if (refundSuccessTimeoutRef.current) {
+      window.clearTimeout(refundSuccessTimeoutRef.current);
+    }
+    setVisiblePageSuccessMessage("");
+    setVisibleRefundCardSuccess({
+      requestId: String(requestId || ""),
+      message: String(message || "").trim(),
+    });
+    refundSuccessTimeoutRef.current = window.setTimeout(() => {
+      setVisibleRefundCardSuccess(null);
+      refundSuccessTimeoutRef.current = null;
+    }, 4000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (refundSuccessTimeoutRef.current) {
+        window.clearTimeout(refundSuccessTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (actionData?.ok || courierRouteActionData?.ok || branchPickupDeliveryActionData?.ok || branchPickupRefundActionData?.ok) {
@@ -4417,13 +4441,8 @@ export default function ReturnsRequests() {
   useEffect(() => {
     if (!pageSuccessMessage) return;
     if (actionData?.ok && actionData?.refundActionRequestId) {
-      setVisiblePageSuccessMessage("");
-      setVisibleRefundCardSuccess({
-        requestId: String(actionData.refundActionRequestId),
-        message: pageSuccessMessage,
-      });
-      const timeoutId = window.setTimeout(() => setVisibleRefundCardSuccess(null), 4000);
-      return () => window.clearTimeout(timeoutId);
+      showRefundActionSuccess(actionData.refundActionRequestId, pageSuccessMessage);
+      return;
     }
     setVisiblePageSuccessMessage(pageSuccessMessage);
     const timeoutId = window.setTimeout(() => setVisiblePageSuccessMessage(""), 4000);
@@ -4629,6 +4648,7 @@ export default function ReturnsRequests() {
                       ? visibleRefundCardSuccess.message
                       : ""
                   }
+                  onRefundActionSuccess={showRefundActionSuccess}
                 />
               ))}
             </div>
@@ -6452,6 +6472,7 @@ function RequestCard({
   showPickupDateSummary = false,
   branchDeliveryTestMode = false,
   cardSuccessMessage = "",
+  onRefundActionSuccess = null,
 }) {
   const [viewerImage, setViewerImage] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -7037,7 +7058,9 @@ function RequestCard({
               onSubmit={(event) => {
                 if (!window.confirm(`¿Confirmas procesar el reembolso del pedido #${request.orderNumber}?`)) {
                   event.preventDefault();
+                  return;
                 }
+                onRefundActionSuccess?.(request.id, "Reembolso procesado correctamente.");
               }}
             >
               <input type="hidden" name="intent" value="process_refund" />
@@ -7053,6 +7076,11 @@ function RequestCard({
               onSubmit={(event) => {
                 if (!window.confirm(`¿Confirmas denegar la devolución del pedido #${request.orderNumber}?`)) {
                   event.preventDefault();
+                  return;
+                }
+                const formData = new FormData(event.currentTarget);
+                if (String(formData.get("rejectionReason") || "").trim()) {
+                  onRefundActionSuccess?.(request.id, "Devolucion denegada correctamente.");
                 }
               }}
             >
