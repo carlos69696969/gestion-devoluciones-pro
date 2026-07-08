@@ -3601,7 +3601,11 @@ export const action = async ({ request }) => {
       title: RETURNED_TO_CUSTOMER_NOTIFICATION_TITLE,
       message: returnedToCustomerMessage,
     });
-    return { ok: true, message: "Devolucion marcada como devuelta al cliente y enviada al historial." };
+    return {
+      ok: true,
+      message: "Devolucion marcada como devuelta al cliente y enviada al historial.",
+      returnToCustomerActionRequestId: id,
+    };
   }
 
   if (intent === "mark_not_returned") {
@@ -3636,7 +3640,11 @@ export const action = async ({ request }) => {
       intent,
       note: NOT_RETURNED_REASON,
     });
-    return { ok: true, message: "Solicitud marcada como no devuelta y enviada al historial." };
+    return {
+      ok: true,
+      message: "Solicitud marcada como no devuelta y enviada al historial.",
+      returnToCustomerActionRequestId: id,
+    };
   }
 
   if (intent === "process_refund") {
@@ -4459,8 +4467,11 @@ export default function ReturnsRequests() {
 
   useEffect(() => {
     if (!pageSuccessMessage) return;
-    if (actionData?.ok && actionData?.refundActionRequestId) {
-      showRefundActionSuccess(actionData.refundActionRequestId, pageSuccessMessage);
+    if (actionData?.ok && (actionData?.refundActionRequestId || actionData?.returnToCustomerActionRequestId)) {
+      showRefundActionSuccess(
+        actionData.refundActionRequestId || actionData.returnToCustomerActionRequestId,
+        pageSuccessMessage,
+      );
       return;
     }
     setVisiblePageSuccessMessage(pageSuccessMessage);
@@ -4701,6 +4712,12 @@ export default function ReturnsRequests() {
                   hidePendingReturnStatus
                   forceShowNotReturnedAction={notReturnedTestMode}
                   useRefundQueueDateFormat
+                  cardSuccessMessage={
+                    visibleRefundCardSuccess?.requestId === String(request.id)
+                      ? visibleRefundCardSuccess.message
+                      : ""
+                  }
+                  onRefundActionSuccess={showRefundActionSuccess}
                 />
               ))}
             </div>
@@ -7148,7 +7165,17 @@ function RequestCard({
         ) : null}
 
         {canMarkReturnedToCustomer ? (
-          <Form method="post" action={currentFormAction}>
+          <Form
+            method="post"
+            action={currentFormAction}
+            onSubmit={(event) => {
+              if (!window.confirm(`¿Confirmas marcar el pedido #${request.orderNumber} como devuelto con exito?`)) {
+                event.preventDefault();
+                return;
+              }
+              onRefundActionSuccess?.(request.id, "Devolucion marcada como devuelta con exito.");
+            }}
+          >
             <input type="hidden" name="intent" value="mark_returned_to_customer" />
             <input type="hidden" name="id" value={request.id} />
             <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
@@ -7158,7 +7185,17 @@ function RequestCard({
         ) : null}
 
         {canMarkNotReturned ? (
-          <Form method="post" action={currentFormAction}>
+          <Form
+            method="post"
+            action={currentFormAction}
+            onSubmit={(event) => {
+              if (!window.confirm(`¿Confirmas marcar el pedido #${request.orderNumber} como no devuelto?`)) {
+                event.preventDefault();
+                return;
+              }
+              onRefundActionSuccess?.(request.id, "Solicitud marcada como no devuelta.");
+            }}
+          >
             <input type="hidden" name="intent" value="mark_not_returned" />
             <input type="hidden" name="id" value={request.id} />
             <input type="hidden" name="notReturnedTestMode" value={forceShowNotReturnedAction ? "1" : "0"} />
