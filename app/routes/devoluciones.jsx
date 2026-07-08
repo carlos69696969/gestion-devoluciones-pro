@@ -2138,11 +2138,6 @@ function CompletedReturnSummary({ requestItem }) {
           ))}
         </div>
       ) : null}
-      {requestItem.wasReturnedToCustomer ? (
-        <p className={`${styles.completedStatus} ${styles.returnedToCustomerHintText}`}>
-          {RETURNED_TO_CUSTOMER_MESSAGE}
-        </p>
-      ) : null}
       {isPendingToReturn ? (
         <p className={`${styles.completedStatus} ${styles.returnedToCustomerHintText}`}>
           Direccion de sucursal: <BranchAddressLink address={requestItem.branchAddress} />
