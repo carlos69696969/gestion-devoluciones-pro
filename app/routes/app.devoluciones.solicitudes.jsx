@@ -1054,7 +1054,7 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
     pushEvent(
       "Reembolso procesado",
       requestRow.refundedAt,
-      "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙",
+      buildRefundProcessedMessage(requestRow, requestRow.finalRefund),
       "refunded",
     );
   }
@@ -1076,6 +1076,8 @@ function buildStatusTimeline(requestRow, hideCourierProgress = false, { hideCour
       ? reviewReturnPortalMessage(requestRow)
       : kind === STATUS_RECEIVED_KIND
       ? receivedReturnPortalMessage(requestRow)
+      : kind === STATUS_REFUNDED_KIND
+      ? buildRefundProcessedMessage(requestRow, requestRow.finalRefund)
       : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestRow, routeTimeRescheduleDateFromReason(entry.reason))
       : kind === "never_arrived_branch"

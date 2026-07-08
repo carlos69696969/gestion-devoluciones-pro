@@ -429,6 +429,11 @@ function toMXN(value) {
   return Number(value || 0).toFixed(2);
 }
 
+function refundProcessedPortalMessage(requestItem) {
+  const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de $${toMXN(requestItem?.finalRefund)} MXN. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙`;
+}
+
 function formatReturnPortalDate(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "-";
@@ -913,7 +918,7 @@ function buildStatusTimeline(requestItem) {
     pushEvent(
       "Reembolso procesado",
       requestItem.refundedAt,
-      "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙",
+      refundProcessedPortalMessage(requestItem),
       "refunded",
     );
   }
@@ -934,6 +939,8 @@ function buildStatusTimeline(requestItem) {
       ? reviewReturnPortalMessage(requestItem)
       : kind === STATUS_RECEIVED_KIND
       ? receivedReturnPortalMessage(requestItem)
+      : kind === STATUS_REFUNDED_KIND
+      ? refundProcessedPortalMessage(requestItem)
       : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestItem, routeTimeRescheduleDateFromReason(entry.reason))
       : kind === "never_arrived_branch"
