@@ -509,7 +509,9 @@ function buildStatusTimeline(requestRow) {
 
   const currentStatusKind = timelineKindFromStatus(requestRow.status);
   const hasExplicitNotReturnedStatus = ["never_arrived_branch", NOT_RETURNED_KIND].some((kind) => entryKinds.has(kind));
+  const isDeniedRefundStatus = ["denegada", "reembolso_denegado"].includes(String(requestRow.status || "").toLowerCase());
   const shouldSkipCurrentStatusFallback =
+    isDeniedRefundStatus ||
     String(requestRow.status || "").toLowerCase() === "no_devuelto" && hasExplicitNotReturnedStatus;
   if (!shouldSkipCurrentStatusFallback && (!currentStatusKind || !entryKinds.has(currentStatusKind))) {
     pushEvent(

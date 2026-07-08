@@ -957,8 +957,10 @@ function buildStatusTimeline(requestItem) {
   const hasExplicitRejectedStatus = ["review_rejected", "rejected_after_attempts"].some((kind) => entryKinds.has(kind));
   const hasExplicitNotReturnedStatus = ["never_arrived_branch", NOT_RETURNED_KIND].some((kind) => entryKinds.has(kind));
   const hasExplicitRouteTimeReprogrammedStatus = entryKinds.has("courier_route_time_reprogrammed");
+  const isDeniedRefundStatus = ["denegada", "reembolso_denegado"].includes(String(requestItem.status || "").toLowerCase());
   const shouldSkipCurrentStatusFallback =
     isInternalRouteStatus ||
+    isDeniedRefundStatus ||
     (String(requestItem.status || "").toLowerCase() === "rechazada" && hasExplicitRejectedStatus) ||
     (String(requestItem.status || "").toLowerCase() === "no_devuelto" && hasExplicitNotReturnedStatus) ||
     (String(requestItem.status || "").toLowerCase() === "reintento_pendiente" && hasExplicitRouteTimeReprogrammedStatus);

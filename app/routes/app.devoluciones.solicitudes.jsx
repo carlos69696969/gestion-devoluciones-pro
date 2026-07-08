@@ -6702,7 +6702,9 @@ function RequestCard({
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Recibida</span>
               <span className={styles.kvVal}>
-                {useRefundQueueDateTimeSummary
+                {isHistoryStatus && useRefundQueueDateFormat
+                  ? formatRefundQueueDate(request.receivedAt)
+                  : useRefundQueueDateTimeSummary
                   ? formatRefundQueueDateTime(request.receivedAt)
                   : useRefundQueueDateFormat
                     ? formatRefundQueueDate(request.receivedAt)
@@ -6714,7 +6716,9 @@ function RequestCard({
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Devuelta al cliente</span>
               <span className={styles.kvVal}>
-                {useRefundQueueDateTimeSummary || useRefundQueueDateFormat || isHistoryStatus
+                {isHistoryStatus && useRefundQueueDateFormat
+                  ? formatRefundQueueDate(request.returnedToCustomerAt)
+                  : useRefundQueueDateTimeSummary || useRefundQueueDateFormat
                   ? formatRefundQueueDateTime(request.returnedToCustomerAt)
                   : new Date(request.returnedToCustomerAt).toLocaleString("es-MX")}
               </span>
