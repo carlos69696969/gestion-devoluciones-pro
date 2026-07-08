@@ -903,7 +903,7 @@ function timelineToneFromReasonEntry(entry) {
   if (kind === "review_rejected" || kind === "rejected_after_attempts") return "rejected";
   if (kind === "denied_after_received") return "denied";
   if (kind === "never_arrived_branch") return "denied";
-  if (kind === RETURNED_TO_CUSTOMER_KIND) return "pending";
+  if (kind === RETURNED_TO_CUSTOMER_KIND) return "returnedToCustomer";
   if (kind === NOT_RETURNED_KIND) return "denied";
   return "default";
 }
@@ -1070,7 +1070,7 @@ function buildStatusTimeline(
     );
   }
   if (!entryKinds.has(RETURNED_TO_CUSTOMER_KIND)) {
-    pushEvent("Devolucion devuelta al cliente", requestRow.returnedToCustomerAt, RETURNED_TO_CUSTOMER_MESSAGE, "pending");
+    pushEvent("Devolucion devuelta al cliente", requestRow.returnedToCustomerAt, RETURNED_TO_CUSTOMER_MESSAGE, "returnedToCustomer");
   }
 
   for (const entry of requestRow.timelineEntries || []) {
@@ -2227,6 +2227,7 @@ function timelineToneClassName(tone) {
   if (tone === "rejected") return styles.timelineToneRejected;
   if (tone === "received") return styles.timelineToneReceived;
   if (tone === "pending") return styles.timelineTonePending;
+  if (tone === "returnedToCustomer") return styles.timelineToneReturnedToCustomer;
   if (tone === "reprogrammed") return styles.timelineToneReprogrammed;
   if (tone === "denied") return styles.timelineToneDenied;
   if (tone === "refunded") return styles.timelineToneRefunded;
