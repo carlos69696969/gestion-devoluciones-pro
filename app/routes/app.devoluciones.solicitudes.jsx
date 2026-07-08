@@ -3553,7 +3553,7 @@ export const action = async ({ request }) => {
       title: "Reembolso denegado ❌",
       message: deniedRefundMessage,
     });
-    return { ok: true, message: "Devolucion denegada correctamente." };
+    return { ok: true, message: "Devolucion denegada correctamente.", refundActionRequestId: id };
   }
 
   if (intent === "mark_returned_to_customer") {
@@ -3709,7 +3709,7 @@ export const action = async ({ request }) => {
         intent,
         note: "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙",
       });
-      return { ok: true, message: "Reembolso procesado correctamente." };
+      return { ok: true, message: "Reembolso procesado correctamente.", refundActionRequestId: id };
     } catch (error) {
       const message = String(error?.message || error || "No se pudo procesar el reembolso.");
       await prisma.returnRequest.update({
@@ -4381,6 +4381,7 @@ export default function ReturnsRequests() {
     actionData?.message ||
     "";
   const [visiblePageSuccessMessage, setVisiblePageSuccessMessage] = useState("");
+  const [visibleRefundCardSuccess, setVisibleRefundCardSuccess] = useState(null);
 
   useEffect(() => {
     if (actionData?.ok || courierRouteActionData?.ok || branchPickupDeliveryActionData?.ok || branchPickupRefundActionData?.ok) {
@@ -4404,10 +4405,19 @@ export default function ReturnsRequests() {
 
   useEffect(() => {
     if (!pageSuccessMessage) return;
+    if (actionData?.ok && actionData?.refundActionRequestId) {
+      setVisiblePageSuccessMessage("");
+      setVisibleRefundCardSuccess({
+        requestId: String(actionData.refundActionRequestId),
+        message: pageSuccessMessage,
+      });
+      const timeoutId = window.setTimeout(() => setVisibleRefundCardSuccess(null), 4000);
+      return () => window.clearTimeout(timeoutId);
+    }
     setVisiblePageSuccessMessage(pageSuccessMessage);
     const timeoutId = window.setTimeout(() => setVisiblePageSuccessMessage(""), 4000);
     return () => window.clearTimeout(timeoutId);
-  }, [pageSuccessMessage]);
+  }, [pageSuccessMessage, actionData]);
 
   const reviewRequests = requests.filter(
     (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
@@ -4419,6 +4429,9 @@ export default function ReturnsRequests() {
   const refundQueueRequests = requests.filter((requestRow) =>
     REFUND_QUEUE_STATUSES.has(String(requestRow.status || "").toLowerCase()),
   );
+  const hasVisibleRefundSuccessCard =
+    Boolean(visibleRefundCardSuccess?.requestId) &&
+    refundQueueRequests.some((requestRow) => String(requestRow.id) === visibleRefundCardSuccess.requestId);
   const returnToCustomerQueueRequests = requests
     .filter((requestRow) => RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase()))
     .sort((a, b) => {
@@ -4496,7 +4509,9 @@ export default function ReturnsRequests() {
   return (
     <s-page heading={pageHeading}>
       {pageErrorMessage ? <p className={styles.errorMsg}>{pageErrorMessage}</p> : null}
-      {visiblePageSuccessMessage ? <p className={styles.successMsg}>{visiblePageSuccessMessage}</p> : null}
+      {visiblePageSuccessMessage && (!visibleRefundCardSuccess || !hasVisibleRefundSuccessCard) ? (
+        <p className={styles.successMsg}>{visiblePageSuccessMessage}</p>
+      ) : null}
 
       {viewMode === VIEW_MODE.BRANCH ? (
         <s-section heading="Entregas en sucursal">
@@ -4593,6 +4608,11 @@ export default function ReturnsRequests() {
                   isSubmitting={isSubmitting}
                   hideCourierRouteStarts
                   useRefundQueueDateFormat
+                  cardSuccessMessage={
+                    visibleRefundCardSuccess?.requestId === String(request.id)
+                      ? visibleRefundCardSuccess.message
+                      : ""
+                  }
                 />
               ))}
             </div>
@@ -6415,6 +6435,7 @@ function RequestCard({
   showPickupRescheduleStatus = false,
   showPickupDateSummary = false,
   branchDeliveryTestMode = false,
+  cardSuccessMessage = "",
 }) {
   const [viewerImage, setViewerImage] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -6501,7 +6522,9 @@ function RequestCard({
   }, [request.status, request.updatedAt, request.id]);
 
   return (
-    <article className={styles.card}>
+    <>
+      {cardSuccessMessage ? <p className={styles.successMsg}>{cardSuccessMessage}</p> : null}
+      <article className={styles.card}>
       <div className={styles.reqHeader}>
         <div>
           <h3 className={styles.reqTitle}>Pedido #{request.orderNumber}</h3>
@@ -7066,7 +7089,8 @@ function RequestCard({
       </div>
 
       <ImageViewer image={viewerImage} onClose={() => setViewerImage(null)} />
-    </article>
+      </article>
+    </>
   );
 }
 
