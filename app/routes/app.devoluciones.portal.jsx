@@ -484,6 +484,7 @@ function buildStatusTimeline(requestRow) {
 
   for (const entry of requestRow.timelineEntries || []) {
     const kind = String(entry?.kind || "").toLowerCase();
+    if (kind.startsWith("courier_en_route_")) continue;
     const label = timelineLabelFromReasonEntry(entry);
     if (!label) continue;
     const note = kind === STATUS_APPROVED_KIND
