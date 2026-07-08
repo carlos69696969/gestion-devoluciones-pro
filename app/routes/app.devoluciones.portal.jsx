@@ -15,6 +15,7 @@ const STATUS_LABEL = {
   intento_fallido_1: "intento de devolucion fallido",
   intento_fallido_2: "segundo intento de devolucion fallido",
   por_devolver: "pendiente por devolver",
+  no_devuelto: "no devuelto",
   rechazada: "rechazada",
   denegada: "reembolso denegado",
   reembolso_denegado: "reembolso denegado",
@@ -23,8 +24,27 @@ const STATUS_LABEL = {
   completada: "completada",
 };
 
-const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada", "reembolso_denegado"]);
+const HISTORY_STATUSES = new Set(["reembolsada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"]);
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
+const NOT_RETURNED_KIND = "not_returned_after_30_days";
+const REQUEST_CREATED_KIND = "request_created";
+const STATUS_REVIEW_KIND = "status_review";
+const STATUS_APPROVED_KIND = "status_approved";
+const STATUS_RECEIVED_KIND = "status_received";
+const STATUS_IN_ROUTE_KIND = "status_in_route";
+const STATUS_REFUNDED_KIND = "status_refunded";
+const TIMELINE_META_KINDS = new Set([
+  REQUEST_CREATED_KIND,
+  STATUS_REVIEW_KIND,
+  STATUS_APPROVED_KIND,
+  STATUS_RECEIVED_KIND,
+  STATUS_IN_ROUTE_KIND,
+  STATUS_REFUNDED_KIND,
+  RETURNED_TO_CUSTOMER_KIND,
+  NOT_RETURNED_KIND,
+]);
+const RETURNED_TO_CUSTOMER_MESSAGE = "Tu devolucion fue regresada con éxito.";
+const PICKUP_DEADLINE_DAYS = 30;
 
 function normalizeOrderNumber(value) {
   return String(value || "")
@@ -46,6 +66,30 @@ function parsePhotoUrls(rawValue) {
   }
 }
 
+function normalizeDisplayedReasonText(rawValue) {
+  const text = String(rawValue || "").trim();
+  if (!text) return "";
+  const compact = text.replace(/\s+/g, " ").trim();
+  const lowered = compact.toLowerCase();
+  if (lowered === "tu reembolso fue procesado al metodo de pago original.") {
+    return "💸 Tu reembolso ya fue procesado correctamente. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙";
+  }
+  if (lowered === "recibimos tu producto. estamos validando para finalizar el proceso.") {
+    return "Producto recibido. 📦 Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰 Regresa mas tarde para ver el estado de tu devolucion.";
+  }
+  if (
+    lowered.includes("devolucion fue regresada con ecxito") ||
+    lowered.includes("devolucion fue regresada con éxito") ||
+    lowered.includes("devoluciã³n fue regresada con ã©xito")
+  ) {
+    return RETURNED_TO_CUSTOMER_MESSAGE;
+  }
+  return compact
+    .replace(/ecxito/gi, "éxito")
+    .replace(/devoluciã³n/gi, "devolución")
+    .replace(/ã©xito/gi, "éxito");
+}
+
 function parseReasonEntries(rawValue) {
   const text = String(rawValue || "").trim();
   if (!text) return [];
@@ -55,12 +99,12 @@ function parseReasonEntries(rawValue) {
     return entries
       .map((entry) => ({
         kind: String(entry?.kind || "").trim() || "legacy",
-        reason: String(entry?.reason || "").trim(),
+        reason: normalizeDisplayedReasonText(entry?.reason),
         at: entry?.at ? String(entry.at) : "",
       }))
       .filter((entry) => entry.reason);
   } catch {
-    return [{ kind: "legacy", reason: text, at: "" }];
+    return [{ kind: "legacy", reason: normalizeDisplayedReasonText(text), at: "" }];
   }
 }
 
@@ -68,10 +112,15 @@ function isReturnedToCustomerEntry(entry) {
   return String(entry?.kind || "").toLowerCase() === RETURNED_TO_CUSTOMER_KIND;
 }
 
+function isSystemProgressEntry(entry) {
+  const kind = String(entry?.kind || "").toLowerCase();
+  return TIMELINE_META_KINDS.has(kind);
+}
+
 function latestReasonFromRaw(rawValue) {
   const entries = parseReasonEntries(rawValue);
   for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
-    if (isReturnedToCustomerEntry(entries[idx])) continue;
+    if (isSystemProgressEntry(entries[idx])) continue;
     return entries[idx]?.reason || "";
   }
   return "";
@@ -90,11 +139,415 @@ function reasonEntryLabel(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
   if (kind === "attempt_failed_1") return "Primer intento";
   if (kind === "attempt_failed_2") return "Segundo intento";
+  if (kind === "attempt_failed_3") return "Tercer intento";
   if (kind === "rejected_after_attempts") return "Motivo de rechazo final";
   if (kind === "review_rejected") return "Motivo de rechazo";
   if (kind === "denied_after_received") return "Motivo de denegacion";
   if (kind === RETURNED_TO_CUSTOMER_KIND) return "Devuelto al cliente";
+  if (kind === NOT_RETURNED_KIND) return "No devuelto";
   return "Motivo";
+}
+
+function latestEntryAtFromKinds(rawValue, kinds) {
+  const kindSet = new Set((kinds || []).map((kind) => String(kind || "").toLowerCase()));
+  if (!kindSet.size) return "";
+  const entries = parseReasonEntries(rawValue);
+  for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
+    const kind = String(entries[idx]?.kind || "").toLowerCase();
+    if (!kindSet.has(kind)) continue;
+    return String(entries[idx]?.at || "").trim();
+  }
+  return "";
+}
+
+function addDays(dateValue, days) {
+  const base = new Date(dateValue);
+  if (!Number.isFinite(base.getTime())) return null;
+  const result = new Date(base);
+  result.setDate(result.getDate() + Number(days || 0));
+  return result;
+}
+
+function formatReturnRescheduleDate(rawValue) {
+  const text = String(rawValue || "").trim();
+  const slashMatch = text.match(/^(\d{1,2})\/([^/]+)\/(\d{4})$/);
+  if (slashMatch) {
+    const month = slashMatch[2].trim();
+    const capitalizedMonth = month ? `${month.charAt(0).toUpperCase()}${month.slice(1)}` : "";
+    return `${slashMatch[1]}/${capitalizedMonth}/${slashMatch[3]}`;
+  }
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!isoMatch) return text;
+  const date = new Date(Date.UTC(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3])));
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const month = String(values.month || "").trim();
+  const capitalizedMonth = month ? `${month.charAt(0).toUpperCase()}${month.slice(1)}` : "";
+  return `${values.day}/${capitalizedMonth}/${values.year}`;
+}
+
+function formatRefundQueueDate(rawValue) {
+  const isoDateMatch = String(rawValue || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDateMatch) {
+    const date = new Date(
+      Date.UTC(Number(isoDateMatch[1]), Number(isoDateMatch[2]) - 1, Number(isoDateMatch[3]), 12),
+    );
+    const parts = new Intl.DateTimeFormat("es-MX", {
+      timeZone: "UTC",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.day}/${String(values.month || "").toLowerCase()}/${values.year}`;
+  }
+  const date = new Date(rawValue);
+  if (!Number.isFinite(date.getTime())) return "-";
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.day}/${String(values.month || "").toLowerCase()}/${values.year}`;
+}
+
+function formatRefundQueueDateTime(rawValue) {
+  const date = new Date(rawValue);
+  if (!Number.isFinite(date.getTime())) return "-";
+  return `${formatRefundQueueDate(rawValue)}, ${new Intl.DateTimeFormat("es-MX", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date)}`;
+}
+
+function latestRouteTimeRescheduleDate(requestRow) {
+  const entries = parseReasonEntries(requestRow?.rejectionReason);
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (String(entry?.kind || "").toLowerCase() !== "courier_route_time_reprogrammed") continue;
+    const dateLabel = String(entry?.reason || "").match(/Reprogramado para el ([^.\n]+)/i)?.[1] || "";
+    if (dateLabel) return formatReturnRescheduleDate(dateLabel);
+  }
+  return formatReturnRescheduleDate(requestRow?.pickupDate);
+}
+
+function routeTimeRescheduleDateFromReason(reason) {
+  const dateLabel = String(reason || "").match(/Reprogramado para el ([^.\n]+)/i)?.[1] || "";
+  return dateLabel ? formatReturnRescheduleDate(dateLabel) : "";
+}
+
+function buildReturnRouteTimeRescheduleMessage(requestRow, dateOverride = "") {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  const dateLabel = dateOverride || latestRouteTimeRescheduleDate(requestRow);
+  const pickupHours = String(requestRow?.pickupHours || "").trim();
+  const pickupHoursText = pickupHours ? ` en un horario de ${pickupHours}` : "";
+  return (
+    `🚚 Pedido #${orderNumber}. Tu devolución no pudo ser recogida el día de hoy debido a ajustes operativos en la ruta de recolección, ` +
+    `tu devolución ha sido reprogramada para mañana${dateLabel ? ` ${dateLabel}` : ""}${pickupHoursText}.\n` +
+    "Agradecemos tu comprensión y por confiar siempre en Cariana . ✨"
+  );
+}
+
+function buildRefundProcessedMessage(requestRow, finalRefund) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de $${toMoney(finalRefund)} MXN. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙`;
+}
+
+function timelineLabelFromStatus(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "en_revision") return "Solicitud en revision";
+  if (normalized === "aprobada") return "Devolucion aprobada";
+  if (normalized === "en_ruta") return "En ruta";
+  if (normalized === "reintento_pendiente") return "Reprogramado";
+  if (normalized === "intento_fallido_1") return "Primer intento";
+  if (normalized === "intento_fallido_2") return "Segundo intento";
+  if (normalized === "rechazada") return "Devolucion rechazada";
+  if (normalized === "recibida") return "Recibimos tu producto";
+  if (normalized === "por_devolver") return "Pendiente por recoger";
+  if (normalized === "no_devuelto") return "No devuelto";
+  if (normalized === "denegada" || normalized === "reembolso_denegado") return "Reembolso denegado";
+  if (normalized === "reembolsada" || normalized === "completada") return "Reembolso procesado";
+  return "Estado actualizado";
+}
+
+function courierAttemptLabel(attempt) {
+  const attemptNumber = Number(attempt || 0);
+  if (attemptNumber === 1) return "Primer intento";
+  if (attemptNumber === 2) return "Segundo intento";
+  if (attemptNumber === 3) return "Tercer intento";
+  return "Intento";
+}
+
+function timelineLabelFromReasonEntry(entry) {
+  const kind = String(entry?.kind || "").toLowerCase();
+  const courierRouteMatch = kind.match(/^courier_en_route_(\d)$/);
+  if (courierRouteMatch) return `${courierAttemptLabel(courierRouteMatch[1])} en ruta`;
+  const courierRetryMatch = kind.match(/^courier_retry_(\d)$/);
+  if (courierRetryMatch) return `${courierAttemptLabel(courierRetryMatch[1])} reprogramado`;
+  if (kind === "courier_route_time_reprogrammed") return "Reprogramado";
+  if (kind === STATUS_REVIEW_KIND) return "Solicitud en revision";
+  if (kind === STATUS_APPROVED_KIND) return "Devolucion aprobada";
+  if (kind === STATUS_IN_ROUTE_KIND) return "En ruta";
+  if (kind === STATUS_RECEIVED_KIND) return "Recibimos tu producto";
+  if (kind === STATUS_REFUNDED_KIND) return "Reembolso procesado";
+  if (kind === "attempt_failed_1") return "Primer intento";
+  if (kind === "attempt_failed_2") return "Segundo intento";
+  if (kind === "attempt_failed_3") return "Tercer intento";
+  if (kind === "review_rejected" || kind === "rejected_after_attempts") return "Devolucion rechazada";
+  if (kind === "denied_after_received") return "Reembolso denegado";
+  if (kind === "never_arrived_branch") return "No devuelto";
+  if (kind === NOT_RETURNED_KIND) return "No devuelto";
+  if (kind === RETURNED_TO_CUSTOMER_KIND) return "Devolucion devuelta al cliente";
+  return "";
+}
+
+function timelineToneFromStatus(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "en_revision") return "review";
+  if (normalized === "aprobada") return "approved";
+  if (normalized === "en_ruta") return "approved";
+  if (normalized === "reintento_pendiente") return "reprogrammed";
+  if (normalized === "intento_fallido_1" || normalized === "intento_fallido_2" || normalized === "intento_fallido_3") return "attempt";
+  if (normalized === "rechazada") return "rejected";
+  if (normalized === "recibida") return "received";
+  if (normalized === "por_devolver") return "pending";
+  if (normalized === "denegada" || normalized === "reembolso_denegado" || normalized === "no_devuelto") return "denied";
+  if (normalized === "reembolsada" || normalized === "completada") return "refunded";
+  return "default";
+}
+
+function timelineToneFromReasonEntry(entry) {
+  const kind = String(entry?.kind || "").toLowerCase();
+  if (kind === REQUEST_CREATED_KIND) return "default";
+  if (kind === STATUS_REVIEW_KIND) return "review";
+  if (kind === STATUS_APPROVED_KIND) return "approved";
+  if (kind === STATUS_IN_ROUTE_KIND) return "approved";
+  if (kind === "courier_route_time_reprogrammed") return "reprogrammed";
+  if (kind === STATUS_RECEIVED_KIND) return "received";
+  if (kind === STATUS_REFUNDED_KIND) return "refunded";
+  if (kind === "attempt_failed_1" || kind === "attempt_failed_2" || kind === "attempt_failed_3") return "attempt";
+  if (kind === "review_rejected" || kind === "rejected_after_attempts") return "rejected";
+  if (kind === "denied_after_received") return "denied";
+  if (kind === "never_arrived_branch") return "denied";
+  if (kind === RETURNED_TO_CUSTOMER_KIND) return "pending";
+  if (kind === NOT_RETURNED_KIND) return "denied";
+  return "default";
+}
+
+function branchApprovedPortalMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim();
+  const prefix = orderNumber ? `📦Pedido #${orderNumber}. ` : "📦";
+  return `${prefix}Tu solicitud de devolución fue aprobada. Por favor, lleva tu producto a la sucursal de devoluciones antes de la fecha limite de entrega siguiendo las instrucciones de entrega.`;
+}
+
+function receivedReturnPortalMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim();
+  const prefix = orderNumber ? `📦Pedido #${orderNumber}. ` : "📦";
+  return `${prefix}Producto recibido. Hemos recibido tu devolución y nuestro equipo ya se encuentra revisando tu producto. Una vez finalizado el proceso de verificación, realizaremos tu reembolso correspondiente. 💰 Regresa mas tarde para ver el estado de tu devolucion.`;
+}
+
+function reviewReturnPortalMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `📦 Pedido #${orderNumber}. Nuestro equipo ya comenzó el proceso de verificación de tu producto. Revisaremos la descripción y las fotografías del problema reportado. Una vez que validemos tu solicitud, te notificaremos el resultado. Regresa más tarde para consultar el estado de tu devolución.`;
+}
+
+function pickupApprovedPortalMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `📦Pedido #${orderNumber}. Tu solicitud fue aprobada exitosamente. Nuestro equipo recogerá tu pedido en el domicilio y fecha indicados por ti. 🚚 Gracias por confiar y ser parte de Cariana. 💙`;
+}
+
+function expiredReturnPortalMessage(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return `Pedido #${orderNumber}. Estimado cliente, la fecha límite para entregar tu devolución ha expirado. Lamentablemente, ya no podremos aceptar el producto.`;
+}
+
+function timelineStatusDescription(status, requestRow) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "en_revision") return reviewReturnPortalMessage(requestRow);
+  if (normalized === "aprobada") {
+    return requestRow.returnMethod === "pickup"
+      ? pickupApprovedPortalMessage(requestRow)
+      : branchApprovedPortalMessage(requestRow);
+  }
+  if (normalized === "en_ruta") {
+    return "Tu recoleccion ya va en ruta hacia tu domicilio. Nuestro equipo se dirige para continuar el proceso.";
+  }
+  if (normalized === "reintento_pendiente") return buildReturnRouteTimeRescheduleMessage(requestRow);
+  if (normalized === "recibida") return receivedReturnPortalMessage(requestRow);
+  if (normalized === "reembolsada" || normalized === "completada") {
+    return "Tu reembolso ya fue procesado al metodo de pago original.";
+  }
+  if (normalized === "por_devolver") return "Tu paquete esta pendiente por recoger en sucursal.";
+  if (normalized === "reembolso_denegado" || normalized === "denegada") {
+    const denialReason = String(requestRow?.rejectionReason || "").trim();
+    return denialReason || "El reembolso fue denegado. Revisa el motivo de denegacion.";
+  }
+  if (normalized === "rechazada") {
+    const rejectionReason = String(requestRow?.rejectionReason || "").trim();
+    return rejectionReason || "Tu solicitud fue rechazada. Revisa el motivo para mas detalle.";
+  }
+  if (normalized === "no_devuelto") return expiredReturnPortalMessage(requestRow);
+  return "";
+}
+
+function timelineKindFromStatus(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "en_revision") return STATUS_REVIEW_KIND;
+  if (normalized === "aprobada") return STATUS_APPROVED_KIND;
+  if (normalized === "en_ruta") return STATUS_IN_ROUTE_KIND;
+  if (normalized === "recibida") return STATUS_RECEIVED_KIND;
+  if (normalized === "reembolsada" || normalized === "completada") return STATUS_REFUNDED_KIND;
+  return "";
+}
+
+function hasReachedApprovedPhase(status) {
+  const normalized = String(status || "").toLowerCase();
+  return [
+    "aprobada",
+    "en_ruta",
+    "intento_fallido_1",
+    "intento_fallido_2",
+    "recibida",
+    "por_devolver",
+    "no_devuelto",
+    "denegada",
+    "reembolso_denegado",
+    "reembolsada",
+    "completada",
+  ].includes(normalized);
+}
+
+function parseEventMs(value) {
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  const ms = new Date(text).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function buildStatusTimeline(requestRow) {
+  const events = [];
+  const entryKinds = new Set(
+    (requestRow.timelineEntries || []).map((entry) => String(entry?.kind || "").toLowerCase()).filter(Boolean),
+  );
+  const pushEvent = (label, at, note = "", tone = "default") => {
+    const atMs = parseEventMs(at);
+    if (!label || !atMs) return;
+    events.push({
+      id: `${label}-${atMs}-${events.length}`,
+      label,
+      at,
+      atMs,
+      note,
+      tone,
+    });
+  };
+
+  if (requestRow.requiresReview && !entryKinds.has(STATUS_REVIEW_KIND)) {
+    pushEvent("Solicitud en revision", requestRow.createdAt, reviewReturnPortalMessage(requestRow), "review");
+  }
+  if (requestRow.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND) && hasReachedApprovedPhase(requestRow.status)) {
+    pushEvent(
+      "Devolucion aprobada",
+      requestRow.receivedAt || requestRow.updatedAt || requestRow.createdAt,
+      requestRow.returnMethod === "pickup"
+        ? pickupApprovedPortalMessage(requestRow)
+        : branchApprovedPortalMessage(requestRow),
+      "approved",
+    );
+  }
+  if (!requestRow.requiresReview && !entryKinds.has(STATUS_APPROVED_KIND)) {
+    pushEvent(
+      "Devolucion aprobada",
+      requestRow.createdAt,
+      requestRow.returnMethod === "pickup"
+        ? pickupApprovedPortalMessage(requestRow)
+        : branchApprovedPortalMessage(requestRow),
+      "approved",
+    );
+  }
+  if (!entryKinds.has(STATUS_RECEIVED_KIND)) {
+    pushEvent("Recibimos tu producto", requestRow.receivedAt, receivedReturnPortalMessage(requestRow), "received");
+  }
+  if (!entryKinds.has(STATUS_REFUNDED_KIND)) {
+    pushEvent("Reembolso procesado", requestRow.refundedAt, buildRefundProcessedMessage(requestRow, requestRow.finalRefund), "refunded");
+  }
+  if (!entryKinds.has(RETURNED_TO_CUSTOMER_KIND)) {
+    pushEvent("Devolucion devuelta al cliente", requestRow.returnedToCustomerAt, RETURNED_TO_CUSTOMER_MESSAGE, "pending");
+  }
+
+  for (const entry of requestRow.timelineEntries || []) {
+    const kind = String(entry?.kind || "").toLowerCase();
+    const label = timelineLabelFromReasonEntry(entry);
+    if (!label) continue;
+    const note = kind === STATUS_APPROVED_KIND
+      ? requestRow.returnMethod === "pickup"
+        ? pickupApprovedPortalMessage(requestRow)
+        : branchApprovedPortalMessage(requestRow)
+      : kind === STATUS_REVIEW_KIND
+        ? reviewReturnPortalMessage(requestRow)
+        : kind === STATUS_RECEIVED_KIND
+          ? receivedReturnPortalMessage(requestRow)
+          : kind === STATUS_REFUNDED_KIND
+            ? buildRefundProcessedMessage(requestRow, requestRow.finalRefund)
+            : kind === "courier_route_time_reprogrammed"
+              ? buildReturnRouteTimeRescheduleMessage(requestRow, routeTimeRescheduleDateFromReason(entry.reason))
+              : kind === "never_arrived_branch"
+                ? expiredReturnPortalMessage(requestRow)
+                : kind === RETURNED_TO_CUSTOMER_KIND
+                  ? RETURNED_TO_CUSTOMER_MESSAGE
+                  : normalizeDisplayedReasonText(entry.reason);
+    pushEvent(label, entry.at, note, timelineToneFromReasonEntry(entry));
+  }
+
+  const currentStatusKind = timelineKindFromStatus(requestRow.status);
+  const hasExplicitNotReturnedStatus = ["never_arrived_branch", NOT_RETURNED_KIND].some((kind) => entryKinds.has(kind));
+  const shouldSkipCurrentStatusFallback =
+    String(requestRow.status || "").toLowerCase() === "no_devuelto" && hasExplicitNotReturnedStatus;
+  if (!shouldSkipCurrentStatusFallback && (!currentStatusKind || !entryKinds.has(currentStatusKind))) {
+    pushEvent(
+      timelineLabelFromStatus(requestRow.status),
+      requestRow.updatedAt,
+      timelineStatusDescription(requestRow.status, requestRow),
+      timelineToneFromStatus(requestRow.status),
+    );
+  }
+
+  const dedup = new Map();
+  for (const event of events) {
+    const key = `${event.label}|${event.atMs}`;
+    if (!dedup.has(key)) dedup.set(key, event);
+  }
+  return Array.from(dedup.values()).sort((a, b) => b.atMs - a.atMs);
+}
+
+function timelineToneClassName(tone) {
+  if (tone === "review") return styles.timelineToneReview;
+  if (tone === "approved") return styles.timelineToneApproved;
+  if (tone === "attempt") return styles.timelineToneAttempt;
+  if (tone === "rejected") return styles.timelineToneRejected;
+  if (tone === "received") return styles.timelineToneReceived;
+  if (tone === "pending") return styles.timelineTonePending;
+  if (tone === "reprogrammed") return styles.timelineToneReprogrammed;
+  if (tone === "denied") return styles.timelineToneDenied;
+  if (tone === "refunded") return styles.timelineToneRefunded;
+  return "";
+}
+
+function sectionLabelForRequest(request) {
+  const status = String(request?.status || "").toLowerCase();
+  if (status === "en_revision") return "Ordenes en revision";
+  if (status === "recibida") return "Procesar reembolsos";
+  if (status === "por_devolver") return "Devoluciones a devolver";
+  if (HISTORY_STATUSES.has(status)) return "Historial";
+  if (request?.returnMethod === "pickup") return "Recoleccion a domicilio";
+  return "Entrega en sucursal";
 }
 
 function getStatusClassName(status) {
@@ -338,9 +791,21 @@ export const action = async ({ request }) => {
         requests: requests.map((requestRow) => {
           const status = String(requestRow.status || "").toLowerCase();
           const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
+          const visibleReasonEntries = reasonEntries.filter((entry) => !isSystemProgressEntry(entry));
           const returnedToCustomerAt = latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason);
+          const requiresPickupDeadline = ["por_devolver", "no_devuelto", "reembolso_denegado", "denegada"].includes(status);
+          const pendingPickupSinceAt = requiresPickupDeadline
+            ? latestEntryAtFromKinds(requestRow.rejectionReason, ["denied_after_received"]) ||
+              requestRow.updatedAt?.toISOString?.() ||
+              ""
+            : "";
+          const pickupDeadlineDate = requiresPickupDeadline ? addDays(pendingPickupSinceAt, PICKUP_DEADLINE_DAYS) : null;
+          const branchDeliveryDeadlineDate =
+            requestRow.returnMethod !== "pickup" && requestRow.limitDate ? new Date(requestRow.limitDate) : null;
+          const hasValidBranchDeliveryDeadline =
+            Boolean(branchDeliveryDeadlineDate) && Number.isFinite(branchDeliveryDeadlineDate.getTime());
           const imageMap = imageMapsByOrder[String(requestRow.shopifyOrderId || "").trim()] || {};
-          return {
+          const mappedRequest = {
             id: requestRow.id,
             orderNumber: requestRow.orderNumber,
             customerName: requestRow.customerName,
@@ -352,10 +817,15 @@ export const action = async ({ request }) => {
             estimatedRefund: requestRow.estimatedRefund,
             finalRefund: requestRow.finalRefund,
             status,
+            requiresReview: Boolean(requestRow.requiresReview),
             createdAt: requestRow.createdAt?.toISOString() || null,
             updatedAt: requestRow.updatedAt?.toISOString() || null,
             receivedAt: requestRow.receivedAt?.toISOString() || null,
             refundedAt: requestRow.refundedAt?.toISOString() || null,
+            pickupDeadlineAt: pickupDeadlineDate?.toISOString?.() || "",
+            branchDeliveryDeadlineAt: hasValidBranchDeliveryDeadline
+              ? branchDeliveryDeadlineDate.toISOString()
+              : "",
             branchAddress: requestRow.branchAddress || "",
             branchHours: requestRow.branchHours || "",
             pickupAddress: requestRow.pickupAddress || "",
@@ -363,8 +833,10 @@ export const action = async ({ request }) => {
             pickupState: requestRow.pickupState || "",
             pickupPostalCode: requestRow.pickupPostalCode || "",
             pickupDate: requestRow.pickupDate || "",
+            pickupHours: requestRow.pickupHours || "",
             pickupNotes: requestRow.pickupNotes || "",
-            reasonEntries,
+            timelineEntries: reasonEntries,
+            reasonEntries: visibleReasonEntries,
             wasReturnedToCustomer: reasonEntries.some(isReturnedToCustomerEntry),
             returnedToCustomerAt: returnedToCustomerAt || null,
             rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
@@ -381,6 +853,10 @@ export const action = async ({ request }) => {
               imageUrl: imageMap[itemKeyFromRecord(item)]?.imageUrl || "",
               imageAlt: imageMap[itemKeyFromRecord(item)]?.imageAlt || "",
             })),
+          };
+          return {
+            ...mappedRequest,
+            sectionLabel: sectionLabelForRequest(mappedRequest),
           };
         }),
       };
@@ -399,6 +875,9 @@ export default function ReturnsPortal() {
   const isSubmitting = navigation.state === "submitting";
   const requests = Array.isArray(actionData?.requests) ? actionData.requests : [];
   const hasResults = requests.length > 0;
+  const resultSections = Array.from(new Set(requests.map((request) => request.sectionLabel).filter(Boolean)));
+  const resultSectionLabel =
+    resultSections.length === 1 ? resultSections[0] : resultSections.length > 1 ? "Varias secciones" : "";
 
   return (
     <s-page heading="Portal de devoluciones">
@@ -421,7 +900,7 @@ export default function ReturnsPortal() {
       </s-section>
 
       {hasResults ? (
-        <s-section heading={`Resultado${requests.length > 1 ? "s" : ""}`}>
+        <s-section heading={`Resultado${requests.length > 1 ? "s" : ""}${resultSectionLabel ? ` - ${resultSectionLabel}` : ""}`}>
           <div className={`${styles.wrap} ${styles.reqGrid}`}>
             {requests.map((request) => (
               <ResultCard key={request.id} request={request} />
@@ -441,6 +920,9 @@ function ResultCard({ request }) {
   const closedAt =
     status === "reembolsada" && request.refundedAt ? request.refundedAt : request.updatedAt || null;
   const isDeniedReturnedToCustomer = status === "reembolso_denegado" && request.wasReturnedToCustomer;
+  const timelineEvents = buildStatusTimeline(request);
+  const currentTimelineEvent = timelineEvents[0] || null;
+  const olderTimelineEvents = timelineEvents.slice(1).filter((event) => String(event.note || "").trim());
 
   return (
     <article className={styles.card}>
@@ -452,7 +934,7 @@ function ResultCard({ request }) {
           </p>
         </div>
         <span className={styles.pill}>
-          Estado:{" "}
+          {request.sectionLabel ? `${request.sectionLabel} · ` : ""}Estado:{" "}
           <strong className={statusClassName}>
             {isDeniedReturnedToCustomer ? (
               <>
@@ -489,35 +971,69 @@ function ResultCard({ request }) {
           </div>
           <div className={styles.kvRow}>
             <span className={styles.kvKey}>Fecha solicitud</span>
-            <span className={styles.kvVal}>
-              {request.createdAt ? new Date(request.createdAt).toLocaleString("es-MX") : "-"}
-            </span>
+            <span className={styles.kvVal}>{request.createdAt ? formatRefundQueueDateTime(request.createdAt) : "-"}</span>
           </div>
           {isHistoryStatus && closedAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Fecha de cierre</span>
-              <span className={styles.kvVal}>{new Date(closedAt).toLocaleString("es-MX")}</span>
+              <span className={styles.kvVal}>{formatRefundQueueDateTime(closedAt)}</span>
+            </div>
+          ) : null}
+          {request.branchDeliveryDeadlineAt ? (
+            <div className={styles.kvRow}>
+              <span className={styles.kvKey}>Fecha limite de entrega</span>
+              <span className={styles.kvVal}>{formatRefundQueueDate(request.branchDeliveryDeadlineAt)}</span>
             </div>
           ) : null}
           {request.receivedAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Recibida</span>
-              <span className={styles.kvVal}>{new Date(request.receivedAt).toLocaleString("es-MX")}</span>
+              <span className={styles.kvVal}>{formatRefundQueueDateTime(request.receivedAt)}</span>
             </div>
           ) : null}
           {request.returnedToCustomerAt ? (
             <div className={styles.kvRow}>
               <span className={styles.kvKey}>Devuelta al cliente</span>
-              <span className={styles.kvVal}>{new Date(request.returnedToCustomerAt).toLocaleString("es-MX")}</span>
+              <span className={styles.kvVal}>{formatRefundQueueDateTime(request.returnedToCustomerAt)}</span>
             </div>
           ) : null}
           {request.refundedAt ? (
             <div className={styles.kvRow}>
-              <span className={styles.kvKey}>Reembolsada</span>
-              <span className={styles.kvVal}>{new Date(request.refundedAt).toLocaleString("es-MX")}</span>
+              <span className={styles.kvKey}>Reembolsado</span>
+              <span className={styles.kvVal}>{formatRefundQueueDateTime(request.refundedAt)}</span>
+            </div>
+          ) : null}
+          {request.pickupDeadlineAt && status !== "no_devuelto" ? (
+            <div className={styles.kvRow}>
+              <span className={styles.kvKey}>Fecha limite para recoger</span>
+              <span className={styles.kvVal}>{formatRefundQueueDate(request.pickupDeadlineAt)}</span>
             </div>
           ) : null}
         </div>
+
+        {currentTimelineEvent ? (
+          <div className={styles.statusTimelineCurrent}>
+            <p className={styles.statusTimelineTitle}>Estado actual</p>
+            <p className={styles.statusTimelineCurrentLine}>
+              <strong className={timelineToneClassName(currentTimelineEvent.tone)}>{currentTimelineEvent.label}</strong>{" "}
+              <span>{formatRefundQueueDateTime(currentTimelineEvent.at)}</span>
+            </p>
+            {currentTimelineEvent.note ? (
+              <p className={styles.statusTimelineItemNote}>{currentTimelineEvent.note}</p>
+            ) : null}
+          </div>
+        ) : null}
+        {olderTimelineEvents.length ? (
+          <div className={styles.statusTimelineList}>
+            {olderTimelineEvents.map((event) => (
+              <div key={event.id} className={styles.statusTimelineItem}>
+                <p className={`${styles.statusTimelineItemTitle} ${timelineToneClassName(event.tone)}`}>{event.label}</p>
+                <p className={styles.statusTimelineItemAt}>{formatRefundQueueDateTime(event.at)}</p>
+                {event.note ? <p className={styles.statusTimelineItemNote}>{event.note}</p> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         {request.returnMethod === "pickup" ? (
           <p className={styles.meta}>
@@ -525,7 +1041,7 @@ function ResultCard({ request }) {
             {[request.pickupAddress, request.pickupCity, request.pickupState, request.pickupPostalCode]
               .filter(Boolean)
               .join(", ") || "-"}
-            {" | "}Dia: {request.pickupDate || "-"}
+            {" | "}Dia: {request.pickupDate ? formatRefundQueueDate(request.pickupDate) : "-"}
             {request.pickupNotes ? ` | Notas: ${request.pickupNotes}` : ""}
           </p>
         ) : (
@@ -534,7 +1050,7 @@ function ResultCard({ request }) {
           </p>
         )}
 
-        {request.reasonEntries?.length ? (
+        {(!timelineEvents.length && request.reasonEntries?.length) ? (
           <div className={styles.reasonHistory}>
             <p className={styles.reasonHistoryTitle}>Historial de motivos enviados</p>
             <ul className={styles.reasonHistoryList}>
