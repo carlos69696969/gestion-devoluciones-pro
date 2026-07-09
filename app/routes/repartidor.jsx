@@ -1054,19 +1054,44 @@ export const action = async ({ request }) => {
         latestPlannedRoute?.routeId && plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
       const plannedRoute =
         latestPlannedRoute?.routeId && !plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
-      if (!resumedTransfer && !plannedRoute && !activeStartedRoute) {
+      const activeStartedRouteWork = activeStartedRoute?.routeId
+        ? await prisma.courierActivity.findFirst({
+            where: {
+              shop,
+              courierId: courier.id,
+              routeId: activeStartedRoute.routeId,
+              action: {
+                in: [
+                  "courier_route_order_assigned",
+                  "courier_mark_en_route",
+                  "courier_mark_delivered",
+                  "courier_mark_not_delivered",
+                  COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION,
+                  "courier_return_mark_received",
+                  "courier_return_pickup_attempt_failed",
+                  "courier_return_reject_after_failed_pickups",
+                  "courier_route_transferred_from:",
+                  "courier_route_finished",
+                ],
+              },
+            },
+            select: { id: true },
+          })
+        : null;
+      const reusableStartedRoute = activeStartedRoute && !activeStartedRouteWork ? activeStartedRoute : null;
+      if (!resumedTransfer && !plannedRoute && !reusableStartedRoute && !activeStartedRoute) {
         return {
           ok: false,
           loginError: `${courier.name} aun no tiene ordenes asignadas. Tu cuenta todavia no esta activa.`,
         };
       }
-      if (activeStartedRoute && !resumedTransfer) {
+      if (activeStartedRoute && !reusableStartedRoute && !resumedTransfer) {
         return {
           ok: false,
           loginError: "Esta cuenta ya inicio sesion en otro dispositivo. Finaliza o transfiere la ruta para permitir otro acceso.",
         };
       }
-      const routeId = resumedTransfer?.routeId || plannedRoute?.routeId;
+      const routeId = resumedTransfer?.routeId || plannedRoute?.routeId || reusableStartedRoute?.routeId;
       const transferStartedAt = resumedTransfer?.createdAt ? new Date(resumedTransfer.createdAt) : null;
       const activeRouteSession = await findActiveCourierRouteSession({
         prisma,
@@ -1075,11 +1100,23 @@ export const action = async ({ request }) => {
         routeId,
         after: transferStartedAt,
       });
-      if (activeRouteSession) {
+      if (activeRouteSession && !reusableStartedRoute) {
         return {
           ok: false,
           loginError: "Esta cuenta ya inicio sesion en otro dispositivo. Finaliza o transfiere la ruta para permitir otro acceso.",
         };
+      }
+      if (activeRouteSession && reusableStartedRoute) {
+        await prisma.courierActivity.create({
+          data: {
+            shop,
+            courierId: courier.id,
+            courierName: courier.name,
+            requestId: String(activeRouteSession.requestId || "session:previous"),
+            action: COURIER_ROUTE_SESSION_ENDED_ACTION,
+            routeId,
+          },
+        });
       }
       const accessSessionId = crypto.randomUUID();
       if (resumedTransfer) {
@@ -1094,17 +1131,6 @@ export const action = async ({ request }) => {
           },
         });
       } else if (plannedRoute) {
-        await prisma.courierActivity.create({
-          data: {
-            shop,
-            courierId: courier.id,
-            courierName: courier.name,
-            requestId: `route:${routeId}`,
-            action: "courier_route_started",
-            routeId,
-          },
-        });
-      } else {
         await prisma.courierActivity.create({
           data: {
             shop,
@@ -2154,9 +2180,19 @@ export default function RepartidorPublicPortal() {
       <main className={styles.page}>
         <div className={styles.accessContainer}>
           <section className={`${styles.card} ${styles.confirmationCard}`}>
-            <a className={styles.backButton} href={resetAccessHref}>
+            <button
+              className={styles.backButton}
+              type="button"
+              onClick={() => {
+                if (window.history.length > 1) {
+                  window.history.back();
+                } else {
+                  window.location.assign(resetAccessHref);
+                }
+              }}
+            >
               Regresar
-            </a>
+            </button>
             <div className={styles.cardHeader}>
               <div>
                 <p className={styles.eyebrow}>Cariana repartidores</p>
@@ -2248,9 +2284,19 @@ export default function RepartidorPublicPortal() {
       <main className={styles.page}>
         <div className={styles.accessContainer}>
           <section className={`${styles.card} ${styles.confirmationCard}`}>
-            <a className={styles.backButton} href={resetAccessHref}>
+            <button
+              className={styles.backButton}
+              type="button"
+              onClick={() => {
+                if (window.history.length > 1) {
+                  window.history.back();
+                } else {
+                  window.location.assign(resetAccessHref);
+                }
+              }}
+            >
               Regresar
-            </a>
+            </button>
             <p className={styles.eyebrow}>Cariana repartidores</p>
             <h1 className={styles.cardTitle}>Confirma tus devoluciones</h1>
             <p className={styles.subtitle}>
