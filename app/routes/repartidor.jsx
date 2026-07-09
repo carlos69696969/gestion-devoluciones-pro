@@ -1062,7 +1062,6 @@ export const action = async ({ request }) => {
               routeId: activeStartedRoute.routeId,
               action: {
                 in: [
-                  "courier_route_order_assigned",
                   "courier_mark_en_route",
                   "courier_mark_delivered",
                   "courier_mark_not_delivered",
