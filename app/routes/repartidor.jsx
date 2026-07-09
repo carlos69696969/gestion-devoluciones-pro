@@ -550,11 +550,12 @@ function getCourierSnapshotDateKey(value = new Date()) {
 }
 
 function courierStatusFromSnapshotAction(action, fallbackStatus = "pendiente") {
-  const normalizedAction = String(action || "").trim();
+  const normalizedAction = String(action || "").trim().toLowerCase();
   if (normalizedAction === "courier_mark_delivered" || normalizedAction === "courier_return_mark_received") {
     return "entregado";
   }
   if (normalizedAction === "courier_mark_not_delivered") return "no_entregado";
+  if (normalizedAction === COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION) return "no_localizado";
   if (
     normalizedAction === "courier_retry_delivery" ||
     normalizedAction === "courier_return_for_retry" ||
@@ -696,6 +697,7 @@ export const action = async ({ request }) => {
       const branchReturnRequestIds = requestIds.filter((id) => {
         const activity = latestActivityByRequestId.get(id);
         const action = String(activity?.action || "").trim();
+        if (action === COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION) return false;
         if (action === "courier_mark_not_delivered" || action === "courier_return_mark_received") return true;
         if (id.startsWith("pickup-")) return false;
         const fetchedOrder = fetchedOrderById.get(id);

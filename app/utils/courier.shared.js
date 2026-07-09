@@ -91,6 +91,7 @@ export function isCourierHistoryStatus(status) {
     "intento_fallido_1",
     "intento_fallido_2",
     "intento_fallido_3",
+    "no_localizado",
     "rechazada",
     "reembolsada",
   ].includes(normalized);
