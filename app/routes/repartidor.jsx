@@ -51,6 +51,7 @@ const SECOND_PICKUP_FAILED_WARNING =
 const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
 const COURIER_ROUTE_SESSION_STARTED_ACTION = "courier_route_session_started";
 const COURIER_ROUTE_SESSION_ENDED_ACTION = "courier_route_session_ended";
+const COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION = "courier_route_order_not_located";
 
 function getFailedPickupMessage(request, rejectionReason) {
   if (getReturnRetryAttemptLabel(request) !== "segundo intento") return rejectionReason;
@@ -224,6 +225,7 @@ function isWorkedCourierRouteAction(action) {
     "courier_mark_en_route",
     "courier_mark_delivered",
     "courier_mark_not_delivered",
+    COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION,
     "courier_return_mark_received",
     "courier_return_pickup_attempt_failed",
     "courier_return_reject_after_failed_pickups",
@@ -420,6 +422,7 @@ function shouldSkipRouteFinishReprogram({ requestId, status, routeAction }) {
       "courier_mark_en_route",
       "courier_mark_delivered",
       "courier_mark_not_delivered",
+      COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION,
       "courier_return_mark_received",
       "courier_return_pickup_attempt_failed",
       "courier_return_reject_after_failed_pickups",
@@ -441,6 +444,7 @@ function isCourierFinalRouteAction(action) {
   return [
     "courier_mark_delivered",
     "courier_mark_not_delivered",
+    COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION,
     "courier_return_mark_received",
     "courier_return_pickup_attempt_failed",
     "courier_return_reject_after_failed_pickups",
@@ -1137,6 +1141,7 @@ export const action = async ({ request }) => {
     if (
       [
         "courier_confirm_delivery_list",
+        "courier_remove_missing_delivery_orders",
         "courier_confirm_delivery",
         "courier_mark_delivery_missing",
         "courier_finish_delivery_confirmation",
@@ -1150,7 +1155,56 @@ export const action = async ({ request }) => {
         ? dailyAccess.missingOrderNumbers.map((value) => String(value || ""))
         : [];
 
-      if (intent === "courier_confirm_return_list") {
+      if (intent === "courier_remove_missing_delivery_orders") {
+        const visibleRequestIds = formData
+          .getAll("visibleRequestIds")
+          .map((value) => String(value || "").trim())
+          .filter(Boolean);
+        const visibleOrderNumbers = formData
+          .getAll("visibleOrderNumbers")
+          .map((value) => String(value || "").trim());
+
+        if (!visibleRequestIds.length) {
+          return { ok: false, confirmationError: "No se encontraron ordenes para quitar de ruta." };
+        }
+        if (!dailyAccess.routeId) {
+          return { ok: false, confirmationError: "No se pudo identificar la ruta activa." };
+        }
+
+        const existingNotLocatedActivities = await prisma.courierActivity.findMany({
+          where: {
+            shop,
+            courierId: Number(dailyAccess.courierId),
+            routeId: String(dailyAccess.routeId),
+            requestId: { in: visibleRequestIds },
+            action: COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION,
+          },
+          select: { requestId: true },
+        });
+        const alreadyNotLocatedRequestIds = new Set(
+          existingNotLocatedActivities.map((activity) => String(activity.requestId || "").trim()),
+        );
+        const notLocatedActivities = visibleRequestIds
+          .map((visibleRequestId, index) => {
+            if (alreadyNotLocatedRequestIds.has(visibleRequestId)) return null;
+            return {
+              shop,
+              courierId: Number(dailyAccess.courierId),
+              courierName: String(dailyAccess.courierName || ""),
+              requestId: visibleRequestId,
+              orderNumber: String(visibleOrderNumbers[index] || "").trim() || null,
+              action: COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION,
+              routeId: String(dailyAccess.routeId),
+            };
+          })
+          .filter(Boolean);
+        if (notLocatedActivities.length) {
+          await prisma.courierActivity.createMany({ data: notLocatedActivities });
+        }
+
+        dailyAccess.deliveryConfirmationComplete = true;
+        dailyAccess.missingOrderNumbers = [];
+      } else if (intent === "courier_confirm_return_list") {
         const visibleRequestIds = formData
           .getAll("visibleRequestIds")
           .map((value) => String(value || "").trim())
@@ -1824,6 +1878,9 @@ export const loader = async ({ request }) => {
     const requestId = String(requestRow?.id || "").trim();
     if (currentRouteRequestIds.has(requestId)) {
       const routeAction = currentRouteActionByRequestId.get(requestId);
+      if (routeAction === COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION) {
+        return null;
+      }
       if (shouldResetAssignedOrderForCurrentRoute(routeAction)) {
         return {
           ...requestRow,
@@ -2092,6 +2149,33 @@ export default function RepartidorPublicPortal() {
               </div>
               <button className={styles.accessButton} type="submit">Confirmar</button>
             </Form>
+            {isSecondConfirmationPass ? (
+              <Form
+                method="post"
+                reloadDocument
+                className={styles.confirmationForm}
+                onSubmit={(event) => {
+                  if (!window.confirm("¿Seguro que deseas quitar estas órdenes de la ruta?")) {
+                    event.preventDefault();
+                  }
+                }}
+              >
+                <input type="hidden" name="intent" value="courier_remove_missing_delivery_orders" />
+                <input type="hidden" name="shop" value={shop || ""} />
+                {confirmationOrders.map((request) => (
+                  <input key={`remove-request-${request.id}`} type="hidden" name="visibleRequestIds" value={request.id} />
+                ))}
+                {confirmationOrders.map((request) => (
+                  <input
+                    key={`remove-order-${request.id}`}
+                    type="hidden"
+                    name="visibleOrderNumbers"
+                    value={request.orderNumber}
+                  />
+                ))}
+                <button className={styles.removeRouteButton} type="submit">Quitar de ruta</button>
+              </Form>
+            ) : null}
           </section>
         </div>
       </main>

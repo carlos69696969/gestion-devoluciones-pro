@@ -483,6 +483,7 @@ function getStatusClassName(status) {
   if (status === "rechazada") return "statusRejected";
   if (status === "reembolso_denegado") return "statusDenied";
   if (status === "no_devuelto") return "statusDenied";
+  if (status === "no_localizado") return "statusNotLocated";
   if (status === "recibida") return "statusReceived";
   if (status === "reembolsada") return "statusRefunded";
   if (status === "denegada") return "statusDenied";
@@ -1662,6 +1663,7 @@ function courierStatusFromActivityAction(action, fallbackStatus = "") {
   const statusByAction = {
     courier_mark_delivered: "entregado",
     courier_mark_not_delivered: "no_entregado",
+    courier_route_order_not_located: "no_localizado",
     courier_return_mark_received: "recibida",
     courier_return_pickup_attempt_failed: "no_recibido",
     courier_return_reject_after_failed_pickups: "rechazada",
@@ -1672,6 +1674,7 @@ function courierStatusFromActivityAction(action, fallbackStatus = "") {
 
 function courierHistoryStatusLabel(status) {
   const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "no_localizado") return "no localizado";
   if (normalized === "no_entregado") return "no entregado";
   if (normalized === "no_recibido") return "no recibido";
   if (normalized === "reintento_pendiente") return "reprogramado";
@@ -1772,6 +1775,7 @@ function isCourierFinalActivityAction(action) {
   return [
     "courier_mark_delivered",
     "courier_mark_not_delivered",
+    "courier_route_order_not_located",
     "courier_return_mark_received",
     "courier_return_pickup_attempt_failed",
     "courier_return_reject_after_failed_pickups",
@@ -2782,8 +2786,15 @@ export const loader = async ({ request }) => {
         ...requestWithAttemptCount,
         persistedHistoryEvents: deliveryHistoryByRequestId.get(String(requestRow.id || "").trim()) || [],
       });
+      const latestFinalActivity = [...requestActivities]
+        .reverse()
+        .find((activity) => isCourierFinalActivityAction(activity.action));
+      const activityStatus = latestFinalActivity
+        ? courierStatusFromActivityAction(latestFinalActivity.action, "")
+        : "";
       return {
         ...requestWithAttemptCount,
+        status: activityStatus || requestWithAttemptCount.status,
         courierActivities: requestActivities,
         historyEvents: enrichCourierHistoryEvents({
           events: dedupeCourierHistoryEvents(historyEvents),
@@ -5158,6 +5169,7 @@ function courierHistoryOrderUpdatedMs(order) {
   const finalDeliveryActions = new Set([
     "courier_mark_delivered",
     "courier_mark_not_delivered",
+    "courier_route_order_not_located",
     "courier_return_mark_received",
     "courier_return_pickup_attempt_failed",
     "courier_return_reject_after_failed_pickups",
@@ -6397,6 +6409,8 @@ function CourierOrderCard({
     !(courierHistoryView && isCourierHistoryReprogrammed && isRouteTimeReprogrammed);
   const statusBadgeClass = courierHistoryView && normalizedVisibleStatus === "pendiente"
     ? styles.courierBadgeStatusPending
+    : normalizedVisibleStatus === "no_localizado"
+      ? styles.courierBadgeStatusNotLocated
     : ["entregado", "recibido", "recibida", "reembolsada"].includes(normalizedVisibleStatus)
       ? styles.courierBadgeStatusSuccess
     : courierHistoryView && isCourierHistoryReprogrammed && isRouteTimeReprogrammed

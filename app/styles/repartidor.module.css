@@ -177,6 +177,17 @@
   cursor: pointer;
 }
 
+.removeRouteButton {
+  border: 0;
+  border-radius: 999px;
+  padding: 13px 18px;
+  background: #c4322a;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .accessError {
   margin: 14px 0 0;
   color: #c5283d;

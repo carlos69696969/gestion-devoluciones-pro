@@ -214,6 +214,10 @@
   color: #b42318;
 }
 
+.statusNotLocated {
+  color: #c11574;
+}
+
 .meta {
   margin: 6px 0 0;
   color: #6d7175;
@@ -964,6 +968,12 @@
   background: #f8fafc;
   border-color: #cbd5e1;
   color: #64748b;
+}
+
+.courierBadgeStatusNotLocated {
+  background: #fff0f6;
+  border-color: #f5b8d1;
+  color: #c11574;
 }
 
 .courierBadgeStatusReprogrammed {
