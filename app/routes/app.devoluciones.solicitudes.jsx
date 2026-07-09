@@ -3147,6 +3147,10 @@ export const action = async ({ request }) => {
       return { ok: false, error: "No hay ordenes pendientes para distribuir." };
     }
 
+    await clearCourierRoutesForOrders(
+      session.shop,
+      routeOrders.map((order) => String(order?.id || "").trim()).filter(Boolean),
+    );
     await clearUnstartedCourierRoutePlans(session.shop);
     const routeSettings = await prisma.returnSettings.findUnique({
       where: { shop: session.shop },
@@ -5449,6 +5453,98 @@ async function clearUnstartedCourierRoutePlans(shop) {
       },
     },
   });
+}
+
+async function clearCourierRoutesForOrders(shop, requestIds = []) {
+  const cleanRequestIds = [...new Set(
+    (Array.isArray(requestIds) ? requestIds : [])
+      .map((requestId) => String(requestId || "").trim())
+      .filter(Boolean),
+  )];
+  if (!shop || !cleanRequestIds.length) return;
+
+  const assignments = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      requestId: { in: cleanRequestIds },
+      action: "courier_route_order_assigned",
+      routeId: { not: null },
+    },
+    select: { routeId: true },
+  });
+  const routeIds = [...new Set(assignments.map((activity) => String(activity.routeId || "").trim()).filter(Boolean))];
+  if (!routeIds.length) return;
+
+  const finishedRoutes = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      routeId: { in: routeIds },
+      action: "courier_route_finished",
+    },
+    select: { routeId: true },
+  });
+  const finishedRouteIds = new Set(finishedRoutes.map((activity) => String(activity.routeId || "").trim()));
+  const activeRouteIds = routeIds.filter((routeId) => !finishedRouteIds.has(routeId));
+  if (!activeRouteIds.length) return;
+
+  await prisma.courierActivity.deleteMany({
+    where: {
+      shop,
+      routeId: { in: activeRouteIds },
+      requestId: { in: cleanRequestIds },
+      action: "courier_route_order_assigned",
+    },
+  });
+
+  const remainingAssignments = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      routeId: { in: activeRouteIds },
+      action: "courier_route_order_assigned",
+    },
+    select: { routeId: true },
+  });
+  const routesWithRemainingOrders = new Set(
+    remainingAssignments.map((activity) => String(activity.routeId || "").trim()),
+  );
+  const emptyRouteIds = activeRouteIds.filter((routeId) => !routesWithRemainingOrders.has(routeId));
+  if (!emptyRouteIds.length) return;
+
+  const routePlans = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      routeId: { in: emptyRouteIds },
+      action: COURIER_ROUTE_PLANNED_ACTION,
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
+  const latestPlanByRouteId = new Map();
+  for (const plan of routePlans) {
+    const routeId = String(plan.routeId || "").trim();
+    if (routeId && !latestPlanByRouteId.has(routeId)) latestPlanByRouteId.set(routeId, plan);
+  }
+  await prisma.$transaction([
+    prisma.courierActivity.deleteMany({
+      where: {
+        shop,
+        routeId: { in: emptyRouteIds },
+        action: COURIER_ROUTE_PLANNED_ACTION,
+      },
+    }),
+    ...emptyRouteIds.map((routeId) => {
+      const plan = latestPlanByRouteId.get(routeId);
+      return prisma.courierActivity.create({
+        data: {
+          shop,
+          courierId: Number(plan?.courierId || 0),
+          courierName: String(plan?.courierName || ""),
+          requestId: `route:${routeId}`,
+          action: "courier_route_finished",
+          routeId,
+        },
+      });
+    }).filter((operation, index) => Number(latestPlanByRouteId.get(emptyRouteIds[index])?.courierId || 0)),
+  ]);
 }
 
 async function plannedCourierRouteSummary(shop, courierIds) {

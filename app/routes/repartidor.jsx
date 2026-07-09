@@ -1657,6 +1657,22 @@ export const loader = async ({ request }) => {
   const currentRoutePickupRequestIds = Array.from(currentRouteRequestIds).filter((requestId) =>
     requestId.startsWith("pickup-"),
   );
+  if (dailyAccess.routeId && currentRouteActivities.length > 0 && currentRouteRequestIds.size === 0) {
+    return {
+      activeTab,
+      shop: shop || "",
+      courierOrders: [],
+      requiresDailyAccess: false,
+      courierName: dailyAccess.courierName || "",
+      transferredFromName: dailyAccess.transferredFromName || "",
+      transferredToName: dailyAccess.transferredToName || "",
+      confirmedRequestIds: [],
+      missingOrderNumbers: [],
+      deliveryConfirmationComplete: true,
+      returnConfirmationComplete: true,
+      receivedTransferReturnOrders: [],
+    };
+  }
   const routeHasFrozenSnapshot = Boolean(
     dailyAccess.routeId && currentRouteStartedAt && currentRouteRequestIds.size > 0,
   );
