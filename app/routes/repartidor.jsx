@@ -5,8 +5,10 @@ import {
   redirect,
   useActionData,
   useLoaderData,
+  useLocation,
   useNavigation,
   useRevalidator,
+  useRouteError,
   useSearchParams,
 } from "react-router";
 import adminStyles from "../styles/admin.module.css";
@@ -62,6 +64,37 @@ export const headers = () => ({
   "Cache-Control": "no-store, max-age=0",
   "X-Robots-Tag": "noindex, nofollow",
 });
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  const location = useLocation();
+  const resetParams = new URLSearchParams(location.search);
+  resetParams.set("acceso", "nuevo");
+  resetParams.delete("tab");
+  resetParams.delete("updated");
+  resetParams.delete("overrideRequestId");
+  resetParams.delete("overrideStatus");
+  resetParams.delete("overrideAttemptCount");
+  const resetHref = `${location.pathname}?${resetParams.toString()}`;
+  console.error("Courier portal render failed", error);
+
+  return (
+    <main className={styles.page}>
+      <div className={styles.accessContainer}>
+        <section className={`${styles.card} ${styles.accessCard}`}>
+          <p className={styles.eyebrow}>Portal del repartidor</p>
+          <h1 className={styles.cardTitle}>Reinicia tu acceso</h1>
+          <p className={styles.subtitle}>
+            Tu sesion quedo desactualizada. Reinicia el acceso e ingresa tu codigo nuevamente.
+          </p>
+          <a className={styles.accessButtonLink} href={resetHref}>
+            Reiniciar acceso
+          </a>
+        </section>
+      </div>
+    </main>
+  );
+}
 
 function getCourierStatusLabel(status) {
   const normalized = String(status || "").trim().toLowerCase();
