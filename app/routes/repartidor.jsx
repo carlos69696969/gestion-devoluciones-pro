@@ -1569,10 +1569,22 @@ export const loader = async ({ request }) => {
         })
       )?.createdAt || null
     : null;
+  const notLocatedRouteRequestIds = new Set(
+    currentRouteActivities
+      .filter((activity) => String(activity.action || "").trim() === COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION)
+      .map((activity) => String(activity.requestId || "").trim())
+      .filter(Boolean),
+  );
   const currentRouteRequestIds = new Set(
     currentRouteActivities
       .map((activity) => String(activity.requestId || "").trim())
-      .filter((requestId) => requestId && !requestId.startsWith("route:") && !requestId.startsWith("session:")),
+      .filter(
+        (requestId) =>
+          requestId &&
+          !requestId.startsWith("route:") &&
+          !requestId.startsWith("session:") &&
+          !notLocatedRouteRequestIds.has(requestId),
+      ),
   );
   const currentRouteActionByRequestId = new Map(
     currentRouteActivities
