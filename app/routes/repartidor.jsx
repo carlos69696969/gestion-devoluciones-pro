@@ -2010,7 +2010,17 @@ export default function RepartidorPublicPortal() {
   const actionData = useActionData();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
+  const resetAccessParams = new URLSearchParams(searchParams);
+  resetAccessParams.set("acceso", "nuevo");
+  if (shop) resetAccessParams.set("shop", shop);
+  resetAccessParams.delete("tab");
+  resetAccessParams.delete("updated");
+  resetAccessParams.delete("overrideRequestId");
+  resetAccessParams.delete("overrideStatus");
+  resetAccessParams.delete("overrideAttemptCount");
+  const resetAccessHref = `${location.pathname}?${resetAccessParams.toString()}`;
   const [activeTab, setActiveTab] = useState(initialActiveTab || "pedidos");
   const [deliveryCodeRequest, setDeliveryCodeRequest] = useState(null);
   const [deliveryCodeInput, setDeliveryCodeInput] = useState("");
@@ -2144,6 +2154,9 @@ export default function RepartidorPublicPortal() {
       <main className={styles.page}>
         <div className={styles.accessContainer}>
           <section className={`${styles.card} ${styles.confirmationCard}`}>
+            <a className={styles.backButton} href={resetAccessHref}>
+              Regresar
+            </a>
             <div className={styles.cardHeader}>
               <div>
                 <p className={styles.eyebrow}>Cariana repartidores</p>
@@ -2235,6 +2248,9 @@ export default function RepartidorPublicPortal() {
       <main className={styles.page}>
         <div className={styles.accessContainer}>
           <section className={`${styles.card} ${styles.confirmationCard}`}>
+            <a className={styles.backButton} href={resetAccessHref}>
+              Regresar
+            </a>
             <p className={styles.eyebrow}>Cariana repartidores</p>
             <h1 className={styles.cardTitle}>Confirma tus devoluciones</h1>
             <p className={styles.subtitle}>
