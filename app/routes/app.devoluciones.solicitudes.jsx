@@ -5871,7 +5871,24 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
             )
             .map((activity) => [String(activity.requestId || "").trim(), activity]),
         );
-        const selectedSnapshotOrders = (Array.isArray(selectedSnapshotCutoff.orders) ? selectedSnapshotCutoff.orders : [])
+        const notLocatedSnapshotOrderIds = new Set(
+          courierActivities
+            .filter(
+              (activity) =>
+                String(activity.routeId || "").trim() === selectedRouteId &&
+                String(activity.action || "").trim().toLowerCase() === "courier_route_order_not_located",
+            )
+            .map((activity) => String(activity.requestId || "").trim())
+            .filter(Boolean),
+        );
+        const snapshotOrders = Array.isArray(selectedSnapshotCutoff.orders) ? selectedSnapshotCutoff.orders : [];
+        const hiddenSnapshotOrderIds = new Set(
+          snapshotOrders
+            .map((order) => String(order?.id || "").trim())
+            .filter((id) => id && notLocatedSnapshotOrderIds.has(id)),
+        );
+        const selectedSnapshotOrders = snapshotOrders
+          .filter((order) => !hiddenSnapshotOrderIds.has(String(order?.id || "").trim()))
           .map((order, index) => {
             const id = String(order?.id || "");
             const sourceOrder = orderByRequestId.get(id) || {};
@@ -5937,10 +5954,18 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
               historyEvents: enrichedSnapshotHistoryEvents,
               branchPickupHistoryEvents: storedSnapshotHistoryEvents,
               unfilteredHistoryEvents: snapshotHistoryEvents,
-              sequenceNumber: Number(order?.sequenceNumber || index + 1),
+              sequenceNumber: index + 1,
             };
           })
-          .sort((firstOrder, secondOrder) => Number(firstOrder.sequenceNumber || 0) - Number(secondOrder.sequenceNumber || 0));
+          .sort((firstOrder, secondOrder) => Number(firstOrder.sequenceNumber || 0) - Number(secondOrder.sequenceNumber || 0))
+          .map((order, index) => ({
+            ...order,
+            sequenceNumber: index + 1,
+          }));
+        const selectedSnapshotRemainingCount = Math.max(
+          0,
+          Number(selectedSnapshot.remainingCount || 0) - hiddenSnapshotOrderIds.size,
+        );
         const selectedDayLabel = new Intl.DateTimeFormat("es-MX", {
           dateStyle: "full",
           timeZone: "UTC",
@@ -5974,7 +5999,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                 ) : null}
                 <span className={styles.courierHistoryCounter}>Ordenes {selectedSnapshotOrders.length}</span>
                 <span className={styles.courierHistoryCounter}>
-                  Restantes {Number(selectedSnapshot.remainingCount || 0)}
+                  Restantes {selectedSnapshotRemainingCount}
                 </span>
               </div>
             </div>
@@ -6036,9 +6061,16 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           finalActivityAtByOrderId.set(requestId, new Date(activity.createdAt || "").getTime());
         }
       }
+      const notLocatedOrderIds = new Set(
+        selectedDayActivities
+          .filter((activity) => String(activity.action || "").trim().toLowerCase() === "courier_route_order_not_located")
+          .map((activity) => String(activity.requestId || "").trim())
+          .filter(Boolean),
+      );
       const selectedActivityOrders = [
         ...new Map(
           selectedDayActivities
+            .filter((activity) => !notLocatedOrderIds.has(String(activity.requestId || "").trim()))
             .map((activity) => orderByRequestId.get(String(activity.requestId || "")))
             .filter(Boolean)
           .map((order) => [String(order.id || ""), order]),
@@ -6047,7 +6079,9 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
       const baseDayOrders = (!selectedRouteId && selectedDate === todayDateKey
         ? todayOrders
         : selectedActivityOrders
-      ).sort(compareCourierDisplayOrder);
+      )
+        .filter((order) => !notLocatedOrderIds.has(String(order.id || "").trim()))
+        .sort(compareCourierDisplayOrder);
       const routeSequenceOrders = [...baseDayOrders].sort((firstOrder, secondOrder) => {
         const firstId = String(firstOrder.id || "");
         const secondId = String(secondOrder.id || "");
@@ -6061,9 +6095,12 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         if (firstFinishedAt !== secondFinishedAt) return firstFinishedAt - secondFinishedAt;
         return compareCourierDisplayOrder(firstOrder, secondOrder);
       });
-      const selectedDayOrders = [...routeSequenceOrders];
+      const selectedDayOrders = routeSequenceOrders.map((order, index) => ({
+        ...order,
+        sequenceNumber: index + 1,
+      }));
       const sequenceByOrderId = new Map(
-        routeSequenceOrders.map((order, index) => [String(order.id || ""), index + 1]),
+        selectedDayOrders.map((order) => [String(order.id || ""), Number(order.sequenceNumber || 0)]),
       );
       const remainingOrdersCount = selectedDayOrders.filter((order) => {
         const orderId = String(order.id || "");
