@@ -1276,6 +1276,38 @@ function isAdminNotLocatedReprogramEvent(event) {
   return isAdminNotLocatedReprogramNote(event?.note) || Boolean(event?.adminNotLocatedReprogram);
 }
 
+function insertMissingRouteSequenceIdsByOrderNumber(primaryIds, missingIds, orderNumberByRequestId) {
+  const sequenceIds = [...new Set((Array.isArray(primaryIds) ? primaryIds : []).filter(Boolean))];
+  const missingSequenceIds = [...new Set((Array.isArray(missingIds) ? missingIds : []).filter(Boolean))]
+    .filter((requestId) => !sequenceIds.includes(requestId))
+    .sort((firstId, secondId) =>
+      String(orderNumberByRequestId.get(firstId) || "").localeCompare(
+        String(orderNumberByRequestId.get(secondId) || ""),
+        "es",
+        { numeric: true, sensitivity: "base" },
+      ),
+    );
+
+  for (const missingId of missingSequenceIds) {
+    const missingOrderNumber = String(orderNumberByRequestId.get(missingId) || "").trim();
+    if (!missingOrderNumber) {
+      sequenceIds.push(missingId);
+      continue;
+    }
+    const insertIndex = sequenceIds.findIndex((requestId) => {
+      const orderNumber = String(orderNumberByRequestId.get(requestId) || "").trim();
+      return (
+        orderNumber &&
+        missingOrderNumber.localeCompare(orderNumber, "es", { numeric: true, sensitivity: "base" }) < 0
+      );
+    });
+    if (insertIndex >= 0) sequenceIds.splice(insertIndex, 0, missingId);
+    else sequenceIds.push(missingId);
+  }
+
+  return sequenceIds;
+}
+
 function routeTimeReprogramLabel(dateLabel, event) {
   if (isAdminNotLocatedReprogramEvent(event)) {
     return dateLabel
@@ -3294,7 +3326,6 @@ export const action = async ({ request }) => {
             },
           });
         }
-        await clearCourierRoutesForOrders(session.shop, [requestId]);
         await prisma.courierActivity.create({
           data: {
             shop: session.shop,
@@ -6195,14 +6226,27 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
       );
       const activeBatchRouteIds = batchRouteIds.filter((id) => !finishedBatchRouteIds.has(id));
       const sequenceRouteIds = activeBatchRouteIds.length ? activeBatchRouteIds : [cleanRouteId];
-      const sequenceIds = [
+      const sequenceActivities = [...activities]
+        .filter(
+          (activity) =>
+            sequenceRouteIds.includes(String(activity.routeId || "").trim()) &&
+            String(activity.action || "").trim().toLowerCase() !== COURIER_ROUTE_PLANNED_ACTION &&
+            String(activity.action || "").trim().toLowerCase() !== "courier_route_started" &&
+            String(activity.action || "").trim().toLowerCase() !== "courier_route_finished",
+        )
+        .sort(compareActivitiesAscending);
+      const orderNumberByRequestId = new Map();
+      for (const activity of sequenceActivities) {
+        const requestId = String(activity.requestId || "").trim();
+        const orderNumber = String(activity.orderNumber || "").trim();
+        if (requestId && orderNumber && !orderNumberByRequestId.has(requestId)) {
+          orderNumberByRequestId.set(requestId, orderNumber);
+        }
+      }
+      const assignedSequenceIds = [
         ...new Set(
-          [...activities]
-            .filter(
-              (activity) =>
-                sequenceRouteIds.includes(String(activity.routeId || "").trim()) &&
-                String(activity.action || "").trim().toLowerCase() === "courier_route_order_assigned",
-            )
+          sequenceActivities
+            .filter((activity) => String(activity.action || "").trim().toLowerCase() === "courier_route_order_assigned")
             .sort(compareActivitiesAscending)
             .map((activity) => String(activity.requestId || "").trim())
             .filter(
@@ -6213,6 +6257,20 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
             ),
         ),
       ];
+      const missingSequenceIds = sequenceActivities
+        .map((activity) => String(activity.requestId || "").trim())
+        .filter(
+          (requestId) =>
+            requestId &&
+            !requestId.startsWith("route:") &&
+            !requestId.startsWith("session:") &&
+            !assignedSequenceIds.includes(requestId),
+        );
+      const sequenceIds = insertMissingRouteSequenceIdsByOrderNumber(
+        assignedSequenceIds,
+        missingSequenceIds,
+        orderNumberByRequestId,
+      );
 
       return new Map(sequenceIds.map((requestId, index) => [requestId, index + 1]));
     };

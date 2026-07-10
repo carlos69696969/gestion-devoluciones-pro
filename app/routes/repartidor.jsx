@@ -583,6 +583,38 @@ function buildSnapshotFallbackOrder(requestId, activity, index = 0) {
   };
 }
 
+function insertMissingRouteSequenceIdsByOrderNumber(primaryIds, missingIds, orderNumberByRequestId) {
+  const sequenceIds = [...new Set((Array.isArray(primaryIds) ? primaryIds : []).filter(Boolean))];
+  const missingSequenceIds = [...new Set((Array.isArray(missingIds) ? missingIds : []).filter(Boolean))]
+    .filter((requestId) => !sequenceIds.includes(requestId))
+    .sort((firstId, secondId) =>
+      String(orderNumberByRequestId.get(firstId) || "").localeCompare(
+        String(orderNumberByRequestId.get(secondId) || ""),
+        "es",
+        { numeric: true, sensitivity: "base" },
+      ),
+    );
+
+  for (const missingId of missingSequenceIds) {
+    const missingOrderNumber = String(orderNumberByRequestId.get(missingId) || "").trim();
+    if (!missingOrderNumber) {
+      sequenceIds.push(missingId);
+      continue;
+    }
+    const insertIndex = sequenceIds.findIndex((requestId) => {
+      const orderNumber = String(orderNumberByRequestId.get(requestId) || "").trim();
+      return (
+        orderNumber &&
+        missingOrderNumber.localeCompare(orderNumber, "es", { numeric: true, sensitivity: "base" }) < 0
+      );
+    });
+    if (insertIndex >= 0) sequenceIds.splice(insertIndex, 0, missingId);
+    else sequenceIds.push(missingId);
+  }
+
+  return sequenceIds;
+}
+
 export const action = async ({ request }) => {
   const { default: prisma } = await import("../db.server");
   const {
@@ -1611,7 +1643,7 @@ export const loader = async ({ request }) => {
           routeId: String(dailyAccess.routeId),
           action: { notIn: ["courier_route_started", "courier_route_finished"] },
         },
-        select: { requestId: true, action: true, createdAt: true },
+        select: { requestId: true, orderNumber: true, action: true, createdAt: true },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       })
     : [];
@@ -1924,7 +1956,7 @@ export const loader = async ({ request }) => {
           routeId: { in: activeBatchRouteIds },
           action: "courier_route_order_assigned",
         },
-        select: { requestId: true },
+        select: { requestId: true, orderNumber: true },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       })
     : [];
@@ -1935,6 +1967,19 @@ export const loader = async ({ request }) => {
         .filter((requestId) => requestId && !requestId.startsWith("route:") && !requestId.startsWith("session:")),
     ),
   ];
+  const orderNumberByRequestId = new Map();
+  for (const order of courierOrders || []) {
+    const requestId = String(order?.id || "").trim();
+    const orderNumber = String(order?.orderNumber || "").trim();
+    if (requestId && orderNumber) orderNumberByRequestId.set(requestId, orderNumber);
+  }
+  for (const activity of [...currentRouteActivities, ...batchRouteAssignments]) {
+    const requestId = String(activity?.requestId || "").trim();
+    const orderNumber = String(activity?.orderNumber || "").trim();
+    if (requestId && orderNumber && !orderNumberByRequestId.has(requestId)) {
+      orderNumberByRequestId.set(requestId, orderNumber);
+    }
+  }
   const primaryRouteSequenceIds = batchRouteRequestIds.length ? batchRouteRequestIds : assignedRouteRequestIds;
   const finalizedRouteRequestIds = [
     ...new Map(
@@ -1950,15 +1995,14 @@ export const loader = async ({ request }) => {
         new Date(secondActivity.createdAt || "").getTime(),
     )
     .map(([requestId]) => requestId);
-  const routeSequenceIds = [
-    ...primaryRouteSequenceIds,
-    ...finalizedRouteRequestIds.filter((requestId) => !primaryRouteSequenceIds.includes(requestId)),
-    ...Array.from(currentRouteRequestIds).filter(
-      (requestId) =>
-        !finalizedRouteRequestIds.includes(requestId) &&
-        !primaryRouteSequenceIds.includes(requestId),
-    ),
-  ];
+  const routeSequenceIds = insertMissingRouteSequenceIdsByOrderNumber(
+    primaryRouteSequenceIds,
+    [
+      ...finalizedRouteRequestIds,
+      ...Array.from(currentRouteRequestIds).filter((requestId) => !finalizedRouteRequestIds.includes(requestId)),
+    ],
+    orderNumberByRequestId,
+  );
   const routeSequenceByRequestId = new Map(
     routeSequenceIds.map((requestId, index) => [requestId, index + 1]),
   );
