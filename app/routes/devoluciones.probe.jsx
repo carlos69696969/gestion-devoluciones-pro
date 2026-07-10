@@ -302,12 +302,25 @@ async function fetchLatestOrderNotification({ shop, orderNumber, isDelivered }) 
     if (!notification?.title && !notification?.message) return null;
     return {
       title: String(notification?.title || "").trim(),
-      message: String(notification?.message || "").trim(),
+      message: normalizeLatestOrderNotificationMessage(notification?.message),
       createdAt: String(notification?.createdAt || "").trim(),
     };
   } catch {
     return null;
   }
+}
+
+function normalizeLatestOrderNotificationMessage(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+
+  return text
+    .replace(
+      /(\b\d{1,2}\s+\S+\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:a\.?\s*m\.?|p\.?\s*m\.?|am|pm)\.?)\s+([^\w\s#]*\s*Pedido\b)/i,
+      "$1\n$2",
+    )
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function buildBranchPickupFallbackNotification(orderNumber) {
