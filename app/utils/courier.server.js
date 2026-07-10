@@ -335,7 +335,7 @@ function courierDeliveryDateFromEventNote(note) {
   );
 }
 
-async function getLatestCourierDeliveryDate({ shopDomain, requestId, orderNumber, fallbackDate }) {
+export async function getLatestCourierDeliveryDate({ shopDomain, requestId, orderNumber, fallbackDate }) {
   const shop = normalizeShop(shopDomain);
   const cleanRequestId = String(requestId || "").trim();
   const cleanOrderNumber = String(orderNumber || "").replace(/^#/, "").trim();

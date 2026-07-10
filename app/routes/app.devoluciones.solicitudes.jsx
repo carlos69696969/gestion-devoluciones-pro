@@ -5,6 +5,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
+  getLatestCourierDeliveryDate,
   markCourierOrderAsDelivered,
   reprogramCourierDeliveryForNextRoute,
 } from "../utils/courier.server";
@@ -546,23 +547,6 @@ function nextIsoDate(value) {
   if (!Number.isFinite(date.getTime())) return "";
   date.setUTCDate(date.getUTCDate() + 1);
   return date.toISOString().slice(0, 10);
-}
-
-async function latestCourierRouteTimeRescheduleDate(prisma, shop, requestId) {
-  const cleanShop = String(shop || "").trim();
-  const cleanRequestId = String(requestId || "").trim();
-  if (!cleanShop || !cleanRequestId) return "";
-
-  const event = await prisma.courierEvent.findFirst({
-    where: {
-      shop: cleanShop,
-      requestId: cleanRequestId,
-      note: { contains: "route_time_rescheduled:" },
-    },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    select: { note: true },
-  });
-  return String(event?.note || "").match(/route_time_rescheduled:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
 }
 
 function itemKeyFromRecord(item) {
@@ -3344,8 +3328,14 @@ export const action = async ({ request }) => {
       for (const order of selectedOrders) {
         const requestId = String(order.id || "").trim();
         const orderNumber = String(order.orderNumber || "").trim();
-        const latestRouteTimeDate = await latestCourierRouteTimeRescheduleDate(prisma, session.shop, requestId);
-        const currentScheduledDate = String(latestRouteTimeDate || order.pickupDate || "").trim();
+        const currentScheduledDate = String(
+          await getLatestCourierDeliveryDate({
+            shopDomain: session.shop,
+            requestId,
+            orderNumber,
+            fallbackDate: order.pickupDate || "",
+          }) || order.pickupDate || "",
+        ).trim();
         const rescheduledDate = nextIsoDate(currentScheduledDate);
         const result = await reprogramCourierDeliveryForNextRoute({
           shopDomain: session.shop,
