@@ -1698,6 +1698,21 @@ function courierRouteTimeAdminConflictKey(event) {
   ].map(normalizeCourierHistoryKeyText).join(":");
 }
 
+function normalizeAdminRouteTimeHistoryEvent(event) {
+  if (!isRouteTimeHistoryEvent(event) || !isAdminNotLocatedReprogramEvent(event)) return event;
+  const noteDate = String(event?.note || "").match(/route_time_rescheduled:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
+  const labelDate = String(event?.label || "").match(/para el ([^.\n]+)/i)?.[1] || "";
+  const dateLabel = noteDate
+    ? formatCourierRescheduledDate(new Date(`${noteDate}T12:00:00Z`))
+    : normalizeCourierRescheduledDateLabel(labelDate);
+  return {
+    ...event,
+    label: routeTimeReprogramLabel(dateLabel, { adminNotLocatedReprogram: true }),
+    routeTimeRescheduled: true,
+    adminNotLocatedReprogram: true,
+  };
+}
+
 function mergeCourierHistoryEvents(...eventLists) {
   const seen = new Set();
   const routeTimeAdminKeys = new Set();
@@ -1705,23 +1720,24 @@ function mergeCourierHistoryEvents(...eventLists) {
   const merged = [];
   for (const events of eventLists) {
     for (const event of events || []) {
-      const eventTimeValue = event?.at || event?.createdAt || "";
-      const eventTimeKey = isRouteTimeHistoryEvent(event)
+      const normalizedEvent = normalizeAdminRouteTimeHistoryEvent(event);
+      const eventTimeValue = normalizedEvent?.at || normalizedEvent?.createdAt || "";
+      const eventTimeKey = isRouteTimeHistoryEvent(normalizedEvent)
         ? courierHistoryMinuteKey(eventTimeValue)
         : courierHistoryMinuteKey(eventTimeValue) || parseEventMs(eventTimeValue) || String(eventTimeValue).trim().toLowerCase();
-      const contentKeyParts = isRouteTimeHistoryEvent(event)
-        ? [eventTimeKey, event?.label || ""]
+      const contentKeyParts = isRouteTimeHistoryEvent(normalizedEvent)
+        ? [eventTimeKey, normalizedEvent?.label || ""]
         : [
             eventTimeKey,
-            event?.label || "",
-            event?.note || "",
-            event?.status || "",
+            normalizedEvent?.label || "",
+            normalizedEvent?.note || "",
+            normalizedEvent?.status || "",
           ];
       const contentKey = contentKeyParts.map(normalizeCourierHistoryKeyText).join(":");
-      const key = contentKey || String(event?.id || "");
+      const key = contentKey || String(normalizedEvent?.id || "");
       if (seen.has(key)) continue;
-      const routeTimeConflictKey = courierRouteTimeAdminConflictKey(event);
-      if (routeTimeConflictKey && isAdminNotLocatedReprogramEvent(event)) {
+      const routeTimeConflictKey = courierRouteTimeAdminConflictKey(normalizedEvent);
+      if (routeTimeConflictKey && isAdminNotLocatedReprogramEvent(normalizedEvent)) {
         routeTimeAdminKeys.add(routeTimeConflictKey);
         const normalIndex = routeTimeNormalIndexByKey.get(routeTimeConflictKey);
         if (normalIndex !== undefined) {
@@ -1743,10 +1759,10 @@ function mergeCourierHistoryEvents(...eventLists) {
         continue;
       }
       seen.add(key);
-      if (routeTimeConflictKey && !isAdminNotLocatedReprogramEvent(event)) {
+      if (routeTimeConflictKey && !isAdminNotLocatedReprogramEvent(normalizedEvent)) {
         routeTimeNormalIndexByKey.set(routeTimeConflictKey, merged.length);
       }
-      merged.push(event);
+      merged.push(normalizedEvent);
     }
   }
   return merged.sort((firstEvent, secondEvent) =>

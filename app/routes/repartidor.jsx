@@ -54,6 +54,7 @@ const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
 const COURIER_ROUTE_SESSION_STARTED_ACTION = "courier_route_session_started";
 const COURIER_ROUTE_SESSION_ENDED_ACTION = "courier_route_session_ended";
 const COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION = "courier_route_order_not_located";
+const COURIER_ADMIN_NOT_LOCATED_REPROGRAM_NOTE = "admin_not_located_reprogram:1";
 
 function getFailedPickupMessage(request, rejectionReason) {
   if (getReturnRetryAttemptLabel(request) !== "segundo intento") return rejectionReason;
@@ -170,6 +171,11 @@ function courierSnapshotEventLabel(event) {
   const routeTimeIsoDate = note.match(/route_time_rescheduled:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
   if (routeTimeIsoDate) {
     const dateLabel = formatCourierSnapshotRescheduledDate(`${routeTimeIsoDate}T12:00:00Z`);
+    if (note.includes(COURIER_ADMIN_NOT_LOCATED_REPROGRAM_NOTE)) {
+      return dateLabel
+        ? `Reprogramada por no localizado para el ${dateLabel}`
+        : "Reprogramada por no localizado";
+    }
     return dateLabel
       ? `Reprogramada por falta de tiempo para el ${dateLabel}`
       : "Reprogramada por falta de tiempo";
