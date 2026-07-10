@@ -5765,6 +5765,81 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
     const snapshotByRouteId = new Map(
       courierSnapshots.map((snapshot) => [String(snapshot.routeId || "").trim(), snapshot]),
     );
+    const compareActivitiesAscending = (firstActivity, secondActivity) => {
+      const timeDifference =
+        new Date(firstActivity.createdAt || "").getTime() -
+        new Date(secondActivity.createdAt || "").getTime();
+      if (timeDifference !== 0) return timeDifference;
+      return Number(firstActivity.id || 0) - Number(secondActivity.id || 0);
+    };
+    const buildRouteAssignmentSequenceByOrderId = (routeId) => {
+      const cleanRouteId = String(routeId || "").trim();
+      if (!cleanRouteId) return new Map();
+
+      const routePlan = [...activities]
+        .filter(
+          (activity) =>
+            String(activity.routeId || "").trim() === cleanRouteId &&
+            String(activity.action || "").trim().toLowerCase() === COURIER_ROUTE_PLANNED_ACTION,
+        )
+        .sort(
+          (firstActivity, secondActivity) =>
+            new Date(secondActivity.createdAt || "").getTime() -
+              new Date(firstActivity.createdAt || "").getTime() ||
+            Number(secondActivity.id || 0) - Number(firstActivity.id || 0),
+        )[0];
+      const planStartedAt = routePlan?.createdAt ? new Date(routePlan.createdAt) : null;
+      const batchRouteIds = planStartedAt
+        ? [
+            ...new Set(
+              [...activities]
+                .filter((activity) => {
+                  if (String(activity.action || "").trim().toLowerCase() !== COURIER_ROUTE_PLANNED_ACTION) {
+                    return false;
+                  }
+                  if (!String(activity.routeId || "").trim()) return false;
+                  const activityTime = new Date(activity.createdAt || "").getTime();
+                  if (!Number.isFinite(activityTime)) return false;
+                  return Math.abs(activityTime - planStartedAt.getTime()) <= 15000;
+                })
+                .sort(compareActivitiesAscending)
+                .map((activity) => String(activity.routeId || "").trim())
+                .filter(Boolean),
+            ),
+          ]
+        : [];
+      const finishedBatchRouteIds = new Set(
+        [...activities]
+          .filter(
+            (activity) =>
+              batchRouteIds.includes(String(activity.routeId || "").trim()) &&
+              String(activity.action || "").trim().toLowerCase() === "courier_route_finished",
+          )
+          .map((activity) => String(activity.routeId || "").trim()),
+      );
+      const activeBatchRouteIds = batchRouteIds.filter((id) => !finishedBatchRouteIds.has(id));
+      const sequenceRouteIds = activeBatchRouteIds.length ? activeBatchRouteIds : [cleanRouteId];
+      const sequenceIds = [
+        ...new Set(
+          [...activities]
+            .filter(
+              (activity) =>
+                sequenceRouteIds.includes(String(activity.routeId || "").trim()) &&
+                String(activity.action || "").trim().toLowerCase() === "courier_route_order_assigned",
+            )
+            .sort(compareActivitiesAscending)
+            .map((activity) => String(activity.requestId || "").trim())
+            .filter(
+              (requestId) =>
+                requestId &&
+                !requestId.startsWith("route:") &&
+                !requestId.startsWith("session:"),
+            ),
+        ),
+      ];
+
+      return new Map(sequenceIds.map((requestId, index) => [requestId, index + 1]));
+    };
     const routeStarts = courierActivities.filter(
       (activity) => activity.action === "courier_route_started" && activity.routeId,
     );
@@ -5881,28 +5956,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
             .map((activity) => String(activity.requestId || "").trim())
             .filter(Boolean),
         );
-        const snapshotRouteAssignmentSequenceByOrderId = new Map(
-          [
-            ...new Map(
-              courierActivities
-                .filter(
-                  (activity) =>
-                    String(activity.routeId || "").trim() === selectedRouteId &&
-                    String(activity.action || "").trim().toLowerCase() === "courier_route_order_assigned",
-                )
-                .sort(
-                  (firstActivity, secondActivity) =>
-                    new Date(firstActivity.createdAt || "").getTime() -
-                    new Date(secondActivity.createdAt || "").getTime(),
-                )
-                .map((activity) => {
-                  const requestId = String(activity.requestId || "").trim();
-                  return [requestId, requestId];
-                })
-                .filter(([requestId]) => requestId),
-            ).values(),
-          ].map((requestId, index) => [requestId, index + 1]),
-        );
+        const snapshotRouteAssignmentSequenceByOrderId = buildRouteAssignmentSequenceByOrderId(selectedRouteId);
         const snapshotOrders = Array.isArray(selectedSnapshotCutoff.orders) ? selectedSnapshotCutoff.orders : [];
         const hiddenSnapshotOrderIds = new Set(
           snapshotOrders
@@ -6087,24 +6141,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           .map((activity) => String(activity.requestId || "").trim())
           .filter(Boolean),
       );
-      const routeAssignmentSequenceByOrderId = new Map(
-        [
-          ...new Map(
-            selectedDayActivities
-              .filter((activity) => String(activity.action || "").trim().toLowerCase() === "courier_route_order_assigned")
-              .sort(
-                (firstActivity, secondActivity) =>
-                  new Date(firstActivity.createdAt || "").getTime() -
-                  new Date(secondActivity.createdAt || "").getTime(),
-              )
-              .map((activity) => {
-                const requestId = String(activity.requestId || "").trim();
-                return [requestId, requestId];
-              })
-              .filter(([requestId]) => requestId),
-          ).values(),
-        ].map((requestId, index) => [requestId, index + 1]),
-      );
+      const routeAssignmentSequenceByOrderId = buildRouteAssignmentSequenceByOrderId(selectedRouteId);
       const selectedActivityOrders = [
         ...new Map(
           selectedDayActivities
