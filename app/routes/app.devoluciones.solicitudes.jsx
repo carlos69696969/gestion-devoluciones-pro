@@ -6,6 +6,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
   markCourierOrderAsDelivered,
+  reprogramCourierDeliveryForNextRoute,
 } from "../utils/courier.server";
 import {
   compareCourierDisplayOrder,
@@ -527,6 +528,17 @@ function viewModeFromPathname(pathname) {
 
 function toMoney(value) {
   return Number(value || 0).toFixed(2);
+}
+
+function nextIsoDate(value) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const date = match
+    ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12))
+    : new Date(raw);
+  if (!Number.isFinite(date.getTime())) return "";
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
 }
 
 function itemKeyFromRecord(item) {
@@ -2420,13 +2432,15 @@ async function replaceShopifyOrderCourierStatusTag(admin, shopifyOrderId, status
   }
 }
 
-async function refundShopifyOrderToOriginalPayment({ admin, shopifyOrderId, notePrefix }) {
+async function refundShopifyOrderToOriginalPayment({ admin, shopifyOrderId, notePrefix, includeShipping = false }) {
   const snapshot = await fetchOrderSnapshot(admin, shopifyOrderId);
   const { refundLineItems, subtotal } = mapOrderItemsToFullRefundLineItems(snapshot.lineItems);
   if (!refundLineItems.length) {
     throw new Error("No hay lineas para reembolsar.");
   }
-  const finalRefund = Number(snapshot.currentSubtotalPrice || subtotal || 0);
+  const finalRefund = includeShipping
+    ? Number(snapshot.currentTotalPrice || snapshot.currentSubtotalPrice || subtotal || 0)
+    : Number(snapshot.currentSubtotalPrice || subtotal || 0);
   if (finalRefund <= 0) {
     throw new Error("No se encontro un monto valido para reembolsar.");
   }
@@ -2449,6 +2463,7 @@ async function refundShopifyOrderToOriginalPayment({ admin, shopifyOrderId, note
           note: notePrefix || "Reembolso por pedido no recogido en sucursal",
           notify: false,
           refundLineItems,
+          ...(includeShipping ? { shipping: { fullRefund: true } } : {}),
           transactions: [
             {
               orderId: shopifyOrderId,
@@ -3089,6 +3104,169 @@ export const action = async ({ request }) => {
         ok: false,
         error: String(error?.message || error || "No se pudo procesar el reembolso."),
         requestId,
+      };
+    }
+  }
+
+  if (intent === "courier_bulk_refund" || intent === "courier_bulk_reprogram") {
+    const selectedOrderIds = formData
+      .getAll("courierBulkOrderIds")
+      .map((orderId) => String(orderId || "").trim())
+      .filter(Boolean);
+    if (!selectedOrderIds.length) {
+      return { ok: false, error: "Selecciona al menos una orden." };
+    }
+    let visibleRouteOrders = [];
+    try {
+      const parsedRouteOrders = JSON.parse(String(formData.get("routeOrdersJson") || "[]"));
+      visibleRouteOrders = Array.isArray(parsedRouteOrders) ? parsedRouteOrders : [];
+    } catch {
+      visibleRouteOrders = [];
+    }
+    const fetchedDeliveryOrders = (await fetchCourierOrders(admin)).map((requestRow) => ({
+      ...requestRow,
+      courierLabel: "Entrega",
+    }));
+    const orderById = new Map();
+    for (const order of [...visibleRouteOrders, ...fetchedDeliveryOrders]) {
+      const orderId = String(order?.id || "").trim();
+      if (orderId) orderById.set(orderId, order);
+    }
+    const selectedOrders = selectedOrderIds.map((orderId) => orderById.get(orderId)).filter(Boolean);
+    if (selectedOrders.length !== selectedOrderIds.length) {
+      return { ok: false, error: "Una o mas ordenes seleccionadas ya no estan disponibles." };
+    }
+    if (selectedOrders.some((order) => String(order?.id || "").startsWith("pickup-"))) {
+      return { ok: false, error: "Esta accion solo aplica para ordenes de entrega." };
+    }
+
+    if (intent === "courier_bulk_refund") {
+      try {
+        const refundedOrders = [];
+        for (const order of selectedOrders) {
+          const requestId = String(order.id || "").trim();
+          const orderNumber = String(order.orderNumber || "").trim();
+          const latestCourierActivity = await prisma.courierActivity.findFirst({
+            where: {
+              shop: session.shop,
+              requestId,
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            select: {
+              courierId: true,
+              courierName: true,
+              routeId: true,
+            },
+          });
+          const refundResult = await refundShopifyOrderToOriginalPayment({
+            admin,
+            shopifyOrderId: requestId,
+            notePrefix: `Reembolso pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} desde ordenes repartidor`,
+            includeShipping: true,
+          });
+          await replaceShopifyOrderCourierStatusTag(admin, requestId, "reembolsada");
+          await prisma.deliveryCodeAssignment.updateMany({
+            where: {
+              shop: session.shop,
+              shopifyOrderId: requestId,
+              active: true,
+            },
+            data: {
+              code: null,
+              active: false,
+              releasedAt: new Date(),
+            },
+          });
+          await clearCourierRoutesForOrders(session.shop, [requestId]);
+          await prisma.courierActivity.create({
+            data: {
+              shop: session.shop,
+              courierId: Number(latestCourierActivity?.courierId || 0),
+              courierName: String(latestCourierActivity?.courierName || "Administrador").trim(),
+              requestId,
+              orderNumber: orderNumber || null,
+              action: "courier_branch_pickup_refunded",
+              routeId: String(latestCourierActivity?.routeId || "") || null,
+            },
+          });
+          refundedOrders.push({
+            orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
+            amount: refundResult.finalRefund,
+            currencyCode: refundResult.currencyCode || "MXN",
+          });
+        }
+        const totalRefunded = refundedOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0);
+        const currencyCode = refundedOrders[0]?.currencyCode || "MXN";
+        return {
+          ok: true,
+          message: `${refundedOrders.length} orden(es) reembolsada(s) por ${toMoney(totalRefunded)} ${currencyCode}.`,
+          courierBulkAction: "refund",
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: String(error?.message || error || "No se pudo procesar el reembolso."),
+        };
+      }
+    }
+
+    try {
+      const reprogrammedOrders = [];
+      for (const order of selectedOrders) {
+        const requestId = String(order.id || "").trim();
+        const orderNumber = String(order.orderNumber || "").trim();
+        const latestCourierActivity = await prisma.courierActivity.findFirst({
+          where: {
+            shop: session.shop,
+            requestId,
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: {
+            courierId: true,
+            courierName: true,
+            routeId: true,
+          },
+        });
+        const currentScheduledDate = String(order.pickupDate || "").trim();
+        const rescheduledDate = nextIsoDate(currentScheduledDate);
+        const result = await reprogramCourierDeliveryForNextRoute({
+          shopDomain: session.shop,
+          requestId,
+          orderNumber,
+          customerName: String(order.customerName || "Cliente").trim(),
+          customerPhone: String(order.customerPhone || "-").trim(),
+          currentAttemptCount: Number(order.attemptCount || 0),
+          currentScheduledDate,
+          ...(rescheduledDate ? { rescheduledDate } : {}),
+        });
+        if (!result?.ok) {
+          return {
+            ok: false,
+            error: result?.error || `No se pudo reprogramar el pedido #${orderNumber || requestId}.`,
+          };
+        }
+        await prisma.courierActivity.create({
+          data: {
+            shop: session.shop,
+            courierId: Number(latestCourierActivity?.courierId || 0),
+            courierName: String(latestCourierActivity?.courierName || "Administrador").trim(),
+            requestId,
+            orderNumber: orderNumber || null,
+            action: "courier_route_delivery_reprogrammed",
+            routeId: String(latestCourierActivity?.routeId || "") || null,
+          },
+        });
+        reprogrammedOrders.push(orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""));
+      }
+      return {
+        ok: true,
+        message: `${reprogrammedOrders.length} orden(es) reprogramada(s) para el siguiente dia.`,
+        courierBulkAction: "reprogram",
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: String(error?.message || error || "No se pudo reprogramar la orden."),
       };
     }
   }
@@ -4423,6 +4601,8 @@ export default function ReturnsRequests() {
   const [showCourierRouteModal, setShowCourierRouteModal] = useState(false);
   const [showCourierMoreActions, setShowCourierMoreActions] = useState(false);
   const [selectedCourierIds, setSelectedCourierIds] = useState([]);
+  const [courierBulkMode, setCourierBulkMode] = useState("");
+  const [selectedCourierBulkOrderIds, setSelectedCourierBulkOrderIds] = useState([]);
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
@@ -4430,8 +4610,19 @@ export default function ReturnsRequests() {
   const [branchDeliveryTestMode, setBranchDeliveryTestMode] = useState(false);
   const [notReturnedTestMode, setNotReturnedTestMode] = useState(false);
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
+  const selectedCourierBulkOrderIdSet = new Set(selectedCourierBulkOrderIds.map((orderId) => String(orderId)));
+  const selectedCourierBulkOrders = courierOrders.filter((order) =>
+    selectedCourierBulkOrderIdSet.has(String(order.id || "")),
+  );
+  const selectedCourierBulkTotal = selectedCourierBulkOrders.reduce(
+    (sum, order) => sum + Number(order.estimatedRefund || 0),
+    0,
+  );
+  const selectedCourierBulkCurrency = selectedCourierBulkOrders[0]?.currencyCode || "MXN";
   const canConfirmCourierRoutePlan =
     selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
+  const canConfirmCourierBulkAction =
+    selectedCourierBulkOrderIds.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
   const courierRouteActionData = courierRouteFetcher.data || null;
   const branchPickupDeliveryActionData = branchPickupDeliveryFetcher.data || null;
   const branchPickupRefundActionData = branchPickupRefundFetcher.data || null;
@@ -4478,6 +4669,11 @@ export default function ReturnsRequests() {
     if (actionData?.ok || courierRouteActionData?.ok || branchPickupDeliveryActionData?.ok || branchPickupRefundActionData?.ok) {
       setShowCourierRouteModal(false);
       setSelectedCourierIds([]);
+    }
+    if (courierRouteActionData?.ok && courierRouteActionData?.courierBulkAction) {
+      setCourierBulkMode("");
+      setSelectedCourierBulkOrderIds([]);
+      setShowCourierMoreActions(false);
     }
     if (
       (actionData?.ok && actionData?.deliveredRequestId) ||
@@ -4575,6 +4771,27 @@ export default function ReturnsRequests() {
     const query = nextParams.toString();
     return query ? `${location.pathname}?${query}` : location.pathname;
   };
+  const courierRouteOrdersPayload = courierOrders.map((order) => ({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    courierLabel: order.courierLabel,
+    customerName: order.customerName,
+    customerPhone: order.customerPhone,
+    pickupDate: order.pickupDate,
+    pickupAddress: order.pickupAddress,
+    pickupNeighborhood: order.pickupNeighborhood,
+    pickupCity: order.pickupCity,
+    pickupState: order.pickupState,
+    pickupPostalCode: order.pickupPostalCode,
+    pickupCountry: order.pickupCountry,
+    estimatedRefund: order.estimatedRefund,
+    currencyCode: order.currencyCode,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+    status: order.status,
+    sequenceNumber: order.sequenceNumber,
+    attemptCount: order.attemptCount,
+  }));
 
   const pageHeading =
     viewMode === VIEW_MODE.PICKUP
@@ -4843,10 +5060,26 @@ export default function ReturnsRequests() {
                     </button>
                     {showCourierMoreActions ? (
                       <div className={styles.courierMoreActionsMenu}>
-                        <button className={`${styles.btn} ${styles.btnSuccess}`} type="button">
+                        <button
+                          className={`${styles.btn} ${styles.courierMoreActionRefund}`}
+                          type="button"
+                          onClick={() => {
+                            setCourierBulkMode("refund");
+                            setSelectedCourierBulkOrderIds([]);
+                            setShowCourierMoreActions(false);
+                          }}
+                        >
                           Reembolsar
                         </button>
-                        <button className={`${styles.btn} ${styles.btnDanger}`} type="button">
+                        <button
+                          className={`${styles.btn} ${styles.courierMoreActionReprogram}`}
+                          type="button"
+                          onClick={() => {
+                            setCourierBulkMode("reprogram");
+                            setSelectedCourierBulkOrderIds([]);
+                            setShowCourierMoreActions(false);
+                          }}
+                        >
                           Reprogramar
                         </button>
                       </div>
@@ -4857,6 +5090,8 @@ export default function ReturnsRequests() {
                     type="button"
                     disabled={isSubmitting || couriers.length === 0 || courierOrders.length === 0}
                     onClick={() => {
+                      setCourierBulkMode("");
+                      setSelectedCourierBulkOrderIds([]);
                       setSelectedCourierIds([]);
                       setShowCourierRouteModal(true);
                     }}
@@ -4865,6 +5100,66 @@ export default function ReturnsRequests() {
                   </button>
                 </div>
               </div>
+              {courierBulkMode ? (
+                <courierRouteFetcher.Form
+                  method="post"
+                  action={buildCourierRouteHref()}
+                  className={styles.courierBulkActionBar}
+                  onSubmit={(event) => {
+                    if (!selectedCourierBulkOrderIds.length) {
+                      event.preventDefault();
+                      return;
+                    }
+                    const orderLabel =
+                      selectedCourierBulkOrders.length === 1
+                        ? `la orden #${selectedCourierBulkOrders[0]?.orderNumber || ""}`
+                        : `${selectedCourierBulkOrders.length} ordenes`;
+                    const message =
+                      courierBulkMode === "refund"
+                        ? `¿Quieres reembolsar ${orderLabel} por la cantidad de ${toMoney(
+                            selectedCourierBulkTotal,
+                          )} ${selectedCourierBulkCurrency}, incluyendo envio?`
+                        : `¿Quieres reprogramar ${orderLabel} para el dia siguiente de su fecha programada?`;
+                    if (!window.confirm(message)) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  <input
+                    type="hidden"
+                    name="intent"
+                    value={courierBulkMode === "refund" ? "courier_bulk_refund" : "courier_bulk_reprogram"}
+                  />
+                  <input type="hidden" name="routeOrdersJson" value={JSON.stringify(courierRouteOrdersPayload)} />
+                  {selectedCourierBulkOrderIds.map((orderId) => (
+                    <input key={orderId} type="hidden" name="courierBulkOrderIds" value={orderId} />
+                  ))}
+                  <span className={styles.courierBulkActionText}>
+                    {courierBulkMode === "refund" ? "Reembolsar" : "Reprogramar"}:{" "}
+                    {selectedCourierBulkOrderIds.length} seleccionada(s)
+                  </span>
+                  <div className={styles.courierBulkActionControls}>
+                    <button
+                      className={styles.btn}
+                      type="button"
+                      disabled={isSubmitting || isCourierRouteSubmitting}
+                      onClick={() => {
+                        setCourierBulkMode("");
+                        setSelectedCourierBulkOrderIds([]);
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      className={`${styles.btn} ${styles.btnPrimary}`}
+                      type="submit"
+                      disabled={!canConfirmCourierBulkAction}
+                    >
+                      Confirmar
+                    </button>
+                  </div>
+                </courierRouteFetcher.Form>
+              ) : null}
             </>
           )}
           {showCourierRouteModal ? (
@@ -4898,26 +5193,7 @@ export default function ReturnsRequests() {
                   <input
                     type="hidden"
                     name="routeOrdersJson"
-                    value={JSON.stringify(
-                      courierOrders.map((order) => ({
-                        id: order.id,
-                        orderNumber: order.orderNumber,
-                        courierLabel: order.courierLabel,
-                        customerName: order.customerName,
-                        customerPhone: order.customerPhone,
-                        pickupDate: order.pickupDate,
-                        pickupAddress: order.pickupAddress,
-                        pickupNeighborhood: order.pickupNeighborhood,
-                        pickupCity: order.pickupCity,
-                        pickupState: order.pickupState,
-                        pickupPostalCode: order.pickupPostalCode,
-                        pickupCountry: order.pickupCountry,
-                        createdAt: order.createdAt,
-                        updatedAt: order.updatedAt,
-                        status: order.status,
-                        sequenceNumber: order.sequenceNumber,
-                      })),
-                    )}
+                    value={JSON.stringify(courierRouteOrdersPayload)}
                   />
                   {courierOrders.map((order) => (
                     <input key={order.id} type="hidden" name="routeOrderIds" value={String(order.id || "")} />
@@ -4971,15 +5247,41 @@ export default function ReturnsRequests() {
             <p>No hay ordenes pendientes por entregar.</p>
           ) : !selectedCourierRoutePlan ? (
             <div className={styles.courierGrid}>
-              {courierOrders.map((request) => (
-                <CourierOrderCard
-                  key={request.id}
-                  request={request}
-                  sequenceNumber={Number(request.sequenceNumber || 0)}
-                  adminCourierView
-                  hideTransferredCourierBadge
-                />
-              ))}
+              {courierOrders.map((request) => {
+                const requestId = String(request.id || "");
+                const isBulkSelected = selectedCourierBulkOrderIdSet.has(requestId);
+                return (
+                  <div
+                    key={request.id}
+                    className={`${styles.courierBulkSelectable} ${
+                      isBulkSelected ? styles.courierBulkSelectableSelected : ""
+                    }`}
+                  >
+                    {courierBulkMode ? (
+                      <label className={styles.courierBulkCheckbox}>
+                        <input
+                          type="checkbox"
+                          checked={isBulkSelected}
+                          onChange={(event) => {
+                            setSelectedCourierBulkOrderIds((currentIds) =>
+                              event.target.checked
+                                ? [...new Set([...currentIds, requestId])]
+                                : currentIds.filter((currentId) => String(currentId) !== requestId),
+                            );
+                          }}
+                        />
+                        <span>Seleccionar</span>
+                      </label>
+                    ) : null}
+                    <CourierOrderCard
+                      request={request}
+                      sequenceNumber={Number(request.sequenceNumber || 0)}
+                      adminCourierView
+                      hideTransferredCourierBadge
+                    />
+                  </div>
+                );
+              })}
             </div>
           ) : null}
         </s-section>

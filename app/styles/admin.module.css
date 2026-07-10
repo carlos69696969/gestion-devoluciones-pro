@@ -1116,6 +1116,72 @@
   box-shadow: 0 12px 28px rgba(17, 24, 39, 0.14);
 }
 
+.courierMoreActionRefund {
+  border-color: #a7f3d0;
+  background: #ecfdf3;
+  color: #047857;
+  box-shadow: none;
+}
+
+.courierMoreActionReprogram {
+  border-color: #f59e0b;
+  background: #fff5e6;
+  color: #b45309;
+  box-shadow: none;
+}
+
+.courierBulkActionBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  background: #fafbfb;
+}
+
+.courierBulkActionText {
+  color: #374151;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.courierBulkActionControls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.courierBulkSelectable {
+  display: grid;
+  gap: 8px;
+}
+
+.courierBulkSelectableSelected .courierCard {
+  border-color: #8eb8ff;
+  box-shadow: 0 0 0 1px #8eb8ff;
+}
+
+.courierBulkCheckbox {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.courierBulkCheckbox input {
+  width: 18px;
+  height: 18px;
+  accent-color: #005bd3;
+}
+
 .courierOrdersCount {
   display: inline-flex;
   align-items: center;
