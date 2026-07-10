@@ -61,6 +61,13 @@ const VIEW_MODE = {
 };
 const COURIER_HISTORY_SINCE = new Date("2026-06-10T00:00:00-06:00");
 const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
+const COURIER_ADMIN_REPROGRAM_ACTION = "courier_admin_order_reprogrammed";
+const COURIER_ROUTE_REPROGRAM_ACTIONS = new Set([
+  "courier_route_delivery_reprogrammed",
+  "courier_route_return_reprogrammed",
+  COURIER_ADMIN_REPROGRAM_ACTION,
+]);
+const COURIER_ADMIN_NOT_LOCATED_REPROGRAM_NOTE = "admin_not_located_reprogram:1";
 
 const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
@@ -1223,6 +1230,11 @@ function courierHistoryEventLabel(event) {
   const routeTimeMatch = note.match(/route_time_rescheduled:([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
   if (routeTimeMatch) {
     const dateLabel = formatCourierRescheduledDate(new Date(`${routeTimeMatch[1]}T12:00:00.000Z`));
+    if (isAdminNotLocatedReprogramNote(note)) {
+      return dateLabel
+        ? `Reprogramada por no localizado para el ${dateLabel}`
+        : "Reprogramada por no localizado";
+    }
     return dateLabel
       ? `Reprogramada por falta de tiempo para el ${dateLabel}`
       : "Reprogramada por falta de tiempo";
@@ -1250,6 +1262,29 @@ function courierHistoryEventLabel(event) {
     year: "numeric",
   }).format(reprogrammedDate);
   return `${label} para el ${formattedDate}`;
+}
+
+function isAdminNotLocatedReprogramNote(value) {
+  return String(value || "").includes(COURIER_ADMIN_NOT_LOCATED_REPROGRAM_NOTE);
+}
+
+function isAdminNotLocatedReprogramActivity(activity) {
+  return String(activity?.action || "").trim().toLowerCase() === COURIER_ADMIN_REPROGRAM_ACTION;
+}
+
+function isAdminNotLocatedReprogramEvent(event) {
+  return isAdminNotLocatedReprogramNote(event?.note) || Boolean(event?.adminNotLocatedReprogram);
+}
+
+function routeTimeReprogramLabel(dateLabel, event) {
+  if (isAdminNotLocatedReprogramEvent(event)) {
+    return dateLabel
+      ? `Reprogramada por no localizado para el ${dateLabel}`
+      : "Reprogramada por no localizado";
+  }
+  return dateLabel
+    ? `Reprogramada por falta de tiempo para el ${dateLabel}`
+    : "Reprogramada por falta de tiempo";
 }
 
 function returnCourierHistoryLabel(entry, finalAttempt) {
@@ -1540,9 +1575,11 @@ function buildCourierHistoryDisplayItems(events, request, { hideTransferDetails 
       items.push({
         id: `route-time-heading-${routeTimeKey}`,
         type: "heading",
-        label: `${courierName ? `Reprogramado por repartidor ${courierName}` : "Reprogramado por repartidor"}${
-          wasHandledAfterTransfer ? ` · traspasado a ${transferredCourierName}` : ""
-        }`,
+        label: isAdminNotLocatedReprogramEvent(event)
+          ? "Reprogramado por administrador"
+          : `${courierName ? `Reprogramado por repartidor ${courierName}` : "Reprogramado por repartidor"}${
+              wasHandledAfterTransfer ? ` · traspasado a ${transferredCourierName}` : ""
+            }`,
       });
     }
     const attempt = courierAttemptFromHistoryLabel(event?.label);
@@ -1659,14 +1696,13 @@ function courierSnapshotRouteTimeFallbackEvents(order, snapshot) {
   if (!eventAt) return events;
   return [{
     id: `snapshot-route-time-${snapshot?.routeId || "route"}-${order?.id || order?.orderNumber || "order"}`,
-    label: scheduledDateLabel
-      ? `Reprogramada por falta de tiempo para el ${scheduledDateLabel}`
-      : "Reprogramada por falta de tiempo",
+    label: routeTimeReprogramLabel(scheduledDateLabel, order),
     at: eventAt,
     atMs: parseEventMs(eventAt),
     courierName: String(order?.courierName || snapshot?.courierName || "").trim(),
     note: scheduledDate ? `route_time_rescheduled:${scheduledDate}` : "route_time_rescheduled",
     routeTimeRescheduled: true,
+    adminNotLocatedReprogram: Boolean(order?.adminNotLocatedReprogram),
   }];
 }
 
@@ -1680,6 +1716,8 @@ function courierStatusFromActivityAction(action, fallbackStatus = "") {
     courier_return_pickup_attempt_failed: "no_recibido",
     courier_return_reject_after_failed_pickups: "rechazada",
     courier_branch_pickup_refunded: "reembolsada",
+    [COURIER_ADMIN_REPROGRAM_ACTION]: "reintento_pendiente",
+    courier_route_delivery_reprogrammed: "reintento_pendiente",
   };
   return statusByAction[normalizedAction] || fallbackStatus;
 }
@@ -1792,6 +1830,7 @@ function isCourierFinalActivityAction(action) {
     "courier_return_pickup_attempt_failed",
     "courier_return_reject_after_failed_pickups",
     "courier_branch_pickup_refunded",
+    COURIER_ADMIN_REPROGRAM_ACTION,
   ].includes(String(action || "").trim().toLowerCase());
 }
 
@@ -1914,9 +1953,7 @@ function normalizeCourierRescheduledDateLabel(value) {
 function buildAdminCourierPresentation(request) {
   const events = request.historyEvents || [];
   const routeTimeActivities = (request.courierActivities || []).filter((activity) =>
-    ["courier_route_delivery_reprogrammed", "courier_route_return_reprogrammed"].includes(
-      String(activity?.action || "").trim().toLowerCase(),
-    ),
+    COURIER_ROUTE_REPROGRAM_ACTIONS.has(String(activity?.action || "").trim().toLowerCase()),
   );
   const latestRouteTimeActivity = routeTimeActivities[routeTimeActivities.length - 1] || null;
   const displayEvents = [];
@@ -1931,6 +1968,7 @@ function buildAdminCourierPresentation(request) {
       /reprogramad[ao] por falta de tiempo/i.test(String(event.label || ""));
     if (isRouteTimeEvent) {
       hasRouteTimeEvent = true;
+      const adminNotLocatedReprogram = isAdminNotLocatedReprogramEvent(event);
       const requestScheduledDate = request.courierLabel === "Entrega" && request.pickupDate
         ? new Date(`${request.pickupDate}T12:00:00Z`)
         : null;
@@ -1949,10 +1987,9 @@ function buildAdminCourierPresentation(request) {
       if (reprogrammedFor) scheduledDate = reprogrammedFor;
       displayEvents.push({
         ...event,
-        label: reprogrammedDateLabel
-          ? `Reprogramada por falta de tiempo para el ${reprogrammedDateLabel}`
-          : String(event.label || "").trim() || "Reprogramada por falta de tiempo",
+        label: routeTimeReprogramLabel(reprogrammedDateLabel, event),
         routeTimeRescheduled: true,
+        adminNotLocatedReprogram,
       });
       continue;
     }
@@ -1987,6 +2024,7 @@ function buildAdminCourierPresentation(request) {
   }
 
   if (!hasRouteTimeEvent && latestRouteTimeActivity) {
+    const adminNotLocatedReprogram = isAdminNotLocatedReprogramActivity(latestRouteTimeActivity);
     const fallbackDate = request.pickupDate ? new Date(`${request.pickupDate}T12:00:00Z`) : null;
     const fallbackDateLabel = fallbackDate && Number.isFinite(fallbackDate.getTime())
       ? formatCourierRescheduledDate(fallbackDate)
@@ -1994,13 +2032,12 @@ function buildAdminCourierPresentation(request) {
     if (fallbackDateLabel && fallbackDate) scheduledDate = fallbackDate;
     displayEvents.push({
       id: `route-time-activity-${latestRouteTimeActivity.id || latestRouteTimeActivity.createdAt}`,
-      label: fallbackDateLabel
-        ? `Reprogramada por falta de tiempo para el ${fallbackDateLabel}`
-        : "Reprogramada por falta de tiempo",
+      label: routeTimeReprogramLabel(fallbackDateLabel, { adminNotLocatedReprogram }),
       at: latestRouteTimeActivity.createdAt,
       atMs: parseEventMs(latestRouteTimeActivity.createdAt),
       courierName: String(latestRouteTimeActivity.courierName || "").trim(),
       routeTimeRescheduled: true,
+      adminNotLocatedReprogram,
     });
   }
 
@@ -3215,18 +3252,6 @@ export const action = async ({ request }) => {
       for (const order of selectedOrders) {
         const requestId = String(order.id || "").trim();
         const orderNumber = String(order.orderNumber || "").trim();
-        const latestCourierActivity = await prisma.courierActivity.findFirst({
-          where: {
-            shop: session.shop,
-            requestId,
-          },
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          select: {
-            courierId: true,
-            courierName: true,
-            routeId: true,
-          },
-        });
         const currentScheduledDate = String(order.pickupDate || "").trim();
         const rescheduledDate = nextIsoDate(currentScheduledDate);
         const result = await reprogramCourierDeliveryForNextRoute({
@@ -3245,15 +3270,40 @@ export const action = async ({ request }) => {
             error: result?.error || `No se pudo reprogramar el pedido #${orderNumber || requestId}.`,
           };
         }
+        const finalRescheduledDate = String(result.rescheduledDate || rescheduledDate || "").trim();
+        const latestReprogramEvent = await prisma.courierEvent.findFirst({
+          where: {
+            shop: session.shop,
+            requestId,
+            status: "reintento_pendiente",
+            ...(finalRescheduledDate
+              ? { note: { contains: `route_time_rescheduled:${finalRescheduledDate}` } }
+              : {}),
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: { id: true, note: true },
+        });
+        if (latestReprogramEvent) {
+          const currentNote = String(latestReprogramEvent.note || "").trim();
+          await prisma.courierEvent.update({
+            where: { id: latestReprogramEvent.id },
+            data: {
+              note: currentNote.includes(COURIER_ADMIN_NOT_LOCATED_REPROGRAM_NOTE)
+                ? currentNote
+                : [currentNote, COURIER_ADMIN_NOT_LOCATED_REPROGRAM_NOTE].filter(Boolean).join(";"),
+            },
+          });
+        }
+        await clearCourierRoutesForOrders(session.shop, [requestId]);
         await prisma.courierActivity.create({
           data: {
             shop: session.shop,
-            courierId: Number(latestCourierActivity?.courierId || 0),
-            courierName: String(latestCourierActivity?.courierName || "Administrador").trim(),
+            courierId: 0,
+            courierName: "Administrador",
             requestId,
             orderNumber: orderNumber || null,
-            action: "courier_route_delivery_reprogrammed",
-            routeId: String(latestCourierActivity?.routeId || "") || null,
+            action: COURIER_ADMIN_REPROGRAM_ACTION,
+            routeId: null,
           },
         });
         reprogrammedOrders.push(orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""));
@@ -5942,6 +5992,7 @@ function isCourierBranchReturnOrder(order, routeAction = "") {
       "courier_mark_not_delivered",
       "courier_return_mark_received",
       "courier_route_delivery_reprogrammed",
+      COURIER_ADMIN_REPROGRAM_ACTION,
     ].includes(normalizedAction);
   }
   if (isReturnCourierLabel(order?.courierLabel)) {
@@ -6265,9 +6316,7 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
             .filter(
               (activity) =>
                 String(activity.routeId || "").trim() === selectedRouteId &&
-                ["courier_route_delivery_reprogrammed", "courier_route_return_reprogrammed"].includes(
-                  String(activity.action || "").trim().toLowerCase(),
-                ),
+                COURIER_ROUTE_REPROGRAM_ACTIONS.has(String(activity.action || "").trim().toLowerCase()),
             )
             .map((activity) => [String(activity.requestId || "").trim(), activity]),
         );
@@ -6307,15 +6356,16 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
                   ...storedSnapshotHistoryEvents,
                   {
                     id: `snapshot-route-activity-${selectedRouteId}-${id}`,
-                    label: scheduledDateLabel
-                      ? `Reprogramada por falta de tiempo para el ${scheduledDateLabel}`
-                      : "Reprogramada por falta de tiempo",
+                    label: routeTimeReprogramLabel(scheduledDateLabel, {
+                      adminNotLocatedReprogram: isAdminNotLocatedReprogramActivity(routeReprogramActivity),
+                    }),
                     at: routeReprogramActivity.createdAt || selectedSnapshotCutoff.finishedAt,
                     courierName: String(
                       routeReprogramActivity.courierName || selectedSnapshotCutoff.courierName || "",
                     ).trim(),
                     note: scheduledDate ? `route_time_rescheduled:${scheduledDate}` : "route_time_rescheduled",
                     routeTimeRescheduled: true,
+                    adminNotLocatedReprogram: isAdminNotLocatedReprogramActivity(routeReprogramActivity),
                   },
                 ]
               : storedSnapshotHistoryEvents;
@@ -6880,6 +6930,9 @@ function CourierOrderCard({
     courierHistoryView &&
     normalizedVisibleStatus === "reintento_pendiente" &&
     !filteredHistoryEvents.some((event) => isRouteTimeHistoryEvent(event));
+  const hasAdminNotLocatedReprogramActivity = (request.courierActivities || []).some((activity) =>
+    isAdminNotLocatedReprogramActivity(activity),
+  );
   const courierRouteTimeFallbackDate = request.pickupDate
     ? formatCourierRescheduledDate(new Date(`${request.pickupDate}T12:00:00Z`))
     : "";
@@ -6888,14 +6941,15 @@ function CourierOrderCard({
         ...filteredHistoryEvents,
         {
           id: `courier-history-route-time-fallback-${request.id || request.orderNumber || "order"}`,
-          label: courierRouteTimeFallbackDate
-            ? `Reprogramada por falta de tiempo para el ${courierRouteTimeFallbackDate}`
-            : "Reprogramada por falta de tiempo",
+          label: routeTimeReprogramLabel(courierRouteTimeFallbackDate, {
+            adminNotLocatedReprogram: hasAdminNotLocatedReprogramActivity,
+          }),
           at: request.finishedAt || request.courierHistoryAt || request.updatedAt || request.createdAt,
           atMs: parseEventMs(request.finishedAt || request.courierHistoryAt || request.updatedAt || request.createdAt),
           courierName: String(request.courierName || request.assignedCourierName || "").trim(),
           note: request.pickupDate ? `route_time_rescheduled:${request.pickupDate}` : "route_time_rescheduled",
           routeTimeRescheduled: true,
+          adminNotLocatedReprogram: hasAdminNotLocatedReprogramActivity,
         },
       ].filter((event) => event.atMs || event.at)
     : filteredHistoryEvents;
