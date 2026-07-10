@@ -4751,6 +4751,7 @@ export default function ReturnsRequests() {
   const [selectedCourierIds, setSelectedCourierIds] = useState([]);
   const [courierBulkMode, setCourierBulkMode] = useState("");
   const [selectedCourierBulkOrderIds, setSelectedCourierBulkOrderIds] = useState([]);
+  const [courierRefundRequest, setCourierRefundRequest] = useState(null);
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
@@ -4821,6 +4822,7 @@ export default function ReturnsRequests() {
     if (courierRouteActionData?.ok && courierRouteActionData?.courierBulkAction) {
       setCourierBulkMode("");
       setSelectedCourierBulkOrderIds([]);
+      setCourierRefundRequest(null);
       setShowCourierMoreActions(false);
     }
     if (
@@ -5240,6 +5242,7 @@ export default function ReturnsRequests() {
                     onClick={() => {
                       setCourierBulkMode("");
                       setSelectedCourierBulkOrderIds([]);
+                      setCourierRefundRequest(null);
                       setSelectedCourierIds([]);
                       setShowCourierRouteModal(true);
                     }}
@@ -5254,6 +5257,10 @@ export default function ReturnsRequests() {
                   action={buildCourierRouteHref()}
                   className={styles.courierBulkActionBar}
                   onSubmit={(event) => {
+                    if (courierBulkMode === "refund") {
+                      event.preventDefault();
+                      return;
+                    }
                     if (!selectedCourierBulkOrderIds.length) {
                       event.preventDefault();
                       return;
@@ -5273,18 +5280,19 @@ export default function ReturnsRequests() {
                     }
                   }}
                 >
-                  <input
-                    type="hidden"
-                    name="intent"
-                    value={courierBulkMode === "refund" ? "courier_bulk_refund" : "courier_bulk_reprogram"}
-                  />
-                  <input type="hidden" name="routeOrdersJson" value={JSON.stringify(courierRouteOrdersPayload)} />
-                  {selectedCourierBulkOrderIds.map((orderId) => (
-                    <input key={orderId} type="hidden" name="courierBulkOrderIds" value={orderId} />
-                  ))}
+                  {courierBulkMode === "reprogram" ? (
+                    <>
+                      <input type="hidden" name="intent" value="courier_bulk_reprogram" />
+                      <input type="hidden" name="routeOrdersJson" value={JSON.stringify(courierRouteOrdersPayload)} />
+                      {selectedCourierBulkOrderIds.map((orderId) => (
+                        <input key={orderId} type="hidden" name="courierBulkOrderIds" value={orderId} />
+                      ))}
+                    </>
+                  ) : null}
                   <span className={styles.courierBulkActionText}>
-                    {courierBulkMode === "refund" ? "Reembolsar" : "Reprogramar"}:{" "}
-                    {selectedCourierBulkOrderIds.length} seleccionada(s)
+                    {courierBulkMode === "refund"
+                      ? "Reembolsar: selecciona una orden"
+                      : `Reprogramar: ${selectedCourierBulkOrderIds.length} seleccionada(s)`}
                   </span>
                   <div className={styles.courierBulkActionControls}>
                     <button
@@ -5294,17 +5302,20 @@ export default function ReturnsRequests() {
                       onClick={() => {
                         setCourierBulkMode("");
                         setSelectedCourierBulkOrderIds([]);
+                        setCourierRefundRequest(null);
                       }}
                     >
                       Cancelar
                     </button>
-                    <button
-                      className={`${styles.btn} ${styles.btnPrimary}`}
-                      type="submit"
-                      disabled={!canConfirmCourierBulkAction}
-                    >
-                      Confirmar
-                    </button>
+                    {courierBulkMode === "reprogram" ? (
+                      <button
+                        className={`${styles.btn} ${styles.btnPrimary}`}
+                        type="submit"
+                        disabled={!canConfirmCourierBulkAction}
+                      >
+                        Confirmar
+                      </button>
+                    ) : null}
                   </div>
                 </courierRouteFetcher.Form>
               ) : null}
@@ -5411,6 +5422,11 @@ export default function ReturnsRequests() {
                           type="checkbox"
                           checked={isBulkSelected}
                           onChange={(event) => {
+                            if (courierBulkMode === "refund") {
+                              setSelectedCourierBulkOrderIds(event.target.checked ? [requestId] : []);
+                              setCourierRefundRequest(event.target.checked ? request : null);
+                              return;
+                            }
                             setSelectedCourierBulkOrderIds((currentIds) =>
                               event.target.checked
                                 ? [...new Set([...currentIds, requestId])]
@@ -5433,6 +5449,60 @@ export default function ReturnsRequests() {
             </div>
           ) : null}
         </s-section>
+      ) : null}
+
+      {viewMode === VIEW_MODE.COURIER && courierBulkMode === "refund" && courierRefundRequest ? (
+        <div className={styles.reasonModalOverlay} role="dialog" aria-modal="true" aria-label="Confirmar reembolso">
+          <section className={`${styles.reasonModal} ${styles.deliveryCodeAdminModal}`}>
+            <p className={styles.reasonModalTitle}>Confirmar reembolso</p>
+            <p className={styles.deliveryCodeDescription}>
+              El pedido #{courierRefundRequest.orderNumber} será enviado al historial del repartidor.
+            </p>
+            <p className={styles.branchPickupRefundAmount}>
+              Monto a reembolsar:{" "}
+              <strong>
+                ${toMoney(courierRefundRequest.estimatedRefund || 0)}{" "}
+                {courierRefundRequest.currencyCode || "MXN"}
+              </strong>
+            </p>
+            <courierRouteFetcher.Form method="post" action={buildCourierRouteHref()} className={styles.deliveryCodeForm}>
+              <input type="hidden" name="intent" value="courier_bulk_refund" />
+              <input type="hidden" name="routeOrdersJson" value={JSON.stringify(courierRouteOrdersPayload)} />
+              <input type="hidden" name="courierBulkOrderIds" value={String(courierRefundRequest.id || "")} />
+              <div className={styles.reasonModalActions}>
+                <button
+                  className={styles.btn}
+                  type="button"
+                  onClick={() => {
+                    setCourierRefundRequest(null);
+                    setSelectedCourierBulkOrderIds([]);
+                  }}
+                  disabled={isSubmitting || isCourierRouteSubmitting}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className={`${styles.btn} ${styles.btnDanger}`}
+                  type="submit"
+                  disabled={isSubmitting || isCourierRouteSubmitting}
+                  onClick={(event) => {
+                    if (
+                      !window.confirm(
+                        `¿Reconfirmas reembolsar el pedido #${courierRefundRequest.orderNumber} por ${toMoney(
+                          courierRefundRequest.estimatedRefund || 0,
+                        )} ${courierRefundRequest.currencyCode || "MXN"} al metodo de pago original?`,
+                      )
+                    ) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  Reconfirmar reembolso
+                </button>
+              </div>
+            </courierRouteFetcher.Form>
+          </section>
+        </div>
       ) : null}
 
       {viewMode === VIEW_MODE.COURIER_HISTORY ? (
