@@ -1080,6 +1080,42 @@
   margin-bottom: 12px;
 }
 
+.courierOrdersActions {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.courierMoreActions {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.courierMoreActionsButton {
+  border-color: #c9cccf;
+  background: #fff;
+  color: #202223;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
+}
+
+.courierMoreActionsMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 5;
+  display: grid;
+  min-width: 148px;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.14);
+}
+
 .courierOrdersCount {
   display: inline-flex;
   align-items: center;

@@ -4421,6 +4421,7 @@ export default function ReturnsRequests() {
   const isBranchPickupRefundSubmitting = branchPickupRefundFetcher.state !== "idle";
   const isCourierRouteSubmitting = courierRouteFetcher.state !== "idle";
   const [showCourierRouteModal, setShowCourierRouteModal] = useState(false);
+  const [showCourierMoreActions, setShowCourierMoreActions] = useState(false);
   const [selectedCourierIds, setSelectedCourierIds] = useState([]);
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
@@ -4830,17 +4831,39 @@ export default function ReturnsRequests() {
                     </div>
                   ) : null}
                 </div>
-                <button
-                  className={`${styles.btn} ${styles.btnPrimary}`}
-                  type="button"
-                  disabled={isSubmitting || couriers.length === 0 || courierOrders.length === 0}
-                  onClick={() => {
-                    setSelectedCourierIds([]);
-                    setShowCourierRouteModal(true);
-                  }}
-                >
-                  Distribuir rutas automaticamente
-                </button>
+                <div className={styles.courierOrdersActions}>
+                  <div className={styles.courierMoreActions}>
+                    <button
+                      className={`${styles.btn} ${styles.courierMoreActionsButton}`}
+                      type="button"
+                      aria-expanded={showCourierMoreActions}
+                      onClick={() => setShowCourierMoreActions((current) => !current)}
+                    >
+                      Más acciones
+                    </button>
+                    {showCourierMoreActions ? (
+                      <div className={styles.courierMoreActionsMenu}>
+                        <button className={`${styles.btn} ${styles.btnSuccess}`} type="button">
+                          Reembolsar
+                        </button>
+                        <button className={`${styles.btn} ${styles.btnDanger}`} type="button">
+                          Reprogramar
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <button
+                    className={`${styles.btn} ${styles.btnPrimary}`}
+                    type="button"
+                    disabled={isSubmitting || couriers.length === 0 || courierOrders.length === 0}
+                    onClick={() => {
+                      setSelectedCourierIds([]);
+                      setShowCourierRouteModal(true);
+                    }}
+                  >
+                    Distribuir rutas automaticamente
+                  </button>
+                </div>
               </div>
             </>
           )}
