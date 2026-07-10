@@ -131,6 +131,20 @@ function isThirdDeliveryAttemptNotification(notification) {
   return /tercer intento de entrega/i.test(`${title} ${message}`);
 }
 
+function normalizeLatestOrderMessageLines(value) {
+  const text = String(value || "").trim();
+  if (!text) return [];
+
+  return text
+    .replace(
+      /(\b\d{1,2}\s+\S+\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:a\.?\s*m\.?|p\.?\s*m\.?|am|pm)\.?)\s+([^\w\s#]*\s*Pedido\b)/i,
+      "$1\n$2",
+    )
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 export default function extension() {
   const shopifyObj = globalThis?.shopify || {};
   const targetValue =
@@ -192,11 +206,7 @@ export default function extension() {
 
   const renderLatestOrderMessage = (notification) => {
     latestOrderMessageTitle.textContent = String(notification?.title || "").trim();
-    const messageLines = String(notification?.message || "")
-      .trim()
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
+    const messageLines = normalizeLatestOrderMessageLines(notification?.message);
     while (latestOrderMessageBlock.firstChild) {
       latestOrderMessageBlock.removeChild(latestOrderMessageBlock.firstChild);
     }
