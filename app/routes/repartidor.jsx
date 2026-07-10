@@ -688,6 +688,10 @@ export const action = async ({ request }) => {
         .getAll("confirmedBranchReturnIds")
         .map((value) => String(value || "").trim())
         .filter(Boolean);
+      const visibleBranchReturnIds = formData
+        .getAll("visibleBranchReturnIds")
+        .map((value) => String(value || "").trim())
+        .filter(Boolean);
       const deliveryRequestIds = requestIds.filter((id) => !id.startsWith("pickup-"));
       const pickupRequestIds = new Set(requestIds.filter((id) => id.startsWith("pickup-")));
       const sessionCandidatesForSnapshot = portalShop.sessionCandidates || portalShop.allSessionCandidates || [];
@@ -740,8 +744,11 @@ export const action = async ({ request }) => {
           .toLowerCase();
         return !isCourierHistoryStatus(currentStatus);
       });
+      const branchReturnRequestIdsToConfirm = visibleBranchReturnIds.length
+        ? branchReturnRequestIds.filter((id) => visibleBranchReturnIds.includes(id))
+        : branchReturnRequestIds;
       if (
-        branchReturnRequestIds.some(
+        branchReturnRequestIdsToConfirm.some(
           (activityRequestId) => !confirmedBranchReturnIds.includes(activityRequestId),
         )
       ) {
@@ -2709,6 +2716,14 @@ export default function RepartidorPublicPortal() {
             >
               <input type="hidden" name="intent" value="courier_finish_route" />
               <input type="hidden" name="shop" value={shop || ""} />
+              {branchReturnOrders.map((request) => (
+                <input
+                  key={`visible-branch-return:${request.id}`}
+                  type="hidden"
+                  name="visibleBranchReturnIds"
+                  value={String(request.id || "")}
+                />
+              ))}
               <div className={styles.confirmationList}>
                 {branchReturnOrders.map((request) => (
                   <div className={styles.confirmationListItem} key={request.id}>
