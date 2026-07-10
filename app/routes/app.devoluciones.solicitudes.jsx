@@ -1698,8 +1698,26 @@ function normalizeCourierHistoryKeyText(value) {
     .toLowerCase();
 }
 
+function courierRouteTimeHistoryDateKey(event) {
+  const noteDate = String(event?.note || "").match(/route_time_rescheduled:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
+  if (noteDate) return noteDate;
+  const labelDate = String(event?.label || "").match(/para el ([^.\n]+)/i)?.[1] || "";
+  return normalizeCourierHistoryKeyText(normalizeCourierRescheduledDateLabel(labelDate));
+}
+
+function courierRouteTimeAdminConflictKey(event) {
+  if (!isRouteTimeHistoryEvent(event)) return "";
+  const eventTimeValue = event?.at || event?.createdAt || "";
+  return [
+    courierHistoryMinuteKey(eventTimeValue),
+    courierRouteTimeHistoryDateKey(event),
+  ].map(normalizeCourierHistoryKeyText).join(":");
+}
+
 function mergeCourierHistoryEvents(...eventLists) {
   const seen = new Set();
+  const routeTimeAdminKeys = new Set();
+  const routeTimeNormalIndexByKey = new Map();
   const merged = [];
   for (const events of eventLists) {
     for (const event of events || []) {
@@ -1718,7 +1736,32 @@ function mergeCourierHistoryEvents(...eventLists) {
       const contentKey = contentKeyParts.map(normalizeCourierHistoryKeyText).join(":");
       const key = contentKey || String(event?.id || "");
       if (seen.has(key)) continue;
+      const routeTimeConflictKey = courierRouteTimeAdminConflictKey(event);
+      if (routeTimeConflictKey && isAdminNotLocatedReprogramEvent(event)) {
+        routeTimeAdminKeys.add(routeTimeConflictKey);
+        const normalIndex = routeTimeNormalIndexByKey.get(routeTimeConflictKey);
+        if (normalIndex !== undefined) {
+          const removedEvent = merged[normalIndex];
+          const removedKey = isRouteTimeHistoryEvent(removedEvent)
+            ? [
+                courierHistoryMinuteKey(removedEvent?.at || removedEvent?.createdAt || ""),
+                removedEvent?.label || "",
+              ].map(normalizeCourierHistoryKeyText).join(":")
+            : "";
+          if (removedKey) seen.delete(removedKey);
+          merged.splice(normalIndex, 1);
+          routeTimeNormalIndexByKey.delete(routeTimeConflictKey);
+          for (const [storedKey, storedIndex] of routeTimeNormalIndexByKey.entries()) {
+            if (storedIndex > normalIndex) routeTimeNormalIndexByKey.set(storedKey, storedIndex - 1);
+          }
+        }
+      } else if (routeTimeConflictKey && routeTimeAdminKeys.has(routeTimeConflictKey)) {
+        continue;
+      }
       seen.add(key);
+      if (routeTimeConflictKey && !isAdminNotLocatedReprogramEvent(event)) {
+        routeTimeNormalIndexByKey.set(routeTimeConflictKey, merged.length);
+      }
       merged.push(event);
     }
   }
