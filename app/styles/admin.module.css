@@ -1182,6 +1182,74 @@
   accent-color: #005bd3;
 }
 
+.courierRefundProductList {
+  display: grid;
+  gap: 10px;
+  max-height: 340px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.courierRefundProductOption {
+  display: grid;
+  grid-template-columns: auto 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e1e3e5;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.courierRefundProductOptionSelected {
+  border-color: #91d5b4;
+  background: #f0fdf7;
+}
+
+.courierRefundProductOption input {
+  width: 18px;
+  height: 18px;
+  accent-color: #008060;
+}
+
+.courierRefundProductImage,
+.courierRefundProductImagePlaceholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  border: 1px solid #e1e3e5;
+  background: #f6f6f7;
+}
+
+.courierRefundProductImage {
+  object-fit: cover;
+}
+
+.courierRefundProductImagePlaceholder {
+  display: block;
+  border-style: dashed;
+}
+
+.courierRefundProductCopy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  color: #4f5560;
+  font-size: 13px;
+}
+
+.courierRefundProductCopy strong {
+  color: #202223;
+  font-size: 14px;
+}
+
+.courierRefundProductPrice {
+  color: #202223;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
 .courierOrdersCount {
   display: inline-flex;
   align-items: center;

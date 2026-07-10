@@ -2517,10 +2517,12 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
   return { refundLineItems: refundableLines, subtotal };
 }
 
-function mapOrderItemsToFullRefundLineItems(orderLineItems) {
+function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemIds = []) {
+  const selectedIds = new Set((selectedLineItemIds || []).map((id) => String(id || "").trim()).filter(Boolean));
   const refundLineItems = [];
   let subtotal = 0;
   for (const line of orderLineItems || []) {
+    if (selectedIds.size && !selectedIds.has(String(line?.id || ""))) continue;
     const quantity = Math.max(0, Number(line.quantity || 0));
     if (!line?.id || quantity <= 0) continue;
     subtotal += Number(line.unitPrice || 0) * quantity;
@@ -2530,7 +2532,9 @@ function mapOrderItemsToFullRefundLineItems(orderLineItems) {
       restockType: "NO_RESTOCK",
     });
   }
-  return { refundLineItems, subtotal };
+  const refundableLineCount = (orderLineItems || []).filter((line) => line?.id && Number(line.quantity || 0) > 0).length;
+  const selectedAllLineItems = refundLineItems.length > 0 && refundLineItems.length === refundableLineCount;
+  return { refundLineItems, subtotal, selectedAllLineItems };
 }
 
 async function replaceShopifyOrderCourierStatusTag(admin, shopifyOrderId, statusTag) {
@@ -2561,15 +2565,25 @@ async function replaceShopifyOrderCourierStatusTag(admin, shopifyOrderId, status
   }
 }
 
-async function refundShopifyOrderToOriginalPayment({ admin, shopifyOrderId, notePrefix, includeShipping = false }) {
+async function refundShopifyOrderToOriginalPayment({
+  admin,
+  shopifyOrderId,
+  notePrefix,
+  includeShipping = false,
+  selectedLineItemIds = [],
+}) {
   const snapshot = await fetchOrderSnapshot(admin, shopifyOrderId);
-  const { refundLineItems, subtotal } = mapOrderItemsToFullRefundLineItems(snapshot.lineItems);
+  const { refundLineItems, subtotal, selectedAllLineItems } = mapOrderItemsToFullRefundLineItems(
+    snapshot.lineItems,
+    selectedLineItemIds,
+  );
   if (!refundLineItems.length) {
     throw new Error("No hay lineas para reembolsar.");
   }
-  const finalRefund = includeShipping
+  const shouldRefundShipping = includeShipping && selectedAllLineItems;
+  const finalRefund = shouldRefundShipping
     ? Number(snapshot.currentTotalPrice || snapshot.currentSubtotalPrice || subtotal || 0)
-    : Number(snapshot.currentSubtotalPrice || subtotal || 0);
+    : Number(subtotal || 0);
   if (finalRefund <= 0) {
     throw new Error("No se encontro un monto valido para reembolsar.");
   }
@@ -2592,7 +2606,7 @@ async function refundShopifyOrderToOriginalPayment({ admin, shopifyOrderId, note
           note: notePrefix || "Reembolso por pedido no recogido en sucursal",
           notify: false,
           refundLineItems,
-          ...(includeShipping ? { shipping: { fullRefund: true } } : {}),
+          ...(shouldRefundShipping ? { shipping: { fullRefund: true } } : {}),
           transactions: [
             {
               orderId: shopifyOrderId,
@@ -2617,6 +2631,7 @@ async function refundShopifyOrderToOriginalPayment({ admin, shopifyOrderId, note
     finalRefund,
     refundedSubtotal: finalRefund,
     currencyCode: snapshot.currencyCode || "MXN",
+    selectedAllLineItems,
   };
 }
 
@@ -3271,6 +3286,13 @@ export const action = async ({ request }) => {
 
     if (intent === "courier_bulk_refund") {
       try {
+        const selectedLineItemIds = formData
+          .getAll("courierRefundLineItemIds")
+          .map((lineItemId) => String(lineItemId || "").trim())
+          .filter(Boolean);
+        if (!selectedLineItemIds.length) {
+          return { ok: false, error: "Selecciona al menos un producto para reembolsar." };
+        }
         const refundedOrders = [];
         for (const order of selectedOrders) {
           const requestId = String(order.id || "").trim();
@@ -3292,43 +3314,50 @@ export const action = async ({ request }) => {
             shopifyOrderId: requestId,
             notePrefix: `Reembolso pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} desde ordenes repartidor`,
             includeShipping: true,
+            selectedLineItemIds,
           });
-          await replaceShopifyOrderCourierStatusTag(admin, requestId, "reembolsada");
-          await prisma.deliveryCodeAssignment.updateMany({
-            where: {
-              shop: session.shop,
-              shopifyOrderId: requestId,
-              active: true,
-            },
-            data: {
-              code: null,
-              active: false,
-              releasedAt: new Date(),
-            },
-          });
-          await clearCourierRoutesForOrders(session.shop, [requestId]);
-          await prisma.courierActivity.create({
-            data: {
-              shop: session.shop,
-              courierId: Number(latestCourierActivity?.courierId || 0),
-              courierName: String(latestCourierActivity?.courierName || "Administrador").trim(),
-              requestId,
-              orderNumber: orderNumber || null,
-              action: "courier_branch_pickup_refunded",
-              routeId: String(latestCourierActivity?.routeId || "") || null,
-            },
-          });
+          if (refundResult.selectedAllLineItems) {
+            await replaceShopifyOrderCourierStatusTag(admin, requestId, "reembolsada");
+            await prisma.deliveryCodeAssignment.updateMany({
+              where: {
+                shop: session.shop,
+                shopifyOrderId: requestId,
+                active: true,
+              },
+              data: {
+                code: null,
+                active: false,
+                releasedAt: new Date(),
+              },
+            });
+            await clearCourierRoutesForOrders(session.shop, [requestId]);
+            await prisma.courierActivity.create({
+              data: {
+                shop: session.shop,
+                courierId: Number(latestCourierActivity?.courierId || 0),
+                courierName: String(latestCourierActivity?.courierName || "Administrador").trim(),
+                requestId,
+                orderNumber: orderNumber || null,
+                action: "courier_branch_pickup_refunded",
+                routeId: String(latestCourierActivity?.routeId || "") || null,
+              },
+            });
+          }
           refundedOrders.push({
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
             amount: refundResult.finalRefund,
             currencyCode: refundResult.currencyCode || "MXN",
+            fullRefund: Boolean(refundResult.selectedAllLineItems),
           });
         }
         const totalRefunded = refundedOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0);
         const currencyCode = refundedOrders[0]?.currencyCode || "MXN";
+        const fullRefundCount = refundedOrders.filter((order) => order.fullRefund).length;
         return {
           ok: true,
-          message: `${refundedOrders.length} orden(es) reembolsada(s) por ${toMoney(totalRefunded)} ${currencyCode}.`,
+          message: `${refundedOrders.length} reembolso(s) procesado(s) por ${toMoney(totalRefunded)} ${currencyCode}.${
+            fullRefundCount ? ` ${fullRefundCount} orden(es) enviada(s) al historial.` : ""
+          }`,
           courierBulkAction: "refund",
         };
       } catch (error) {
@@ -4268,6 +4297,37 @@ async function fetchCourierOrders(admin) {
                 deliveryCategory
               }
             }
+            lineItems(first: 100) {
+              edges {
+                node {
+                  id
+                  title
+                  quantity
+                  originalUnitPriceSet {
+                    shopMoney { amount currencyCode }
+                  }
+                  variant {
+                    id
+                    title
+                    selectedOptions {
+                      name
+                      value
+                    }
+                    image {
+                      url
+                      altText
+                    }
+                  }
+                  product {
+                    id
+                    featuredImage {
+                      url
+                      altText
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4293,6 +4353,19 @@ async function fetchCourierOrders(admin) {
     .map((orderNode) => {
       const shipping = orderNode.shippingAddress || null;
       const billing = orderNode.billingAddress || null;
+      const lineItems = (orderNode.lineItems?.edges || []).map(({ node }) => ({
+        id: node.id,
+        lineItemId: node.id,
+        title: String(node.title || "").trim(),
+        quantity: Math.max(1, Number(node.quantity || 1)),
+        unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+        currencyCode: String(node.originalUnitPriceSet?.shopMoney?.currencyCode || orderNode.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
+        variantId: node.variant?.id || "",
+        productId: node.product?.id || "",
+        variantSummary: formatVariantSummary(node.variant),
+        imageUrl: node.variant?.image?.url || node.product?.featuredImage?.url || "",
+        imageAlt: node.variant?.image?.altText || node.product?.featuredImage?.altText || node.title || "",
+      }));
       return {
         id: orderNode.id,
         orderNumber: String(orderNode.name || "").replace("#", ""),
@@ -4310,6 +4383,7 @@ async function fetchCourierOrders(admin) {
         createdAt: orderNode.createdAt,
         updatedAt: orderNode.updatedAt || orderNode.createdAt,
         status: getCourierRouteStatusFromTags(orderNode.tags),
+        items: lineItems,
       };
     })
     .sort((a, b) => courierOrderTimestampMs(a) - courierOrderTimestampMs(b));
@@ -4752,6 +4826,7 @@ export default function ReturnsRequests() {
   const [courierBulkMode, setCourierBulkMode] = useState("");
   const [selectedCourierBulkOrderIds, setSelectedCourierBulkOrderIds] = useState([]);
   const [courierRefundRequest, setCourierRefundRequest] = useState(null);
+  const [selectedCourierRefundLineItemIds, setSelectedCourierRefundLineItemIds] = useState([]);
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
@@ -4768,6 +4843,24 @@ export default function ReturnsRequests() {
     0,
   );
   const selectedCourierBulkCurrency = selectedCourierBulkOrders[0]?.currencyCode || "MXN";
+  const courierRefundItems = Array.isArray(courierRefundRequest?.items) ? courierRefundRequest.items : [];
+  const selectedCourierRefundLineItemIdSet = new Set(
+    selectedCourierRefundLineItemIds.map((lineItemId) => String(lineItemId)),
+  );
+  const selectedCourierRefundItems = courierRefundItems.filter((item) =>
+    selectedCourierRefundLineItemIdSet.has(String(item.lineItemId || item.id || "")),
+  );
+  const selectedCourierRefundSubtotal = selectedCourierRefundItems.reduce(
+    (sum, item) => sum + Number(item.unitPrice || 0) * Math.max(1, Number(item.quantity || 1)),
+    0,
+  );
+  const selectedCourierRefundIsFull =
+    courierRefundItems.length > 0 && selectedCourierRefundLineItemIds.length === courierRefundItems.length;
+  const selectedCourierRefundTotal = selectedCourierRefundIsFull
+    ? Number(courierRefundRequest?.estimatedRefund || selectedCourierRefundSubtotal || 0)
+    : selectedCourierRefundSubtotal;
+  const selectedCourierRefundCurrency =
+    courierRefundRequest?.currencyCode || selectedCourierRefundItems[0]?.currencyCode || "MXN";
   const canConfirmCourierRoutePlan =
     selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
   const canConfirmCourierBulkAction =
@@ -4823,6 +4916,7 @@ export default function ReturnsRequests() {
       setCourierBulkMode("");
       setSelectedCourierBulkOrderIds([]);
       setCourierRefundRequest(null);
+      setSelectedCourierRefundLineItemIds([]);
       setShowCourierMoreActions(false);
     }
     if (
@@ -4941,6 +5035,7 @@ export default function ReturnsRequests() {
     status: order.status,
     sequenceNumber: order.sequenceNumber,
     attemptCount: order.attemptCount,
+    items: order.items || [],
   }));
 
   const pageHeading =
@@ -5243,6 +5338,7 @@ export default function ReturnsRequests() {
                       setCourierBulkMode("");
                       setSelectedCourierBulkOrderIds([]);
                       setCourierRefundRequest(null);
+                      setSelectedCourierRefundLineItemIds([]);
                       setSelectedCourierIds([]);
                       setShowCourierRouteModal(true);
                     }}
@@ -5303,6 +5399,7 @@ export default function ReturnsRequests() {
                         setCourierBulkMode("");
                         setSelectedCourierBulkOrderIds([]);
                         setCourierRefundRequest(null);
+                        setSelectedCourierRefundLineItemIds([]);
                       }}
                     >
                       Cancelar
@@ -5425,6 +5522,7 @@ export default function ReturnsRequests() {
                             if (courierBulkMode === "refund") {
                               setSelectedCourierBulkOrderIds(event.target.checked ? [requestId] : []);
                               setCourierRefundRequest(event.target.checked ? request : null);
+                              setSelectedCourierRefundLineItemIds([]);
                               return;
                             }
                             setSelectedCourierBulkOrderIds((currentIds) =>
@@ -5456,19 +5554,68 @@ export default function ReturnsRequests() {
           <section className={`${styles.reasonModal} ${styles.deliveryCodeAdminModal}`}>
             <p className={styles.reasonModalTitle}>Confirmar reembolso</p>
             <p className={styles.deliveryCodeDescription}>
-              El pedido #{courierRefundRequest.orderNumber} será enviado al historial del repartidor.
+              Selecciona los productos del pedido #{courierRefundRequest.orderNumber} que quieres reembolsar.
             </p>
+            <div className={styles.courierRefundProductList}>
+              {courierRefundItems.map((item) => {
+                const lineItemId = String(item.lineItemId || item.id || "");
+                const checked = selectedCourierRefundLineItemIdSet.has(lineItemId);
+                const itemTotal = Number(item.unitPrice || 0) * Math.max(1, Number(item.quantity || 1));
+                return (
+                  <label
+                    key={lineItemId || item.title}
+                    className={`${styles.courierRefundProductOption} ${
+                      checked ? styles.courierRefundProductOptionSelected : ""
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => {
+                        setSelectedCourierRefundLineItemIds((currentIds) =>
+                          event.target.checked
+                            ? [...new Set([...currentIds, lineItemId])]
+                            : currentIds.filter((currentId) => String(currentId) !== lineItemId),
+                        );
+                      }}
+                    />
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.imageAlt || item.title}
+                        className={styles.courierRefundProductImage}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <span className={styles.courierRefundProductImagePlaceholder} />
+                    )}
+                    <span className={styles.courierRefundProductCopy}>
+                      <strong>{item.title}</strong>
+                      {item.variantSummary ? <span>Variante: {item.variantSummary}</span> : null}
+                      <span>Cantidad: {Math.max(1, Number(item.quantity || 1))}</span>
+                    </span>
+                    <strong className={styles.courierRefundProductPrice}>
+                      ${toMoney(itemTotal)} {item.currencyCode || courierRefundRequest.currencyCode || "MXN"}
+                    </strong>
+                  </label>
+                );
+              })}
+            </div>
             <p className={styles.branchPickupRefundAmount}>
               Monto a reembolsar:{" "}
               <strong>
-                ${toMoney(courierRefundRequest.estimatedRefund || 0)}{" "}
-                {courierRefundRequest.currencyCode || "MXN"}
+                ${toMoney(selectedCourierRefundTotal)} {selectedCourierRefundCurrency}
               </strong>
+              {selectedCourierRefundIsFull ? " (incluye envio)" : ""}
             </p>
             <courierRouteFetcher.Form method="post" action={buildCourierRouteHref()} className={styles.deliveryCodeForm}>
               <input type="hidden" name="intent" value="courier_bulk_refund" />
               <input type="hidden" name="routeOrdersJson" value={JSON.stringify(courierRouteOrdersPayload)} />
               <input type="hidden" name="courierBulkOrderIds" value={String(courierRefundRequest.id || "")} />
+              {selectedCourierRefundLineItemIds.map((lineItemId) => (
+                <input key={lineItemId} type="hidden" name="courierRefundLineItemIds" value={lineItemId} />
+              ))}
               <div className={styles.reasonModalActions}>
                 <button
                   className={styles.btn}
@@ -5476,6 +5623,7 @@ export default function ReturnsRequests() {
                   onClick={() => {
                     setCourierRefundRequest(null);
                     setSelectedCourierBulkOrderIds([]);
+                    setSelectedCourierRefundLineItemIds([]);
                   }}
                   disabled={isSubmitting || isCourierRouteSubmitting}
                 >
@@ -5484,13 +5632,19 @@ export default function ReturnsRequests() {
                 <button
                   className={`${styles.btn} ${styles.btnDanger}`}
                   type="submit"
-                  disabled={isSubmitting || isCourierRouteSubmitting}
+                  disabled={
+                    isSubmitting ||
+                    isCourierRouteSubmitting ||
+                    selectedCourierRefundLineItemIds.length === 0
+                  }
                   onClick={(event) => {
                     if (
                       !window.confirm(
                         `¿Reconfirmas reembolsar el pedido #${courierRefundRequest.orderNumber} por ${toMoney(
-                          courierRefundRequest.estimatedRefund || 0,
-                        )} ${courierRefundRequest.currencyCode || "MXN"} al metodo de pago original?`,
+                          selectedCourierRefundTotal,
+                        )} ${selectedCourierRefundCurrency} al metodo de pago original?${
+                          selectedCourierRefundIsFull ? " La orden se enviara al historial del repartidor." : ""
+                        }`,
                       )
                     ) {
                       event.preventDefault();
