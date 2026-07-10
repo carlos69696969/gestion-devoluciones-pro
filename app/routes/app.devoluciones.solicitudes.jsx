@@ -548,6 +548,23 @@ function nextIsoDate(value) {
   return date.toISOString().slice(0, 10);
 }
 
+async function latestCourierRouteTimeRescheduleDate(prisma, shop, requestId) {
+  const cleanShop = String(shop || "").trim();
+  const cleanRequestId = String(requestId || "").trim();
+  if (!cleanShop || !cleanRequestId) return "";
+
+  const event = await prisma.courierEvent.findFirst({
+    where: {
+      shop: cleanShop,
+      requestId: cleanRequestId,
+      note: { contains: "route_time_rescheduled:" },
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { note: true },
+  });
+  return String(event?.note || "").match(/route_time_rescheduled:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
+}
+
 function itemKeyFromRecord(item) {
   const lineItemId = String(item?.lineItemId || "").trim();
   if (lineItemId) return `line:${lineItemId}`;
@@ -3284,7 +3301,8 @@ export const action = async ({ request }) => {
       for (const order of selectedOrders) {
         const requestId = String(order.id || "").trim();
         const orderNumber = String(order.orderNumber || "").trim();
-        const currentScheduledDate = String(order.pickupDate || "").trim();
+        const latestRouteTimeDate = await latestCourierRouteTimeRescheduleDate(prisma, session.shop, requestId);
+        const currentScheduledDate = String(latestRouteTimeDate || order.pickupDate || "").trim();
         const rescheduledDate = nextIsoDate(currentScheduledDate);
         const result = await reprogramCourierDeliveryForNextRoute({
           shopDomain: session.shop,
