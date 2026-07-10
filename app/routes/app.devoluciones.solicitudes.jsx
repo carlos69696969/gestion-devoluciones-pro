@@ -2517,23 +2517,40 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
   return { refundLineItems: refundableLines, subtotal };
 }
 
-function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemIds = []) {
-  const selectedIds = new Set((selectedLineItemIds || []).map((id) => String(id || "").trim()).filter(Boolean));
+function parseSelectedLineItemUnitCounts(selectedLineItemUnitKeys = []) {
+  const counts = new Map();
+  for (const rawKey of selectedLineItemUnitKeys || []) {
+    const key = String(rawKey || "").trim();
+    if (!key) continue;
+    const [lineItemId] = key.split("::");
+    const cleanLineItemId = String(lineItemId || "").trim();
+    if (!cleanLineItemId) continue;
+    counts.set(cleanLineItemId, Number(counts.get(cleanLineItemId) || 0) + 1);
+  }
+  return counts;
+}
+
+function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemUnitKeys = []) {
+  const selectedUnitCountsByLineId = parseSelectedLineItemUnitCounts(selectedLineItemUnitKeys);
   const refundLineItems = [];
   let subtotal = 0;
+  let totalRefundableQuantity = 0;
+  let selectedRefundQuantity = 0;
   for (const line of orderLineItems || []) {
-    if (selectedIds.size && !selectedIds.has(String(line?.id || ""))) continue;
     const quantity = Math.max(0, Number(line.quantity || 0));
     if (!line?.id || quantity <= 0) continue;
-    subtotal += Number(line.unitPrice || 0) * quantity;
+    totalRefundableQuantity += quantity;
+    const selectedQuantity = Math.min(quantity, Math.max(0, Number(selectedUnitCountsByLineId.get(String(line.id)) || 0)));
+    if (selectedQuantity <= 0) continue;
+    selectedRefundQuantity += selectedQuantity;
+    subtotal += Number(line.unitPrice || 0) * selectedQuantity;
     refundLineItems.push({
       lineItemId: line.id,
-      quantity,
+      quantity: selectedQuantity,
       restockType: "NO_RESTOCK",
     });
   }
-  const refundableLineCount = (orderLineItems || []).filter((line) => line?.id && Number(line.quantity || 0) > 0).length;
-  const selectedAllLineItems = refundLineItems.length > 0 && refundLineItems.length === refundableLineCount;
+  const selectedAllLineItems = selectedRefundQuantity > 0 && selectedRefundQuantity === totalRefundableQuantity;
   return { refundLineItems, subtotal, selectedAllLineItems };
 }
 
@@ -2570,12 +2587,12 @@ async function refundShopifyOrderToOriginalPayment({
   shopifyOrderId,
   notePrefix,
   includeShipping = false,
-  selectedLineItemIds = [],
+  selectedLineItemUnitKeys = [],
 }) {
   const snapshot = await fetchOrderSnapshot(admin, shopifyOrderId);
   const { refundLineItems, subtotal, selectedAllLineItems } = mapOrderItemsToFullRefundLineItems(
     snapshot.lineItems,
-    selectedLineItemIds,
+    selectedLineItemUnitKeys,
   );
   if (!refundLineItems.length) {
     throw new Error("No hay lineas para reembolsar.");
@@ -3286,11 +3303,11 @@ export const action = async ({ request }) => {
 
     if (intent === "courier_bulk_refund") {
       try {
-        const selectedLineItemIds = formData
-          .getAll("courierRefundLineItemIds")
-          .map((lineItemId) => String(lineItemId || "").trim())
+        const selectedLineItemUnitKeys = formData
+          .getAll("courierRefundLineItemUnitKeys")
+          .map((lineItemUnitKey) => String(lineItemUnitKey || "").trim())
           .filter(Boolean);
-        if (!selectedLineItemIds.length) {
+        if (!selectedLineItemUnitKeys.length) {
           return { ok: false, error: "Selecciona al menos un producto para reembolsar." };
         }
         const refundedOrders = [];
@@ -3314,7 +3331,7 @@ export const action = async ({ request }) => {
             shopifyOrderId: requestId,
             notePrefix: `Reembolso pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} desde ordenes repartidor`,
             includeShipping: true,
-            selectedLineItemIds,
+            selectedLineItemUnitKeys,
           });
           if (refundResult.selectedAllLineItems) {
             await replaceShopifyOrderCourierStatusTag(admin, requestId, "reembolsada");
@@ -4826,7 +4843,7 @@ export default function ReturnsRequests() {
   const [courierBulkMode, setCourierBulkMode] = useState("");
   const [selectedCourierBulkOrderIds, setSelectedCourierBulkOrderIds] = useState([]);
   const [courierRefundRequest, setCourierRefundRequest] = useState(null);
-  const [selectedCourierRefundLineItemIds, setSelectedCourierRefundLineItemIds] = useState([]);
+  const [selectedCourierRefundUnitKeys, setSelectedCourierRefundUnitKeys] = useState([]);
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
@@ -4844,18 +4861,27 @@ export default function ReturnsRequests() {
   );
   const selectedCourierBulkCurrency = selectedCourierBulkOrders[0]?.currencyCode || "MXN";
   const courierRefundItems = Array.isArray(courierRefundRequest?.items) ? courierRefundRequest.items : [];
-  const selectedCourierRefundLineItemIdSet = new Set(
-    selectedCourierRefundLineItemIds.map((lineItemId) => String(lineItemId)),
+  const courierRefundUnitItems = courierRefundItems.flatMap((item) => {
+    const quantity = Math.max(1, Number(item.quantity || 1));
+    return Array.from({ length: quantity }, (_value, index) => ({
+      ...item,
+      quantity: 1,
+      unitIndex: index + 1,
+      unitKey: `${String(item.lineItemId || item.id || item.title || "item")}::${index + 1}`,
+    }));
+  });
+  const selectedCourierRefundUnitKeySet = new Set(
+    selectedCourierRefundUnitKeys.map((unitKey) => String(unitKey)),
   );
-  const selectedCourierRefundItems = courierRefundItems.filter((item) =>
-    selectedCourierRefundLineItemIdSet.has(String(item.lineItemId || item.id || "")),
+  const selectedCourierRefundItems = courierRefundUnitItems.filter((item) =>
+    selectedCourierRefundUnitKeySet.has(String(item.unitKey || "")),
   );
   const selectedCourierRefundSubtotal = selectedCourierRefundItems.reduce(
-    (sum, item) => sum + Number(item.unitPrice || 0) * Math.max(1, Number(item.quantity || 1)),
+    (sum, item) => sum + Number(item.unitPrice || 0),
     0,
   );
   const selectedCourierRefundIsFull =
-    courierRefundItems.length > 0 && selectedCourierRefundLineItemIds.length === courierRefundItems.length;
+    courierRefundUnitItems.length > 0 && selectedCourierRefundUnitKeys.length === courierRefundUnitItems.length;
   const selectedCourierRefundTotal = selectedCourierRefundIsFull
     ? Number(courierRefundRequest?.estimatedRefund || selectedCourierRefundSubtotal || 0)
     : selectedCourierRefundSubtotal;
@@ -4916,7 +4942,7 @@ export default function ReturnsRequests() {
       setCourierBulkMode("");
       setSelectedCourierBulkOrderIds([]);
       setCourierRefundRequest(null);
-      setSelectedCourierRefundLineItemIds([]);
+      setSelectedCourierRefundUnitKeys([]);
       setShowCourierMoreActions(false);
     }
     if (
@@ -5338,7 +5364,7 @@ export default function ReturnsRequests() {
                       setCourierBulkMode("");
                       setSelectedCourierBulkOrderIds([]);
                       setCourierRefundRequest(null);
-                      setSelectedCourierRefundLineItemIds([]);
+                      setSelectedCourierRefundUnitKeys([]);
                       setSelectedCourierIds([]);
                       setShowCourierRouteModal(true);
                     }}
@@ -5399,7 +5425,7 @@ export default function ReturnsRequests() {
                         setCourierBulkMode("");
                         setSelectedCourierBulkOrderIds([]);
                         setCourierRefundRequest(null);
-                        setSelectedCourierRefundLineItemIds([]);
+                        setSelectedCourierRefundUnitKeys([]);
                       }}
                     >
                       Cancelar
@@ -5522,7 +5548,7 @@ export default function ReturnsRequests() {
                             if (courierBulkMode === "refund") {
                               setSelectedCourierBulkOrderIds(event.target.checked ? [requestId] : []);
                               setCourierRefundRequest(event.target.checked ? request : null);
-                              setSelectedCourierRefundLineItemIds([]);
+                              setSelectedCourierRefundUnitKeys([]);
                               return;
                             }
                             setSelectedCourierBulkOrderIds((currentIds) =>
@@ -5557,13 +5583,13 @@ export default function ReturnsRequests() {
               Selecciona los productos del pedido #{courierRefundRequest.orderNumber} que quieres reembolsar.
             </p>
             <div className={styles.courierRefundProductList}>
-              {courierRefundItems.map((item) => {
-                const lineItemId = String(item.lineItemId || item.id || "");
-                const checked = selectedCourierRefundLineItemIdSet.has(lineItemId);
-                const itemTotal = Number(item.unitPrice || 0) * Math.max(1, Number(item.quantity || 1));
+              {courierRefundUnitItems.map((item) => {
+                const unitKey = String(item.unitKey || "");
+                const checked = selectedCourierRefundUnitKeySet.has(unitKey);
+                const itemTotal = Number(item.unitPrice || 0);
                 return (
                   <label
-                    key={lineItemId || item.title}
+                    key={unitKey || `${item.title}-${item.unitIndex}`}
                     className={`${styles.courierRefundProductOption} ${
                       checked ? styles.courierRefundProductOptionSelected : ""
                     }`}
@@ -5572,10 +5598,10 @@ export default function ReturnsRequests() {
                       type="checkbox"
                       checked={checked}
                       onChange={(event) => {
-                        setSelectedCourierRefundLineItemIds((currentIds) =>
+                        setSelectedCourierRefundUnitKeys((currentIds) =>
                           event.target.checked
-                            ? [...new Set([...currentIds, lineItemId])]
-                            : currentIds.filter((currentId) => String(currentId) !== lineItemId),
+                            ? [...new Set([...currentIds, unitKey])]
+                            : currentIds.filter((currentId) => String(currentId) !== unitKey),
                         );
                       }}
                     />
@@ -5593,7 +5619,11 @@ export default function ReturnsRequests() {
                     <span className={styles.courierRefundProductCopy}>
                       <strong>{item.title}</strong>
                       {item.variantSummary ? <span>Variante: {item.variantSummary}</span> : null}
-                      <span>Cantidad: {Math.max(1, Number(item.quantity || 1))}</span>
+                      <span>Unidad {item.unitIndex} de {Math.max(1, Number(
+                        courierRefundItems.find((sourceItem) =>
+                          String(sourceItem.lineItemId || sourceItem.id || "") === String(item.lineItemId || item.id || ""),
+                        )?.quantity || 1,
+                      ))}</span>
                     </span>
                     <strong className={styles.courierRefundProductPrice}>
                       ${toMoney(itemTotal)} {item.currencyCode || courierRefundRequest.currencyCode || "MXN"}
@@ -5613,8 +5643,8 @@ export default function ReturnsRequests() {
               <input type="hidden" name="intent" value="courier_bulk_refund" />
               <input type="hidden" name="routeOrdersJson" value={JSON.stringify(courierRouteOrdersPayload)} />
               <input type="hidden" name="courierBulkOrderIds" value={String(courierRefundRequest.id || "")} />
-              {selectedCourierRefundLineItemIds.map((lineItemId) => (
-                <input key={lineItemId} type="hidden" name="courierRefundLineItemIds" value={lineItemId} />
+              {selectedCourierRefundUnitKeys.map((unitKey) => (
+                <input key={unitKey} type="hidden" name="courierRefundLineItemUnitKeys" value={unitKey} />
               ))}
               <div className={styles.reasonModalActions}>
                 <button
@@ -5623,7 +5653,7 @@ export default function ReturnsRequests() {
                   onClick={() => {
                     setCourierRefundRequest(null);
                     setSelectedCourierBulkOrderIds([]);
-                    setSelectedCourierRefundLineItemIds([]);
+                    setSelectedCourierRefundUnitKeys([]);
                   }}
                   disabled={isSubmitting || isCourierRouteSubmitting}
                 >
@@ -5635,7 +5665,7 @@ export default function ReturnsRequests() {
                   disabled={
                     isSubmitting ||
                     isCourierRouteSubmitting ||
-                    selectedCourierRefundLineItemIds.length === 0
+                    selectedCourierRefundUnitKeys.length === 0
                   }
                   onClick={(event) => {
                     if (
