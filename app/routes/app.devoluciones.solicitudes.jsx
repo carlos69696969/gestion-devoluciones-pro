@@ -5881,6 +5881,28 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
             .map((activity) => String(activity.requestId || "").trim())
             .filter(Boolean),
         );
+        const snapshotRouteAssignmentSequenceByOrderId = new Map(
+          [
+            ...new Map(
+              courierActivities
+                .filter(
+                  (activity) =>
+                    String(activity.routeId || "").trim() === selectedRouteId &&
+                    String(activity.action || "").trim().toLowerCase() === "courier_route_order_assigned",
+                )
+                .sort(
+                  (firstActivity, secondActivity) =>
+                    new Date(firstActivity.createdAt || "").getTime() -
+                    new Date(secondActivity.createdAt || "").getTime(),
+                )
+                .map((activity) => {
+                  const requestId = String(activity.requestId || "").trim();
+                  return [requestId, requestId];
+                })
+                .filter(([requestId]) => requestId),
+            ).values(),
+          ].map((requestId, index) => [requestId, index + 1]),
+        );
         const snapshotOrders = Array.isArray(selectedSnapshotCutoff.orders) ? selectedSnapshotCutoff.orders : [];
         const hiddenSnapshotOrderIds = new Set(
           snapshotOrders
@@ -5954,7 +5976,9 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
               historyEvents: enrichedSnapshotHistoryEvents,
               branchPickupHistoryEvents: storedSnapshotHistoryEvents,
               unfilteredHistoryEvents: snapshotHistoryEvents,
-              sequenceNumber: Number(order?.sequenceNumber || index + 1),
+              sequenceNumber: Number(
+                snapshotRouteAssignmentSequenceByOrderId.get(id) || order?.sequenceNumber || index + 1,
+              ),
             };
           })
           .sort((firstOrder, secondOrder) => Number(firstOrder.sequenceNumber || 0) - Number(secondOrder.sequenceNumber || 0));
@@ -6063,6 +6087,24 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
           .map((activity) => String(activity.requestId || "").trim())
           .filter(Boolean),
       );
+      const routeAssignmentSequenceByOrderId = new Map(
+        [
+          ...new Map(
+            selectedDayActivities
+              .filter((activity) => String(activity.action || "").trim().toLowerCase() === "courier_route_order_assigned")
+              .sort(
+                (firstActivity, secondActivity) =>
+                  new Date(firstActivity.createdAt || "").getTime() -
+                  new Date(secondActivity.createdAt || "").getTime(),
+              )
+              .map((activity) => {
+                const requestId = String(activity.requestId || "").trim();
+                return [requestId, requestId];
+              })
+              .filter(([requestId]) => requestId),
+          ).values(),
+        ].map((requestId, index) => [requestId, index + 1]),
+      );
       const selectedActivityOrders = [
         ...new Map(
           selectedDayActivities
@@ -6090,7 +6132,10 @@ function CourierHistoryDirectory({ couriers, activities, snapshots = [], orders,
         return compareCourierDisplayOrder(firstOrder, secondOrder);
       });
       const sequenceByOrderId = new Map(
-        routeSequenceOrders.map((order, index) => [String(order.id || ""), index + 1]),
+        routeSequenceOrders.map((order, index) => {
+          const orderId = String(order.id || "");
+          return [orderId, routeAssignmentSequenceByOrderId.get(orderId) || index + 1];
+        }),
       );
       const selectedDayOrders = routeSequenceOrders
         .filter((order) => !notLocatedOrderIds.has(String(order.id || "").trim()))
