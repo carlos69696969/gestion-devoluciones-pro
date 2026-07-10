@@ -190,19 +190,23 @@ export default function extension() {
   const latestOrderMessageTitle = document.createElement("s-text");
   latestOrderMessageTitle.setAttribute("appearance", "strong");
 
-  const latestOrderMessageBody = document.createElement("s-text");
-
   const renderLatestOrderMessage = (notification) => {
     latestOrderMessageTitle.textContent = String(notification?.title || "").trim();
-    latestOrderMessageBody.textContent = String(notification?.message || "").trim();
+    const messageLines = String(notification?.message || "")
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
     while (latestOrderMessageBlock.firstChild) {
       latestOrderMessageBlock.removeChild(latestOrderMessageBlock.firstChild);
     }
     if (latestOrderMessageTitle.textContent) {
       latestOrderMessageBlock.appendChild(latestOrderMessageTitle);
     }
-    if (latestOrderMessageBody.textContent) {
-      latestOrderMessageBlock.appendChild(latestOrderMessageBody);
+    for (const line of messageLines) {
+      const lineText = document.createElement("s-text");
+      lineText.textContent = line;
+      latestOrderMessageBlock.appendChild(lineText);
     }
   };
 
