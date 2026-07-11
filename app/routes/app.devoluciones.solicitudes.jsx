@@ -7655,6 +7655,7 @@ function CourierOrderCard({
   const displayHistoryEvents = dedupeCourierHistoryEvents(adminCourierPresentation.events);
   const initialBranchPickupHistoryOrder =
     courierHistoryView &&
+    !hasCourierFullRefund &&
     (
       isBranchPickupHistoryOrder(request, displayHistoryEvents) ||
       isBranchPickupHistoryOrder(request, request.historyEvents || [])
@@ -7710,12 +7711,15 @@ function CourierOrderCard({
     { hideTransferDetails: branchPickupView },
   );
   const branchPickupHistoryOrder =
-    initialBranchPickupHistoryOrder ||
+    !hasCourierFullRefund &&
     (
-      courierHistoryView &&
+      initialBranchPickupHistoryOrder ||
       (
-        isBranchPickupHistoryOrder(request, effectiveHistoryEvents) ||
-        displayHistoryItems.some((item) => isBranchPickupHistoryEvent(item))
+        courierHistoryView &&
+        (
+          isBranchPickupHistoryOrder(request, effectiveHistoryEvents) ||
+          displayHistoryItems.some((item) => isBranchPickupHistoryEvent(item))
+        )
       )
     );
   const displayedScheduledDate =
