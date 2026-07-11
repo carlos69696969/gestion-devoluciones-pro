@@ -217,7 +217,7 @@ export default function PreparerPortal() {
             </div>
           ) : (
             <section className={styles.card}>
-              <p className={styles.subtitle}>Todavia no tienes ordenes asignadas para preparar.</p>
+              <p className={styles.error}>Este preparador aún no tiene órdenes asignadas.</p>
             </section>
           )}
           {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}

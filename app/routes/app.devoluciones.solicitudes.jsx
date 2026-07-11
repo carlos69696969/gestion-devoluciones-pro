@@ -7877,6 +7877,12 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
     counts.set(preparerId, Number(counts.get(preparerId) || 0) + 1);
     return counts;
   }, new Map());
+  const assignedPreparers = preparers
+    .map((preparer) => ({
+      ...preparer,
+      assignedCount: Number(assignmentCountByPreparerId.get(String(preparer.id)) || 0),
+    }))
+    .filter((preparer) => preparer.assignedCount > 0);
 
   useEffect(() => {
     if (!distributeFetcher.data?.ok) return;
@@ -7943,6 +7949,16 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
               Guardar
             </button>
           </Form>
+        ) : null}
+
+        {assignedPreparers.length ? (
+          <div className={styles.courierRoutePlanSummary}>
+            {assignedPreparers.map((preparer) => (
+              <span key={preparer.id} className={styles.courierRoutePlanBadge}>
+                {preparer.name}: {preparer.assignedCount} orden(es)
+              </span>
+            ))}
+          </div>
         ) : null}
 
         <div className={styles.courierDirectory}>
