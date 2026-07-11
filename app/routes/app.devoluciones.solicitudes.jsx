@@ -518,6 +518,7 @@ async function emitCourierOrderRefundNotification({
   currencyCode,
   selectedAllLineItems,
   refundedItems,
+  refundId,
 }) {
   if (!shopDomain || !requestId || !NOTIFICATIONS_API_BASE_URL) {
     return;
@@ -570,6 +571,12 @@ async function emitCourierOrderRefundNotification({
           status: "refund_processed",
           title: copy.title,
           message: copy.message,
+          source: "courier_order_refund",
+          notificationSource: "courier_order_refund",
+          refundKind: selectedAllLineItems ? "full" : "partial",
+          refundId: refundId || "",
+          suppressRefundWebhook: true,
+          suppressOrderInTransitWebhook: true,
         }),
       });
       const responsePayload = await response.json().catch(() => null);
@@ -3601,6 +3608,7 @@ export const action = async ({ request }) => {
             currencyCode: refundResult.currencyCode || "MXN",
             selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
             refundedItems: refundResult.refundedItems || [],
+            refundId: refundResult.refundId || "",
           });
           await prisma.courierActivity.create({
             data: {
