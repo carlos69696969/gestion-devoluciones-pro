@@ -118,6 +118,18 @@ model Courier {
   @@index([shop, createdAt])
 }
 
+model Preparer {
+  id        Int      @id @default(autoincrement())
+  shop      String
+  name      String
+  code      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shop, code])
+  @@index([shop, createdAt])
+}
+
 model CourierActivity {
   id          Int      @id @default(autoincrement())
   shop        String

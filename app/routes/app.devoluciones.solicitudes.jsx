@@ -59,6 +59,7 @@ const VIEW_MODE = {
   COURIER_HISTORY: "courier_history",
   BRANCH_PICKUP: "branch_pickup",
   COURIERS: "couriers",
+  PREPARERS: "preparers",
 };
 const COURIER_HISTORY_SINCE = new Date("2026-06-10T00:00:00-06:00");
 const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
@@ -742,6 +743,7 @@ function normalizeViewMode(rawValue) {
   if (value === VIEW_MODE.COURIER_HISTORY) return VIEW_MODE.COURIER_HISTORY;
   if (value === VIEW_MODE.BRANCH_PICKUP) return VIEW_MODE.BRANCH_PICKUP;
   if (value === VIEW_MODE.COURIERS) return VIEW_MODE.COURIERS;
+  if (value === VIEW_MODE.PREPARERS) return VIEW_MODE.PREPARERS;
   return VIEW_MODE.BRANCH;
 }
 
@@ -759,6 +761,7 @@ function viewModeFromPathname(pathname) {
   if (path.endsWith("/repartidor")) return VIEW_MODE.COURIER;
   if (path.endsWith("/branch_pickup")) return VIEW_MODE.BRANCH_PICKUP;
   if (path.endsWith("/couriers")) return VIEW_MODE.COURIERS;
+  if (path.endsWith("/preparers")) return VIEW_MODE.PREPARERS;
   return "";
 }
 
@@ -3285,6 +3288,13 @@ export const loader = async ({ request }) => {
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         })
       : [];
+  const preparers =
+    viewMode === VIEW_MODE.PREPARERS
+      ? await prisma.preparer.findMany({
+          where: { shop: session.shop },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        })
+      : [];
   if (
     (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryActivity) &&
     couriers.length
@@ -3350,6 +3360,7 @@ export const loader = async ({ request }) => {
     requests,
     courierOrders: visibleCourierOrders,
     couriers,
+    preparers,
     courierActivities,
     courierRouteSnapshots,
     plannedCourierRoutes,
@@ -3941,6 +3952,38 @@ export const action = async ({ request }) => {
       return { ok: false, error: "No se encontro el repartidor." };
     }
     return { ok: true, message: "Repartidor dado de baja correctamente." };
+  }
+
+  if (intent === "create_preparer") {
+    const name = String(formData.get("name") || "").trim();
+    const code = String(formData.get("code") || "").trim();
+    if (!name) return { ok: false, error: "Escribe el nombre del preparador." };
+    if (!/^\d{6}$/.test(code)) {
+      return { ok: false, error: "Genera un codigo numerico de 6 digitos." };
+    }
+    const existingPreparer = await prisma.preparer.findFirst({
+      where: { shop: session.shop, code },
+      select: { id: true },
+    });
+    if (existingPreparer) {
+      return { ok: false, error: "Ese codigo ya existe. Genera uno nuevo." };
+    }
+    await prisma.preparer.create({
+      data: { shop: session.shop, name, code },
+    });
+    return { ok: true, message: "Preparador guardado correctamente." };
+  }
+
+  if (intent === "delete_preparer") {
+    const preparerId = Number(formData.get("preparerId") || 0);
+    if (!preparerId) return { ok: false, error: "Preparador invalido." };
+    const deletedPreparer = await prisma.preparer.deleteMany({
+      where: { id: preparerId, shop: session.shop },
+    });
+    if (!deletedPreparer.count) {
+      return { ok: false, error: "No se encontro el preparador." };
+    }
+    return { ok: true, message: "Preparador dado de baja correctamente." };
   }
 
   if (intent === "transfer_courier_route") {
@@ -5253,6 +5296,7 @@ export default function ReturnsRequests() {
     requests,
     courierOrders,
     couriers = [],
+    preparers = [],
     courierActivities = [],
     courierRouteSnapshots = [],
     plannedCourierRoutes = [],
@@ -5556,6 +5600,8 @@ export default function ReturnsRequests() {
           ? "Recoger en sucursal"
         : viewMode === VIEW_MODE.COURIERS
           ? "Repartidores"
+        : viewMode === VIEW_MODE.PREPARERS
+          ? "Preparadores"
         : "Entrega en sucursal";
 
   return (
@@ -6343,6 +6389,10 @@ export default function ReturnsRequests() {
 
       {viewMode === VIEW_MODE.COURIERS ? (
         <CouriersSection couriers={couriers} isSubmitting={isSubmitting} />
+      ) : null}
+
+      {viewMode === VIEW_MODE.PREPARERS ? (
+        <PreparersSection preparers={preparers} isSubmitting={isSubmitting} />
       ) : null}
     </s-page>
   );
@@ -7714,6 +7764,93 @@ function CouriersSection({ couriers, isSubmitting }) {
         {transferFetcher.data?.message ? (
           <p className={styles.successMsg}>{transferFetcher.data.message}</p>
         ) : null}
+      </div>
+    </s-section>
+  );
+}
+
+function PreparersSection({ preparers, isSubmitting }) {
+  const [showForm, setShowForm] = useState(false);
+  const [code, setCode] = useState("");
+
+  const generateCode = () => {
+    setCode(String(Math.floor(100000 + Math.random() * 900000)));
+  };
+
+  return (
+    <s-section heading="Preparadores">
+      <div className={`${styles.wrap} ${styles.couriersLayout}`}>
+        <button
+          className={`${styles.btn} ${styles.btnPrimary}`}
+          type="button"
+          onClick={() => setShowForm((current) => !current)}
+        >
+          Agregar preparador
+        </button>
+
+        {showForm ? (
+          <Form method="post" className={`${styles.card} ${styles.courierCreateForm}`}>
+            <input type="hidden" name="intent" value="create_preparer" />
+            <label className={styles.label}>
+              Nombre del preparador
+              <input className={styles.input} name="name" required />
+            </label>
+            <div className={styles.courierCodeField}>
+              <label className={styles.label}>
+                Codigo unico
+                <input
+                  className={styles.input}
+                  name="code"
+                  value={code}
+                  readOnly
+                  required
+                  placeholder="Genera un codigo de 6 digitos"
+                />
+              </label>
+              <button className={styles.btn} type="button" onClick={generateCode}>
+                Generar codigo
+              </button>
+            </div>
+            <button
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              type="submit"
+              disabled={isSubmitting || !code}
+            >
+              Guardar
+            </button>
+          </Form>
+        ) : null}
+
+        <div className={styles.courierDirectory}>
+          {preparers.map((preparer) => (
+            <details key={preparer.id} className={styles.courierDirectoryCard}>
+              <summary className={styles.courierDirectorySummary}>
+                <span>Preparador</span>
+                <strong>{preparer.name}</strong>
+              </summary>
+              <div className={styles.courierDirectoryCode}>
+                <div>Codigo unico: <strong>{preparer.code}</strong></div>
+                <div className={styles.courierDirectoryActions}>
+                  <Form
+                    method="post"
+                    action="/app/devoluciones/solicitudes/preparers"
+                    onSubmit={(event) => {
+                      if (!window.confirm(`¿Deseas dar de baja a ${preparer.name}?`)) {
+                        event.preventDefault();
+                      }
+                    }}
+                  >
+                    <input type="hidden" name="intent" value="delete_preparer" />
+                    <input type="hidden" name="preparerId" value={preparer.id} />
+                    <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
+                      Dar de baja
+                    </button>
+                  </Form>
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
       </div>
     </s-section>
   );

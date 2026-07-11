@@ -182,6 +182,7 @@ export default function App() {
           {withCount("Recoger en sucursal", navCounts?.branchPickup || 0)}
         </s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/couriers")}>Repartidores</s-link>
+        <s-link href={withEmbedParams("/app/devoluciones/solicitudes/preparers")}>Preparadores</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>
