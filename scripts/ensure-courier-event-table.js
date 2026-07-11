@@ -42,6 +42,28 @@ await prisma.$executeRawUnsafe(`
 `);
 
 await prisma.$executeRawUnsafe(`
+  CREATE TABLE IF NOT EXISTS "Preparer" (
+    "id" SERIAL NOT NULL,
+    "shop" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Preparer_pkey" PRIMARY KEY ("id")
+  )
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE UNIQUE INDEX IF NOT EXISTS "Preparer_shop_code_key"
+  ON "Preparer"("shop", "code")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "Preparer_shop_createdAt_idx"
+  ON "Preparer"("shop", "createdAt")
+`);
+
+await prisma.$executeRawUnsafe(`
   CREATE TABLE IF NOT EXISTS "CourierActivity" (
     "id" SERIAL NOT NULL,
     "shop" TEXT NOT NULL,
