@@ -642,6 +642,47 @@ function latestCourierRefundDetail(activities = []) {
     .sort((first, second) => parseEventMs(second.refundedAt || second.createdAt) - parseEventMs(first.refundedAt || first.createdAt))[0] || null;
 }
 
+function courierRefundDetailsFromActivities(activities = []) {
+  return [...(activities || [])]
+    .map(parseCourierRefundDetailActivity)
+    .filter(Boolean)
+    .sort((first, second) => parseEventMs(first.refundedAt || first.createdAt) - parseEventMs(second.refundedAt || second.createdAt));
+}
+
+function courierRefundedUnitKeySetFromDetails(details = []) {
+  const refundedCountsByLineId = new Map();
+  const explicitKeys = new Set();
+  for (const detail of details || []) {
+    for (const item of detail?.items || []) {
+      const lineItemId = String(item?.lineItemId || "").trim();
+      if (!lineItemId) continue;
+      const itemUnitKeys = Array.isArray(item?.unitKeys) ? item.unitKeys : [];
+      if (itemUnitKeys.length) {
+        for (const unitKey of itemUnitKeys) {
+          const cleanUnitKey = String(unitKey || "").trim();
+          if (cleanUnitKey) explicitKeys.add(cleanUnitKey);
+        }
+        refundedCountsByLineId.set(lineItemId, Number(refundedCountsByLineId.get(lineItemId) || 0) + itemUnitKeys.length);
+      } else {
+        refundedCountsByLineId.set(
+          lineItemId,
+          Number(refundedCountsByLineId.get(lineItemId) || 0) + Math.max(1, Number(item?.quantity || 1)),
+        );
+      }
+    }
+  }
+  for (const [lineItemId, count] of refundedCountsByLineId.entries()) {
+    for (let index = 1; index <= Number(count || 0); index += 1) {
+      explicitKeys.add(`${lineItemId}::${index}`);
+    }
+  }
+  return explicitKeys;
+}
+
+function courierRefundedUnitKeySetFromActivities(activities = []) {
+  return courierRefundedUnitKeySetFromDetails(courierRefundDetailsFromActivities(activities));
+}
+
 const PICKUP_FAILED_REASON_OPTIONS = [
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨",
   "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
@@ -2704,6 +2745,16 @@ function parseSelectedLineItemUnitCounts(selectedLineItemUnitKeys = []) {
 
 function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemUnitKeys = []) {
   const selectedUnitCountsByLineId = parseSelectedLineItemUnitCounts(selectedLineItemUnitKeys);
+  const selectedUnitKeysByLineId = new Map();
+  for (const unitKey of selectedLineItemUnitKeys || []) {
+    const cleanUnitKey = String(unitKey || "").trim();
+    const [lineItemId] = cleanUnitKey.split("::");
+    const cleanLineItemId = String(lineItemId || "").trim();
+    if (!cleanLineItemId || !cleanUnitKey) continue;
+    const current = selectedUnitKeysByLineId.get(cleanLineItemId) || [];
+    current.push(cleanUnitKey);
+    selectedUnitKeysByLineId.set(cleanLineItemId, current);
+  }
   const refundLineItems = [];
   const refundedItems = [];
   let subtotal = 0;
@@ -2728,6 +2779,7 @@ function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemUnit
       quantity: selectedQuantity,
       unitPrice: Number(line.unitPrice || 0),
       total: Number(line.unitPrice || 0) * selectedQuantity,
+      unitKeys: (selectedUnitKeysByLineId.get(String(line.id)) || []).slice(0, selectedQuantity),
     });
   }
   const selectedAllLineItems = selectedRefundQuantity > 0 && selectedRefundQuantity === totalRefundableQuantity;
@@ -3502,6 +3554,7 @@ export const action = async ({ request }) => {
             where: {
               shop: session.shop,
               requestId,
+              action: { not: COURIER_ORDER_REFUND_DETAIL_ACTION },
             },
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             select: {
@@ -3510,12 +3563,27 @@ export const action = async ({ request }) => {
               routeId: true,
             },
           });
+          const existingRefundActivities = await prisma.courierActivity.findMany({
+            where: {
+              shop: session.shop,
+              requestId,
+              action: COURIER_ORDER_REFUND_DETAIL_ACTION,
+            },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          });
+          const alreadyRefundedUnitKeys = courierRefundedUnitKeySetFromActivities(existingRefundActivities);
+          const refundableSelectedLineItemUnitKeys = selectedLineItemUnitKeys.filter(
+            (unitKey) => !alreadyRefundedUnitKeys.has(String(unitKey || "").trim()),
+          );
+          if (!refundableSelectedLineItemUnitKeys.length) {
+            return { ok: false, error: "Los productos seleccionados ya fueron reembolsados." };
+          }
           const refundResult = await refundShopifyOrderToOriginalPayment({
             admin,
             shopifyOrderId: requestId,
             notePrefix: `Reembolso pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} desde ordenes repartidor`,
             includeShipping: true,
-            selectedLineItemUnitKeys,
+            selectedLineItemUnitKeys: refundableSelectedLineItemUnitKeys,
           });
           const refundNotificationCopy = buildCourierOrderRefundNotificationCopy({
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
@@ -3594,7 +3662,7 @@ export const action = async ({ request }) => {
         const fullRefundCount = refundedOrders.filter((order) => order.fullRefund).length;
         return {
           ok: true,
-          message: `${refundedOrders.length} reembolso(s) procesado(s) por ${toMoney(totalRefunded)} ${currencyCode}.${
+          message: `Artículos reembolsados correctamente por ${toMoney(totalRefunded)} ${currencyCode}.${
             fullRefundCount ? ` ${fullRefundCount} orden(es) enviada(s) al historial.` : ""
           }`,
           courierBulkAction: "refund",
@@ -5092,10 +5160,16 @@ export default function ReturnsRequests() {
       unitKey: `${String(item.lineItemId || item.id || item.title || "item")}::${index + 1}`,
     }));
   });
+  const alreadyRefundedCourierUnitKeySet = courierRefundedUnitKeySetFromActivities(
+    courierRefundRequest?.courierActivities || [],
+  );
+  const availableCourierRefundUnitItems = courierRefundUnitItems.filter(
+    (item) => !alreadyRefundedCourierUnitKeySet.has(String(item.unitKey || "")),
+  );
   const selectedCourierRefundUnitKeySet = new Set(
     selectedCourierRefundUnitKeys.map((unitKey) => String(unitKey)),
   );
-  const selectedCourierRefundItems = courierRefundUnitItems.filter((item) =>
+  const selectedCourierRefundItems = availableCourierRefundUnitItems.filter((item) =>
     selectedCourierRefundUnitKeySet.has(String(item.unitKey || "")),
   );
   const selectedCourierRefundSubtotal = selectedCourierRefundItems.reduce(
@@ -5103,7 +5177,9 @@ export default function ReturnsRequests() {
     0,
   );
   const selectedCourierRefundIsFull =
-    courierRefundUnitItems.length > 0 && selectedCourierRefundUnitKeys.length === courierRefundUnitItems.length;
+    courierRefundUnitItems.length > 0 &&
+    alreadyRefundedCourierUnitKeySet.size === 0 &&
+    selectedCourierRefundUnitKeys.length === courierRefundUnitItems.length;
   const selectedCourierRefundTotal = selectedCourierRefundIsFull
     ? Number(courierRefundRequest?.estimatedRefund || selectedCourierRefundSubtotal || 0)
     : selectedCourierRefundSubtotal;
@@ -5808,18 +5884,21 @@ export default function ReturnsRequests() {
               {courierRefundUnitItems.map((item) => {
                 const unitKey = String(item.unitKey || "");
                 const checked = selectedCourierRefundUnitKeySet.has(unitKey);
+                const alreadyRefunded = alreadyRefundedCourierUnitKeySet.has(unitKey);
                 const itemTotal = Number(item.unitPrice || 0);
                 return (
                   <label
                     key={unitKey || `${item.title}-${item.unitIndex}`}
                     className={`${styles.courierRefundProductOption} ${
                       checked ? styles.courierRefundProductOptionSelected : ""
-                    }`}
+                    } ${alreadyRefunded ? styles.courierRefundProductOptionDisabled : ""}`}
                   >
                     <input
                       type="checkbox"
                       checked={checked}
+                      disabled={alreadyRefunded}
                       onChange={(event) => {
+                        if (alreadyRefunded) return;
                         setSelectedCourierRefundUnitKeys((currentIds) =>
                           event.target.checked
                             ? [...new Set([...currentIds, unitKey])]
@@ -5846,6 +5925,7 @@ export default function ReturnsRequests() {
                           String(sourceItem.lineItemId || sourceItem.id || "") === String(item.lineItemId || item.id || ""),
                         )?.quantity || 1,
                       ))}</span>
+                      {alreadyRefunded ? <span className={styles.courierRefundAlreadyRefunded}>Ya reembolsado</span> : null}
                     </span>
                     <strong className={styles.courierRefundProductPrice}>
                       ${toMoney(itemTotal)} {item.currencyCode || courierRefundRequest.currencyCode || "MXN"}

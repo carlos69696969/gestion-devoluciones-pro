@@ -1223,6 +1223,16 @@
   background: #f0fdf7;
 }
 
+.courierRefundProductOptionDisabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  background: rgba(246, 246, 247, 0.72);
+}
+
+.courierRefundProductOptionDisabled input {
+  cursor: not-allowed;
+}
+
 .courierRefundProductOption input {
   width: 18px;
   height: 18px;
@@ -1258,6 +1268,17 @@
 .courierRefundProductCopy strong {
   color: #202223;
   font-size: 14px;
+}
+
+.courierRefundAlreadyRefunded {
+  width: fit-content;
+  padding: 3px 8px;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  background: #ecfdf3;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .courierRefundProductPrice {
