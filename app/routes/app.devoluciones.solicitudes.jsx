@@ -7846,6 +7846,15 @@ function CourierOrderCard({
           ) : null}
         </div>
         <div className={styles.courierStatusGroup}>
+          {hasCourierPartialRefund ? (
+            <button
+              className={`${styles.courierBadgeStatus} ${styles.courierBadgeButton} ${styles.courierBadgeStatusPartialRefund}`}
+              type="button"
+              onClick={() => setRefundDetailOpen(true)}
+            >
+              parcialmente reembolsado
+            </button>
+          ) : null}
           {shouldShowFinalAttemptBadge && (finalAttempt > 0 || hasCourierFullRefund) ? (
             <span className={`${styles.courierBadgeStatus} ${attemptBadgeClass}`}>
               {hasCourierFullRefund ? "0 intentos" : courierAttemptCountLabel(finalAttempt)}
@@ -7855,15 +7864,6 @@ function CourierOrderCard({
             <span className={`${styles.courierBadgeStatus} ${styles.courierBadgeAttempt}`}>
               {courierAttemptBadgeLabel(retryAttemptNumber)}
             </span>
-          ) : null}
-          {hasCourierPartialRefund ? (
-            <button
-              className={`${styles.courierBadgeStatus} ${styles.courierBadgeButton} ${styles.courierBadgeStatusPartialRefund}`}
-              type="button"
-              onClick={() => setRefundDetailOpen(true)}
-            >
-              parcialmente reembolsado
-            </button>
           ) : null}
           {hasCourierFullRefund ? (
             <button
