@@ -3668,6 +3668,7 @@ export const action = async ({ request }) => {
             });
           }
           refundedOrders.push({
+            requestId,
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
             amount: refundResult.finalRefund,
             currencyCode: refundResult.currencyCode || "MXN",
@@ -3683,6 +3684,7 @@ export const action = async ({ request }) => {
             fullRefundCount ? ` ${fullRefundCount} orden(es) enviada(s) al historial.` : ""
           }`,
           courierBulkAction: "refund",
+          courierBulkRequestIds: refundedOrders.map((order) => order.requestId).filter(Boolean),
         };
       } catch (error) {
         return {
@@ -3757,12 +3759,16 @@ export const action = async ({ request }) => {
             routeId: null,
           },
         });
-        reprogrammedOrders.push(orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""));
+        reprogrammedOrders.push({
+          requestId,
+          orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
+        });
       }
       return {
         ok: true,
         message: `${reprogrammedOrders.length} orden(es) reprogramada(s) para el siguiente dia.`,
         courierBulkAction: "reprogram",
+        courierBulkRequestIds: reprogrammedOrders.map((order) => order.requestId).filter(Boolean),
       };
     } catch (error) {
       return {
@@ -5312,7 +5318,9 @@ export default function ReturnsRequests() {
     "";
   const [visiblePageSuccessMessage, setVisiblePageSuccessMessage] = useState("");
   const [visibleRefundCardSuccess, setVisibleRefundCardSuccess] = useState(null);
+  const [visibleCourierCardSuccessMessages, setVisibleCourierCardSuccessMessages] = useState({});
   const refundSuccessTimeoutRef = useRef(null);
+  const courierCardSuccessTimeoutRef = useRef(null);
 
   const showRefundActionSuccess = (requestId, message) => {
     if (refundSuccessTimeoutRef.current) {
@@ -5329,10 +5337,33 @@ export default function ReturnsRequests() {
     }, 4000);
   };
 
+  const showCourierCardActionSuccess = (requestIds, message) => {
+    const cleanRequestIds = (Array.isArray(requestIds) ? requestIds : [requestIds])
+      .map((requestId) => String(requestId || "").trim())
+      .filter(Boolean);
+    if (!cleanRequestIds.length || !message) return;
+    if (courierCardSuccessTimeoutRef.current) {
+      window.clearTimeout(courierCardSuccessTimeoutRef.current);
+    }
+    const nextMessages = {};
+    for (const requestId of cleanRequestIds) {
+      nextMessages[requestId] = String(message || "").trim();
+    }
+    setVisiblePageSuccessMessage("");
+    setVisibleCourierCardSuccessMessages(nextMessages);
+    courierCardSuccessTimeoutRef.current = window.setTimeout(() => {
+      setVisibleCourierCardSuccessMessages({});
+      courierCardSuccessTimeoutRef.current = null;
+    }, 4000);
+  };
+
   useEffect(() => {
     return () => {
       if (refundSuccessTimeoutRef.current) {
         window.clearTimeout(refundSuccessTimeoutRef.current);
+      }
+      if (courierCardSuccessTimeoutRef.current) {
+        window.clearTimeout(courierCardSuccessTimeoutRef.current);
       }
     };
   }, []);
@@ -5373,10 +5404,18 @@ export default function ReturnsRequests() {
       );
       return;
     }
+    if (
+      courierRouteActionData?.ok &&
+      courierRouteActionData?.courierBulkAction &&
+      Array.isArray(courierRouteActionData?.courierBulkRequestIds)
+    ) {
+      showCourierCardActionSuccess(courierRouteActionData.courierBulkRequestIds, pageSuccessMessage);
+      return;
+    }
     setVisiblePageSuccessMessage(pageSuccessMessage);
     const timeoutId = window.setTimeout(() => setVisiblePageSuccessMessage(""), 4000);
     return () => window.clearTimeout(timeoutId);
-  }, [pageSuccessMessage, actionData]);
+  }, [pageSuccessMessage, actionData, courierRouteActionData]);
 
   const reviewRequests = requests.filter(
     (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
@@ -5970,6 +6009,7 @@ export default function ReturnsRequests() {
                       sequenceNumber={Number(request.sequenceNumber || 0)}
                       adminCourierView
                       hideTransferredCourierBadge
+                      cardSuccessMessage={visibleCourierCardSuccessMessages[requestId] || ""}
                     />
                   </div>
                 );
@@ -7662,6 +7702,7 @@ function CourierOrderCard({
   isSubmitting = false,
   onBranchPickupDeliver = null,
   onBranchPickupRefund = null,
+  cardSuccessMessage = "",
 }) {
   const [refundDetailOpen, setRefundDetailOpen] = useState(false);
   const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
@@ -7820,11 +7861,13 @@ function CourierOrderCard({
         ? styles.courierBadgeStatusRoute
         : "";
   return (
-    <article
-      className={`${styles.courierCard} ${
-        isReturnCourierLabel(request.courierLabel) ? styles.courierCardReturn : styles.courierCardDelivery
-      } ${courierHistoryView ? styles.courierCardCompactHistory : ""}`}
-    >
+    <>
+      {cardSuccessMessage ? <p className={styles.successMsg}>{cardSuccessMessage}</p> : null}
+      <article
+        className={`${styles.courierCard} ${
+          isReturnCourierLabel(request.courierLabel) ? styles.courierCardReturn : styles.courierCardDelivery
+        } ${courierHistoryView ? styles.courierCardCompactHistory : ""}`}
+      >
       <div className={styles.courierHeader}>
         <div className={styles.courierOrderBadgeGroup}>
           {sequenceNumber > 0 ? (
@@ -7999,7 +8042,8 @@ function CourierOrderCard({
           </div>
         </div>
       ) : null}
-    </article>
+      </article>
+    </>
   );
 }
 

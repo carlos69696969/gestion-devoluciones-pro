@@ -1147,6 +1147,9 @@
 }
 
 .courierBulkActionBar {
+  position: sticky;
+  top: 8px;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1155,7 +1158,8 @@
   padding: 10px 12px;
   border: 1px solid #dfe3e8;
   border-radius: 8px;
-  background: #fafbfb;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(17, 24, 39, 0.08);
 }
 
 .courierBulkActionText {
