@@ -882,6 +882,16 @@
   color: #6b7280;
 }
 
+.courierBadgeButton {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.courierBadgeButton:hover {
+  filter: brightness(0.98);
+  box-shadow: 0 0 0 3px rgba(0, 91, 211, 0.08);
+}
+
 .courierOrderBadgeGroup {
   display: inline-flex;
   align-items: center;
@@ -956,6 +966,12 @@
   background: #ecfdf3;
   border-color: #a7f3d0;
   color: #047857;
+}
+
+.courierBadgeStatusPartialRefund {
+  background: #fff7e6;
+  border-color: #facc15;
+  color: #a16207;
 }
 
 .courierBadgeStatusRoute {
@@ -1248,6 +1264,73 @@
   color: #202223;
   font-size: 14px;
   white-space: nowrap;
+}
+
+.courierRefundDetailModal {
+  width: min(620px, 100%);
+}
+
+.courierRefundDetailList {
+  display: grid;
+  gap: 8px;
+}
+
+.courierRefundDetailItem,
+.courierRefundDetailTotal {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #e1e3e5;
+  border-radius: 10px;
+  background: #fff;
+  color: #202223;
+  font-size: 14px;
+}
+
+.courierRefundDetailItem span {
+  min-width: 0;
+}
+
+.courierRefundDetailItem em {
+  color: #6b7280;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.courierRefundDetailTotal {
+  border-color: #f5b8b8;
+  background: #fff5f5;
+  color: #b42318;
+  font-weight: 800;
+}
+
+.courierRefundNotificationBox {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1f2937;
+  font-size: 13px;
+}
+
+.courierRefundNotificationBox span {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.courierRefundNotificationBox p {
+  margin: 0;
+  font-weight: 800;
+}
+
+.courierRefundNotificationBox pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  line-height: 1.4;
 }
 
 .courierOrdersCount {

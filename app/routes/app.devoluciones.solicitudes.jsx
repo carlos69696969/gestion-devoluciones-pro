@@ -63,6 +63,8 @@ const VIEW_MODE = {
 const COURIER_HISTORY_SINCE = new Date("2026-06-10T00:00:00-06:00");
 const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
 const COURIER_ADMIN_REPROGRAM_ACTION = "courier_admin_order_reprogrammed";
+const COURIER_ORDER_REFUND_DETAIL_ACTION = "courier_order_refund_detail";
+const COURIER_REFUND_DETAIL_ROUTE_PREFIX = "refund:";
 const COURIER_ROUTE_REPROGRAM_ACTIONS = new Set([
   "courier_route_delivery_reprogrammed",
   "courier_route_return_reprogrammed",
@@ -598,6 +600,46 @@ async function emitCourierOrderRefundNotification({
     requestId,
     ...lastFailure,
   });
+}
+
+function encodeCourierRefundDetailRouteId(detail) {
+  try {
+    return `${COURIER_REFUND_DETAIL_ROUTE_PREFIX}${JSON.stringify(detail || {})}`;
+  } catch {
+    return "";
+  }
+}
+
+function parseCourierRefundDetailActivity(activity) {
+  if (String(activity?.action || "").trim() !== COURIER_ORDER_REFUND_DETAIL_ACTION) return null;
+  const rawRouteId = String(activity?.routeId || "").trim();
+  if (!rawRouteId.startsWith(COURIER_REFUND_DETAIL_ROUTE_PREFIX)) return null;
+  try {
+    const parsed = JSON.parse(rawRouteId.slice(COURIER_REFUND_DETAIL_ROUTE_PREFIX.length));
+    const amount = Number(parsed?.amount || 0);
+    return {
+      id: activity.id,
+      orderNumber: parsed?.orderNumber || activity.orderNumber || "",
+      amount: Number.isFinite(amount) ? amount : 0,
+      currencyCode: String(parsed?.currencyCode || "MXN").trim().toUpperCase() || "MXN",
+      fullRefund: Boolean(parsed?.fullRefund),
+      items: Array.isArray(parsed?.items) ? parsed.items : [],
+      notificationTitle: String(parsed?.notificationTitle || "").trim(),
+      notificationMessage: String(parsed?.notificationMessage || "").trim(),
+      notificationSentAt: parsed?.notificationSentAt || activity.createdAt || "",
+      refundedAt: parsed?.refundedAt || activity.createdAt || "",
+      createdAt: activity.createdAt || "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function latestCourierRefundDetail(activities = []) {
+  return [...(activities || [])]
+    .map(parseCourierRefundDetailActivity)
+    .filter(Boolean)
+    .sort((first, second) => parseEventMs(second.refundedAt || second.createdAt) - parseEventMs(first.refundedAt || first.createdAt))[0] || null;
 }
 
 const PICKUP_FAILED_REASON_OPTIONS = [
@@ -3002,7 +3044,7 @@ export const loader = async ({ request }) => {
     ...new Set(
       courierActivitiesForCards
         .map((activity) => String(activity.routeId || "").trim())
-        .filter(Boolean),
+        .filter((routeId) => routeId && !routeId.startsWith(COURIER_REFUND_DETAIL_ROUTE_PREFIX)),
     ),
   ];
   const transferActivitiesForCards = courierRouteIdsForCards.length
@@ -3086,7 +3128,10 @@ export const loader = async ({ request }) => {
       const requestWithAttemptCount = { ...requestRow, attemptCount };
       const requestActivities = courierActivitiesByRequestId.get(String(requestRow.id || "").trim()) || [];
       const requestRouteId = String(
-        [...requestActivities].reverse().find((activity) => String(activity.routeId || "").trim())?.routeId || "",
+        [...requestActivities].reverse().find((activity) => {
+          const routeId = String(activity.routeId || "").trim();
+          return routeId && !routeId.startsWith(COURIER_REFUND_DETAIL_ROUTE_PREFIX);
+        })?.routeId || "",
       ).trim();
       const transferActivity = transferActivityByRouteId.get(requestRouteId);
       const transferAtMs = transferActivity ? new Date(transferActivity.createdAt || "").getTime() : 0;
@@ -3472,6 +3517,14 @@ export const action = async ({ request }) => {
             includeShipping: true,
             selectedLineItemUnitKeys,
           });
+          const refundNotificationCopy = buildCourierOrderRefundNotificationCopy({
+            orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
+            refundAmount: refundResult.finalRefund,
+            currencyCode: refundResult.currencyCode || "MXN",
+            selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
+            refundedItems: refundResult.refundedItems || [],
+          });
+          const refundNotificationSentAt = new Date();
           await emitCourierOrderRefundNotification({
             shopDomain: session.shop,
             requestId,
@@ -3480,6 +3533,27 @@ export const action = async ({ request }) => {
             currencyCode: refundResult.currencyCode || "MXN",
             selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
             refundedItems: refundResult.refundedItems || [],
+          });
+          await prisma.courierActivity.create({
+            data: {
+              shop: session.shop,
+              courierId: Number(latestCourierActivity?.courierId || 0),
+              courierName: String(latestCourierActivity?.courierName || "Administrador").trim(),
+              requestId,
+              orderNumber: orderNumber || null,
+              action: COURIER_ORDER_REFUND_DETAIL_ACTION,
+              routeId: encodeCourierRefundDetailRouteId({
+                orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
+                amount: refundResult.finalRefund,
+                currencyCode: refundResult.currencyCode || "MXN",
+                fullRefund: Boolean(refundResult.selectedAllLineItems),
+                items: refundResult.refundedItems || [],
+                notificationTitle: refundNotificationCopy.title,
+                notificationMessage: refundNotificationCopy.message,
+                notificationSentAt: refundNotificationSentAt.toISOString(),
+                refundedAt: refundNotificationSentAt.toISOString(),
+              }),
+            },
           });
           if (refundResult.selectedAllLineItems) {
             await replaceShopifyOrderCourierStatusTag(admin, requestId, "reembolsada");
@@ -6053,6 +6127,7 @@ function courierHistoryOrderUpdatedMs(order) {
     "courier_return_pickup_attempt_failed",
     "courier_return_reject_after_failed_pickups",
     "courier_branch_pickup_refunded",
+    COURIER_ORDER_REFUND_DETAIL_ACTION,
   ]);
   const finalActivityMs = (order?.courierActivities || []).reduce((latestMs, activity) => {
     const action = String(activity?.action || "").trim().toLowerCase();
@@ -6098,6 +6173,7 @@ function courierHistoryOrderUpdatedMs(order) {
 
 function isCourierCompletedHistoryOrder(order) {
   const status = String(order?.status || "").trim().toLowerCase();
+  if (latestCourierRefundDetail(order?.courierActivities)) return true;
   if (["entregado", "recibido", "recibida", "reembolsada"].includes(status)) return true;
   return (
     isReturnCourierLabel(order?.courierLabel) &&
@@ -7401,7 +7477,11 @@ function CourierOrderCard({
   onBranchPickupDeliver = null,
   onBranchPickupRefund = null,
 }) {
+  const [refundDetailOpen, setRefundDetailOpen] = useState(false);
   const finalAttempt = courierAttemptFromHistoryEvents(request.historyEvents, request.attemptCount);
+  const courierRefundDetail = courierHistoryView ? latestCourierRefundDetail(request.courierActivities) : null;
+  const hasCourierFullRefund = Boolean(courierRefundDetail?.fullRefund);
+  const hasCourierPartialRefund = Boolean(courierRefundDetail && !courierRefundDetail.fullRefund);
   const visibleStatus = statusOverride || request.status;
   const normalizedVisibleStatus = String(visibleStatus || "").trim().toLowerCase();
   const isAdminReprogrammed =
@@ -7576,9 +7656,9 @@ function CourierOrderCard({
           ) : null}
         </div>
         <div className={styles.courierStatusGroup}>
-          {shouldShowFinalAttemptBadge && finalAttempt > 0 ? (
+          {shouldShowFinalAttemptBadge && (finalAttempt > 0 || hasCourierFullRefund) ? (
             <span className={`${styles.courierBadgeStatus} ${attemptBadgeClass}`}>
-              {courierAttemptCountLabel(finalAttempt)}
+              {hasCourierFullRefund ? "0 intentos" : courierAttemptCountLabel(finalAttempt)}
             </span>
           ) : null}
           {showReturnRetryAttemptBadge ? (
@@ -7586,9 +7666,28 @@ function CourierOrderCard({
               {courierAttemptBadgeLabel(retryAttemptNumber)}
             </span>
           ) : null}
-          <span className={`${styles.courierBadgeStatus} ${statusBadgeClass}`}>
-            {isAdminReprogrammed ? displayStatus : courierHistoryStatusLabel(displayStatus)}
-          </span>
+          {hasCourierPartialRefund ? (
+            <button
+              className={`${styles.courierBadgeStatus} ${styles.courierBadgeButton} ${styles.courierBadgeStatusPartialRefund}`}
+              type="button"
+              onClick={() => setRefundDetailOpen(true)}
+            >
+              parcialmente reembolsado
+            </button>
+          ) : null}
+          {hasCourierFullRefund ? (
+            <button
+              className={`${styles.courierBadgeStatus} ${styles.courierBadgeButton} ${styles.courierBadgeStatusSuccess}`}
+              type="button"
+              onClick={() => setRefundDetailOpen(true)}
+            >
+              reembolsado
+            </button>
+          ) : (
+            <span className={`${styles.courierBadgeStatus} ${statusBadgeClass}`}>
+              {isAdminReprogrammed ? displayStatus : courierHistoryStatusLabel(displayStatus)}
+            </span>
+          )}
         </div>
       </div>
       {branchPickupFinalStatus ? (
@@ -7648,6 +7747,56 @@ function CourierOrderCard({
           )}
         </div>
       </details>
+      {refundDetailOpen && courierRefundDetail ? (
+        <div className={styles.reasonModalOverlay} role="dialog" aria-modal="true">
+          <div className={`${styles.reasonModal} ${styles.courierRefundDetailModal}`}>
+            <h3 className={styles.reasonModalTitle}>
+              {courierRefundDetail.fullRefund ? "Reembolso completo" : "Reembolso parcial"}
+            </h3>
+            <p className={styles.reasonOptionText}>
+              Pedido #{courierRefundDetail.orderNumber || request.orderNumber} ·{" "}
+              {formatCourierHistoryDate(courierRefundDetail.refundedAt || courierRefundDetail.createdAt)}
+            </p>
+            <div className={styles.courierRefundDetailList}>
+              {(courierRefundDetail.items || []).length ? (
+                courierRefundDetail.items.map((item, index) => {
+                  const quantity = Math.max(1, Number(item.quantity || 1));
+                  const currency = String(courierRefundDetail.currencyCode || "MXN").trim().toUpperCase() || "MXN";
+                  return (
+                    <div key={`${item.lineItemId || item.title || "item"}-${index}`} className={styles.courierRefundDetailItem}>
+                      <span>
+                        <strong>{item.title || "Producto"}</strong>
+                        {quantity > 1 ? <em> x{quantity}</em> : null}
+                      </span>
+                      <strong>${toMoney(item.total || item.unitPrice || 0)} {currency}</strong>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className={styles.courierRefundDetailItem}>
+                  <span>Productos reembolsados</span>
+                  <strong>${toMoney(courierRefundDetail.amount)} {courierRefundDetail.currencyCode || "MXN"}</strong>
+                </div>
+              )}
+            </div>
+            <div className={styles.courierRefundDetailTotal}>
+              <span>Total reembolsado</span>
+              <strong>${toMoney(courierRefundDetail.amount)} {courierRefundDetail.currencyCode || "MXN"}</strong>
+            </div>
+            <div className={styles.courierRefundNotificationBox}>
+              <strong>Notificación enviada</strong>
+              <span>{formatCourierHistoryDate(courierRefundDetail.notificationSentAt || courierRefundDetail.refundedAt)}</span>
+              {courierRefundDetail.notificationTitle ? <p>{courierRefundDetail.notificationTitle}</p> : null}
+              {courierRefundDetail.notificationMessage ? <pre>{courierRefundDetail.notificationMessage}</pre> : null}
+            </div>
+            <div className={styles.reasonModalActions}>
+              <button className={styles.btn} type="button" onClick={() => setRefundDetailOpen(false)}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
