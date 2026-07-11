@@ -415,11 +415,19 @@ function buildCourierOrderRefundNotificationCopy({
       const itemTotal = Number(item.total || 0);
       return `• ${title}${quantitySuffix} — $${toMoney(itemTotal)} ${currency}`;
     });
+  const refundedItemCount = (refundedItems || []).reduce(
+    (sum, item) => sum + Math.max(1, Number(item?.quantity || 1)),
+    0,
+  );
+  const refundIntro =
+    refundedItemCount === 1
+      ? "Hemos procesado el reembolso del siguiente producto debido a que ya no se encuentra disponible:"
+      : "Hemos procesado el reembolso de los siguientes productos debido a que ya no se encuentran disponibles:";
 
   return {
     title: "Reembolso parcial procesado 💰",
     message: [
-      `📦 Pedido #${cleanOrderNumber}. Hemos procesado el reembolso de los siguientes productos debido a que ya no se encuentran disponibles:`,
+      `📦 Pedido #${cleanOrderNumber}. ${refundIntro}`,
       ...(itemLines.length ? itemLines : [`• Productos seleccionados — ${amountLabel}`]),
       `Total reembolsado: ${amountLabel} 💰`,
       "El monto se reflejará en tu cuenta de 5 a 10 días hábiles, dependiendo de tu banco. Los demás artículos de tu pedido sí serán enviados y recibirás una notificación cuando vayan en camino. Agradecemos tu comprensión y la confianza que has depositado en Cariana. ✨",
