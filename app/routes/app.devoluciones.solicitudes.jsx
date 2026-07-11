@@ -4890,6 +4890,37 @@ async function fetchCourierHistoryOrders(admin) {
                 deliveryCategory
               }
             }
+            lineItems(first: 100) {
+              edges {
+                node {
+                  id
+                  title
+                  quantity
+                  originalUnitPriceSet {
+                    shopMoney { amount currencyCode }
+                  }
+                  variant {
+                    id
+                    title
+                    selectedOptions {
+                      name
+                      value
+                    }
+                    image {
+                      url
+                      altText
+                    }
+                  }
+                  product {
+                    id
+                    featuredImage {
+                      url
+                      altText
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4912,6 +4943,19 @@ async function fetchCourierHistoryOrders(admin) {
     .map((orderNode) => {
       const shipping = orderNode.shippingAddress || null;
       const billing = orderNode.billingAddress || null;
+      const lineItems = (orderNode.lineItems?.edges || []).map(({ node }) => ({
+        id: node.id,
+        lineItemId: node.id,
+        title: String(node.title || "").trim(),
+        quantity: Math.max(1, Number(node.quantity || 1)),
+        unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+        currencyCode: String(node.originalUnitPriceSet?.shopMoney?.currencyCode || "MXN"),
+        variantId: node.variant?.id || "",
+        productId: node.product?.id || "",
+        variantSummary: formatVariantSummary(node.variant),
+        imageUrl: node.variant?.image?.url || node.product?.featuredImage?.url || "",
+        imageAlt: node.variant?.image?.altText || node.product?.featuredImage?.altText || node.title || "",
+      }));
       return {
         id: orderNode.id,
         orderNumber: String(orderNode.name || "").replace("#", ""),
