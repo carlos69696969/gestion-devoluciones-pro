@@ -387,6 +387,44 @@ function buildBranchPickupRefundNotificationCopy(orderNumber, refundAmount, curr
   };
 }
 
+function buildCourierOrderRefundNotificationCopy({
+  orderNumber,
+  refundAmount,
+  currencyCode = "MXN",
+  selectedAllLineItems = false,
+  refundedItems = [],
+}) {
+  const cleanOrderNumber = String(orderNumber || "").replace(/^#/, "").trim() || "****";
+  const currency = String(currencyCode || "MXN").trim().toUpperCase() || "MXN";
+  const amountLabel = `$${toMoney(refundAmount)} ${currency}`;
+  if (selectedAllLineItems) {
+    return {
+      title: "Reembolso realizado 💰",
+      message: `📦 Pedido #${cleanOrderNumber}. Durante la preparación de tu pedido detectamos que el producto ya no estaba disponible. Para evitar cualquier demora, procesamos el reembolso de tu compra por la cantidad de ${amountLabel}. El monto se reflejará en tu cuenta de 5 a 10 días hábiles, dependiendo de tu banco. Lamentamos este inconveniente y esperamos poder atenderte nuevamente pronto. Att Cariana. ✨`,
+    };
+  }
+
+  const itemLines = (refundedItems || [])
+    .filter((item) => String(item?.title || "").trim())
+    .map((item) => {
+      const quantity = Math.max(1, Number(item.quantity || 1));
+      const title = String(item.title || "").trim();
+      const quantitySuffix = quantity > 1 ? ` x${quantity}` : "";
+      const itemTotal = Number(item.total || 0);
+      return `• ${title}${quantitySuffix} — $${toMoney(itemTotal)} ${currency}`;
+    });
+
+  return {
+    title: "Reembolso parcial procesado 💰",
+    message: [
+      `📦 Pedido #${cleanOrderNumber}. Hemos procesado el reembolso de los siguientes productos debido a que ya no se encuentran disponibles:`,
+      ...(itemLines.length ? itemLines : [`• Productos seleccionados — ${amountLabel}`]),
+      `Total reembolsado: ${amountLabel} 💰`,
+      "El monto se reflejará en tu cuenta de 5 a 10 días hábiles, dependiendo de tu banco. Los demás artículos de tu pedido sí serán enviados y recibirás una notificación cuando vayan en camino. Agradecemos tu comprensión y la confianza que has depositado en Cariana. ✨",
+    ].join("\n"),
+  };
+}
+
 function buildRefundProcessedMessage(requestRow, finalRefund) {
   const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
   return `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de $${toMoney(finalRefund)} MXN. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙`;
@@ -463,6 +501,98 @@ async function emitBranchPickupRefundNotification({ shopDomain, requestId, order
   }
 
   console.error("Failed to emit branch pickup refund notification", {
+    shopDomain,
+    orderNumber,
+    requestId,
+    ...lastFailure,
+  });
+}
+
+async function emitCourierOrderRefundNotification({
+  shopDomain,
+  requestId,
+  orderNumber,
+  refundAmount,
+  currencyCode,
+  selectedAllLineItems,
+  refundedItems,
+}) {
+  if (!shopDomain || !requestId || !NOTIFICATIONS_API_BASE_URL) {
+    return;
+  }
+  const copy = buildCourierOrderRefundNotificationCopy({
+    orderNumber,
+    refundAmount,
+    currencyCode,
+    selectedAllLineItems,
+    refundedItems,
+  });
+  const endpoints = NOTIFICATIONS_API_KEY
+    ? [
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/api/orders/manual-status`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+            "x-api-key": NOTIFICATIONS_API_KEY,
+          },
+        },
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/proxy/orders/manual-status`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+          },
+        },
+      ]
+    : [
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/proxy/orders/manual-status`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+          },
+        },
+      ];
+
+  let lastFailure = null;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint.url, {
+        method: "POST",
+        headers: endpoint.headers,
+        body: JSON.stringify({
+          shopDomain,
+          orderId: requestId,
+          orderNumber,
+          status: "refund_processed",
+          title: copy.title,
+          message: copy.message,
+        }),
+      });
+      const responsePayload = await response.json().catch(() => null);
+      if (response.ok && !responsePayload?.result?.skipped) {
+        return;
+      }
+      lastFailure = {
+        endpoint: endpoint.url,
+        status: response.status,
+        detail: String(
+          responsePayload?.error ||
+            responsePayload?.detail ||
+            responsePayload?.result?.reason ||
+            "No se pudo enviar la notificacion de reembolso de orden del repartidor.",
+        ).slice(0, 300),
+      };
+    } catch (error) {
+      lastFailure = {
+        endpoint: endpoint.url,
+        error: String(error?.message || error || "unknown"),
+      };
+    }
+  }
+
+  console.error("Failed to emit courier order refund notification", {
     shopDomain,
     orderNumber,
     requestId,
@@ -2533,6 +2663,7 @@ function parseSelectedLineItemUnitCounts(selectedLineItemUnitKeys = []) {
 function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemUnitKeys = []) {
   const selectedUnitCountsByLineId = parseSelectedLineItemUnitCounts(selectedLineItemUnitKeys);
   const refundLineItems = [];
+  const refundedItems = [];
   let subtotal = 0;
   let totalRefundableQuantity = 0;
   let selectedRefundQuantity = 0;
@@ -2549,9 +2680,16 @@ function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemUnit
       quantity: selectedQuantity,
       restockType: "NO_RESTOCK",
     });
+    refundedItems.push({
+      lineItemId: line.id,
+      title: line.title || "Producto",
+      quantity: selectedQuantity,
+      unitPrice: Number(line.unitPrice || 0),
+      total: Number(line.unitPrice || 0) * selectedQuantity,
+    });
   }
   const selectedAllLineItems = selectedRefundQuantity > 0 && selectedRefundQuantity === totalRefundableQuantity;
-  return { refundLineItems, subtotal, selectedAllLineItems };
+  return { refundLineItems, refundedItems, subtotal, selectedAllLineItems };
 }
 
 async function replaceShopifyOrderCourierStatusTag(admin, shopifyOrderId, statusTag) {
@@ -2590,7 +2728,7 @@ async function refundShopifyOrderToOriginalPayment({
   selectedLineItemUnitKeys = [],
 }) {
   const snapshot = await fetchOrderSnapshot(admin, shopifyOrderId);
-  const { refundLineItems, subtotal, selectedAllLineItems } = mapOrderItemsToFullRefundLineItems(
+  const { refundLineItems, refundedItems, subtotal, selectedAllLineItems } = mapOrderItemsToFullRefundLineItems(
     snapshot.lineItems,
     selectedLineItemUnitKeys,
   );
@@ -2649,6 +2787,7 @@ async function refundShopifyOrderToOriginalPayment({
     refundedSubtotal: finalRefund,
     currencyCode: snapshot.currencyCode || "MXN",
     selectedAllLineItems,
+    refundedItems,
   };
 }
 
@@ -3332,6 +3471,15 @@ export const action = async ({ request }) => {
             notePrefix: `Reembolso pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} desde ordenes repartidor`,
             includeShipping: true,
             selectedLineItemUnitKeys,
+          });
+          await emitCourierOrderRefundNotification({
+            shopDomain: session.shop,
+            requestId,
+            orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
+            refundAmount: refundResult.finalRefund,
+            currencyCode: refundResult.currencyCode || "MXN",
+            selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
+            refundedItems: refundResult.refundedItems || [],
           });
           if (refundResult.selectedAllLineItems) {
             await replaceShopifyOrderCourierStatusTag(admin, requestId, "reembolsada");
