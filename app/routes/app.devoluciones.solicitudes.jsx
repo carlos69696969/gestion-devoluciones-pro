@@ -3000,7 +3000,8 @@ export const loader = async ({ request }) => {
     viewMode === VIEW_MODE.COURIER ||
     viewMode === VIEW_MODE.COURIER_HISTORY ||
     viewMode === VIEW_MODE.BRANCH_PICKUP ||
-    viewMode === VIEW_MODE.COURIERS
+    viewMode === VIEW_MODE.COURIERS ||
+    viewMode === VIEW_MODE.PREPARERS
       ? []
       : await prisma.returnRequest.findMany({
           where,
@@ -3043,7 +3044,7 @@ export const loader = async ({ request }) => {
   }
 
   const courierOrdersRaw =
-    viewMode === VIEW_MODE.COURIER
+    viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS
       ? [
           ...(await fetchCourierOrders(admin)).map((requestRow) => ({
             ...requestRow,
@@ -3295,6 +3296,13 @@ export const loader = async ({ request }) => {
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         })
       : [];
+  const preparerAssignments =
+    viewMode === VIEW_MODE.PREPARERS
+      ? await prisma.preparerAssignment.findMany({
+          where: { shop: session.shop },
+          orderBy: [{ sequence: "asc" }, { id: "asc" }],
+        })
+      : [];
   if (
     (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryActivity) &&
     couriers.length
@@ -3361,6 +3369,7 @@ export const loader = async ({ request }) => {
     courierOrders: visibleCourierOrders,
     couriers,
     preparers,
+    preparerAssignments,
     courierActivities,
     courierRouteSnapshots,
     plannedCourierRoutes,
@@ -3984,6 +3993,81 @@ export const action = async ({ request }) => {
       return { ok: false, error: "No se encontro el preparador." };
     }
     return { ok: true, message: "Preparador dado de baja correctamente." };
+  }
+
+  if (intent === "plan_preparer_orders") {
+    const selectedPreparerIds = formData
+      .getAll("preparerIds")
+      .map((preparerId) => Number(preparerId))
+      .filter((preparerId) => Number.isInteger(preparerId) && preparerId > 0);
+    const selectedOrderIds = formData
+      .getAll("routeOrderIds")
+      .map((orderId) => String(orderId || "").trim())
+      .filter(Boolean);
+    let visibleOrders = [];
+    try {
+      const parsedOrders = JSON.parse(String(formData.get("routeOrdersJson") || "[]"));
+      visibleOrders = Array.isArray(parsedOrders) ? parsedOrders : [];
+    } catch {
+      visibleOrders = [];
+    }
+    const preparers = await prisma.preparer.findMany({
+      where: selectedPreparerIds.length
+        ? { shop: session.shop, id: { in: selectedPreparerIds } }
+        : { shop: session.shop, id: { in: [] } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    if (!preparers.length) {
+      return { ok: false, error: "Selecciona al menos un preparador para distribuir las ordenes." };
+    }
+    const orderById = new Map();
+    for (const order of visibleOrders) {
+      const orderId = String(order?.id || "").trim();
+      if (orderId && !orderById.has(orderId)) orderById.set(orderId, order);
+    }
+    const orders = (selectedOrderIds.length
+      ? selectedOrderIds.map((orderId) => orderById.get(orderId)).filter(Boolean)
+      : visibleOrders
+    ).filter((order) => String(order?.id || "").trim());
+    if (!orders.length) {
+      return { ok: false, error: "No hay ordenes pendientes para distribuir." };
+    }
+
+    const baseCount = Math.floor(orders.length / preparers.length);
+    const remainder = orders.length % preparers.length;
+    let orderIndex = 0;
+    const assignments = [];
+    for (const [preparerIndex, preparer] of preparers.entries()) {
+      const countForPreparer = baseCount + (preparerIndex >= preparers.length - remainder ? 1 : 0);
+      const assignedOrders = orders.slice(orderIndex, orderIndex + countForPreparer);
+      orderIndex += countForPreparer;
+      for (const order of assignedOrders) {
+        const sequence = assignments.length + 1;
+        assignments.push({
+          shop: session.shop,
+          preparerId: preparer.id,
+          preparerName: preparer.name,
+          requestId: String(order.id || "").trim(),
+          orderNumber: String(order.orderNumber || "").trim() || null,
+          sequence,
+          status: "assigned",
+          orderData: order,
+          completedAt: null,
+        });
+      }
+    }
+
+    await prisma.$transaction([
+      prisma.preparerAssignment.deleteMany({
+        where: { shop: session.shop },
+      }),
+      ...(assignments.length ? [prisma.preparerAssignment.createMany({ data: assignments })] : []),
+    ]);
+
+    return {
+      ok: true,
+      message: `${assignments.length} orden(es) distribuidas entre ${preparers.length} preparador(es).`,
+    };
   }
 
   if (intent === "transfer_courier_route") {
@@ -5297,6 +5381,7 @@ export default function ReturnsRequests() {
     courierOrders,
     couriers = [],
     preparers = [],
+    preparerAssignments = [],
     courierActivities = [],
     courierRouteSnapshots = [],
     plannedCourierRoutes = [],
@@ -6392,7 +6477,13 @@ export default function ReturnsRequests() {
       ) : null}
 
       {viewMode === VIEW_MODE.PREPARERS ? (
-        <PreparersSection preparers={preparers} isSubmitting={isSubmitting} />
+        <PreparersSection
+          preparers={preparers}
+          preparerAssignments={preparerAssignments}
+          courierOrders={courierOrders}
+          routeOrdersPayload={courierRouteOrdersPayload}
+          isSubmitting={isSubmitting}
+        />
       ) : null}
     </s-page>
   );
@@ -7769,11 +7860,29 @@ function CouriersSection({ couriers, isSubmitting }) {
   );
 }
 
-function PreparersSection({ preparers, isSubmitting }) {
+function PreparersSection({ preparers, preparerAssignments = [], courierOrders = [], routeOrdersPayload = [], isSubmitting }) {
   const location = useLocation();
+  const distributeFetcher = useFetcher();
   const [showForm, setShowForm] = useState(false);
   const [code, setCode] = useState("");
+  const [showDistributeModal, setShowDistributeModal] = useState(false);
+  const [selectedPreparerIds, setSelectedPreparerIds] = useState([]);
   const preparersAction = `${location.pathname}${location.search || ""}`;
+  const isDistributing = distributeFetcher.state !== "idle";
+  const selectedPreparerIdSet = new Set(selectedPreparerIds.map((preparerId) => String(preparerId)));
+  const canDistributeOrders = selectedPreparerIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isDistributing;
+  const assignmentCountByPreparerId = preparerAssignments.reduce((counts, assignment) => {
+    const preparerId = String(assignment.preparerId || "");
+    if (!preparerId) return counts;
+    counts.set(preparerId, Number(counts.get(preparerId) || 0) + 1);
+    return counts;
+  }, new Map());
+
+  useEffect(() => {
+    if (!distributeFetcher.data?.ok) return;
+    setShowDistributeModal(false);
+    setSelectedPreparerIds([]);
+  }, [distributeFetcher.data]);
 
   const generateCode = () => {
     setCode(String(Math.floor(100000 + Math.random() * 900000)));
@@ -7782,13 +7891,26 @@ function PreparersSection({ preparers, isSubmitting }) {
   return (
     <s-section heading="Preparadores">
       <div className={`${styles.wrap} ${styles.couriersLayout}`}>
-        <button
-          className={`${styles.btn} ${styles.btnPrimary}`}
-          type="button"
-          onClick={() => setShowForm((current) => !current)}
-        >
-          Agregar preparador
-        </button>
+        <div className={styles.courierOrdersHeader}>
+          <button
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            type="button"
+            onClick={() => setShowForm((current) => !current)}
+          >
+            Agregar preparador
+          </button>
+          <button
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            type="button"
+            disabled={isSubmitting || isDistributing || preparers.length === 0 || courierOrders.length === 0}
+            onClick={() => {
+              setSelectedPreparerIds([]);
+              setShowDistributeModal(true);
+            }}
+          >
+            Distribuir órdenes
+          </button>
+        </div>
 
         {showForm ? (
           <Form method="post" action={preparersAction} className={`${styles.card} ${styles.courierCreateForm}`}>
@@ -7832,6 +7954,7 @@ function PreparersSection({ preparers, isSubmitting }) {
               </summary>
               <div className={styles.courierDirectoryCode}>
                 <div>Codigo unico: <strong>{preparer.code}</strong></div>
+                <div>Ordenes asignadas: <strong>{assignmentCountByPreparerId.get(String(preparer.id)) || 0}</strong></div>
                 <div className={styles.courierDirectoryActions}>
                   <Form
                     method="post"
@@ -7853,7 +7976,82 @@ function PreparersSection({ preparers, isSubmitting }) {
             </details>
           ))}
         </div>
+        {distributeFetcher.data?.error ? (
+          <p className={styles.errorMsg}>{distributeFetcher.data.error}</p>
+        ) : null}
+        {distributeFetcher.data?.message ? (
+          <p className={styles.successMsg}>{distributeFetcher.data.message}</p>
+        ) : null}
       </div>
+      {showDistributeModal ? (
+        <div className={styles.courierRouteModalBackdrop} role="presentation">
+          <div
+            className={styles.courierRouteModal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="preparer-route-modal-title"
+          >
+            <div className={styles.courierRouteModalHeader}>
+              <h3 id="preparer-route-modal-title">Selecciona preparadores</h3>
+              <button
+                className={styles.courierRouteModalClose}
+                type="button"
+                aria-label="Cerrar"
+                onClick={() => setShowDistributeModal(false)}
+              >
+                x
+              </button>
+            </div>
+            <p className={styles.courierRouteModalText}>
+              Se distribuirán {courierOrders.length} orden(es) de forma equitativa y por bloques consecutivos.
+            </p>
+            <distributeFetcher.Form method="post" action={preparersAction} className={styles.courierRouteModalForm}>
+              <input type="hidden" name="intent" value="plan_preparer_orders" />
+              <input type="hidden" name="routeOrdersJson" value={JSON.stringify(routeOrdersPayload)} />
+              {courierOrders.map((order) => (
+                <input key={order.id} type="hidden" name="routeOrderIds" value={String(order.id || "")} />
+              ))}
+              <div className={styles.courierRouteCourierList}>
+                {preparers.map((preparer) => {
+                  const preparerId = String(preparer.id);
+                  const isChecked = selectedPreparerIdSet.has(preparerId);
+                  return (
+                    <label key={preparer.id} className={styles.courierRouteCourierOption}>
+                      <input
+                        type="checkbox"
+                        name="preparerIds"
+                        value={preparerId}
+                        checked={isChecked}
+                        onChange={(event) => {
+                          setSelectedPreparerIds((currentIds) =>
+                            event.target.checked
+                              ? [...currentIds, preparerId]
+                              : currentIds.filter((currentId) => String(currentId) !== preparerId),
+                          );
+                        }}
+                      />
+                      <span>{preparer.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className={styles.courierRouteModalActions}>
+                <button
+                  className={styles.btn}
+                  type="button"
+                  onClick={() => setShowDistributeModal(false)}
+                  disabled={isSubmitting || isDistributing}
+                >
+                  Cancelar
+                </button>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={!canDistributeOrders}>
+                  Confirmar distribucion
+                </button>
+              </div>
+            </distributeFetcher.Form>
+          </div>
+        </div>
+      ) : null}
     </s-section>
   );
 }

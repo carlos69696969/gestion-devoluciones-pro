@@ -131,6 +131,86 @@
   font-size: 18px;
 }
 
+.preparerSummary {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+
+.preparerGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.preparerStatusBadge {
+  text-transform: capitalize;
+}
+
+.preparerProductList {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.preparerProductItem {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.preparerProductImage,
+.preparerProductImagePlaceholder {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  border: 1px solid #dfe3e8;
+  background: #fff;
+}
+
+.preparerProductImage {
+  object-fit: cover;
+}
+
+.preparerProductImagePlaceholder {
+  display: block;
+  border-style: dashed;
+}
+
+.preparerProductCopy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  color: #6d7175;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.preparerProductCopy strong {
+  color: #202223;
+  font-size: 14px;
+}
+
+.preparerActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.preparerActions form {
+  min-width: 0;
+}
+
+.preparerActions button {
+  width: 100%;
+}
+
 .missingOrderList {
   display: flex;
   flex-wrap: wrap;

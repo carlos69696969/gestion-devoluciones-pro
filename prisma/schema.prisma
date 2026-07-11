@@ -130,6 +130,25 @@ model Preparer {
   @@index([shop, createdAt])
 }
 
+model PreparerAssignment {
+  id           Int       @id @default(autoincrement())
+  shop         String
+  preparerId   Int
+  preparerName String
+  requestId    String
+  orderNumber  String?
+  sequence     Int       @default(0)
+  status       String    @default("assigned")
+  orderData    Json
+  assignedAt   DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  completedAt  DateTime?
+
+  @@unique([shop, requestId])
+  @@index([shop, preparerId, status])
+  @@index([shop, assignedAt])
+}
+
 model CourierActivity {
   id          Int      @id @default(autoincrement())
   shop        String

@@ -44,10 +44,20 @@ export async function loader({ request }) {
   const url = new URL(request.url);
   const shop = cleanShop(url.searchParams.get("shop"));
   const access = await getPreparerAccess(request);
+  const assignments = access
+    ? await prisma.preparerAssignment.findMany({
+        where: {
+          shop: access.shop,
+          preparerId: access.id,
+        },
+        orderBy: [{ sequence: "asc" }, { id: "asc" }],
+      })
+    : [];
   return {
     shop: access?.shop || shop,
     preparerName: access?.name || "",
     isLoggedIn: Boolean(access),
+    assignments,
   };
 }
 
@@ -64,6 +74,25 @@ export async function action({ request }) {
         "Set-Cookie": await accessCookie.serialize("", { maxAge: 0 }),
       },
     });
+  }
+
+  if (intent === "preparer_mark_ready" || intent === "preparer_mark_not_located") {
+    const access = await getPreparerAccess(request);
+    if (!access) return { ok: false, error: "Inicia sesion nuevamente." };
+    const assignmentId = Number(formData.get("assignmentId") || 0);
+    if (!assignmentId) return { ok: false, error: "Orden invalida." };
+    await prisma.preparerAssignment.updateMany({
+      where: {
+        id: assignmentId,
+        shop: access.shop,
+        preparerId: access.id,
+      },
+      data: {
+        status: intent === "preparer_mark_ready" ? "ready" : "not_located",
+        completedAt: new Date(),
+      },
+    });
+    return redirect(`/preparador?shop=${encodeURIComponent(access.shop)}`);
   }
 
   const code = String(formData.get("code") || "").trim();
@@ -86,8 +115,15 @@ export async function action({ request }) {
   });
 }
 
+function preparerStatusLabel(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "ready") return "listo";
+  if (normalized === "not_located") return "no localizado";
+  return "pendiente";
+}
+
 export default function PreparerPortal() {
-  const { shop, preparerName, isLoggedIn } = useLoaderData();
+  const { shop, preparerName, isLoggedIn, assignments = [] } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -95,19 +131,96 @@ export default function PreparerPortal() {
   if (isLoggedIn) {
     return (
       <main className={styles.page}>
-        <div className={styles.accessContainer}>
-          <section className={`${styles.card} ${styles.accessCard}`}>
-            <p className={styles.eyebrow}>Portal del preparador</p>
-            <h1 className={styles.cardTitle}>Hola, {preparerName}</h1>
-            <p className={styles.subtitle}>Tu acceso esta activo. Aqui apareceran las ordenes de preparacion.</p>
-            <Form method="post" className={styles.accessForm}>
+        <div className={styles.container}>
+          <header className={styles.header}>
+            <div>
+              <p className={styles.eyebrow}>Portal del preparador</p>
+              <h1 className={styles.title}>Cariana preparadores</h1>
+              <p className={styles.subtitle}>
+                {preparerName ? `Preparador: ${preparerName}` : "Ordenes asignadas para preparacion."}
+              </p>
+            </div>
+            <Form method="post">
               <input type="hidden" name="intent" value="logout" />
               <input type="hidden" name="shop" value={shop || ""} />
               <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
                 Cerrar sesion
               </button>
             </Form>
-          </section>
+          </header>
+
+          <div className={styles.preparerSummary}>
+            <span className={styles.counterBadge}>Ordenes {assignments.length}</span>
+          </div>
+
+          {assignments.length ? (
+            <div className={styles.preparerGrid}>
+              {assignments.map((assignment) => {
+                const order = assignment.orderData || {};
+                const items = Array.isArray(order.items) ? order.items : [];
+                const status = String(assignment.status || "assigned").trim().toLowerCase();
+                const isCompleted = status === "ready" || status === "not_located";
+                return (
+                  <article key={assignment.id} className={styles.card}>
+                    <div className={styles.cardHeader}>
+                      <div>
+                        <p className={styles.eyebrow}>Orden #{order.orderNumber || assignment.orderNumber || "-"}</p>
+                        <h2 className={styles.cardTitle}>{order.customerName || "Cliente"}</h2>
+                      </div>
+                      <span className={`${styles.counterBadge} ${styles.preparerStatusBadge}`}>
+                        {preparerStatusLabel(status)}
+                      </span>
+                    </div>
+                    <div className={styles.preparerProductList}>
+                      {items.length ? (
+                        items.map((item, index) => (
+                          <div key={`${item.lineItemId || item.id || item.title || "item"}-${index}`} className={styles.preparerProductItem}>
+                            {item.imageUrl ? (
+                              <img
+                                className={styles.preparerProductImage}
+                                src={item.imageUrl}
+                                alt={item.imageAlt || item.title || "Producto"}
+                              />
+                            ) : (
+                              <span className={styles.preparerProductImagePlaceholder} />
+                            )}
+                            <div className={styles.preparerProductCopy}>
+                              <strong>{item.title || "Producto"}</strong>
+                              {item.variantSummary ? <span>{item.variantSummary}</span> : null}
+                              <span>Cantidad: {Math.max(1, Number(item.quantity || 1))}</span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className={styles.subtitle}>No hay productos registrados para esta orden.</p>
+                      )}
+                    </div>
+                    <div className={styles.preparerActions}>
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="preparer_mark_ready" />
+                        <input type="hidden" name="assignmentId" value={assignment.id} />
+                        <button className={styles.accessButton} type="submit" disabled={isSubmitting || isCompleted}>
+                          Listo
+                        </button>
+                      </Form>
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="preparer_mark_not_located" />
+                        <input type="hidden" name="assignmentId" value={assignment.id} />
+                        <button className={styles.missingButton} type="submit" disabled={isSubmitting || isCompleted}>
+                          No localizado
+                        </button>
+                      </Form>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <section className={styles.card}>
+              <p className={styles.subtitle}>Todavia no tienes ordenes asignadas para preparar.</p>
+            </section>
+          )}
+          {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
         </div>
       </main>
     );

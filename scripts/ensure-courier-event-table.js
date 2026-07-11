@@ -64,6 +64,39 @@ await prisma.$executeRawUnsafe(`
 `);
 
 await prisma.$executeRawUnsafe(`
+  CREATE TABLE IF NOT EXISTS "PreparerAssignment" (
+    "id" SERIAL NOT NULL,
+    "shop" TEXT NOT NULL,
+    "preparerId" INTEGER NOT NULL,
+    "preparerName" TEXT NOT NULL,
+    "requestId" TEXT NOT NULL,
+    "orderNumber" TEXT,
+    "sequence" INTEGER NOT NULL DEFAULT 0,
+    "status" TEXT NOT NULL DEFAULT 'assigned',
+    "orderData" JSONB NOT NULL,
+    "assignedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "completedAt" TIMESTAMP(3),
+    CONSTRAINT "PreparerAssignment_pkey" PRIMARY KEY ("id")
+  )
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE UNIQUE INDEX IF NOT EXISTS "PreparerAssignment_shop_requestId_key"
+  ON "PreparerAssignment"("shop", "requestId")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "PreparerAssignment_shop_preparerId_status_idx"
+  ON "PreparerAssignment"("shop", "preparerId", "status")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "PreparerAssignment_shop_assignedAt_idx"
+  ON "PreparerAssignment"("shop", "assignedAt")
+`);
+
+await prisma.$executeRawUnsafe(`
   CREATE TABLE IF NOT EXISTS "CourierActivity" (
     "id" SERIAL NOT NULL,
     "shop" TEXT NOT NULL,
