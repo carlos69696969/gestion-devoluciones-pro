@@ -6261,7 +6261,7 @@ function courierHistoryOrderUpdatedMs(order) {
 
 function isCourierCompletedHistoryOrder(order) {
   const status = String(order?.status || "").trim().toLowerCase();
-  if (latestCourierRefundDetail(order?.courierActivities)) return true;
+  if (latestCourierRefundDetail(order?.courierActivities)?.fullRefund) return true;
   if (["entregado", "recibido", "recibida", "reembolsada"].includes(status)) return true;
   return (
     isReturnCourierLabel(order?.courierLabel) &&
