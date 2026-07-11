@@ -2783,6 +2783,7 @@ function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemUnit
     refundedItems.push({
       lineItemId: line.id,
       title: line.title || "Producto",
+      variantSummary: String(line.variantSummary || "").trim(),
       quantity: selectedQuantity,
       unitPrice: Number(line.unitPrice || 0),
       total: Number(line.unitPrice || 0) * selectedQuantity,
@@ -7850,11 +7851,23 @@ function CourierOrderCard({
                 courierRefundDetail.items.map((item, index) => {
                   const quantity = Math.max(1, Number(item.quantity || 1));
                   const currency = String(courierRefundDetail.currencyCode || "MXN").trim().toUpperCase() || "MXN";
+                  const matchingRequestItem = (request.items || []).find((requestItem) => {
+                    const itemLineId = String(item.lineItemId || "").trim();
+                    const requestLineId = String(requestItem.lineItemId || "").trim();
+                    if (itemLineId && requestLineId && itemLineId === requestLineId) return true;
+                    return (
+                      String(item.title || "").trim().toLowerCase() &&
+                      String(item.title || "").trim().toLowerCase() ===
+                        String(requestItem.title || "").trim().toLowerCase()
+                    );
+                  });
+                  const variantSummary = String(item.variantSummary || matchingRequestItem?.variantSummary || "").trim();
                   return (
                     <div key={`${item.lineItemId || item.title || "item"}-${index}`} className={styles.courierRefundDetailItem}>
                       <span>
                         <strong>{item.title || "Producto"}</strong>
                         {quantity > 1 ? <em> x{quantity}</em> : null}
+                        {variantSummary ? <small>{variantSummary}</small> : null}
                       </span>
                       <strong>${toMoney(item.total || item.unitPrice || 0)} {currency}</strong>
                     </div>

@@ -1310,7 +1310,15 @@
 }
 
 .courierRefundDetailItem span {
+  display: grid;
+  gap: 2px;
   min-width: 0;
+}
+
+.courierRefundDetailItem small {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .courierRefundDetailItem em {
