@@ -7770,8 +7770,10 @@ function CouriersSection({ couriers, isSubmitting }) {
 }
 
 function PreparersSection({ preparers, isSubmitting }) {
+  const location = useLocation();
   const [showForm, setShowForm] = useState(false);
   const [code, setCode] = useState("");
+  const preparersAction = `${location.pathname}${location.search || ""}`;
 
   const generateCode = () => {
     setCode(String(Math.floor(100000 + Math.random() * 900000)));
@@ -7789,7 +7791,7 @@ function PreparersSection({ preparers, isSubmitting }) {
         </button>
 
         {showForm ? (
-          <Form method="post" className={`${styles.card} ${styles.courierCreateForm}`}>
+          <Form method="post" action={preparersAction} className={`${styles.card} ${styles.courierCreateForm}`}>
             <input type="hidden" name="intent" value="create_preparer" />
             <label className={styles.label}>
               Nombre del preparador
@@ -7833,7 +7835,7 @@ function PreparersSection({ preparers, isSubmitting }) {
                 <div className={styles.courierDirectoryActions}>
                   <Form
                     method="post"
-                    action="/app/devoluciones/solicitudes/preparers"
+                    action={preparersAction}
                     onSubmit={(event) => {
                       if (!window.confirm(`¿Deseas dar de baja a ${preparer.name}?`)) {
                         event.preventDefault();
