@@ -2383,7 +2383,14 @@ async function fetchOrderSnapshot(admin, orderId) {
               id
               title
               quantity
-              variant { id }
+              variant {
+                id
+                title
+                selectedOptions {
+                  name
+                  value
+                }
+              }
               product { id }
               originalUnitPriceSet {
                 shopMoney { amount currencyCode }
@@ -2419,6 +2426,7 @@ async function fetchOrderSnapshot(admin, orderId) {
       quantity: Number(node.quantity || 0),
       variantId: node.variant?.id || "",
       productId: node.product?.id || "",
+      variantSummary: formatVariantSummary(node.variant),
       unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
     })),
     transactions: (order.transactions || []).map((transaction) => ({
@@ -4749,6 +4757,37 @@ async function fetchBranchPickupCourierOrders(admin) {
                 deliveryCategory
               }
             }
+            lineItems(first: 100) {
+              edges {
+                node {
+                  id
+                  title
+                  quantity
+                  originalUnitPriceSet {
+                    shopMoney { amount currencyCode }
+                  }
+                  variant {
+                    id
+                    title
+                    selectedOptions {
+                      name
+                      value
+                    }
+                    image {
+                      url
+                      altText
+                    }
+                  }
+                  product {
+                    id
+                    featuredImage {
+                      url
+                      altText
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4774,6 +4813,19 @@ async function fetchBranchPickupCourierOrders(admin) {
     .map((orderNode) => {
       const shipping = orderNode.shippingAddress || null;
       const billing = orderNode.billingAddress || null;
+      const lineItems = (orderNode.lineItems?.edges || []).map(({ node }) => ({
+        id: node.id,
+        lineItemId: node.id,
+        title: String(node.title || "").trim(),
+        quantity: Math.max(1, Number(node.quantity || 1)),
+        unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+        currencyCode: String(node.originalUnitPriceSet?.shopMoney?.currencyCode || "MXN"),
+        variantId: node.variant?.id || "",
+        productId: node.product?.id || "",
+        variantSummary: formatVariantSummary(node.variant),
+        imageUrl: node.variant?.image?.url || node.product?.featuredImage?.url || "",
+        imageAlt: node.variant?.image?.altText || node.product?.featuredImage?.altText || node.title || "",
+      }));
       return {
         id: orderNode.id,
         orderNumber: String(orderNode.name || "").replace("#", ""),
@@ -4875,6 +4927,7 @@ async function fetchCourierHistoryOrders(admin) {
         createdAt: orderNode.createdAt,
         updatedAt: orderNode.updatedAt || orderNode.createdAt,
         status: getCourierRouteStatusFromTags(orderNode.tags),
+        items: lineItems,
       };
     });
 }
