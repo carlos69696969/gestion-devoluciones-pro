@@ -147,6 +147,59 @@
   text-transform: capitalize;
 }
 
+.preparerOrderChecklist {
+  display: grid;
+  gap: 10px;
+}
+
+.preparerOrderCheckItem {
+  display: grid;
+  grid-template-columns: 32px 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid #dfe3e8;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.preparerOrderCheckItem strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.preparerCheckBox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 2px solid #c9cccf;
+  border-radius: 7px;
+  background: #fff;
+  color: #6d7175;
+  font-size: 19px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.preparerCheckBoxReady {
+  border-color: #008060;
+  background: #ecfdf3;
+  color: #008060;
+}
+
+.preparerCheckBoxMissing {
+  border-color: #d82c0d;
+  background: #fff4f4;
+  color: #b42318;
+}
+
+.preparerDispatchCard {
+  box-shadow: none;
+}
+
 .preparerProductList {
   display: grid;
   gap: 10px;
@@ -175,6 +228,22 @@
 
 .preparerProductImage {
   object-fit: cover;
+}
+
+.preparerProductImageButton {
+  appearance: none;
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.preparerProductImageButton:focus-visible {
+  outline: 3px solid rgba(0, 91, 211, 0.28);
+  outline-offset: 2px;
 }
 
 .preparerProductImagePlaceholder {
@@ -209,6 +278,29 @@
 
 .preparerActions button {
   width: 100%;
+}
+
+.preparerImageModal {
+  display: grid;
+  gap: 12px;
+  width: min(720px, 100%);
+  max-height: calc(100vh - 40px);
+  padding: 16px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+}
+
+.preparerImageModal button {
+  justify-self: end;
+}
+
+.preparerImageModal img {
+  width: 100%;
+  max-height: calc(100vh - 130px);
+  object-fit: contain;
+  border-radius: 12px;
+  background: #f6f6f7;
 }
 
 .missingOrderList {
