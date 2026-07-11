@@ -7970,7 +7970,6 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
               </summary>
               <div className={styles.courierDirectoryCode}>
                 <div>Codigo unico: <strong>{preparer.code}</strong></div>
-                <div>Ordenes asignadas: <strong>{assignmentCountByPreparerId.get(String(preparer.id)) || 0}</strong></div>
                 <div className={styles.courierDirectoryActions}>
                   <Form
                     method="post"
