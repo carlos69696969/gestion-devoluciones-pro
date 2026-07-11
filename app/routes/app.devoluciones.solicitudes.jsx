@@ -1902,6 +1902,27 @@ function normalizeCourierHistoryKeyText(value) {
     .toLowerCase();
 }
 
+function courierFinalHistoryEventKey(event, eventTimeKey) {
+  const label = String(event?.label || "").trim();
+  const status = String(event?.status || "").trim().toLowerCase();
+  const action = String(event?.action || "").trim().toLowerCase();
+  if (
+    action === "courier_branch_pickup_refunded" ||
+    status === "reembolsada" ||
+    /\breembolsad[ao]\b/i.test(label)
+  ) {
+    return [eventTimeKey, "final", "reembolsado"].map(normalizeCourierHistoryKeyText).join(":");
+  }
+  if (
+    action === "courier_mark_delivered" ||
+    status === "entregado" ||
+    /\bentregad[ao]\b/i.test(label)
+  ) {
+    return [eventTimeKey, "final", "entregado"].map(normalizeCourierHistoryKeyText).join(":");
+  }
+  return "";
+}
+
 function courierRouteTimeHistoryDateKey(event) {
   const noteDate = String(event?.note || "").match(/route_time_rescheduled:(\d{4}-\d{2}-\d{2})/i)?.[1] || "";
   if (noteDate) return noteDate;
@@ -1945,6 +1966,7 @@ function mergeCourierHistoryEvents(...eventLists) {
       const eventTimeKey = isRouteTimeHistoryEvent(normalizedEvent)
         ? courierHistoryMinuteKey(eventTimeValue)
         : courierHistoryMinuteKey(eventTimeValue) || parseEventMs(eventTimeValue) || String(eventTimeValue).trim().toLowerCase();
+      const finalEventKey = courierFinalHistoryEventKey(normalizedEvent, eventTimeKey);
       const contentKeyParts = isRouteTimeHistoryEvent(normalizedEvent)
         ? [eventTimeKey, normalizedEvent?.label || ""]
         : [
@@ -1954,7 +1976,7 @@ function mergeCourierHistoryEvents(...eventLists) {
             normalizedEvent?.status || "",
           ];
       const contentKey = contentKeyParts.map(normalizeCourierHistoryKeyText).join(":");
-      const key = contentKey || String(normalizedEvent?.id || "");
+      const key = finalEventKey || contentKey || String(normalizedEvent?.id || "");
       if (seen.has(key)) continue;
       const routeTimeConflictKey = courierRouteTimeAdminConflictKey(normalizedEvent);
       if (routeTimeConflictKey && isAdminNotLocatedReprogramEvent(normalizedEvent)) {
