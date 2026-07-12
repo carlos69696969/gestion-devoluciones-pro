@@ -3,6 +3,8 @@ import { createCookie, Form, redirect, useActionData, useLoaderData, useNavigati
 import prisma from "../db.server";
 import styles from "../styles/repartidor.module.css";
 
+const COURIER_ADMIN_REPROGRAM_ACTION = "courier_admin_order_reprogrammed";
+
 function preparerPortalCookies() {
   const options = {
     httpOnly: true,
@@ -72,6 +74,36 @@ function isReprogrammedPreparerOrder(orderData = {}) {
   );
 }
 
+function preparerCourierStatusFromActivityAction(action, fallbackStatus = "") {
+  const normalizedAction = String(action || "").trim().toLowerCase();
+  const statusByAction = {
+    courier_mark_delivered: "entregado",
+    courier_mark_not_delivered: "no_entregado",
+    courier_route_order_not_located: "no_localizado",
+    courier_return_mark_received: "recibida",
+    courier_return_pickup_attempt_failed: "no_recibido",
+    courier_return_reject_after_failed_pickups: "rechazada",
+    courier_branch_pickup_refunded: "reembolsada",
+    [COURIER_ADMIN_REPROGRAM_ACTION]: "reintento_pendiente",
+    courier_route_delivery_reprogrammed: "reintento_pendiente",
+  };
+  return statusByAction[normalizedAction] || fallbackStatus;
+}
+
+function isPreparerCourierFinalActivityAction(action) {
+  return [
+    "courier_mark_delivered",
+    "courier_mark_not_delivered",
+    "courier_route_order_not_located",
+    "courier_return_mark_received",
+    "courier_return_pickup_attempt_failed",
+    "courier_return_reject_after_failed_pickups",
+    "courier_branch_pickup_refunded",
+    COURIER_ADMIN_REPROGRAM_ACTION,
+    "courier_route_delivery_reprogrammed",
+  ].includes(String(action || "").trim().toLowerCase());
+}
+
 async function getPreparerAccess(request) {
   const { accessCookie } = preparerPortalCookies();
   const cookieHeader = request.headers.get("Cookie");
@@ -108,7 +140,7 @@ export async function loader({ request }) {
   const url = new URL(request.url);
   const shop = cleanShop(url.searchParams.get("shop"));
   const access = await getPreparerAccess(request);
-  const assignments = access
+  let assignments = access
     ? await prisma.preparerAssignment.findMany({
         where: {
           shop: access.shop,
@@ -117,6 +149,40 @@ export async function loader({ request }) {
         orderBy: [{ sequence: "asc" }, { id: "asc" }],
       })
     : [];
+  const assignmentRequestIds = assignments
+    .map((assignment) => String(assignment.requestId || "").trim())
+    .filter(Boolean);
+  const activities = assignmentRequestIds.length
+    ? await prisma.courierActivity.findMany({
+        where: {
+          shop: access.shop,
+          requestId: { in: assignmentRequestIds },
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      })
+    : [];
+  const latestFinalActivityByRequestId = new Map();
+  for (const activity of activities) {
+    if (!isPreparerCourierFinalActivityAction(activity.action)) continue;
+    const requestId = String(activity.requestId || "").trim();
+    if (!requestId) continue;
+    latestFinalActivityByRequestId.set(requestId, activity);
+  }
+  assignments = assignments.map((assignment) => {
+    const requestId = String(assignment.requestId || "").trim();
+    const activity = latestFinalActivityByRequestId.get(requestId);
+    const activityStatus = activity ? preparerCourierStatusFromActivityAction(activity.action, "") : "";
+    if (!activityStatus) return assignment;
+    const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+    return {
+      ...assignment,
+      orderData: {
+        ...orderData,
+        status: activityStatus,
+        courierActivityStatus: activityStatus,
+      },
+    };
+  });
   return {
     shop: access?.shop || shop,
     preparerName: access?.name || "",
