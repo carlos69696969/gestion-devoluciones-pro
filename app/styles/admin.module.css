@@ -1277,10 +1277,10 @@
 .courierRefundAlreadyRefunded {
   width: fit-content;
   padding: 3px 8px;
-  border: 1px solid #a7f3d0;
+  border: 1px solid #fda29b;
   border-radius: 999px;
-  background: #ecfdf3;
-  color: #047857;
+  background: #fff4f4;
+  color: #b42318;
   font-size: 12px;
   font-weight: 800;
 }
