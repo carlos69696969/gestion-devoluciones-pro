@@ -152,6 +152,34 @@ export async function loader({ request }) {
   const assignmentRequestIds = assignments
     .map((assignment) => String(assignment.requestId || "").trim())
     .filter(Boolean);
+  let liveCourierOrderByRequestId = new Map();
+  if (access && assignmentRequestIds.length) {
+    try {
+      const { fetchCourierOrdersByIdsForShop, resolveCourierPortalShop } = await import("../utils/courier.server");
+      const portalShop = await resolveCourierPortalShop(request);
+      const sessionCandidatesByShop = new Map();
+      for (const sessionCandidate of portalShop.allSessionCandidates || portalShop.sessionCandidates || []) {
+        const candidateShop = String(sessionCandidate?.shop || "").trim().toLowerCase();
+        if (!candidateShop) continue;
+        const current = sessionCandidatesByShop.get(candidateShop) || [];
+        current.push(sessionCandidate);
+        sessionCandidatesByShop.set(candidateShop, current);
+      }
+      const sessionCandidates = sessionCandidatesByShop.get(access.shop) || portalShop.sessionCandidates || [];
+      const liveCourierOrders = await fetchCourierOrdersByIdsForShop({
+        shop: access.shop,
+        sessionCandidates,
+        orderIds: assignmentRequestIds,
+      });
+      liveCourierOrderByRequestId = new Map(
+        liveCourierOrders
+          .map((order) => [String(order?.id || "").trim(), order])
+          .filter(([requestId]) => requestId),
+      );
+    } catch (error) {
+      console.error("No se pudieron sincronizar ordenes vivas para preparador", error);
+    }
+  }
   const activities = assignmentRequestIds.length
     ? await prisma.courierActivity.findMany({
         where: {
@@ -170,16 +198,21 @@ export async function loader({ request }) {
   }
   assignments = assignments.map((assignment) => {
     const requestId = String(assignment.requestId || "").trim();
+    const liveCourierOrder = liveCourierOrderByRequestId.get(requestId) || null;
     const activity = latestFinalActivityByRequestId.get(requestId);
     const activityStatus = activity ? preparerCourierStatusFromActivityAction(activity.action, "") : "";
-    if (!activityStatus) return assignment;
+    const liveStatus = String(liveCourierOrder?.status || "").trim().toLowerCase();
+    const nextStatus = liveStatus || activityStatus;
+    if (!nextStatus && !liveCourierOrder) return assignment;
     const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
     return {
       ...assignment,
       orderData: {
         ...orderData,
-        status: activityStatus,
-        courierActivityStatus: activityStatus,
+        ...(liveCourierOrder || {}),
+        items: orderData.items || liveCourierOrder?.items || [],
+        status: nextStatus || orderData.status,
+        courierActivityStatus: activityStatus || orderData.courierActivityStatus || "",
       },
     };
   });
