@@ -1869,6 +1869,13 @@
   align-items: center;
 }
 
+.preparerAssignmentSummaryList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -4px;
+}
+
 .preparerHistoryPanel {
   display: grid;
   gap: 12px;

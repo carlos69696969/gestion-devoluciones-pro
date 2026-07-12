@@ -7984,6 +7984,7 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
   const [showDistributeModal, setShowDistributeModal] = useState(false);
   const [selectedPreparerIds, setSelectedPreparerIds] = useState([]);
   const [selectedPreparerHistory, setSelectedPreparerHistory] = useState(null);
+  const [showDistributionMessage, setShowDistributionMessage] = useState(false);
   const preparersAction = `${location.pathname}${location.search || ""}`;
   const isDistributing = distributeFetcher.state !== "idle";
   const selectedPreparerIdSet = new Set(selectedPreparerIds.map((preparerId) => String(preparerId)));
@@ -8008,6 +8009,24 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
     month: "long",
     year: "numeric",
   }).format(new Date());
+  const activePreparerAssignments = preparerAssignments
+    .filter((assignment) => {
+      const status = String(assignment.status || "").trim().toLowerCase();
+      return status !== "ready" && status !== "not_located";
+    })
+    .sort(comparePreparerAssignmentsForPortal);
+  const activePreparerSummary = [...activePreparerAssignments.reduce((groups, assignment) => {
+    const key = String(assignment.preparerId || assignment.preparerName || "").trim();
+    if (!key) return groups;
+    const current = groups.get(key) || {
+      id: key,
+      preparerName: String(assignment.preparerName || "").trim() || "Preparador",
+      count: 0,
+    };
+    current.count += 1;
+    groups.set(key, current);
+    return groups;
+  }, new Map()).values()];
   const completedPreparerAssignments = preparerAssignments
     .filter((assignment) => {
       const status = String(assignment.status || "").trim().toLowerCase();
@@ -8061,7 +8080,14 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
     if (!distributeFetcher.data?.ok) return;
     setShowDistributeModal(false);
     setSelectedPreparerIds([]);
+    setShowDistributionMessage(true);
   }, [distributeFetcher.data]);
+
+  useEffect(() => {
+    if (!showDistributionMessage) return undefined;
+    const timeoutId = window.setTimeout(() => setShowDistributionMessage(false), 3500);
+    return () => window.clearTimeout(timeoutId);
+  }, [showDistributionMessage]);
 
   const generateCode = () => {
     setCode(String(Math.floor(100000 + Math.random() * 900000)));
@@ -8090,6 +8116,16 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
             Distribuir órdenes
           </button>
         </div>
+
+        {activePreparerSummary.length ? (
+          <div className={styles.preparerAssignmentSummaryList}>
+            {activePreparerSummary.map((summary) => (
+              <span key={summary.id} className={styles.counterBadge}>
+                {summary.preparerName}: {summary.count} orden(es)
+              </span>
+            ))}
+          </div>
+        ) : null}
 
         {showForm ? (
           <Form method="post" action={preparersAction} className={`${styles.card} ${styles.courierCreateForm}`}>
@@ -8180,7 +8216,7 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
         {distributeFetcher.data?.error ? (
           <p className={styles.errorMsg}>{distributeFetcher.data.error}</p>
         ) : null}
-        {distributeFetcher.data?.message ? (
+        {showDistributionMessage && distributeFetcher.data?.message ? (
           <p className={styles.successMsg}>{distributeFetcher.data.message}</p>
         ) : null}
       </div>
