@@ -1807,6 +1807,28 @@
   font-weight: 700;
 }
 
+.preparerDirectoryName {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  text-align: right;
+}
+
+.preparerPreparedCount {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid #8eb8ff;
+  border-radius: 999px;
+  background: #f3f7ff;
+  color: #005bd3;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .courierDirectoryCode {
   border-top: 1px solid #e1e3e5;
   padding: 14px 16px;
@@ -1860,10 +1882,24 @@
   gap: 12px;
 }
 
+.preparerHistoryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .preparerHistoryPanel h3 {
   margin: 0;
   color: #202223;
   font-size: 16px;
+  font-weight: 800;
+}
+
+.preparerHistoryHeader span {
+  color: #6d7175;
+  font-size: 13px;
   font-weight: 800;
 }
 
@@ -1884,6 +1920,17 @@
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.preparerHistoryButton strong {
+  color: #005bd3;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .preparerHistoryButton:hover {

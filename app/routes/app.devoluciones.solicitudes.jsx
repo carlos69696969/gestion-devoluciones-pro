@@ -7959,19 +7959,26 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
   const isDistributing = distributeFetcher.state !== "idle";
   const selectedPreparerIdSet = new Set(selectedPreparerIds.map((preparerId) => String(preparerId)));
   const canDistributeOrders = selectedPreparerIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isDistributing;
-  const assignmentCountByPreparerId = preparerAssignments.reduce((counts, assignment) => {
-    const preparerId = String(assignment.preparerId || "");
-    if (!preparerId) return counts;
-    counts.set(preparerId, Number(counts.get(preparerId) || 0) + 1);
-    return counts;
-  }, new Map());
-  const assignedPreparers = preparers
-    .map((preparer) => ({
-      ...preparer,
-      assignedCount: Number(assignmentCountByPreparerId.get(String(preparer.id)) || 0),
-    }))
-    .filter((preparer) => preparer.assignedCount > 0);
+  const preparerAssignmentOrderNumberValue = (assignment) => {
+    const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+    const orderNumber = String(order.orderNumber || assignment.orderNumber || "").replace(/\D/g, "");
+    return Number(orderNumber || 0) || 0;
+  };
+  const preparerAssignmentStoredSequence = (assignment) => {
+    const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+    return Number(order.sequenceNumber || assignment.sequence || 0) || 0;
+  };
+  const comparePreparerAssignmentsForPortal = (first, second) =>
+    preparerAssignmentOrderNumberValue(first) - preparerAssignmentOrderNumberValue(second) ||
+    preparerAssignmentStoredSequence(first) - preparerAssignmentStoredSequence(second) ||
+    Number(first.id || 0) - Number(second.id || 0);
   const todayMexicoKey = mexicoActivityDateKey(new Date());
+  const todayPreparerHistoryLabel = new Intl.DateTimeFormat("es-MX", {
+    timeZone: "America/Mexico_City",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
   const completedPreparerAssignments = preparerAssignments
     .filter((assignment) => {
       const status = String(assignment.status || "").trim().toLowerCase();
@@ -7980,38 +7987,51 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
       if (!completedAt || !Number.isFinite(new Date(completedAt).getTime())) return false;
       return mexicoActivityDateKey(completedAt) === todayMexicoKey;
     })
-    .map((assignment, index) => {
+    .sort(comparePreparerAssignmentsForPortal)
+    .map((assignment) => {
       const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
-      const sequence = Number(order.sequenceNumber || assignment.sequence || index + 1) || index + 1;
       const status = String(assignment.status || "").trim().toLowerCase();
       return {
+        rawAssignment: assignment,
         id: assignment.id,
         preparerId: String(assignment.preparerId || ""),
         preparerName: String(assignment.preparerName || "").trim() || "Preparador",
-        sequence,
+        sequence: 0,
         orderNumber: String(order.orderNumber || assignment.orderNumber || "").trim() || "-",
         status,
       };
-    })
-    .sort((first, second) => first.sequence - second.sequence || Number(first.id || 0) - Number(second.id || 0));
+    });
   const preparerHistoryById = completedPreparerAssignments.reduce((groups, assignment) => {
     const key = assignment.preparerId || assignment.preparerName;
     const current = groups.get(key) || {
       id: key,
       preparerName: assignment.preparerName,
-      startSequence: assignment.sequence,
-      endSequence: assignment.sequence,
+      startSequence: 0,
+      endSequence: 0,
       orders: [],
     };
     current.orders.push(assignment);
-    current.startSequence = Math.min(current.startSequence, assignment.sequence);
-    current.endSequence = Math.max(current.endSequence, assignment.sequence);
     groups.set(key, current);
     return groups;
   }, new Map());
-  const preparerHistory = [...preparerHistoryById.values()].sort(
-    (first, second) => first.startSequence - second.startSequence || first.preparerName.localeCompare(second.preparerName),
-  );
+  const preparerHistory = [...preparerHistoryById.values()]
+    .map((history) => {
+      const orders = history.orders
+        .sort((first, second) => comparePreparerAssignmentsForPortal(first.rawAssignment, second.rawAssignment))
+        .map((order, index) => ({ ...order, sequence: index + 1 }));
+      return {
+        ...history,
+        orders,
+        orderCount: orders.length,
+        startSequence: orders[0]?.sequence || 0,
+        endSequence: orders[orders.length - 1]?.sequence || 0,
+      };
+    })
+    .sort((first, second) => first.startSequence - second.startSequence || first.preparerName.localeCompare(second.preparerName));
+  const preparedCountByPreparerId = preparerHistory.reduce((counts, history) => {
+    counts.set(String(history.id), Number(history.orderCount || 0));
+    return counts;
+  }, new Map());
 
   useEffect(() => {
     if (!distributeFetcher.data?.ok) return;
@@ -8080,22 +8100,19 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
           </Form>
         ) : null}
 
-        {assignedPreparers.length ? (
-          <div className={styles.courierRoutePlanSummary}>
-            {assignedPreparers.map((preparer) => (
-              <span key={preparer.id} className={styles.courierRoutePlanBadge}>
-                {preparer.name}: {preparer.assignedCount} orden(es)
-              </span>
-            ))}
-          </div>
-        ) : null}
-
         <div className={styles.courierDirectory}>
-          {preparers.map((preparer) => (
+          {preparers.map((preparer) => {
+            const preparedCount = Number(preparedCountByPreparerId.get(String(preparer.id)) || 0);
+            return (
             <details key={preparer.id} className={styles.courierDirectoryCard}>
               <summary className={styles.courierDirectorySummary}>
                 <span>Preparador</span>
-                <strong>{preparer.name}</strong>
+                <strong className={styles.preparerDirectoryName}>
+                  {preparer.name}
+                  {preparedCount > 0 ? (
+                    <span className={styles.preparerPreparedCount}>{preparedCount} orden(es)</span>
+                  ) : null}
+                </strong>
               </summary>
               <div className={styles.courierDirectoryCode}>
                 <div>Codigo unico: <strong>{preparer.code}</strong></div>
@@ -8118,10 +8135,14 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
                 </div>
               </div>
             </details>
-          ))}
+            );
+          })}
         </div>
         <div className={`${styles.card} ${styles.preparerHistoryPanel}`}>
-          <h3>Historial de preparadores</h3>
+          <div className={styles.preparerHistoryHeader}>
+            <h3>Historial de preparadores</h3>
+            <span>Hoy {todayPreparerHistoryLabel}</span>
+          </div>
           {preparerHistory.length ? (
             <div className={styles.preparerHistorySummaryList}>
               {preparerHistory.map((history) => (
@@ -8131,7 +8152,8 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
                   type="button"
                   onClick={() => setSelectedPreparerHistory(history)}
                 >
-                  Preparó {history.preparerName} de la {history.startSequence} a la {history.endSequence}
+                  <span>Preparó {history.preparerName} de la {history.startSequence} a la {history.endSequence}</span>
+                  <strong>{history.orderCount} orden(es)</strong>
                 </button>
               ))}
             </div>
