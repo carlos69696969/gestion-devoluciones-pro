@@ -288,11 +288,11 @@ export default function PreparerPortal() {
       preparerDisplaySequence(firstAssignment) - preparerDisplaySequence(secondAssignment) ||
       Number(firstAssignment.id || 0) - Number(secondAssignment.id || 0),
   );
+  const activeAssignments = sortedAssignments.filter((assignment) => !isPreparerAssignmentDone(assignment.status));
   const displaySequenceByAssignmentId = new Map(
-    sortedAssignments.map((assignment, index) => [String(assignment.id), index + 1]),
+    activeAssignments.map((assignment, index) => [String(assignment.id), index + 1]),
   );
-  const dispatchAssignment =
-    sortedAssignments.find((assignment) => !isPreparerAssignmentDone(assignment.status)) || null;
+  const dispatchAssignment = activeAssignments[0] || null;
 
   useEffect(() => {
     setReadyUnitKeys([]);
@@ -308,7 +308,7 @@ export default function PreparerPortal() {
   };
 
   if (isLoggedIn) {
-    const remainingAssignments = sortedAssignments.filter((assignment) => !isPreparerAssignmentDone(assignment.status));
+    const remainingAssignments = activeAssignments;
     const dispatchOrder = dispatchAssignment?.orderData || {};
     const dispatchItems = Array.isArray(dispatchOrder.items) ? dispatchOrder.items : [];
     const dispatchStatus = String(dispatchAssignment?.status || "assigned").trim().toLowerCase();
@@ -353,11 +353,11 @@ export default function PreparerPortal() {
           </header>
 
           <div className={styles.preparerSummary}>
-            <span className={styles.counterBadge}>Ordenes {sortedAssignments.length}</span>
+            <span className={styles.counterBadge}>Ordenes {activeAssignments.length}</span>
             <span className={styles.counterBadge}>Restantes {remainingAssignments.length}</span>
           </div>
 
-          {sortedAssignments.length ? (
+          {activeAssignments.length ? (
             <section className={styles.card}>
               <div className={styles.tabRow} role="tablist" aria-label="Secciones de preparador">
                 <button
@@ -378,7 +378,7 @@ export default function PreparerPortal() {
 
               {activeTab === "ordenes" ? (
                 <div className={styles.preparerOrderChecklist}>
-                  {sortedAssignments.map((assignment) => {
+                  {activeAssignments.map((assignment) => {
                     const order = assignment.orderData || {};
                     const status = String(assignment.status || "assigned").trim().toLowerCase();
                     return (
