@@ -4,6 +4,11 @@ import prisma from "../db.server";
 import styles from "../styles/repartidor.module.css";
 
 const COURIER_ADMIN_REPROGRAM_ACTION = "courier_admin_order_reprogrammed";
+const COURIER_REPROGRAM_ACTIONS = [
+  COURIER_ADMIN_REPROGRAM_ACTION,
+  "courier_route_delivery_reprogrammed",
+  "courier_route_return_reprogrammed",
+];
 
 function preparerPortalCookies() {
   const options = {
@@ -64,13 +69,28 @@ function normalizeOrderItemsWithPreparerStatus(orderData, readyUnitKeys = [], mi
 
 function isReprogrammedPreparerOrder(orderData = {}) {
   const status = String(orderData?.status || "").trim().toLowerCase();
+  const currentStatus = String(orderData?.currentStatus || "").trim().toLowerCase();
   const visibleStatus = String(orderData?.visibleStatus || orderData?.displayStatus || "").trim().toLowerCase();
+  const courierActivityStatus = String(orderData?.courierActivityStatus || "").trim().toLowerCase();
+  const normalizedTags = new Set(
+    (Array.isArray(orderData?.tags) ? orderData.tags : [])
+      .map((tag) => String(tag || "").trim().toLowerCase().replace(/[\s_-]+/g, " "))
+      .filter(Boolean),
+  );
   return (
     status === "reintento_pendiente" ||
     status === "reprogramado" ||
     status === "reprogramada" ||
+    currentStatus === "reintento_pendiente" ||
+    currentStatus === "reprogramado" ||
+    currentStatus === "reprogramada" ||
     visibleStatus === "reprogramado" ||
-    visibleStatus === "reprogramada"
+    visibleStatus === "reprogramada" ||
+    courierActivityStatus === "reintento_pendiente" ||
+    courierActivityStatus === "reprogramado" ||
+    normalizedTags.has("reprogramado") ||
+    normalizedTags.has("rpfdt") ||
+    normalizedTags.has("reintentar entrega")
   );
 }
 
@@ -86,6 +106,7 @@ function preparerCourierStatusFromActivityAction(action, fallbackStatus = "") {
     courier_branch_pickup_refunded: "reembolsada",
     [COURIER_ADMIN_REPROGRAM_ACTION]: "reintento_pendiente",
     courier_route_delivery_reprogrammed: "reintento_pendiente",
+    courier_route_return_reprogrammed: "reintento_pendiente",
   };
   return statusByAction[normalizedAction] || fallbackStatus;
 }
@@ -99,8 +120,7 @@ function isPreparerCourierFinalActivityAction(action) {
     "courier_return_pickup_attempt_failed",
     "courier_return_reject_after_failed_pickups",
     "courier_branch_pickup_refunded",
-    COURIER_ADMIN_REPROGRAM_ACTION,
-    "courier_route_delivery_reprogrammed",
+    ...COURIER_REPROGRAM_ACTIONS,
   ].includes(String(action || "").trim().toLowerCase());
 }
 
