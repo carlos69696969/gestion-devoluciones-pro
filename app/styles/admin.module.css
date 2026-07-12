@@ -1604,6 +1604,12 @@
   font-size: 13px;
 }
 
+.courierHistoryPreparerItem {
+  border: 1px solid #fdba74;
+  background: #fff7ed;
+  color: #b45309;
+}
+
 .courierHistoryAttemptHeader {
   border-radius: 8px;
   background: #eff6ff;
@@ -1616,6 +1622,10 @@
 .courierHistoryItem span {
   color: #6b7280;
   white-space: nowrap;
+}
+
+.courierHistoryPreparerItem span {
+  color: #b45309;
 }
 
 .courierHistoryDirectory {

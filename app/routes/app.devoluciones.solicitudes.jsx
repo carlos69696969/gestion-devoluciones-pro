@@ -8272,6 +8272,7 @@ function CourierOrderCard({
           id: `preparer-ready-${request.id || request.orderNumber || preparerName}`,
           label: `Preparado por ${preparerName}`,
           at: preparedAt,
+          type: "preparer",
         }
       : null;
   const displayHistoryItems = preparedHistoryItem
@@ -8449,7 +8450,12 @@ function CourierOrderCard({
                   <strong>{item.label}</strong>
                 </div>
               ) : (
-                <div key={item.id} className={styles.courierHistoryItem}>
+                <div
+                  key={item.id}
+                  className={`${styles.courierHistoryItem} ${
+                    item.type === "preparer" ? styles.courierHistoryPreparerItem : ""
+                  }`}
+                >
                   <strong>{item.label}</strong>
                   <span>{formatCourierHistoryDate(item.at)}</span>
                 </div>
