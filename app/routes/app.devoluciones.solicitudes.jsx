@@ -8028,11 +8028,6 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
       };
     })
     .sort((first, second) => first.startSequence - second.startSequence || first.preparerName.localeCompare(second.preparerName));
-  const preparedCountByPreparerId = preparerHistory.reduce((counts, history) => {
-    counts.set(String(history.id), Number(history.orderCount || 0));
-    return counts;
-  }, new Map());
-
   useEffect(() => {
     if (!distributeFetcher.data?.ok) return;
     setShowDistributeModal(false);
@@ -8101,18 +8096,11 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
         ) : null}
 
         <div className={styles.courierDirectory}>
-          {preparers.map((preparer) => {
-            const preparedCount = Number(preparedCountByPreparerId.get(String(preparer.id)) || 0);
-            return (
+          {preparers.map((preparer) => (
             <details key={preparer.id} className={styles.courierDirectoryCard}>
               <summary className={styles.courierDirectorySummary}>
                 <span>Preparador</span>
-                <strong className={styles.preparerDirectoryName}>
-                  {preparer.name}
-                  {preparedCount > 0 ? (
-                    <span className={styles.preparerPreparedCount}>{preparedCount} orden(es)</span>
-                  ) : null}
-                </strong>
+                <strong>{preparer.name}</strong>
               </summary>
               <div className={styles.courierDirectoryCode}>
                 <div>Codigo unico: <strong>{preparer.code}</strong></div>
@@ -8135,8 +8123,7 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
                 </div>
               </div>
             </details>
-            );
-          })}
+          ))}
         </div>
         <div className={`${styles.card} ${styles.preparerHistoryPanel}`}>
           <div className={styles.preparerHistoryHeader}>

@@ -1807,28 +1807,6 @@
   font-weight: 700;
 }
 
-.preparerDirectoryName {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-  text-align: right;
-}
-
-.preparerPreparedCount {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 4px 10px;
-  border: 1px solid #8eb8ff;
-  border-radius: 999px;
-  background: #f3f7ff;
-  color: #005bd3;
-  font-size: 13px;
-  font-weight: 800;
-}
-
 .courierDirectoryCode {
   border-top: 1px solid #e1e3e5;
   padding: 14px 16px;
