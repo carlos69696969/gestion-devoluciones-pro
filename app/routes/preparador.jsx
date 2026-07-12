@@ -134,6 +134,18 @@ async function generateUniquePreparerCode(shop) {
   throw new Error("No se pudo generar un codigo unico para el preparador.");
 }
 
+async function hasActivePreparerAssignments({ shop, preparerId }) {
+  const activeAssignment = await prisma.preparerAssignment.findFirst({
+    where: {
+      shop,
+      preparerId,
+      status: { notIn: ["ready", "not_located"] },
+    },
+    select: { id: true },
+  });
+  return Boolean(activeAssignment);
+}
+
 export const headers = () => ({
   "Cache-Control": "no-store, max-age=0",
   "X-Robots-Tag": "noindex, nofollow",
@@ -313,6 +325,13 @@ export async function action({ request }) {
     select: { id: true, shop: true, name: true },
   });
   if (!preparer) return { ok: false, error: "Codigo invalido." };
+  const hasAssignedOrders = await hasActivePreparerAssignments({
+    shop: preparer.shop,
+    preparerId: preparer.id,
+  });
+  if (!hasAssignedOrders) {
+    return { ok: false, error: "Este preparador aun no tiene ordenes asignadas." };
+  }
 
   return redirect(`/preparador?shop=${encodeURIComponent(preparer.shop)}`, {
     headers: {
