@@ -8120,7 +8120,7 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
         {activePreparerSummary.length ? (
           <div className={styles.preparerAssignmentSummaryList}>
             {activePreparerSummary.map((summary) => (
-              <span key={summary.id} className={styles.counterBadge}>
+              <span key={summary.id} className={styles.preparerAssignmentSummaryBadge}>
                 {summary.preparerName}: {summary.count} orden(es)
               </span>
             ))}

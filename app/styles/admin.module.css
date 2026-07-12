@@ -1876,6 +1876,23 @@
   margin-top: -4px;
 }
 
+.preparerAssignmentSummaryBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: #f9fafb;
+  border: 1px solid #d1d5db;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
 .preparerHistoryPanel {
   display: grid;
   gap: 12px;
