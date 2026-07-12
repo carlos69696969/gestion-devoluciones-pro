@@ -6276,7 +6276,9 @@ export default function ReturnsRequests() {
                     key={unitKey || `${item.title}-${item.unitIndex}`}
                     className={`${styles.courierRefundProductOption} ${
                       checked ? styles.courierRefundProductOptionSelected : ""
-                    } ${alreadyRefunded ? styles.courierRefundProductOptionDisabled : ""}`}
+                    } ${checked && item.preparerMissing ? styles.courierRefundProductOptionPreparerMissing : ""} ${
+                      alreadyRefunded ? styles.courierRefundProductOptionDisabled : ""
+                    }`}
                   >
                     <input
                       type="checkbox"

@@ -1227,6 +1227,11 @@
   background: #f0fdf7;
 }
 
+.courierRefundProductOptionPreparerMissing {
+  border-color: #fda29b;
+  background: #fff4f4;
+}
+
 .courierRefundProductOptionDisabled {
   cursor: not-allowed;
   opacity: 0.58;
