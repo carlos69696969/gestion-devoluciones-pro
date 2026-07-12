@@ -104,15 +104,18 @@ function isPreparerCourierFinalActivityAction(action) {
   ].includes(String(action || "").trim().toLowerCase());
 }
 
-async function getPreparerAccess(request) {
+async function getPreparerAccess(request, expectedShop = "") {
   const { accessCookie } = preparerPortalCookies();
   const cookieHeader = request.headers.get("Cookie");
   const access = await accessCookie.parse(cookieHeader);
   if (!access?.shop || !access?.preparerId) return null;
+  const accessShop = cleanShop(access.shop);
+  const requestedShop = cleanShop(expectedShop);
+  if (requestedShop && accessShop !== requestedShop) return null;
   const preparer = await prisma.preparer.findFirst({
     where: {
       id: Number(access.preparerId),
-      shop: cleanShop(access.shop),
+      shop: accessShop,
     },
     select: { id: true, shop: true, name: true },
   });
@@ -139,7 +142,7 @@ export const headers = () => ({
 export async function loader({ request }) {
   const url = new URL(request.url);
   const shop = cleanShop(url.searchParams.get("shop"));
-  const access = await getPreparerAccess(request);
+  const access = await getPreparerAccess(request, shop);
   let assignments = access
     ? await prisma.preparerAssignment.findMany({
         where: {
@@ -232,7 +235,7 @@ export async function action({ request }) {
   const { accessCookie } = preparerPortalCookies();
 
   if (intent === "logout") {
-    const access = await getPreparerAccess(request);
+    const access = await getPreparerAccess(request, shop);
     if (access) {
       await prisma.preparer.update({
         where: { id: access.id },
@@ -247,7 +250,7 @@ export async function action({ request }) {
   }
 
   if (intent === "preparer_mark_ready") {
-    const access = await getPreparerAccess(request);
+    const access = await getPreparerAccess(request, shop);
     if (!access) return { ok: false, error: "Inicia sesion nuevamente." };
     const assignmentId = Number(formData.get("assignmentId") || 0);
     if (!assignmentId) return { ok: false, error: "Orden invalida." };
@@ -305,17 +308,10 @@ export async function action({ request }) {
   if (!shop) return { ok: false, error: "Falta la tienda para validar el acceso." };
   if (!/^\d{6}$/.test(code)) return { ok: false, error: "Ingresa tu codigo de 6 digitos." };
 
-  let preparer = await prisma.preparer.findFirst({
+  const preparer = await prisma.preparer.findFirst({
     where: { shop, code },
     select: { id: true, shop: true, name: true },
   });
-  if (!preparer) {
-    preparer = await prisma.preparer.findFirst({
-      where: { code },
-      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-      select: { id: true, shop: true, name: true },
-    });
-  }
   if (!preparer) return { ok: false, error: "Codigo invalido." };
 
   return redirect(`/preparador?shop=${encodeURIComponent(preparer.shop)}`, {
