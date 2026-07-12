@@ -260,9 +260,7 @@ export default function PreparerPortal() {
     sortedAssignments.map((assignment, index) => [String(assignment.id), index + 1]),
   );
   const dispatchAssignment =
-    sortedAssignments.find((assignment) => !isPreparerAssignmentDone(assignment.status)) ||
-    sortedAssignments[0] ||
-    null;
+    sortedAssignments.find((assignment) => !isPreparerAssignmentDone(assignment.status)) || null;
 
   useEffect(() => {
     setReadyUnitKeys([]);
