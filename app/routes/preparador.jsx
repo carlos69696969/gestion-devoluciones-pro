@@ -243,15 +243,12 @@ function isPreparerAssignmentDone(status) {
 
 function isPreparerAssignmentActive(assignment) {
   const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
-  return (
-    !isPreparerAssignmentDone(assignment?.status) ||
-    (isReprogrammedPreparerOrder(order) && !order.preparerReprogrammedHandledAt)
-  );
+  return !isPreparerAssignmentDone(assignment?.status) || isReprogrammedPreparerOrder(order);
 }
 
 function preparerAssignmentDisplayStatus(assignment) {
   const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
-  return isReprogrammedPreparerOrder(order) && !order.preparerReprogrammedHandledAt
+  return isReprogrammedPreparerOrder(order)
     ? "assigned"
     : String(assignment?.status || "assigned").trim().toLowerCase();
 }
