@@ -75,6 +75,18 @@ async function getPreparerAccess(request) {
   return preparer || null;
 }
 
+async function generateUniquePreparerCode(shop) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const existing = await prisma.preparer.findFirst({
+      where: { shop, code },
+      select: { id: true },
+    });
+    if (!existing) return code;
+  }
+  throw new Error("No se pudo generar un codigo unico para el preparador.");
+}
+
 export const headers = () => ({
   "Cache-Control": "no-store, max-age=0",
   "X-Robots-Tag": "noindex, nofollow",
@@ -109,6 +121,13 @@ export async function action({ request }) {
   const { accessCookie } = preparerPortalCookies();
 
   if (intent === "logout") {
+    const access = await getPreparerAccess(request);
+    if (access) {
+      await prisma.preparer.update({
+        where: { id: access.id },
+        data: { code: await generateUniquePreparerCode(access.shop) },
+      });
+    }
     return redirect(`/preparador${shop ? `?shop=${encodeURIComponent(shop)}` : ""}`, {
       headers: {
         "Set-Cookie": await accessCookie.serialize("", { maxAge: 0 }),
@@ -303,11 +322,18 @@ export default function PreparerPortal() {
                 {preparerName ? `Preparador: ${preparerName}` : "Ordenes asignadas para preparacion."}
               </p>
             </div>
-            <Form method="post">
+            <Form
+              method="post"
+              onSubmit={(event) => {
+                if (!window.confirm("Deseas finalizar?")) {
+                  event.preventDefault();
+                }
+              }}
+            >
               <input type="hidden" name="intent" value="logout" />
               <input type="hidden" name="shop" value={shop || ""} />
               <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
-                Cerrar sesion
+                Finalizar
               </button>
             </Form>
           </header>

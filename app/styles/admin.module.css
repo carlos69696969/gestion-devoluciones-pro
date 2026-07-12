@@ -1855,6 +1855,87 @@
   align-items: center;
 }
 
+.preparerHistoryPanel {
+  display: grid;
+  gap: 12px;
+}
+
+.preparerHistoryPanel h3 {
+  margin: 0;
+  color: #202223;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.preparerHistorySummaryList {
+  display: grid;
+  gap: 10px;
+}
+
+.preparerHistoryButton {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid #d8dee8;
+  border-radius: 10px;
+  background: #fff;
+  color: #111827;
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.preparerHistoryButton:hover {
+  border-color: #8eb8ff;
+  background: #f3f7ff;
+}
+
+.preparerHistoryModal {
+  width: min(680px, 100%);
+}
+
+.preparerHistoryOrderList {
+  display: grid;
+  gap: 10px;
+}
+
+.preparerHistoryOrderItem {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid #dfe3e8;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.preparerHistoryMark {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #c9cccf;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.preparerHistoryMarkReady {
+  border-color: #008060;
+  color: #008060;
+}
+
+.preparerHistoryMarkMissing {
+  border-color: #d82c0d;
+  color: #d82c0d;
+}
+
 .courierTransferForm {
   width: min(100%, 460px) !important;
   display: grid;

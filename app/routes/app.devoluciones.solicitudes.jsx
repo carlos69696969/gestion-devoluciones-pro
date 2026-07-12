@@ -7954,6 +7954,7 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
   const [code, setCode] = useState("");
   const [showDistributeModal, setShowDistributeModal] = useState(false);
   const [selectedPreparerIds, setSelectedPreparerIds] = useState([]);
+  const [selectedPreparerHistory, setSelectedPreparerHistory] = useState(null);
   const preparersAction = `${location.pathname}${location.search || ""}`;
   const isDistributing = distributeFetcher.state !== "idle";
   const selectedPreparerIdSet = new Set(selectedPreparerIds.map((preparerId) => String(preparerId)));
@@ -7970,6 +7971,47 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
       assignedCount: Number(assignmentCountByPreparerId.get(String(preparer.id)) || 0),
     }))
     .filter((preparer) => preparer.assignedCount > 0);
+  const todayMexicoKey = mexicoActivityDateKey(new Date());
+  const completedPreparerAssignments = preparerAssignments
+    .filter((assignment) => {
+      const status = String(assignment.status || "").trim().toLowerCase();
+      if (status !== "ready" && status !== "not_located") return false;
+      const completedAt = assignment.completedAt || assignment.updatedAt;
+      if (!completedAt || !Number.isFinite(new Date(completedAt).getTime())) return false;
+      return mexicoActivityDateKey(completedAt) === todayMexicoKey;
+    })
+    .map((assignment, index) => {
+      const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+      const sequence = Number(order.sequenceNumber || assignment.sequence || index + 1) || index + 1;
+      const status = String(assignment.status || "").trim().toLowerCase();
+      return {
+        id: assignment.id,
+        preparerId: String(assignment.preparerId || ""),
+        preparerName: String(assignment.preparerName || "").trim() || "Preparador",
+        sequence,
+        orderNumber: String(order.orderNumber || assignment.orderNumber || "").trim() || "-",
+        status,
+      };
+    })
+    .sort((first, second) => first.sequence - second.sequence || Number(first.id || 0) - Number(second.id || 0));
+  const preparerHistoryById = completedPreparerAssignments.reduce((groups, assignment) => {
+    const key = assignment.preparerId || assignment.preparerName;
+    const current = groups.get(key) || {
+      id: key,
+      preparerName: assignment.preparerName,
+      startSequence: assignment.sequence,
+      endSequence: assignment.sequence,
+      orders: [],
+    };
+    current.orders.push(assignment);
+    current.startSequence = Math.min(current.startSequence, assignment.sequence);
+    current.endSequence = Math.max(current.endSequence, assignment.sequence);
+    groups.set(key, current);
+    return groups;
+  }, new Map());
+  const preparerHistory = [...preparerHistoryById.values()].sort(
+    (first, second) => first.startSequence - second.startSequence || first.preparerName.localeCompare(second.preparerName),
+  );
 
   useEffect(() => {
     if (!distributeFetcher.data?.ok) return;
@@ -8078,6 +8120,25 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
             </details>
           ))}
         </div>
+        <div className={`${styles.card} ${styles.preparerHistoryPanel}`}>
+          <h3>Historial de preparadores</h3>
+          {preparerHistory.length ? (
+            <div className={styles.preparerHistorySummaryList}>
+              {preparerHistory.map((history) => (
+                <button
+                  key={history.id}
+                  className={styles.preparerHistoryButton}
+                  type="button"
+                  onClick={() => setSelectedPreparerHistory(history)}
+                >
+                  Preparó {history.preparerName} de la {history.startSequence} a la {history.endSequence}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className={styles.noticeMuted}>No hay preparaciones finalizadas hoy.</p>
+          )}
+        </div>
         {distributeFetcher.data?.error ? (
           <p className={styles.errorMsg}>{distributeFetcher.data.error}</p>
         ) : null}
@@ -8152,6 +8213,41 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
               </div>
             </distributeFetcher.Form>
           </div>
+        </div>
+      ) : null}
+      {selectedPreparerHistory ? (
+        <div className={styles.reasonModalOverlay} role="dialog" aria-modal="true" aria-label="Detalle de preparacion">
+          <section className={`${styles.reasonModal} ${styles.preparerHistoryModal}`}>
+            <div className={styles.courierRouteModalHeader}>
+              <h3 id="preparer-history-title">
+                Preparó {selectedPreparerHistory.preparerName} de la {selectedPreparerHistory.startSequence} a la{" "}
+                {selectedPreparerHistory.endSequence}
+              </h3>
+              <button
+                className={styles.courierRouteModalClose}
+                type="button"
+                aria-label="Cerrar"
+                onClick={() => setSelectedPreparerHistory(null)}
+              >
+                x
+              </button>
+            </div>
+            <div className={styles.preparerHistoryOrderList}>
+              {selectedPreparerHistory.orders.map((order) => (
+                <div key={order.id} className={styles.preparerHistoryOrderItem}>
+                  <span className={styles.courierOrderSequence}>{order.sequence}</span>
+                  <strong>Orden #{order.orderNumber}</strong>
+                  <span
+                    className={`${styles.preparerHistoryMark} ${
+                      order.status === "not_located" ? styles.preparerHistoryMarkMissing : styles.preparerHistoryMarkReady
+                    }`}
+                  >
+                    {order.status === "not_located" ? "x" : "✓"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       ) : null}
     </s-section>
