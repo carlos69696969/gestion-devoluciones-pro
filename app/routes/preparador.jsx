@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createCookie, Form, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import prisma from "../db.server";
 import styles from "../styles/repartidor.module.css";
@@ -19,6 +19,45 @@ function preparerPortalCookies() {
 
 function cleanShop(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function itemBaseKey(item) {
+  return String(item?.lineItemId || item?.id || item?.title || "item").trim();
+}
+
+function itemUnitKey(item, index = 0) {
+  return `${itemBaseKey(item)}::${Number(index || 0) + 1}`;
+}
+
+function itemUnitKeys(item) {
+  const quantity = Math.max(1, Number(item?.quantity || 1));
+  return Array.from({ length: quantity }, (_value, index) => itemUnitKey(item, index));
+}
+
+function normalizeOrderItemsWithPreparerStatus(orderData, readyUnitKeys = [], missingUnitKeys = []) {
+  const readySet = new Set(readyUnitKeys.map((value) => String(value || "").trim()).filter(Boolean));
+  const missingSet = new Set(missingUnitKeys.map((value) => String(value || "").trim()).filter(Boolean));
+  const order = orderData && typeof orderData === "object" ? orderData : {};
+  const items = Array.isArray(order.items) ? order.items : [];
+  return {
+    ...order,
+    preparerReadyUnitKeys: [...readySet],
+    preparerMissingUnitKeys: [...missingSet],
+    preparerCompletedAt: new Date().toISOString(),
+    items: items.map((item, itemIndex) => {
+      const unitKeys = itemUnitKeys(item);
+      const missingItemUnitKeys = unitKeys.filter((unitKey) => missingSet.has(unitKey));
+      const readyItemUnitKeys = unitKeys.filter((unitKey) => readySet.has(unitKey));
+      return {
+        ...item,
+        preparerItemKey: itemBaseKey(item) || `item-${itemIndex}`,
+        preparerUnitKeys: unitKeys,
+        preparerReadyUnitKeys: readyItemUnitKeys,
+        preparerMissingUnitKeys: missingItemUnitKeys,
+        preparerStatus: missingItemUnitKeys.length ? "not_located" : "ready",
+      };
+    }),
+  };
 }
 
 async function getPreparerAccess(request) {
@@ -77,22 +116,54 @@ export async function action({ request }) {
     });
   }
 
-  if (intent === "preparer_mark_ready" || intent === "preparer_mark_not_located") {
+  if (intent === "preparer_mark_ready") {
     const access = await getPreparerAccess(request);
     if (!access) return { ok: false, error: "Inicia sesion nuevamente." };
     const assignmentId = Number(formData.get("assignmentId") || 0);
     if (!assignmentId) return { ok: false, error: "Orden invalida." };
-    await prisma.preparerAssignment.updateMany({
+    const readyUnitKeys = formData
+      .getAll("readyUnitKeys")
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    const missingUnitKeys = formData
+      .getAll("missingUnitKeys")
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    const assignment = await prisma.preparerAssignment.findFirst({
       where: {
         id: assignmentId,
         shop: access.shop,
         preparerId: access.id,
       },
-      data: {
-        status: intent === "preparer_mark_ready" ? "ready" : "not_located",
-        completedAt: new Date(),
-      },
     });
+    if (!assignment) return { ok: false, error: "Orden invalida." };
+    const nextStatus = missingUnitKeys.length ? "not_located" : "ready";
+    const nextOrderData = normalizeOrderItemsWithPreparerStatus(assignment.orderData, readyUnitKeys, missingUnitKeys);
+    await prisma.$transaction([
+      prisma.preparerAssignment.update({
+        where: { id: assignment.id },
+        data: {
+          status: nextStatus,
+          orderData: nextOrderData,
+          completedAt: new Date(),
+        },
+      }),
+      ...(missingUnitKeys.length
+        ? [
+            prisma.courierActivity.create({
+              data: {
+                shop: access.shop,
+                courierId: 0,
+                courierName: `Preparador: ${access.name}`,
+                requestId: String(assignment.requestId || "").trim(),
+                orderNumber: assignment.orderNumber || null,
+                action: "courier_route_order_not_located",
+                routeId: null,
+              },
+            }),
+          ]
+        : []),
+    ]);
     return redirect(`/preparador?shop=${encodeURIComponent(access.shop)}&tab=despachar`);
   }
 
@@ -152,7 +223,7 @@ function formatPreparerAddress(order) {
 function preparerOrderMark(status) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "ready") return "✓";
-  if (normalized === "not_located") return "×";
+  if (normalized === "not_located") return "x";
   return "";
 }
 
@@ -162,6 +233,9 @@ export default function PreparerPortal() {
   const navigation = useNavigation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [enlargedImage, setEnlargedImage] = useState(null);
+  const [readyUnitKeys, setReadyUnitKeys] = useState([]);
+  const [missingReviewOpen, setMissingReviewOpen] = useState(false);
+  const [reviewMissingUnitKeys, setReviewMissingUnitKeys] = useState([]);
   const isSubmitting = navigation.state === "submitting";
   const requestedTab = String(searchParams.get("tab") || "ordenes").trim().toLowerCase();
   const activeTab = requestedTab === "despachar" ? "despachar" : "ordenes";
@@ -175,6 +249,12 @@ export default function PreparerPortal() {
     sortedAssignments[0] ||
     null;
 
+  useEffect(() => {
+    setReadyUnitKeys([]);
+    setReviewMissingUnitKeys([]);
+    setMissingReviewOpen(false);
+  }, [dispatchAssignment?.id]);
+
   const handleTabChange = (nextTab) => {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set("tab", nextTab);
@@ -183,11 +263,17 @@ export default function PreparerPortal() {
   };
 
   if (isLoggedIn) {
+    const remainingAssignments = sortedAssignments.filter((assignment) => !isPreparerAssignmentDone(assignment.status));
     const dispatchOrder = dispatchAssignment?.orderData || {};
     const dispatchItems = Array.isArray(dispatchOrder.items) ? dispatchOrder.items : [];
     const dispatchStatus = String(dispatchAssignment?.status || "assigned").trim().toLowerCase();
     const isDispatchCompleted = isPreparerAssignmentDone(dispatchStatus);
     const dispatchAddress = formatPreparerAddress(dispatchOrder);
+    const dispatchUnitKeys = dispatchItems.flatMap((item) => itemUnitKeys(item));
+    const readyUnitKeySet = new Set(readyUnitKeys);
+    const missingReviewUnitKeySet = new Set(reviewMissingUnitKeys);
+    const uncheckedUnitKeys = dispatchUnitKeys.filter((unitKey) => !readyUnitKeySet.has(unitKey));
+    const finalReadyUnitKeys = dispatchUnitKeys.filter((unitKey) => !missingReviewUnitKeySet.has(unitKey));
 
     return (
       <main className={styles.page}>
@@ -211,6 +297,7 @@ export default function PreparerPortal() {
 
           <div className={styles.preparerSummary}>
             <span className={styles.counterBadge}>Ordenes {sortedAssignments.length}</span>
+            <span className={styles.counterBadge}>Restantes {remainingAssignments.length}</span>
           </div>
 
           {sortedAssignments.length ? (
@@ -240,6 +327,7 @@ export default function PreparerPortal() {
                     return (
                       <div key={assignment.id} className={styles.preparerOrderCheckItem}>
                         <span className={styles.orderSequenceBadge}>{Number(assignment.sequence || 0) || ""}</span>
+                        <strong>Orden #{order.orderNumber || assignment.orderNumber || "-"}</strong>
                         <span
                           className={`${styles.preparerCheckBox} ${
                             status === "ready"
@@ -252,7 +340,6 @@ export default function PreparerPortal() {
                         >
                           {preparerOrderMark(status)}
                         </span>
-                        <strong>Orden #{order.orderNumber || assignment.orderNumber || "-"}</strong>
                       </div>
                     );
                   })}
@@ -263,10 +350,13 @@ export default function PreparerPortal() {
                     <>
                       <div className={styles.cardHeader}>
                         <div>
-                          <p className={styles.eyebrow}>
-                            Orden {Number(dispatchAssignment.sequence || 0) || ""} · #{dispatchOrder.orderNumber || dispatchAssignment.orderNumber || "-"}
-                          </p>
-                          <h2 className={styles.cardTitle}>{dispatchOrder.customerName || "Cliente"}</h2>
+                          <div className={styles.preparerDispatchTitleRow}>
+                            <span className={styles.orderSequenceBadge}>{Number(dispatchAssignment.sequence || 0) || ""}</span>
+                            <h2 className={styles.preparerDispatchOrderNumber}>
+                              #{dispatchOrder.orderNumber || dispatchAssignment.orderNumber || "-"}
+                            </h2>
+                          </div>
+                          <h3 className={styles.cardTitle}>{dispatchOrder.customerName || "Cliente"}</h3>
                           {dispatchAddress ? <p className={styles.subtitle}>{dispatchAddress}</p> : null}
                         </div>
                         <span className={`${styles.counterBadge} ${styles.preparerStatusBadge}`}>
@@ -274,58 +364,86 @@ export default function PreparerPortal() {
                         </span>
                       </div>
 
-                      <div className={styles.preparerProductList}>
-                        {dispatchItems.length ? (
-                          dispatchItems.map((item, index) => (
-                            <div key={`${item.lineItemId || item.id || item.title || "item"}-${index}`} className={styles.preparerProductItem}>
-                              {item.imageUrl ? (
-                                <button
-                                  className={styles.preparerProductImageButton}
-                                  type="button"
-                                  onClick={() =>
-                                    setEnlargedImage({
-                                      src: item.imageUrl,
-                                      alt: item.imageAlt || item.title || "Producto",
-                                    })
-                                  }
-                                >
-                                  <img
-                                    className={styles.preparerProductImage}
-                                    src={item.imageUrl}
-                                    alt={item.imageAlt || item.title || "Producto"}
-                                  />
-                                </button>
-                              ) : (
-                                <span className={styles.preparerProductImagePlaceholder} />
-                              )}
-                              <div className={styles.preparerProductCopy}>
-                                <strong>{item.title || "Producto"}</strong>
-                                {item.variantSummary ? <span>Variante: {item.variantSummary}</span> : null}
-                                <span>Cantidad: {Math.max(1, Number(item.quantity || 1))}</span>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <p className={styles.subtitle}>No hay productos registrados para esta orden.</p>
-                        )}
-                      </div>
+                      <Form
+                        method="post"
+                        onSubmit={(event) => {
+                          if (isDispatchCompleted) return;
+                          if (uncheckedUnitKeys.length) {
+                            event.preventDefault();
+                            setReviewMissingUnitKeys(uncheckedUnitKeys);
+                            setMissingReviewOpen(true);
+                          }
+                        }}
+                      >
+                        <input type="hidden" name="intent" value="preparer_mark_ready" />
+                        <input type="hidden" name="assignmentId" value={dispatchAssignment.id} />
+                        {readyUnitKeys.map((unitKey) => (
+                          <input key={`ready:${unitKey}`} type="hidden" name="readyUnitKeys" value={unitKey} />
+                        ))}
+                        <div className={styles.preparerProductList}>
+                          {dispatchItems.length ? (
+                            dispatchItems.map((item, index) => {
+                              const unitKeys = itemUnitKeys(item);
+                              const checked = unitKeys.every((unitKey) => readyUnitKeySet.has(unitKey));
+                              return (
+                                <div key={`${item.lineItemId || item.id || item.title || "item"}-${index}`} className={styles.preparerProductItem}>
+                                  {item.imageUrl ? (
+                                    <button
+                                      className={styles.preparerProductImageButton}
+                                      type="button"
+                                      onClick={() =>
+                                        setEnlargedImage({
+                                          src: item.imageUrl,
+                                          alt: item.imageAlt || item.title || "Producto",
+                                        })
+                                      }
+                                    >
+                                      <img
+                                        className={styles.preparerProductImage}
+                                        src={item.imageUrl}
+                                        alt={item.imageAlt || item.title || "Producto"}
+                                      />
+                                    </button>
+                                  ) : (
+                                    <span className={styles.preparerProductImagePlaceholder} />
+                                  )}
+                                  <div className={styles.preparerProductCopy}>
+                                    <strong>{item.title || "Producto"}</strong>
+                                    {item.variantSummary ? <span>Variante: {item.variantSummary}</span> : null}
+                                    <span>Cantidad: {Math.max(1, Number(item.quantity || 1))}</span>
+                                  </div>
+                                  <label className={styles.preparerProductCheck}>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={isDispatchCompleted}
+                                      onChange={(event) => {
+                                        setReadyUnitKeys((currentKeys) => {
+                                          const nextKeys = new Set(currentKeys);
+                                          for (const unitKey of unitKeys) {
+                                            if (event.target.checked) nextKeys.add(unitKey);
+                                            else nextKeys.delete(unitKey);
+                                          }
+                                          return [...nextKeys];
+                                        });
+                                      }}
+                                    />
+                                    <span>{checked ? "✓" : ""}</span>
+                                  </label>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <p className={styles.subtitle}>No hay productos registrados para esta orden.</p>
+                          )}
+                        </div>
 
-                      <div className={styles.preparerActions}>
-                        <Form method="post">
-                          <input type="hidden" name="intent" value="preparer_mark_ready" />
-                          <input type="hidden" name="assignmentId" value={dispatchAssignment.id} />
+                        <div className={styles.preparerActions}>
                           <button className={styles.accessButton} type="submit" disabled={isSubmitting || isDispatchCompleted}>
                             Listo
                           </button>
-                        </Form>
-                        <Form method="post">
-                          <input type="hidden" name="intent" value="preparer_mark_not_located" />
-                          <input type="hidden" name="assignmentId" value={dispatchAssignment.id} />
-                          <button className={styles.missingButton} type="submit" disabled={isSubmitting || isDispatchCompleted}>
-                            No localizado
-                          </button>
-                        </Form>
-                      </div>
+                        </div>
+                      </Form>
                     </>
                   ) : (
                     <p className={styles.empty}>No hay ordenes para despachar.</p>
@@ -335,9 +453,67 @@ export default function PreparerPortal() {
             </section>
           ) : (
             <section className={styles.card}>
-              <p className={styles.error}>Este preparador aún no tiene órdenes asignadas.</p>
+              <p className={styles.error}>Este preparador aun no tiene ordenes asignadas.</p>
             </section>
           )}
+          {missingReviewOpen && dispatchAssignment ? (
+            <div className={styles.modalBackdrop} role="presentation">
+              <section className={styles.preparerReviewModal} role="dialog" aria-modal="true">
+                <h2 className={styles.cardTitle}>Revisa los productos sin palomita</h2>
+                <p className={styles.subtitle}>
+                  Marca como no localizado solo los productos que no tienes fisicamente. Los demas se guardaran como listos.
+                </p>
+                <div className={styles.preparerReviewList}>
+                  {dispatchItems
+                    .filter((item) => itemUnitKeys(item).some((unitKey) => uncheckedUnitKeys.includes(unitKey)))
+                    .map((item, index) => {
+                      const unitKeys = itemUnitKeys(item);
+                      const isMissing = unitKeys.some((unitKey) => missingReviewUnitKeySet.has(unitKey));
+                      return (
+                        <div key={`review:${itemBaseKey(item)}:${index}`} className={styles.preparerReviewItem}>
+                          <strong>{item.title || "Producto"}</strong>
+                          {item.variantSummary ? <span>Variante: {item.variantSummary}</span> : null}
+                          <span>Cantidad: {Math.max(1, Number(item.quantity || 1))}</span>
+                          <label className={styles.preparerReviewToggle}>
+                            <input
+                              type="checkbox"
+                              checked={isMissing}
+                              onChange={(event) => {
+                                setReviewMissingUnitKeys((currentKeys) => {
+                                  const nextKeys = new Set(currentKeys);
+                                  for (const unitKey of unitKeys) {
+                                    if (event.target.checked) nextKeys.add(unitKey);
+                                    else nextKeys.delete(unitKey);
+                                  }
+                                  return [...nextKeys];
+                                });
+                              }}
+                            />
+                            <span>No localizado</span>
+                          </label>
+                        </div>
+                      );
+                    })}
+                </div>
+                <Form method="post" className={styles.preparerReviewActions}>
+                  <input type="hidden" name="intent" value="preparer_mark_ready" />
+                  <input type="hidden" name="assignmentId" value={dispatchAssignment.id} />
+                  {finalReadyUnitKeys.map((unitKey) => (
+                    <input key={`review-ready:${unitKey}`} type="hidden" name="readyUnitKeys" value={unitKey} />
+                  ))}
+                  {reviewMissingUnitKeys.map((unitKey) => (
+                    <input key={`review-missing:${unitKey}`} type="hidden" name="missingUnitKeys" value={unitKey} />
+                  ))}
+                  <button className={styles.actionButton} type="button" onClick={() => setMissingReviewOpen(false)}>
+                    Cancelar
+                  </button>
+                  <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
+                    Guardar
+                  </button>
+                </Form>
+              </section>
+            </div>
+          ) : null}
           {enlargedImage ? (
             <div className={styles.modalBackdrop} role="presentation" onClick={() => setEnlargedImage(null)}>
               <div className={styles.preparerImageModal} role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>

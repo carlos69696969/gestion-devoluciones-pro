@@ -699,6 +699,29 @@ function courierRefundedUnitKeySetFromActivities(activities = []) {
   return courierRefundedUnitKeySetFromDetails(courierRefundDetailsFromActivities(activities));
 }
 
+function courierRefundUnitKeyFromItem(item, index = 0) {
+  return `${String(item?.lineItemId || item?.id || item?.title || "item")}::${Number(index || 0) + 1}`;
+}
+
+function preparerMissingUnitKeySetFromOrder(order = {}) {
+  const explicitKeys = new Set(
+    (Array.isArray(order?.preparerMissingUnitKeys) ? order.preparerMissingUnitKeys : [])
+      .map((unitKey) => String(unitKey || "").trim())
+      .filter(Boolean),
+  );
+  for (const item of Array.isArray(order?.items) ? order.items : []) {
+    for (const unitKey of Array.isArray(item?.preparerMissingUnitKeys) ? item.preparerMissingUnitKeys : []) {
+      const cleanUnitKey = String(unitKey || "").trim();
+      if (cleanUnitKey) explicitKeys.add(cleanUnitKey);
+    }
+  }
+  return explicitKeys;
+}
+
+function preparerMissingRefundUnitKeysFromOrder(order = {}) {
+  return [...preparerMissingUnitKeySetFromOrder(order)];
+}
+
 const PICKUP_FAILED_REASON_OPTIONS = [
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨",
   "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
@@ -3142,6 +3165,23 @@ export const loader = async ({ request }) => {
     current.push(activity);
     courierActivitiesByRequestId.set(requestId, current);
   }
+  const preparerAssignmentsForCourierOrders =
+    courierRequestIds.length && (viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.COURIER_HISTORY)
+      ? await prisma.preparerAssignment.findMany({
+          where: {
+            shop: session.shop,
+            requestId: { in: courierRequestIds },
+          },
+          orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        })
+      : [];
+  const preparerAssignmentByRequestId = new Map();
+  for (const assignment of preparerAssignmentsForCourierOrders) {
+    const requestId = String(assignment.requestId || "").trim();
+    if (requestId && !preparerAssignmentByRequestId.has(requestId)) {
+      preparerAssignmentByRequestId.set(requestId, assignment);
+    }
+  }
   const courierRouteIdsForCards = [
     ...new Set(
       courierActivitiesForCards
@@ -3254,13 +3294,47 @@ export const loader = async ({ request }) => {
       const activityStatus = latestFinalActivity
         ? courierStatusFromActivityAction(latestFinalActivity.action, "")
         : "";
+      const requestId = String(requestRow.id || "").trim();
+      const preparerAssignment = preparerAssignmentByRequestId.get(requestId) || null;
+      const preparerOrderData =
+        preparerAssignment?.orderData && typeof preparerAssignment.orderData === "object"
+          ? preparerAssignment.orderData
+          : null;
+      const preparerMissingUnitKeySet = preparerMissingUnitKeySetFromOrder(preparerOrderData || {});
+      const preparerItemByKey = new Map(
+        (Array.isArray(preparerOrderData?.items) ? preparerOrderData.items : [])
+          .map((item) => [String(item?.lineItemId || item?.id || item?.title || "item"), item]),
+      );
+      const hasPreparerMissingItems =
+        String(preparerAssignment?.status || "").trim().toLowerCase() === "not_located" ||
+        preparerMissingUnitKeySet.size > 0;
+      const itemsWithPreparerStatus = (requestWithAttemptCount.items || []).map((item) => {
+        const itemKey = String(item?.lineItemId || item?.id || item?.title || "item");
+        const preparerItem = preparerItemByKey.get(itemKey) || {};
+        const quantity = Math.max(1, Number(item?.quantity || 1));
+        const itemMissingUnitKeys = Array.from({ length: quantity }, (_value, index) =>
+          courierRefundUnitKeyFromItem(item, index),
+        ).filter((unitKey) => preparerMissingUnitKeySet.has(unitKey));
+        return {
+          ...item,
+          preparerStatus: preparerItem.preparerStatus || (itemMissingUnitKeys.length ? "not_located" : ""),
+          preparerMissingUnitKeys: itemMissingUnitKeys.length
+            ? itemMissingUnitKeys
+            : Array.isArray(preparerItem.preparerMissingUnitKeys)
+              ? preparerItem.preparerMissingUnitKeys
+              : [],
+        };
+      });
       return {
         ...requestWithAttemptCount,
-        status: activityStatus || requestWithAttemptCount.status,
+        status: activityStatus || (hasPreparerMissingItems ? "no_localizado" : requestWithAttemptCount.status),
+        items: itemsWithPreparerStatus,
+        preparerMissingUnitKeys: [...preparerMissingUnitKeySet],
+        preparerAssignmentStatus: preparerAssignment?.status || "",
         courierActivities: requestActivities,
         historyEvents: enrichCourierHistoryEvents({
           events: dedupeCourierHistoryEvents(historyEvents),
-          request: requestWithAttemptCount,
+          request: { ...requestWithAttemptCount, items: itemsWithPreparerStatus },
           activitiesByRequestId: courierActivitiesByRequestId,
           transferActivityByRouteId,
         }),
@@ -5422,13 +5496,15 @@ export default function ReturnsRequests() {
   );
   const selectedCourierBulkCurrency = selectedCourierBulkOrders[0]?.currencyCode || "MXN";
   const courierRefundItems = Array.isArray(courierRefundRequest?.items) ? courierRefundRequest.items : [];
+  const preparerMissingCourierRefundUnitKeySet = preparerMissingUnitKeySetFromOrder(courierRefundRequest || {});
   const courierRefundUnitItems = courierRefundItems.flatMap((item) => {
     const quantity = Math.max(1, Number(item.quantity || 1));
     return Array.from({ length: quantity }, (_value, index) => ({
       ...item,
       quantity: 1,
       unitIndex: index + 1,
-      unitKey: `${String(item.lineItemId || item.id || item.title || "item")}::${index + 1}`,
+      unitKey: courierRefundUnitKeyFromItem(item, index),
+      preparerMissing: preparerMissingCourierRefundUnitKeySet.has(courierRefundUnitKeyFromItem(item, index)),
     }));
   });
   const alreadyRefundedCourierUnitKeySet = courierRefundedUnitKeySetFromActivities(
@@ -6152,7 +6228,9 @@ export default function ReturnsRequests() {
                             if (courierBulkMode === "refund") {
                               setSelectedCourierBulkOrderIds(event.target.checked ? [requestId] : []);
                               setCourierRefundRequest(event.target.checked ? request : null);
-                              setSelectedCourierRefundUnitKeys([]);
+                              setSelectedCourierRefundUnitKeys(
+                                event.target.checked ? preparerMissingRefundUnitKeysFromOrder(request) : [],
+                              );
                               return;
                             }
                             setSelectedCourierBulkOrderIds((currentIds) =>
@@ -6232,6 +6310,7 @@ export default function ReturnsRequests() {
                           String(sourceItem.lineItemId || sourceItem.id || "") === String(item.lineItemId || item.id || ""),
                         )?.quantity || 1,
                       ))}</span>
+                      {item.preparerMissing ? <span className={styles.courierRefundAlreadyRefunded}>No localizado por preparador</span> : null}
                       {alreadyRefunded ? <span className={styles.courierRefundAlreadyRefunded}>Ya reembolsado</span> : null}
                     </span>
                     <strong className={styles.courierRefundProductPrice}>
