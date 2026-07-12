@@ -3329,6 +3329,12 @@ export const loader = async ({ request }) => {
         ...requestWithAttemptCount,
         status: activityStatus || (hasPreparerMissingItems ? "no_localizado" : requestWithAttemptCount.status),
         items: itemsWithPreparerStatus,
+        preparerName: preparerAssignment?.preparerName || "",
+        preparedAt:
+          preparerAssignment?.completedAt ||
+          (["ready", "not_located"].includes(String(preparerAssignment?.status || "").trim().toLowerCase())
+            ? preparerAssignment?.updatedAt || preparerAssignment?.assignedAt
+            : null),
         preparerMissingUnitKeys: [...preparerMissingUnitKeySet],
         preparerAssignmentStatus: preparerAssignment?.status || "",
         courierActivities: requestActivities,
@@ -8251,13 +8257,26 @@ function CourierOrderCard({
         },
       ].filter((event) => event.atMs || event.at)
     : filteredHistoryEvents;
-  const displayHistoryItems = buildCourierHistoryDisplayItems(
+  const baseDisplayHistoryItems = buildCourierHistoryDisplayItems(
     courierHistoryView && isReturnCourierLabel(request.courierLabel)
       ? normalizeReturnCourierHistoryEvents(effectiveHistoryEvents)
       : effectiveHistoryEvents,
     request,
     { hideTransferDetails: branchPickupView },
   );
+  const preparerName = String(request.preparerName || "").trim();
+  const preparedAt = request.preparedAt || "";
+  const preparedHistoryItem =
+    preparerName && preparedAt
+      ? {
+          id: `preparer-ready-${request.id || request.orderNumber || preparerName}`,
+          label: `Preparado por ${preparerName}`,
+          at: preparedAt,
+        }
+      : null;
+  const displayHistoryItems = preparedHistoryItem
+    ? [preparedHistoryItem, ...baseDisplayHistoryItems]
+    : baseDisplayHistoryItems;
   const branchPickupHistoryOrder =
     !hasCourierFullRefund &&
     (
