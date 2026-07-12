@@ -492,15 +492,28 @@ export default function PreparerPortal() {
                             Listo
                           </button>
                           {missingReviewOpen && activeReviewUnitKeys.some((unitKey) => !readyUnitKeySet.has(unitKey)) ? (
-                            <button
-                              className={styles.missingButton}
-                              type="submit"
-                              name="preparerSubmitAction"
-                              value="not_located"
-                              disabled={isSubmitting || isDispatchCompleted}
-                            >
-                              No localizado
-                            </button>
+                            <>
+                              <button
+                                className={styles.missingButton}
+                                type="submit"
+                                name="preparerSubmitAction"
+                                value="not_located"
+                                disabled={isSubmitting || isDispatchCompleted}
+                              >
+                                No localizado
+                              </button>
+                              <button
+                                className={styles.accessButton}
+                                type="button"
+                                disabled={isSubmitting || isDispatchCompleted}
+                                onClick={() => {
+                                  setMissingReviewOpen(false);
+                                  setReviewUnitKeys([]);
+                                }}
+                              >
+                                Regresar
+                              </button>
+                            </>
                           ) : null}
                         </div>
                       </Form>
