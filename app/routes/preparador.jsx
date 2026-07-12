@@ -227,6 +227,11 @@ function preparerOrderMark(status) {
   return "";
 }
 
+function preparerDisplaySequence(assignment, fallback = 0) {
+  const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+  return Number(order.sequenceNumber || assignment?.sequence || fallback || 0) || 0;
+}
+
 export default function PreparerPortal() {
   const { shop, preparerName, isLoggedIn, assignments = [] } = useLoaderData();
   const actionData = useActionData();
@@ -241,7 +246,7 @@ export default function PreparerPortal() {
   const activeTab = requestedTab === "despachar" ? "despachar" : "ordenes";
   const sortedAssignments = [...assignments].sort(
     (firstAssignment, secondAssignment) =>
-      Number(firstAssignment.sequence || 0) - Number(secondAssignment.sequence || 0) ||
+      preparerDisplaySequence(firstAssignment) - preparerDisplaySequence(secondAssignment) ||
       Number(firstAssignment.id || 0) - Number(secondAssignment.id || 0),
   );
   const dispatchAssignment =
@@ -326,7 +331,7 @@ export default function PreparerPortal() {
                     const status = String(assignment.status || "assigned").trim().toLowerCase();
                     return (
                       <div key={assignment.id} className={styles.preparerOrderCheckItem}>
-                        <span className={styles.orderSequenceBadge}>{Number(assignment.sequence || 0) || ""}</span>
+                        <span className={styles.orderSequenceBadge}>{preparerDisplaySequence(assignment) || ""}</span>
                         <strong>Orden #{order.orderNumber || assignment.orderNumber || "-"}</strong>
                         <span
                           className={`${styles.preparerCheckBox} ${
@@ -351,7 +356,7 @@ export default function PreparerPortal() {
                       <div className={styles.cardHeader}>
                         <div>
                           <div className={styles.preparerDispatchTitleRow}>
-                            <span className={styles.orderSequenceBadge}>{Number(dispatchAssignment.sequence || 0) || ""}</span>
+                            <span className={styles.orderSequenceBadge}>{preparerDisplaySequence(dispatchAssignment) || ""}</span>
                             <h2 className={styles.preparerDispatchOrderNumber}>
                               #{dispatchOrder.orderNumber || dispatchAssignment.orderNumber || "-"}
                             </h2>

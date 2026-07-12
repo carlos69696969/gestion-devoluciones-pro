@@ -4116,7 +4116,7 @@ export const action = async ({ request }) => {
       const assignedOrders = orders.slice(orderIndex, orderIndex + countForPreparer);
       orderIndex += countForPreparer;
       for (const order of assignedOrders) {
-        const sequence = assignments.length + 1;
+        const sequence = Number(order.sequenceNumber || 0) || assignments.length + 1;
         assignments.push({
           shop: session.shop,
           preparerId: preparer.id,
