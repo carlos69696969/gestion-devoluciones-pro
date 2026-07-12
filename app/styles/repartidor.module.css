@@ -134,7 +134,8 @@
 .preparerSummary {
   display: flex;
   justify-content: flex-end;
-  flex-wrap: wrap;
+  align-items: flex-end;
+  flex-direction: column;
   gap: 8px;
   margin-bottom: 14px;
 }

@@ -232,6 +232,12 @@ function preparerDisplaySequence(assignment, fallback = 0) {
   return Number(order.sequenceNumber || assignment?.sequence || fallback || 0) || 0;
 }
 
+function preparerOrderNumberValue(assignment) {
+  const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+  const digits = String(order.orderNumber || assignment?.orderNumber || "").replace(/\D/g, "");
+  return Number(digits || 0) || 0;
+}
+
 export default function PreparerPortal() {
   const { shop, preparerName, isLoggedIn, assignments = [] } = useLoaderData();
   const actionData = useActionData();
@@ -246,8 +252,12 @@ export default function PreparerPortal() {
   const activeTab = requestedTab === "despachar" ? "despachar" : "ordenes";
   const sortedAssignments = [...assignments].sort(
     (firstAssignment, secondAssignment) =>
+      preparerOrderNumberValue(firstAssignment) - preparerOrderNumberValue(secondAssignment) ||
       preparerDisplaySequence(firstAssignment) - preparerDisplaySequence(secondAssignment) ||
       Number(firstAssignment.id || 0) - Number(secondAssignment.id || 0),
+  );
+  const displaySequenceByAssignmentId = new Map(
+    sortedAssignments.map((assignment, index) => [String(assignment.id), index + 1]),
   );
   const dispatchAssignment =
     sortedAssignments.find((assignment) => !isPreparerAssignmentDone(assignment.status)) ||
@@ -331,7 +341,9 @@ export default function PreparerPortal() {
                     const status = String(assignment.status || "assigned").trim().toLowerCase();
                     return (
                       <div key={assignment.id} className={styles.preparerOrderCheckItem}>
-                        <span className={styles.orderSequenceBadge}>{preparerDisplaySequence(assignment) || ""}</span>
+                        <span className={styles.orderSequenceBadge}>
+                          {displaySequenceByAssignmentId.get(String(assignment.id)) || ""}
+                        </span>
                         <strong>Orden #{order.orderNumber || assignment.orderNumber || "-"}</strong>
                         <span
                           className={`${styles.preparerCheckBox} ${
@@ -356,7 +368,9 @@ export default function PreparerPortal() {
                       <div className={styles.cardHeader}>
                         <div>
                           <div className={styles.preparerDispatchTitleRow}>
-                            <span className={styles.orderSequenceBadge}>{preparerDisplaySequence(dispatchAssignment) || ""}</span>
+                            <span className={styles.orderSequenceBadge}>
+                              {displaySequenceByAssignmentId.get(String(dispatchAssignment.id)) || ""}
+                            </span>
                             <h2 className={styles.preparerDispatchOrderNumber}>
                               #{dispatchOrder.orderNumber || dispatchAssignment.orderNumber || "-"}
                             </h2>
