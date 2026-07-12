@@ -1146,6 +1146,20 @@
   box-shadow: none;
 }
 
+.courierNotLocatedFilterButton {
+  border-color: #f9a8d4;
+  background: #fdf2f8;
+  color: #c11574;
+  box-shadow: none;
+}
+
+.courierNotLocatedFilterButton:hover,
+.courierNotLocatedFilterButtonActive {
+  border-color: #c11574;
+  background: #fce7f3;
+  color: #9d174d;
+}
+
 .courierBulkActionBar {
   position: sticky;
   top: 8px;

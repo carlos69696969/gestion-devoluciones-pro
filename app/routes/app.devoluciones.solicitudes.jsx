@@ -5485,6 +5485,7 @@ export default function ReturnsRequests() {
   const [selectedCourierBulkOrderIds, setSelectedCourierBulkOrderIds] = useState([]);
   const [courierRefundRequest, setCourierRefundRequest] = useState(null);
   const [selectedCourierRefundUnitKeys, setSelectedCourierRefundUnitKeys] = useState([]);
+  const [showOnlyNotLocatedCourierOrders, setShowOnlyNotLocatedCourierOrders] = useState(false);
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
@@ -5542,6 +5543,10 @@ export default function ReturnsRequests() {
     selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
   const canConfirmCourierBulkAction =
     selectedCourierBulkOrderIds.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
+  const notLocatedCourierOrders = courierOrders.filter(
+    (order) => String(order.status || "").trim().toLowerCase() === "no_localizado",
+  );
+  const visibleCourierOrders = showOnlyNotLocatedCourierOrders ? notLocatedCourierOrders : courierOrders;
   const courierRouteActionData = courierRouteFetcher.data || null;
   const branchPickupDeliveryActionData = branchPickupDeliveryFetcher.data || null;
   const branchPickupRefundActionData = branchPickupRefundFetcher.data || null;
@@ -5635,6 +5640,12 @@ export default function ReturnsRequests() {
       setBranchPickupRefundRequest(null);
     }
   }, [actionData, courierRouteActionData, branchPickupDeliveryActionData, branchPickupRefundActionData]);
+
+  useEffect(() => {
+    if (showOnlyNotLocatedCourierOrders && notLocatedCourierOrders.length === 0) {
+      setShowOnlyNotLocatedCourierOrders(false);
+    }
+  }, [showOnlyNotLocatedCourierOrders, notLocatedCourierOrders.length]);
 
   useEffect(() => {
     if (!pageSuccessMessage) return;
@@ -6042,6 +6053,24 @@ export default function ReturnsRequests() {
                       </div>
                     ) : null}
                   </div>
+                  {notLocatedCourierOrders.length > 0 ? (
+                    <button
+                      className={`${styles.btn} ${styles.courierNotLocatedFilterButton} ${
+                        showOnlyNotLocatedCourierOrders ? styles.courierNotLocatedFilterButtonActive : ""
+                      }`}
+                      type="button"
+                      aria-pressed={showOnlyNotLocatedCourierOrders}
+                      onClick={() => {
+                        setShowOnlyNotLocatedCourierOrders((current) => !current);
+                        setCourierBulkMode("");
+                        setSelectedCourierBulkOrderIds([]);
+                        setCourierRefundRequest(null);
+                        setSelectedCourierRefundUnitKeys([]);
+                      }}
+                    >
+                      No localizados ({notLocatedCourierOrders.length})
+                    </button>
+                  ) : null}
                   <button
                     className={`${styles.btn} ${styles.btnPrimary}`}
                     type="button"
@@ -6211,11 +6240,11 @@ export default function ReturnsRequests() {
               </div>
             </div>
           ) : null}
-          {!selectedCourierRoutePlan && courierOrders.length === 0 ? (
+          {!selectedCourierRoutePlan && visibleCourierOrders.length === 0 ? (
             <p>No hay ordenes pendientes por entregar.</p>
           ) : !selectedCourierRoutePlan ? (
             <div className={styles.courierGrid}>
-              {courierOrders.map((request) => {
+              {visibleCourierOrders.map((request) => {
                 const requestId = String(request.id || "");
                 const isBulkSelected = selectedCourierBulkOrderIdSet.has(requestId);
                 return (
