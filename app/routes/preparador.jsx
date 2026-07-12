@@ -60,6 +60,18 @@ function normalizeOrderItemsWithPreparerStatus(orderData, readyUnitKeys = [], mi
   };
 }
 
+function isReprogrammedPreparerOrder(orderData = {}) {
+  const status = String(orderData?.status || "").trim().toLowerCase();
+  const visibleStatus = String(orderData?.visibleStatus || orderData?.displayStatus || "").trim().toLowerCase();
+  return (
+    status === "reintento_pendiente" ||
+    status === "reprogramado" ||
+    status === "reprogramada" ||
+    visibleStatus === "reprogramado" ||
+    visibleStatus === "reprogramada"
+  );
+}
+
 async function getPreparerAccess(request) {
   const { accessCookie } = preparerPortalCookies();
   const cookieHeader = request.headers.get("Cookie");
@@ -148,6 +160,7 @@ export async function action({ request }) {
       .getAll("missingUnitKeys")
       .map((value) => String(value || "").trim())
       .filter(Boolean);
+    const submitAction = String(formData.get("preparerSubmitAction") || "").trim().toLowerCase();
     const assignment = await prisma.preparerAssignment.findFirst({
       where: {
         id: assignmentId,
@@ -156,7 +169,7 @@ export async function action({ request }) {
       },
     });
     if (!assignment) return { ok: false, error: "Orden invalida." };
-    const nextStatus = missingUnitKeys.length ? "not_located" : "ready";
+    const nextStatus = submitAction === "not_located" || missingUnitKeys.length ? "not_located" : "ready";
     const nextOrderData = normalizeOrderItemsWithPreparerStatus(assignment.orderData, readyUnitKeys, missingUnitKeys);
     await prisma.$transaction([
       prisma.preparerAssignment.update({
@@ -167,7 +180,7 @@ export async function action({ request }) {
           completedAt: new Date(),
         },
       }),
-      ...(missingUnitKeys.length
+      ...(nextStatus === "not_located"
         ? [
             prisma.courierActivity.create({
               data: {
@@ -300,6 +313,7 @@ export default function PreparerPortal() {
     const dispatchItems = Array.isArray(dispatchOrder.items) ? dispatchOrder.items : [];
     const dispatchStatus = String(dispatchAssignment?.status || "assigned").trim().toLowerCase();
     const isDispatchCompleted = isPreparerAssignmentDone(dispatchStatus);
+    const isDispatchReprogrammed = isReprogrammedPreparerOrder(dispatchOrder);
     const dispatchAddress = formatPreparerAddress(dispatchOrder);
     const dispatchUnitKeys = dispatchItems.flatMap((item) => itemUnitKeys(item));
     const readyUnitKeySet = new Set(readyUnitKeys);
@@ -417,7 +431,16 @@ export default function PreparerPortal() {
                           if (isDispatchCompleted) return;
                           const submitAction = event.nativeEvent?.submitter?.value || "";
                           if (submitAction === "not_located") {
-                            if (!window.confirm("Confirmas que estos productos no fueron localizados?")) {
+                            const message = isDispatchReprogrammed
+                              ? "Confirmas que esta orden no fue localizada?"
+                              : "Confirmas que estos productos no fueron localizados?";
+                            if (!window.confirm(message)) {
+                              event.preventDefault();
+                            }
+                            return;
+                          }
+                          if (isDispatchReprogrammed) {
+                            if (!window.confirm("Confirmas que esta orden esta lista?")) {
                               event.preventDefault();
                             }
                             return;
@@ -448,11 +471,16 @@ export default function PreparerPortal() {
                               <input key={`missing:${unitKey}`} type="hidden" name="missingUnitKeys" value={unitKey} />
                             ))
                           : null}
-                        {missingReviewOpen ? (
+                        {isDispatchReprogrammed ? (
+                          <div className={styles.preparerReprogrammedNotice}>
+                            Recoge esta orden en la seccion de reprogramados.
+                          </div>
+                        ) : missingReviewOpen ? (
                           <p className={styles.preparerInlineReviewMessage}>
                             {reviewItemCount === 1 ? "Revisa que tengas este producto." : "Revisa que tengas estos productos."}
                           </p>
                         ) : null}
+                        {!isDispatchReprogrammed ? (
                         <div className={styles.preparerProductList}>
                           {visibleDispatchItems.length ? (
                             visibleDispatchItems.map((item, index) => {
@@ -510,12 +538,23 @@ export default function PreparerPortal() {
                             <p className={styles.subtitle}>No hay productos registrados para esta orden.</p>
                           )}
                         </div>
+                        ) : null}
 
                         <div className={styles.preparerActions}>
                           <button className={styles.accessButton} type="submit" disabled={isSubmitting || isDispatchCompleted}>
                             Listo
                           </button>
-                          {missingReviewOpen && activeReviewUnitKeys.some((unitKey) => !readyUnitKeySet.has(unitKey)) ? (
+                          {isDispatchReprogrammed ? (
+                            <button
+                              className={styles.missingButton}
+                              type="submit"
+                              name="preparerSubmitAction"
+                              value="not_located"
+                              disabled={isSubmitting || isDispatchCompleted}
+                            >
+                              No localizado
+                            </button>
+                          ) : missingReviewOpen && activeReviewUnitKeys.some((unitKey) => !readyUnitKeySet.has(unitKey)) ? (
                             <>
                               <button
                                 className={styles.missingButton}

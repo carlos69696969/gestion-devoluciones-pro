@@ -309,6 +309,17 @@
   font-weight: 800;
 }
 
+.preparerReprogrammedNotice {
+  margin: 14px 0 0;
+  padding: 14px;
+  border: 1px solid #f59e0b;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 16px;
+  font-weight: 900;
+}
+
 .preparerProductCheck {
   display: inline-flex;
   justify-content: flex-end;
