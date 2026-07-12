@@ -108,8 +108,8 @@
   border: 1px solid #d82c0d;
   border-radius: 999px;
   padding: 12px 18px;
-  background: #fff4f4;
-  color: #b42318;
+  background: #d82c0d;
+  color: #fff;
   font-size: 15px;
   font-weight: 800;
   cursor: pointer;
@@ -301,10 +301,10 @@
 .preparerInlineReviewMessage {
   margin: 14px 0 0;
   padding: 12px 14px;
-  border: 1px solid #8eb8ff;
+  border: 1px solid #fda29b;
   border-radius: 12px;
-  background: #f1f6ff;
-  color: #005bd3;
+  background: #fff4f4;
+  color: #b42318;
   font-size: 15px;
   font-weight: 800;
 }

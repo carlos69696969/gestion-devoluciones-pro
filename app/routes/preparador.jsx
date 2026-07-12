@@ -246,6 +246,7 @@ export default function PreparerPortal() {
   const [enlargedImage, setEnlargedImage] = useState(null);
   const [readyUnitKeys, setReadyUnitKeys] = useState([]);
   const [missingReviewOpen, setMissingReviewOpen] = useState(false);
+  const [reviewUnitKeys, setReviewUnitKeys] = useState([]);
   const isSubmitting = navigation.state === "submitting";
   const requestedTab = String(searchParams.get("tab") || "ordenes").trim().toLowerCase();
   const activeTab = requestedTab === "despachar" ? "despachar" : "ordenes";
@@ -266,6 +267,7 @@ export default function PreparerPortal() {
   useEffect(() => {
     setReadyUnitKeys([]);
     setMissingReviewOpen(false);
+    setReviewUnitKeys([]);
   }, [dispatchAssignment?.id]);
 
   const handleTabChange = (nextTab) => {
@@ -285,9 +287,12 @@ export default function PreparerPortal() {
     const dispatchUnitKeys = dispatchItems.flatMap((item) => itemUnitKeys(item));
     const readyUnitKeySet = new Set(readyUnitKeys);
     const uncheckedUnitKeys = dispatchUnitKeys.filter((unitKey) => !readyUnitKeySet.has(unitKey));
+    const activeReviewUnitKeys = missingReviewOpen && reviewUnitKeys.length ? reviewUnitKeys : uncheckedUnitKeys;
+    const activeReviewUnitKeySet = new Set(activeReviewUnitKeys);
     const visibleDispatchItems = missingReviewOpen
-      ? dispatchItems.filter((item) => itemUnitKeys(item).some((unitKey) => uncheckedUnitKeys.includes(unitKey)))
+      ? dispatchItems.filter((item) => itemUnitKeys(item).some((unitKey) => activeReviewUnitKeySet.has(unitKey)))
       : dispatchItems;
+    const reviewItemCount = visibleDispatchItems.length;
 
     return (
       <main className={styles.page}>
@@ -398,6 +403,7 @@ export default function PreparerPortal() {
                             if (!window.confirm("Hay productos sin palomita. Quieres revisarlos antes de guardar?")) {
                               return;
                             }
+                            setReviewUnitKeys(uncheckedUnitKeys);
                             setMissingReviewOpen(true);
                             return;
                           }
@@ -412,12 +418,16 @@ export default function PreparerPortal() {
                           <input key={`ready:${unitKey}`} type="hidden" name="readyUnitKeys" value={unitKey} />
                         ))}
                         {missingReviewOpen
-                          ? uncheckedUnitKeys.map((unitKey) => (
+                          ? activeReviewUnitKeys
+                              .filter((unitKey) => !readyUnitKeySet.has(unitKey))
+                              .map((unitKey) => (
                               <input key={`missing:${unitKey}`} type="hidden" name="missingUnitKeys" value={unitKey} />
                             ))
                           : null}
                         {missingReviewOpen ? (
-                          <p className={styles.preparerInlineReviewMessage}>Revisa que tengas este producto.</p>
+                          <p className={styles.preparerInlineReviewMessage}>
+                            {reviewItemCount === 1 ? "Revisa que tengas este producto." : "Revisa que tengas estos productos."}
+                          </p>
                         ) : null}
                         <div className={styles.preparerProductList}>
                           {visibleDispatchItems.length ? (
@@ -481,7 +491,7 @@ export default function PreparerPortal() {
                           <button className={styles.accessButton} type="submit" disabled={isSubmitting || isDispatchCompleted}>
                             Listo
                           </button>
-                          {missingReviewOpen && uncheckedUnitKeys.length ? (
+                          {missingReviewOpen && activeReviewUnitKeys.some((unitKey) => !readyUnitKeySet.has(unitKey)) ? (
                             <button
                               className={styles.missingButton}
                               type="submit"
