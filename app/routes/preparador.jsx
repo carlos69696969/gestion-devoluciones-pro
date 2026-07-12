@@ -246,7 +246,6 @@ export default function PreparerPortal() {
   const [enlargedImage, setEnlargedImage] = useState(null);
   const [readyUnitKeys, setReadyUnitKeys] = useState([]);
   const [missingReviewOpen, setMissingReviewOpen] = useState(false);
-  const [reviewMissingUnitKeys, setReviewMissingUnitKeys] = useState([]);
   const isSubmitting = navigation.state === "submitting";
   const requestedTab = String(searchParams.get("tab") || "ordenes").trim().toLowerCase();
   const activeTab = requestedTab === "despachar" ? "despachar" : "ordenes";
@@ -266,7 +265,6 @@ export default function PreparerPortal() {
 
   useEffect(() => {
     setReadyUnitKeys([]);
-    setReviewMissingUnitKeys([]);
     setMissingReviewOpen(false);
   }, [dispatchAssignment?.id]);
 
@@ -286,9 +284,10 @@ export default function PreparerPortal() {
     const dispatchAddress = formatPreparerAddress(dispatchOrder);
     const dispatchUnitKeys = dispatchItems.flatMap((item) => itemUnitKeys(item));
     const readyUnitKeySet = new Set(readyUnitKeys);
-    const missingReviewUnitKeySet = new Set(reviewMissingUnitKeys);
     const uncheckedUnitKeys = dispatchUnitKeys.filter((unitKey) => !readyUnitKeySet.has(unitKey));
-    const finalReadyUnitKeys = dispatchUnitKeys.filter((unitKey) => !missingReviewUnitKeySet.has(unitKey));
+    const visibleDispatchItems = missingReviewOpen
+      ? dispatchItems.filter((item) => itemUnitKeys(item).some((unitKey) => uncheckedUnitKeys.includes(unitKey)))
+      : dispatchItems;
 
     return (
       <main className={styles.page}>
@@ -387,10 +386,23 @@ export default function PreparerPortal() {
                         method="post"
                         onSubmit={(event) => {
                           if (isDispatchCompleted) return;
+                          const submitAction = event.nativeEvent?.submitter?.value || "";
+                          if (submitAction === "not_located") {
+                            if (!window.confirm("Confirmas que estos productos no fueron localizados?")) {
+                              event.preventDefault();
+                            }
+                            return;
+                          }
                           if (uncheckedUnitKeys.length) {
                             event.preventDefault();
-                            setReviewMissingUnitKeys(uncheckedUnitKeys);
+                            if (!window.confirm("Hay productos sin palomita. Quieres revisarlos antes de guardar?")) {
+                              return;
+                            }
                             setMissingReviewOpen(true);
+                            return;
+                          }
+                          if (!window.confirm("Confirmas que esta orden esta lista?")) {
+                            event.preventDefault();
                           }
                         }}
                       >
@@ -399,9 +411,17 @@ export default function PreparerPortal() {
                         {readyUnitKeys.map((unitKey) => (
                           <input key={`ready:${unitKey}`} type="hidden" name="readyUnitKeys" value={unitKey} />
                         ))}
+                        {missingReviewOpen
+                          ? uncheckedUnitKeys.map((unitKey) => (
+                              <input key={`missing:${unitKey}`} type="hidden" name="missingUnitKeys" value={unitKey} />
+                            ))
+                          : null}
+                        {missingReviewOpen ? (
+                          <p className={styles.preparerInlineReviewMessage}>Revisa que tengas este producto.</p>
+                        ) : null}
                         <div className={styles.preparerProductList}>
-                          {dispatchItems.length ? (
-                            dispatchItems.map((item, index) => {
+                          {visibleDispatchItems.length ? (
+                            visibleDispatchItems.map((item, index) => {
                               const unitKeys = itemUnitKeys(item);
                               const checked = unitKeys.every((unitKey) => readyUnitKeySet.has(unitKey));
                               return (
@@ -461,6 +481,17 @@ export default function PreparerPortal() {
                           <button className={styles.accessButton} type="submit" disabled={isSubmitting || isDispatchCompleted}>
                             Listo
                           </button>
+                          {missingReviewOpen && uncheckedUnitKeys.length ? (
+                            <button
+                              className={styles.missingButton}
+                              type="submit"
+                              name="preparerSubmitAction"
+                              value="not_located"
+                              disabled={isSubmitting || isDispatchCompleted}
+                            >
+                              No localizado
+                            </button>
+                          ) : null}
                         </div>
                       </Form>
                     </>
@@ -475,64 +506,6 @@ export default function PreparerPortal() {
               <p className={styles.error}>Este preparador aun no tiene ordenes asignadas.</p>
             </section>
           )}
-          {missingReviewOpen && dispatchAssignment ? (
-            <div className={styles.modalBackdrop} role="presentation">
-              <section className={styles.preparerReviewModal} role="dialog" aria-modal="true">
-                <h2 className={styles.cardTitle}>Revisa los productos sin palomita</h2>
-                <p className={styles.subtitle}>
-                  Marca como no localizado solo los productos que no tienes fisicamente. Los demas se guardaran como listos.
-                </p>
-                <div className={styles.preparerReviewList}>
-                  {dispatchItems
-                    .filter((item) => itemUnitKeys(item).some((unitKey) => uncheckedUnitKeys.includes(unitKey)))
-                    .map((item, index) => {
-                      const unitKeys = itemUnitKeys(item);
-                      const isMissing = unitKeys.some((unitKey) => missingReviewUnitKeySet.has(unitKey));
-                      return (
-                        <div key={`review:${itemBaseKey(item)}:${index}`} className={styles.preparerReviewItem}>
-                          <strong>{item.title || "Producto"}</strong>
-                          {item.variantSummary ? <span>Variante: {item.variantSummary}</span> : null}
-                          <span>Cantidad: {Math.max(1, Number(item.quantity || 1))}</span>
-                          <label className={styles.preparerReviewToggle}>
-                            <input
-                              type="checkbox"
-                              checked={isMissing}
-                              onChange={(event) => {
-                                setReviewMissingUnitKeys((currentKeys) => {
-                                  const nextKeys = new Set(currentKeys);
-                                  for (const unitKey of unitKeys) {
-                                    if (event.target.checked) nextKeys.add(unitKey);
-                                    else nextKeys.delete(unitKey);
-                                  }
-                                  return [...nextKeys];
-                                });
-                              }}
-                            />
-                            <span>No localizado</span>
-                          </label>
-                        </div>
-                      );
-                    })}
-                </div>
-                <Form method="post" className={styles.preparerReviewActions}>
-                  <input type="hidden" name="intent" value="preparer_mark_ready" />
-                  <input type="hidden" name="assignmentId" value={dispatchAssignment.id} />
-                  {finalReadyUnitKeys.map((unitKey) => (
-                    <input key={`review-ready:${unitKey}`} type="hidden" name="readyUnitKeys" value={unitKey} />
-                  ))}
-                  {reviewMissingUnitKeys.map((unitKey) => (
-                    <input key={`review-missing:${unitKey}`} type="hidden" name="missingUnitKeys" value={unitKey} />
-                  ))}
-                  <button className={styles.actionButton} type="button" onClick={() => setMissingReviewOpen(false)}>
-                    Cancelar
-                  </button>
-                  <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
-                    Guardar
-                  </button>
-                </Form>
-              </section>
-            </div>
-          ) : null}
           {enlargedImage ? (
             <div className={styles.modalBackdrop} role="presentation" onClick={() => setEnlargedImage(null)}>
               <div className={styles.preparerImageModal} role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
