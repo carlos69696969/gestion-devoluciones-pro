@@ -4181,10 +4181,21 @@ export const action = async ({ request }) => {
       const orderId = String(order?.id || "").trim();
       if (orderId && !orderById.has(orderId)) orderById.set(orderId, order);
     }
+    const orderSequenceValue = (order) => {
+      const sequence = Number(order?.sequenceNumber || 0) || 0;
+      const orderNumber = Number(String(order?.orderNumber || "").replace(/\D/g, "") || 0) || 0;
+      return { sequence, orderNumber };
+    };
     const orders = (selectedOrderIds.length
       ? selectedOrderIds.map((orderId) => orderById.get(orderId)).filter(Boolean)
       : visibleOrders
-    ).filter((order) => String(order?.id || "").trim());
+    )
+      .filter((order) => String(order?.id || "").trim())
+      .sort((firstOrder, secondOrder) => {
+        const first = orderSequenceValue(firstOrder);
+        const second = orderSequenceValue(secondOrder);
+        return first.sequence - second.sequence || first.orderNumber - second.orderNumber;
+      });
     if (!orders.length) {
       return { ok: false, error: "No hay ordenes pendientes para distribuir." };
     }
