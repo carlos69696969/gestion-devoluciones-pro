@@ -4082,7 +4082,7 @@ export const action = async ({ request }) => {
     await prisma.preparer.create({
       data: { shop: session.shop, name, code },
     });
-    return { ok: true, message: "Preparador guardado correctamente." };
+    return { ok: true, intent: "create_preparer", message: "Preparador guardado correctamente." };
   }
 
   if (intent === "delete_preparer") {
@@ -6621,6 +6621,7 @@ export default function ReturnsRequests() {
           courierOrders={courierOrders}
           routeOrdersPayload={courierRouteOrdersPayload}
           isSubmitting={isSubmitting}
+          actionData={actionData}
         />
       ) : null}
     </s-page>
@@ -7998,7 +7999,14 @@ function CouriersSection({ couriers, isSubmitting }) {
   );
 }
 
-function PreparersSection({ preparers, preparerAssignments = [], courierOrders = [], routeOrdersPayload = [], isSubmitting }) {
+function PreparersSection({
+  preparers,
+  preparerAssignments = [],
+  courierOrders = [],
+  routeOrdersPayload = [],
+  isSubmitting,
+  actionData,
+}) {
   const location = useLocation();
   const distributeFetcher = useFetcher();
   const [showForm, setShowForm] = useState(false);
@@ -8114,6 +8122,13 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
     const timeoutId = window.setTimeout(() => setShowDistributionMessage(false), 3500);
     return () => window.clearTimeout(timeoutId);
   }, [showDistributionMessage]);
+
+  useEffect(() => {
+    if (actionData?.ok && actionData?.intent === "create_preparer") {
+      setShowForm(false);
+      setCode("");
+    }
+  }, [actionData]);
 
   const generateCode = () => {
     setCode(String(Math.floor(100000 + Math.random() * 900000)));
