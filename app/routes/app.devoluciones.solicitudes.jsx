@@ -3380,7 +3380,7 @@ export const loader = async ({ request }) => {
         : courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
     );
   const visibleCourierOrders =
-    viewMode === VIEW_MODE.COURIER
+    viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS
       ? await sortCourierRouteOrdersByProximity(session.shop, courierOrders, routeStartAddress)
       : courierOrders;
 
