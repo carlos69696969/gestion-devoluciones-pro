@@ -3326,6 +3326,8 @@ export const loader = async ({ request }) => {
       const preparerNotLocatedScope = hasPreparerMissingItems
         ? preparerNotLocatedScopeFromOrder(preparerOrderData || {}, requestWithAttemptCount.items || [])
         : "";
+      const preparerReprogrammedNotLocated =
+        hasPreparerMissingItems && Boolean(preparerOrderData?.preparerReprogrammedHandledAt);
       const itemsWithPreparerStatus = (requestWithAttemptCount.items || []).map((item) => {
         const itemKey = String(item?.lineItemId || item?.id || item?.title || "item");
         const preparerItem = preparerItemByKey.get(itemKey) || {};
@@ -3355,6 +3357,7 @@ export const loader = async ({ request }) => {
             : null),
         preparerMissingUnitKeys: [...preparerMissingUnitKeySet],
         preparerNotLocatedScope,
+        preparerReprogrammedNotLocated,
         preparerAssignmentStatus: preparerAssignment?.status || "",
         courierActivities: requestActivities,
         historyEvents: enrichCourierHistoryEvents({
@@ -8518,11 +8521,13 @@ function CourierOrderCard({
   const statusBadgeClass = courierHistoryView && normalizedVisibleStatus === "pendiente"
     ? styles.courierBadgeStatusPending
     : normalizedVisibleStatus === "no_localizado"
-      ? request.preparerNotLocatedScope === "partial"
-        ? styles.courierBadgeStatusNotLocatedPartial
-        : request.preparerNotLocatedScope === "full"
-          ? styles.courierBadgeStatusNotLocatedFull
-          : styles.courierBadgeStatusNotLocated
+      ? request.preparerReprogrammedNotLocated
+        ? styles.courierBadgeStatusNotLocatedReprogrammed
+        : request.preparerNotLocatedScope === "partial"
+          ? styles.courierBadgeStatusNotLocatedPartial
+          : request.preparerNotLocatedScope === "full"
+            ? styles.courierBadgeStatusNotLocatedFull
+            : styles.courierBadgeStatusNotLocated
     : ["entregado", "recibido", "recibida", "reembolsada"].includes(normalizedVisibleStatus)
       ? styles.courierBadgeStatusSuccess
     : courierHistoryView && isCourierHistoryReprogrammed && isRouteTimeReprogrammed
