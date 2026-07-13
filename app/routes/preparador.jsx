@@ -475,7 +475,7 @@ export async function action({ request }) {
     take: 2,
   });
   if (!preparerCandidates.length) {
-    return { ok: false, error: "Codigo invalido o esta cuenta ya inicio sesion." };
+    return { ok: false, error: "Esta cuenta ya inicio sesion." };
   }
   if (!shop && preparerCandidates.length > 1) {
     return { ok: false, error: "Este codigo existe en mas de una tienda. Abre el enlace del preparador desde Shopify." };
