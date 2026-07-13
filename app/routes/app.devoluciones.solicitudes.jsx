@@ -8032,6 +8032,26 @@ function PreparersSection({
     preparerAssignmentOrderNumberValue(first) - preparerAssignmentOrderNumberValue(second) ||
     preparerAssignmentStoredSequence(first) - preparerAssignmentStoredSequence(second) ||
     Number(first.id || 0) - Number(second.id || 0);
+  const globalSequenceByOrderNumber = new Map();
+  [...courierOrders]
+    .sort((firstOrder, secondOrder) => {
+      const firstSequence = Number(firstOrder?.sequenceNumber || 0) || 0;
+      const secondSequence = Number(secondOrder?.sequenceNumber || 0) || 0;
+      const firstOrderNumber = Number(String(firstOrder?.orderNumber || "").replace(/\D/g, "") || 0) || 0;
+      const secondOrderNumber = Number(String(secondOrder?.orderNumber || "").replace(/\D/g, "") || 0) || 0;
+      return firstSequence - secondSequence || firstOrderNumber - secondOrderNumber;
+    })
+    .forEach((order, index) => {
+      const orderNumber = String(order?.orderNumber || "").replace(/\D/g, "");
+      if (orderNumber && !globalSequenceByOrderNumber.has(orderNumber)) {
+        globalSequenceByOrderNumber.set(orderNumber, Number(order?.sequenceNumber || 0) || index + 1);
+      }
+    });
+  const preparerAssignmentDisplaySequence = (assignment) => {
+    const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+    const orderNumber = String(order.orderNumber || assignment.orderNumber || "").replace(/\D/g, "");
+    return globalSequenceByOrderNumber.get(orderNumber) || preparerAssignmentStoredSequence(assignment);
+  };
   const todayMexicoKey = mexicoActivityDateKey(new Date());
   const todayPreparerHistoryLabel = new Intl.DateTimeFormat("es-MX", {
     timeZone: "America/Mexico_City",
@@ -8078,7 +8098,7 @@ function PreparersSection({
         id: assignment.id,
         preparerId: String(assignment.preparerId || ""),
         preparerName: String(assignment.preparerName || "").trim() || "Preparador",
-        sequence: 0,
+        sequence: preparerAssignmentDisplaySequence(assignment),
         orderNumber: String(order.orderNumber || assignment.orderNumber || "").trim() || "-",
         status: displayStatus,
       };
@@ -8099,8 +8119,11 @@ function PreparersSection({
   const preparerHistory = [...preparerHistoryById.values()]
     .map((history) => {
       const orders = history.orders
-        .sort((first, second) => comparePreparerAssignmentsForPortal(first.rawAssignment, second.rawAssignment))
-        .map((order, index) => ({ ...order, sequence: index + 1 }));
+        .sort(
+          (first, second) =>
+            first.sequence - second.sequence ||
+            comparePreparerAssignmentsForPortal(first.rawAssignment, second.rawAssignment),
+        );
       return {
         ...history,
         orders,
