@@ -569,7 +569,10 @@ export default function PreparerPortal() {
   const visibleAssignments = sortedAssignments;
   const pendingAssignments = sortedAssignments.filter((assignment) => !isPreparerAssignmentDone(assignment?.status));
   const displaySequenceByAssignmentId = new Map(
-    visibleAssignments.map((assignment, index) => [String(assignment.id), index + 1]),
+    visibleAssignments.map((assignment, index) => [
+      String(assignment.id),
+      preparerDisplaySequence(assignment, index + 1),
+    ]),
   );
   const dispatchAssignment = pendingAssignments[0] || null;
 
