@@ -341,6 +341,7 @@ export async function action({ request }) {
       .map((value) => String(value || "").trim())
       .filter(Boolean);
     const submitAction = String(formData.get("preparerSubmitAction") || "").trim().toLowerCase();
+    const isReprogrammedOrder = String(formData.get("isReprogrammedOrder") || "").trim() === "1";
     const assignment = await prisma.preparerAssignment.findFirst({
       where: {
         id: assignmentId,
@@ -351,7 +352,7 @@ export async function action({ request }) {
     if (!assignment) return { ok: false, error: "Orden invalida." };
     const nextStatus = submitAction === "not_located" || missingUnitKeys.length ? "not_located" : "ready";
     const nextOrderData = normalizeOrderItemsWithPreparerStatus(assignment.orderData, readyUnitKeys, missingUnitKeys);
-    if (isReprogrammedPreparerOrder(assignment.orderData)) {
+    if (isReprogrammedOrder || isReprogrammedPreparerOrder(assignment.orderData)) {
       nextOrderData.preparerReprogrammedHandledAt = new Date().toISOString();
     }
     await prisma.$transaction([
@@ -421,16 +422,13 @@ function isPreparerAssignmentDone(status) {
   return normalized === "ready" || normalized === "not_located";
 }
 
-function isPreparerAssignmentActive(assignment) {
-  const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
-  return !isPreparerAssignmentDone(assignment?.status) || isReprogrammedPreparerOrder(order);
-}
-
 function preparerAssignmentDisplayStatus(assignment) {
   const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+  const status = String(assignment?.status || "assigned").trim().toLowerCase();
+  if (isPreparerAssignmentDone(status)) return status;
   return isReprogrammedPreparerOrder(order)
     ? "assigned"
-    : String(assignment?.status || "assigned").trim().toLowerCase();
+    : status;
 }
 
 function formatPreparerAddress(order) {
@@ -483,11 +481,12 @@ export default function PreparerPortal() {
       preparerDisplaySequence(firstAssignment) - preparerDisplaySequence(secondAssignment) ||
       Number(firstAssignment.id || 0) - Number(secondAssignment.id || 0),
   );
-  const activeAssignments = sortedAssignments.filter((assignment) => isPreparerAssignmentActive(assignment));
+  const visibleAssignments = sortedAssignments;
+  const pendingAssignments = sortedAssignments.filter((assignment) => !isPreparerAssignmentDone(assignment?.status));
   const displaySequenceByAssignmentId = new Map(
-    activeAssignments.map((assignment, index) => [String(assignment.id), index + 1]),
+    visibleAssignments.map((assignment, index) => [String(assignment.id), index + 1]),
   );
-  const dispatchAssignment = activeAssignments[0] || null;
+  const dispatchAssignment = pendingAssignments[0] || null;
 
   useEffect(() => {
     setReadyUnitKeys([]);
@@ -503,7 +502,7 @@ export default function PreparerPortal() {
   };
 
   if (isLoggedIn) {
-    const remainingAssignments = activeAssignments;
+    const remainingAssignments = pendingAssignments;
     const dispatchOrder = dispatchAssignment?.orderData || {};
     const dispatchItems = Array.isArray(dispatchOrder.items) ? dispatchOrder.items : [];
     const isDispatchReprogrammed = isReprogrammedPreparerOrder(dispatchOrder);
@@ -548,11 +547,11 @@ export default function PreparerPortal() {
           </header>
 
           <div className={styles.preparerSummary}>
-            <span className={styles.counterBadge}>Ordenes {activeAssignments.length}</span>
+            <span className={styles.counterBadge}>Ordenes {visibleAssignments.length}</span>
             <span className={styles.counterBadge}>Restantes {remainingAssignments.length}</span>
           </div>
 
-          {activeAssignments.length ? (
+          {visibleAssignments.length ? (
             <section className={styles.card}>
               <div className={styles.tabRow} role="tablist" aria-label="Secciones de preparador">
                 <button
@@ -573,7 +572,7 @@ export default function PreparerPortal() {
 
               {activeTab === "ordenes" ? (
                 <div className={styles.preparerOrderChecklist}>
-                  {activeAssignments.map((assignment) => {
+                  {visibleAssignments.map((assignment) => {
                     const order = assignment.orderData || {};
                     const status = preparerAssignmentDisplayStatus(assignment);
                     return (
@@ -656,6 +655,7 @@ export default function PreparerPortal() {
                       >
                         <input type="hidden" name="intent" value="preparer_mark_ready" />
                         <input type="hidden" name="assignmentId" value={dispatchAssignment.id} />
+                        <input type="hidden" name="isReprogrammedOrder" value={isDispatchReprogrammed ? "1" : ""} />
                         {readyUnitKeys.map((unitKey) => (
                           <input key={`ready:${unitKey}`} type="hidden" name="readyUnitKeys" value={unitKey} />
                         ))}
