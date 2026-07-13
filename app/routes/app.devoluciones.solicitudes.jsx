@@ -8518,9 +8518,11 @@ function CourierOrderCard({
   const statusBadgeClass = courierHistoryView && normalizedVisibleStatus === "pendiente"
     ? styles.courierBadgeStatusPending
     : normalizedVisibleStatus === "no_localizado"
-      ? request.preparerNotLocatedScope === "full"
-        ? styles.courierBadgeStatusNotLocatedFull
-        : styles.courierBadgeStatusNotLocated
+      ? request.preparerNotLocatedScope === "partial"
+        ? styles.courierBadgeStatusNotLocatedPartial
+        : request.preparerNotLocatedScope === "full"
+          ? styles.courierBadgeStatusNotLocatedFull
+          : styles.courierBadgeStatusNotLocated
     : ["entregado", "recibido", "recibida", "reembolsada"].includes(normalizedVisibleStatus)
       ? styles.courierBadgeStatusSuccess
     : courierHistoryView && isCourierHistoryReprogrammed && isRouteTimeReprogrammed

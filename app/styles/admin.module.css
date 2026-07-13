@@ -992,6 +992,12 @@
   color: #c11574;
 }
 
+.courierBadgeStatusNotLocatedPartial {
+  background: #fff7ed;
+  border-color: #f59e0b;
+  color: #b45309;
+}
+
 .courierBadgeStatusNotLocatedFull {
   background: #fff1f1;
   border-color: #d9364f;
