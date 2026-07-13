@@ -312,10 +312,10 @@
 .preparerReprogrammedNotice {
   margin: 14px 0 0;
   padding: 14px;
-  border: 1px solid #f59e0b;
+  border: 1px solid #22c55e;
   border-radius: 12px;
-  background: #fff7ed;
-  color: #9a3412;
+  background: #f0fdf4;
+  color: #047857;
   font-size: 16px;
   font-weight: 900;
 }
