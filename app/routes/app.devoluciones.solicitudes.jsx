@@ -4099,7 +4099,9 @@ export const action = async ({ request }) => {
 
   if (intent === "transfer_preparer_account") {
     const preparerId = Number(formData.get("preparerId") || 0);
+    const newPreparerName = String(formData.get("newPreparerName") || "").trim();
     if (!preparerId) return { ok: false, error: "Preparador invalido." };
+    if (!newPreparerName) return { ok: false, error: "Escribe el nombre del nuevo preparador." };
     const preparer = await prisma.preparer.findFirst({
       where: { id: preparerId, shop: session.shop },
       select: { id: true, name: true },
@@ -4118,13 +4120,33 @@ export const action = async ({ request }) => {
       }
     }
     if (!nextCode) return { ok: false, error: "No se pudo generar un codigo nuevo para transferir la cuenta." };
-    await prisma.preparer.update({
-      where: { id: preparer.id },
-      data: { code: nextCode },
+    const preparerAssignmentsToTransfer = await prisma.preparerAssignment.findMany({
+      where: { shop: session.shop, preparerId: preparer.id },
+      select: { id: true, orderData: true },
     });
+    await prisma.$transaction([
+      prisma.preparer.update({
+        where: { id: preparer.id },
+        data: { code: nextCode },
+      }),
+      ...preparerAssignmentsToTransfer.map((assignment) => {
+        const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+        return prisma.preparerAssignment.update({
+          where: { id: assignment.id },
+          data: {
+            orderData: {
+              ...orderData,
+              preparerOriginalName: orderData.preparerOriginalName || preparer.name,
+              preparerTransferredToName: newPreparerName,
+              preparerTransferredAt: new Date().toISOString(),
+            },
+          },
+        });
+      }),
+    ]);
     return {
       ok: true,
-      message: `Cuenta de ${preparer.name} transferida. Usa el codigo ${nextCode} para entrar.`,
+      message: `Cuenta de ${preparer.name} transferida a ${newPreparerName}. Usa el codigo ${nextCode} para entrar.`,
     };
   }
 
@@ -8040,15 +8062,19 @@ function PreparersSection({
 }) {
   const location = useLocation();
   const distributeFetcher = useFetcher();
+  const transferPreparerFetcher = useFetcher();
   const [showForm, setShowForm] = useState(false);
   const [code, setCode] = useState("");
   const [showDistributeModal, setShowDistributeModal] = useState(false);
   const [selectedPreparerIds, setSelectedPreparerIds] = useState([]);
+  const [transferPreparerId, setTransferPreparerId] = useState(null);
+  const [transferPreparerName, setTransferPreparerName] = useState("");
   const [selectedPreparerAssignmentSummary, setSelectedPreparerAssignmentSummary] = useState(null);
   const [selectedPreparerHistory, setSelectedPreparerHistory] = useState(null);
   const [showDistributionMessage, setShowDistributionMessage] = useState(false);
   const preparersAction = `${location.pathname}${location.search || ""}`;
   const isDistributing = distributeFetcher.state !== "idle";
+  const isTransferPreparerSubmitting = transferPreparerFetcher.state !== "idle";
   const selectedPreparerIdSet = new Set(selectedPreparerIds.map((preparerId) => String(preparerId)));
   const canDistributeOrders = selectedPreparerIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isDistributing;
   const preparerAssignmentOrderNumberValue = (assignment) => {
@@ -8193,6 +8219,12 @@ function PreparersSection({
     }
   }, [actionData]);
 
+  useEffect(() => {
+    if (!transferPreparerFetcher.data?.ok) return;
+    setTransferPreparerId(null);
+    setTransferPreparerName("");
+  }, [transferPreparerFetcher.data]);
+
   const generateCode = () => {
     setCode(String(Math.floor(100000 + Math.random() * 900000)));
   };
@@ -8294,26 +8326,76 @@ function PreparersSection({
                       Dar de baja
                     </button>
                   </Form>
-                  <Form
+                  <button
+                    className={styles.btn}
+                    type="button"
+                    onClick={() => {
+                      setTransferPreparerId(preparer.id);
+                      setTransferPreparerName("");
+                    }}
+                    disabled={isSubmitting || isTransferPreparerSubmitting}
+                  >
+                    Transferir cuenta
+                  </button>
+                </div>
+                {transferPreparerId === preparer.id ? (
+                  <transferPreparerFetcher.Form
                     method="post"
                     action={preparersAction}
+                    className={styles.courierTransferForm}
                     onSubmit={(event) => {
-                      if (!window.confirm(`¿Deseas transferir la cuenta de ${preparer.name}?`)) {
+                      if (
+                        !window.confirm(
+                          `¿Confirmas transferir la cuenta de ${preparer.name} a ${transferPreparerName.trim()}?`,
+                        )
+                      ) {
                         event.preventDefault();
                       }
                     }}
                   >
                     <input type="hidden" name="intent" value="transfer_preparer_account" />
                     <input type="hidden" name="preparerId" value={preparer.id} />
-                    <button className={styles.btn} type="submit" disabled={isSubmitting}>
-                      Transferir cuenta
-                    </button>
-                  </Form>
-                </div>
+                    <label className={styles.label}>
+                      Nombre del nuevo preparador
+                      <input
+                        className={styles.input}
+                        name="newPreparerName"
+                        value={transferPreparerName}
+                        onChange={(event) => setTransferPreparerName(event.target.value)}
+                        required
+                      />
+                    </label>
+                    <div className={styles.courierDirectoryActions}>
+                      <button
+                        className={`${styles.btn} ${styles.btnPrimary}`}
+                        type="submit"
+                        disabled={isSubmitting || isTransferPreparerSubmitting || !transferPreparerName.trim()}
+                      >
+                        {isTransferPreparerSubmitting ? "Transfiriendo..." : "Listo"}
+                      </button>
+                      <button
+                        className={styles.btn}
+                        type="button"
+                        onClick={() => {
+                          setTransferPreparerId(null);
+                          setTransferPreparerName("");
+                        }}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </transferPreparerFetcher.Form>
+                ) : null}
               </div>
             </details>
           ))}
         </div>
+        {transferPreparerFetcher.data?.error ? (
+          <p className={styles.errorMsg}>{transferPreparerFetcher.data.error}</p>
+        ) : null}
+        {transferPreparerFetcher.data?.message ? (
+          <p className={styles.successMsg}>{transferPreparerFetcher.data.message}</p>
+        ) : null}
         <div className={`${styles.card} ${styles.preparerHistoryPanel}`}>
           <div className={styles.preparerHistoryHeader}>
             <h3>Historial de preparadores</h3>

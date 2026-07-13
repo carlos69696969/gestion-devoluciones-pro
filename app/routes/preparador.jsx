@@ -376,6 +376,12 @@ export async function loader({ request }) {
   return {
     shop: access?.shop || shop,
     preparerName: access?.name || "",
+    transferredToName: assignments
+      .map((assignment) => {
+        const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+        return String(orderData.preparerTransferredToName || "").trim();
+      })
+      .find(Boolean) || "",
     isLoggedIn: Boolean(access),
     assignments,
   };
@@ -591,7 +597,7 @@ function preparerOrderNumberValue(assignment) {
 }
 
 export default function PreparerPortal() {
-  const { shop, preparerName, isLoggedIn, assignments = [] } = useLoaderData();
+  const { shop, preparerName, transferredToName = "", isLoggedIn, assignments = [] } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -658,6 +664,11 @@ export default function PreparerPortal() {
               <p className={styles.subtitle}>
                 {preparerName ? `Preparador: ${preparerName}` : "Ordenes asignadas para preparacion."}
               </p>
+              {transferredToName ? (
+                <p className={styles.subtitle}>
+                  Cuenta transferida a {transferredToName}
+                </p>
+              ) : null}
             </div>
             <Form
               method="post"
