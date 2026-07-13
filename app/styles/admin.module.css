@@ -1909,6 +1909,13 @@
   line-height: 1;
   box-sizing: border-box;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.preparerAssignmentSummaryBadge:hover {
+  border-color: #8eb8ff;
+  background: #f3f7ff;
+  color: #005bd3;
 }
 
 .preparerHistoryPanel {

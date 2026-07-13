@@ -59,6 +59,7 @@ function normalizedPreparerSessions(access = {}) {
         {
           shop: cleanShop(value?.shop),
           preparerId: Number(value?.preparerId || 0),
+          accessCode: String(value?.accessCode || "").trim(),
         },
       ])
       .filter(([key, value]) => key && value.shop && value.preparerId),
@@ -177,6 +178,7 @@ async function getPreparerAccess(request, expectedShop = "") {
     : null;
   const selectedAccess = sessionAccess || (!requestedAccessId ? legacyAccess : null);
   if (!selectedAccess?.shop || !selectedAccess?.preparerId) return null;
+  if (!selectedAccess.accessCode) return null;
   const accessShop = cleanShop(selectedAccess.shop);
   const requestedShop = cleanShop(expectedShop);
   if (requestedShop && accessShop !== requestedShop) return null;
@@ -185,8 +187,11 @@ async function getPreparerAccess(request, expectedShop = "") {
       id: Number(selectedAccess.preparerId),
       shop: accessShop,
     },
-    select: { id: true, shop: true, name: true },
+    select: { id: true, shop: true, name: true, code: true },
   });
+  if (preparer && selectedAccess.accessCode && String(preparer.code || "").trim() !== selectedAccess.accessCode) {
+    return null;
+  }
   return preparer ? { ...preparer, accessId: sessionAccess ? requestedAccessId : "" } : null;
 }
 
@@ -490,14 +495,16 @@ export async function action({ request }) {
   }
 
   const accessId = createPreparerAccessId();
+  const nextCode = await generateUniquePreparerCode(preparer.shop);
   await prisma.preparer.update({
     where: { id: preparer.id },
-    data: { code: await generateUniquePreparerCode(preparer.shop) },
+    data: { code: nextCode },
   });
 
   currentSessions[accessId] = {
     shop: preparer.shop,
     preparerId: preparer.id,
+    accessCode: nextCode,
   };
 
   return redirect(`/preparador?shop=${encodeURIComponent(preparer.shop)}&access=${encodeURIComponent(accessId)}`, {

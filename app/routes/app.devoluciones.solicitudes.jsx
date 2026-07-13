@@ -4097,6 +4097,37 @@ export const action = async ({ request }) => {
     return { ok: true, message: "Preparador dado de baja correctamente." };
   }
 
+  if (intent === "transfer_preparer_account") {
+    const preparerId = Number(formData.get("preparerId") || 0);
+    if (!preparerId) return { ok: false, error: "Preparador invalido." };
+    const preparer = await prisma.preparer.findFirst({
+      where: { id: preparerId, shop: session.shop },
+      select: { id: true, name: true },
+    });
+    if (!preparer) return { ok: false, error: "No se encontro el preparador." };
+    let nextCode = "";
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const candidateCode = String(Math.floor(100000 + Math.random() * 900000));
+      const existingPreparer = await prisma.preparer.findFirst({
+        where: { shop: session.shop, code: candidateCode },
+        select: { id: true },
+      });
+      if (!existingPreparer) {
+        nextCode = candidateCode;
+        break;
+      }
+    }
+    if (!nextCode) return { ok: false, error: "No se pudo generar un codigo nuevo para transferir la cuenta." };
+    await prisma.preparer.update({
+      where: { id: preparer.id },
+      data: { code: nextCode },
+    });
+    return {
+      ok: true,
+      message: `Cuenta de ${preparer.name} transferida. Usa el codigo ${nextCode} para entrar.`,
+    };
+  }
+
   if (intent === "plan_preparer_orders") {
     const selectedPreparerIds = formData
       .getAll("preparerIds")
@@ -8013,6 +8044,7 @@ function PreparersSection({
   const [code, setCode] = useState("");
   const [showDistributeModal, setShowDistributeModal] = useState(false);
   const [selectedPreparerIds, setSelectedPreparerIds] = useState([]);
+  const [selectedPreparerAssignmentSummary, setSelectedPreparerAssignmentSummary] = useState(null);
   const [selectedPreparerHistory, setSelectedPreparerHistory] = useState(null);
   const [showDistributionMessage, setShowDistributionMessage] = useState(false);
   const preparersAction = `${location.pathname}${location.search || ""}`;
@@ -8059,6 +8091,29 @@ function PreparersSection({
     month: "long",
     year: "numeric",
   }).format(new Date());
+  const preparerAssignmentDetail = (assignment) => {
+    const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+    const status = String(assignment.status || "").trim().toLowerCase();
+    return {
+      rawAssignment: assignment,
+      id: assignment.id,
+      preparerId: String(assignment.preparerId || ""),
+      preparerName: String(assignment.preparerName || "").trim() || "Preparador",
+      sequence: preparerAssignmentDisplaySequence(assignment),
+      orderNumber: String(order.orderNumber || assignment.orderNumber || "").trim() || "-",
+      status:
+        status === "not_located" && preparerNotLocatedScopeFromOrder(order) === "partial"
+          ? "partial"
+          : status,
+    };
+  };
+  const allPreparerAssignmentDetails = preparerAssignments
+    .map(preparerAssignmentDetail)
+    .sort(
+      (first, second) =>
+        first.sequence - second.sequence ||
+        comparePreparerAssignmentsForPortal(first.rawAssignment, second.rawAssignment),
+    );
   const activePreparerAssignments = preparerAssignments
     .filter((assignment) => {
       const status = String(assignment.status || "").trim().toLowerCase();
@@ -8072,6 +8127,7 @@ function PreparersSection({
       id: key,
       preparerName: String(assignment.preparerName || "").trim() || "Preparador",
       count: 0,
+      orders: allPreparerAssignmentDetails.filter((order) => String(order.preparerId || order.preparerName) === key),
     };
     current.count += 1;
     groups.set(key, current);
@@ -8086,23 +8142,7 @@ function PreparersSection({
       return mexicoActivityDateKey(completedAt) === todayMexicoKey;
     })
     .sort(comparePreparerAssignmentsForPortal)
-    .map((assignment) => {
-      const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
-      const status = String(assignment.status || "").trim().toLowerCase();
-      const displayStatus =
-        status === "not_located" && preparerNotLocatedScopeFromOrder(order) === "partial"
-          ? "partial"
-          : status;
-      return {
-        rawAssignment: assignment,
-        id: assignment.id,
-        preparerId: String(assignment.preparerId || ""),
-        preparerName: String(assignment.preparerName || "").trim() || "Preparador",
-        sequence: preparerAssignmentDisplaySequence(assignment),
-        orderNumber: String(order.orderNumber || assignment.orderNumber || "").trim() || "-",
-        status: displayStatus,
-      };
-    });
+    .map(preparerAssignmentDetail);
   const preparerHistoryById = completedPreparerAssignments.reduce((groups, assignment) => {
     const key = assignment.preparerId || assignment.preparerName;
     const current = groups.get(key) || {
@@ -8184,9 +8224,14 @@ function PreparersSection({
         {activePreparerSummary.length ? (
           <div className={styles.preparerAssignmentSummaryList}>
             {activePreparerSummary.map((summary) => (
-              <span key={summary.id} className={styles.preparerAssignmentSummaryBadge}>
+              <button
+                key={summary.id}
+                className={styles.preparerAssignmentSummaryBadge}
+                type="button"
+                onClick={() => setSelectedPreparerAssignmentSummary(summary)}
+              >
                 {summary.preparerName}: {summary.count} orden(es)
-              </span>
+              </button>
             ))}
           </div>
         ) : null}
@@ -8247,6 +8292,21 @@ function PreparersSection({
                     <input type="hidden" name="preparerId" value={preparer.id} />
                     <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
                       Dar de baja
+                    </button>
+                  </Form>
+                  <Form
+                    method="post"
+                    action={preparersAction}
+                    onSubmit={(event) => {
+                      if (!window.confirm(`¿Deseas transferir la cuenta de ${preparer.name}?`)) {
+                        event.preventDefault();
+                      }
+                    }}
+                  >
+                    <input type="hidden" name="intent" value="transfer_preparer_account" />
+                    <input type="hidden" name="preparerId" value={preparer.id} />
+                    <button className={styles.btn} type="submit" disabled={isSubmitting}>
+                      Transferir cuenta
                     </button>
                   </Form>
                 </div>
@@ -8351,6 +8411,46 @@ function PreparersSection({
               </div>
             </distributeFetcher.Form>
           </div>
+        </div>
+      ) : null}
+      {selectedPreparerAssignmentSummary ? (
+        <div className={styles.reasonModalOverlay} role="dialog" aria-modal="true" aria-label="Ordenes del preparador">
+          <section className={`${styles.reasonModal} ${styles.preparerHistoryModal}`}>
+            <div className={styles.courierRouteModalHeader}>
+              <h3 id="preparer-assignment-summary-title">
+                {selectedPreparerAssignmentSummary.preparerName}: {selectedPreparerAssignmentSummary.orders.length} orden(es)
+              </h3>
+              <button
+                className={styles.courierRouteModalClose}
+                type="button"
+                aria-label="Cerrar"
+                onClick={() => setSelectedPreparerAssignmentSummary(null)}
+              >
+                x
+              </button>
+            </div>
+            <div className={styles.preparerHistoryOrderList}>
+              {selectedPreparerAssignmentSummary.orders.map((order) => (
+                <div key={order.id} className={styles.preparerHistoryOrderItem}>
+                  <span className={styles.courierOrderSequence}>{order.sequence}</span>
+                  <strong>Orden #{order.orderNumber}</strong>
+                  <span
+                    className={`${styles.preparerHistoryMark} ${
+                      order.status === "partial"
+                        ? styles.preparerHistoryMarkPartial
+                        : order.status === "not_located"
+                          ? styles.preparerHistoryMarkMissing
+                          : order.status === "ready"
+                            ? styles.preparerHistoryMarkReady
+                            : ""
+                    }`}
+                  >
+                    {order.status === "partial" ? "-" : order.status === "not_located" ? "x" : order.status === "ready" ? "✓" : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       ) : null}
       {selectedPreparerHistory ? (
