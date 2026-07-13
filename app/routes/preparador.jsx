@@ -450,10 +450,32 @@ export async function action({ request }) {
   if (intent === "logout") {
     const access = await getPreparerAccess(request, shop);
     if (access) {
-      await prisma.preparer.update({
-        where: { id: access.id },
-        data: { code: await generateUniquePreparerCode(access.shop) },
+      const finishedAt = new Date().toISOString();
+      const assignments = await prisma.preparerAssignment.findMany({
+        where: {
+          shop: access.shop,
+          preparerId: access.id,
+        },
+        select: { id: true, orderData: true },
       });
+      await prisma.$transaction([
+        prisma.preparer.update({
+          where: { id: access.id },
+          data: { code: await generateUniquePreparerCode(access.shop) },
+        }),
+        ...assignments.map((assignment) => {
+          const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+          return prisma.preparerAssignment.update({
+            where: { id: assignment.id },
+            data: {
+              orderData: {
+                ...orderData,
+                preparerSessionFinishedAt: finishedAt,
+              },
+            },
+          });
+        }),
+      ]);
     }
     if (currentAccessId) {
       delete currentSessions[currentAccessId];

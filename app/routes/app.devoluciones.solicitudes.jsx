@@ -8176,6 +8176,10 @@ function PreparersSection({
     .filter((assignment) => {
       const status = String(assignment.status || "").trim().toLowerCase();
       if (status !== "ready" && status !== "not_located") return false;
+      const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+      const finishedAt = order.preparerSessionFinishedAt || "";
+      if (!finishedAt || !Number.isFinite(new Date(finishedAt).getTime())) return false;
+      if (mexicoActivityDateKey(finishedAt) !== todayMexicoKey) return false;
       const completedAt = assignment.completedAt || assignment.updatedAt;
       if (!completedAt || !Number.isFinite(new Date(completedAt).getTime())) return false;
       return mexicoActivityDateKey(completedAt) === todayMexicoKey;
