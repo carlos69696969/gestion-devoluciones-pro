@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { useEffect, useState } from "react";
 import { createCookie, Form, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import prisma from "../db.server";
@@ -34,6 +35,34 @@ function preparerPortalCookies() {
 
 function cleanShop(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function createPreparerAccessId() {
+  return randomBytes(16).toString("hex");
+}
+
+function accessIdFromRequest(request) {
+  const url = new URL(request.url);
+  return String(url.searchParams.get("access") || "").trim();
+}
+
+function accessSearchParam(accessId) {
+  return accessId ? `&access=${encodeURIComponent(accessId)}` : "";
+}
+
+function normalizedPreparerSessions(access = {}) {
+  const sessions = access?.sessions && typeof access.sessions === "object" ? access.sessions : {};
+  return Object.fromEntries(
+    Object.entries(sessions)
+      .map(([key, value]) => [
+        String(key || "").trim(),
+        {
+          shop: cleanShop(value?.shop),
+          preparerId: Number(value?.preparerId || 0),
+        },
+      ])
+      .filter(([key, value]) => key && value.shop && value.preparerId),
+  );
 }
 
 function itemBaseKey(item) {
@@ -139,19 +168,26 @@ function isPreparerCourierFinalActivityAction(action) {
 async function getPreparerAccess(request, expectedShop = "") {
   const { accessCookie } = preparerPortalCookies();
   const cookieHeader = request.headers.get("Cookie");
-  const access = await accessCookie.parse(cookieHeader);
-  if (!access?.shop || !access?.preparerId) return null;
-  const accessShop = cleanShop(access.shop);
+  const access = (await accessCookie.parse(cookieHeader)) || {};
+  const requestedAccessId = accessIdFromRequest(request);
+  const sessions = normalizedPreparerSessions(access);
+  const sessionAccess = requestedAccessId ? sessions[requestedAccessId] : null;
+  const legacyAccess = access?.shop && access?.preparerId
+    ? { shop: cleanShop(access.shop), preparerId: Number(access.preparerId || 0) }
+    : null;
+  const selectedAccess = sessionAccess || (!requestedAccessId ? legacyAccess : null);
+  if (!selectedAccess?.shop || !selectedAccess?.preparerId) return null;
+  const accessShop = cleanShop(selectedAccess.shop);
   const requestedShop = cleanShop(expectedShop);
   if (requestedShop && accessShop !== requestedShop) return null;
   const preparer = await prisma.preparer.findFirst({
     where: {
-      id: Number(access.preparerId),
+      id: Number(selectedAccess.preparerId),
       shop: accessShop,
     },
     select: { id: true, shop: true, name: true },
   });
-  return preparer || null;
+  return preparer ? { ...preparer, accessId: sessionAccess ? requestedAccessId : "" } : null;
 }
 
 async function generateUniquePreparerCode(shop) {
@@ -311,6 +347,10 @@ export async function action({ request }) {
   const url = new URL(request.url);
   const shop = cleanShop(formData.get("shop") || url.searchParams.get("shop"));
   const { accessCookie } = preparerPortalCookies();
+  const cookieHeader = request.headers.get("Cookie");
+  const currentCookieAccess = (await accessCookie.parse(cookieHeader)) || {};
+  const currentSessions = normalizedPreparerSessions(currentCookieAccess);
+  const currentAccessId = accessIdFromRequest(request);
 
   if (intent === "logout") {
     const access = await getPreparerAccess(request, shop);
@@ -320,9 +360,17 @@ export async function action({ request }) {
         data: { code: await generateUniquePreparerCode(access.shop) },
       });
     }
+    if (currentAccessId) {
+      delete currentSessions[currentAccessId];
+    }
+    const nextCookieValue = currentAccessId
+      ? { sessions: currentSessions }
+      : "";
     return redirect(`/preparador${shop ? `?shop=${encodeURIComponent(shop)}` : ""}`, {
       headers: {
-        "Set-Cookie": await accessCookie.serialize("", { maxAge: 0 }),
+        "Set-Cookie": currentAccessId
+          ? await accessCookie.serialize(nextCookieValue)
+          : await accessCookie.serialize("", { maxAge: 0 }),
       },
     });
   }
@@ -380,7 +428,7 @@ export async function action({ request }) {
           ]
         : []),
     ]);
-    return redirect(`/preparador?shop=${encodeURIComponent(access.shop)}&tab=despachar`);
+    return redirect(`/preparador?shop=${encodeURIComponent(access.shop)}${accessSearchParam(access.accessId)}&tab=despachar`);
   }
 
   const code = String(formData.get("code") || "").replace(/\D/g, "").trim();
@@ -400,11 +448,16 @@ export async function action({ request }) {
     return { ok: false, error: "Este preparador aun no tiene ordenes asignadas." };
   }
 
-  return redirect(`/preparador?shop=${encodeURIComponent(preparer.shop)}`, {
+  const accessId = createPreparerAccessId();
+  currentSessions[accessId] = {
+    shop: preparer.shop,
+    preparerId: preparer.id,
+  };
+
+  return redirect(`/preparador?shop=${encodeURIComponent(preparer.shop)}&access=${encodeURIComponent(accessId)}`, {
     headers: {
       "Set-Cookie": await accessCookie.serialize({
-        shop: preparer.shop,
-        preparerId: preparer.id,
+        sessions: currentSessions,
       }),
     },
   });
