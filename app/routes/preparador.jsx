@@ -432,14 +432,18 @@ export async function action({ request }) {
   }
 
   const code = String(formData.get("code") || "").replace(/\D/g, "").trim();
-  if (!shop) return { ok: false, error: "Falta la tienda para validar el acceso." };
   if (!/^\d{6}$/.test(code)) return { ok: false, error: "Ingresa tu codigo de 6 digitos." };
 
-  const preparer = await prisma.preparer.findFirst({
-    where: { shop, code },
+  const preparerCandidates = await prisma.preparer.findMany({
+    where: shop ? { shop, code } : { code },
     select: { id: true, shop: true, name: true },
+    take: 2,
   });
-  if (!preparer) return { ok: false, error: "Codigo invalido." };
+  if (!preparerCandidates.length) return { ok: false, error: "Codigo invalido." };
+  if (!shop && preparerCandidates.length > 1) {
+    return { ok: false, error: "Este codigo existe en mas de una tienda. Abre el enlace del preparador desde Shopify." };
+  }
+  const preparer = preparerCandidates[0];
   const hasAssignedOrders = await hasActivePreparerAssignments({
     shop: preparer.shop,
     preparerId: preparer.id,
