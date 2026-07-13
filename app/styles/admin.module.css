@@ -1990,7 +1990,7 @@
 
 .preparerHistoryOrderItem {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 34px;
+  grid-template-columns: 32px minmax(0, 1fr) minmax(82px, auto) 34px;
   align-items: center;
   gap: 10px;
   min-height: 52px;
@@ -2018,6 +2018,11 @@
   font-size: 12px;
   font-weight: 800;
   line-height: 1.2;
+  align-self: end;
+  justify-self: end;
+  min-height: 15px;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .preparerHistoryTransferMeta {

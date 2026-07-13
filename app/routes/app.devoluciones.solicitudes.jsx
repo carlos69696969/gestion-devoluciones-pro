@@ -8533,10 +8533,10 @@ function PreparersSection({
                     {order.transferredToName ? (
                       <span className={styles.preparerHistoryTransferMeta}>Traspasado a {order.transferredToName}</span>
                     ) : null}
-                    {order.completedTimeLabel ? (
-                      <span className={styles.preparerHistoryOrderMeta}>Listo {order.completedTimeLabel}</span>
-                    ) : null}
                   </div>
+                  <span className={styles.preparerHistoryOrderMeta}>
+                    {order.completedTimeLabel ? `Listo ${order.completedTimeLabel}` : ""}
+                  </span>
                   <span
                     className={`${styles.preparerHistoryMark} ${
                       order.status === "partial"
@@ -8582,10 +8582,10 @@ function PreparersSection({
                     {order.transferredToName ? (
                       <span className={styles.preparerHistoryTransferMeta}>Traspasado a {order.transferredToName}</span>
                     ) : null}
-                    {order.completedTimeLabel ? (
-                      <span className={styles.preparerHistoryOrderMeta}>Listo {order.completedTimeLabel}</span>
-                    ) : null}
                   </div>
+                  <span className={styles.preparerHistoryOrderMeta}>
+                    {order.completedTimeLabel ? `Listo ${order.completedTimeLabel}` : ""}
+                  </span>
                   <span
                     className={`${styles.preparerHistoryMark} ${
                       order.status === "partial"
