@@ -8117,9 +8117,25 @@ function PreparersSection({
     month: "long",
     year: "numeric",
   }).format(new Date());
+  const preparerCompletionTimeLabel = (value) => {
+    if (!value || !Number.isFinite(new Date(value).getTime())) return "";
+    return new Intl.DateTimeFormat("es-MX", {
+      timeZone: "America/Mexico_City",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(value));
+  };
   const preparerAssignmentDetail = (assignment) => {
     const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
     const status = String(assignment.status || "").trim().toLowerCase();
+    const isCompleted = status === "ready" || status === "not_located";
+    const completedAt = isCompleted ? assignment.completedAt || assignment.updatedAt || "" : "";
+    const completedMs = Number.isFinite(new Date(completedAt).getTime()) ? new Date(completedAt).getTime() : 0;
+    const transferredAt = order.preparerTransferredAt || "";
+    const transferredMs = Number.isFinite(new Date(transferredAt).getTime()) ? new Date(transferredAt).getTime() : 0;
+    const transferredToName = String(order.preparerTransferredToName || "").trim();
+    const showTransferredToName = Boolean(transferredToName && completedMs && transferredMs && completedMs >= transferredMs);
     return {
       rawAssignment: assignment,
       id: assignment.id,
@@ -8127,6 +8143,8 @@ function PreparersSection({
       preparerName: String(assignment.preparerName || "").trim() || "Preparador",
       sequence: preparerAssignmentDisplaySequence(assignment),
       orderNumber: String(order.orderNumber || assignment.orderNumber || "").trim() || "-",
+      completedTimeLabel: completedMs ? preparerCompletionTimeLabel(completedAt) : "",
+      transferredToName: showTransferredToName ? transferredToName : "",
       status:
         status === "not_located" && preparerNotLocatedScopeFromOrder(order) === "partial"
           ? "partial"
@@ -8510,7 +8528,15 @@ function PreparersSection({
               {selectedPreparerAssignmentSummary.orders.map((order) => (
                 <div key={order.id} className={styles.preparerHistoryOrderItem}>
                   <span className={styles.courierOrderSequence}>{order.sequence}</span>
-                  <strong>Orden #{order.orderNumber}</strong>
+                  <div className={styles.preparerHistoryOrderDetails}>
+                    <strong>Orden #{order.orderNumber}</strong>
+                    {order.transferredToName ? (
+                      <span className={styles.preparerHistoryTransferMeta}>Traspasado a {order.transferredToName}</span>
+                    ) : null}
+                    {order.completedTimeLabel ? (
+                      <span className={styles.preparerHistoryOrderMeta}>Listo {order.completedTimeLabel}</span>
+                    ) : null}
+                  </div>
                   <span
                     className={`${styles.preparerHistoryMark} ${
                       order.status === "partial"
@@ -8551,7 +8577,15 @@ function PreparersSection({
               {selectedPreparerHistory.orders.map((order) => (
                 <div key={order.id} className={styles.preparerHistoryOrderItem}>
                   <span className={styles.courierOrderSequence}>{order.sequence}</span>
-                  <strong>Orden #{order.orderNumber}</strong>
+                  <div className={styles.preparerHistoryOrderDetails}>
+                    <strong>Orden #{order.orderNumber}</strong>
+                    {order.transferredToName ? (
+                      <span className={styles.preparerHistoryTransferMeta}>Traspasado a {order.transferredToName}</span>
+                    ) : null}
+                    {order.completedTimeLabel ? (
+                      <span className={styles.preparerHistoryOrderMeta}>Listo {order.completedTimeLabel}</span>
+                    ) : null}
+                  </div>
                   <span
                     className={`${styles.preparerHistoryMark} ${
                       order.status === "partial"
