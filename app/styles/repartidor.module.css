@@ -193,6 +193,12 @@
   color: #008060;
 }
 
+.preparerCheckBoxPartial {
+  border-color: #f59e0b;
+  background: #fff7ed;
+  color: #b45309;
+}
+
 .preparerCheckBoxMissing {
   border-color: #d82c0d;
   background: #fff4f4;

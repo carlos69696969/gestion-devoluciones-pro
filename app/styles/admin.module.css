@@ -992,6 +992,12 @@
   color: #c11574;
 }
 
+.courierBadgeStatusNotLocatedFull {
+  background: #fff1f1;
+  border-color: #d9364f;
+  color: #c5283d;
+}
+
 .courierBadgeStatusReprogrammed {
   background: #fff5e6;
   border-color: #f59e0b;
@@ -1992,6 +1998,11 @@
 .preparerHistoryMarkReady {
   border-color: #008060;
   color: #008060;
+}
+
+.preparerHistoryMarkPartial {
+  border-color: #f59e0b;
+  color: #b45309;
 }
 
 .preparerHistoryMarkMissing {

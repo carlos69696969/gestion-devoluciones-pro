@@ -722,6 +722,21 @@ function preparerMissingRefundUnitKeysFromOrder(order = {}) {
   return [...preparerMissingUnitKeySetFromOrder(order)];
 }
 
+function orderUnitCount(items = []) {
+  return (Array.isArray(items) ? items : []).reduce(
+    (count, item) => count + Math.max(1, Number(item?.quantity || 1)),
+    0,
+  );
+}
+
+function preparerNotLocatedScopeFromOrder(order = {}, fallbackItems = []) {
+  const items = Array.isArray(order?.items) && order.items.length ? order.items : fallbackItems;
+  const totalUnits = orderUnitCount(items);
+  const missingCount = preparerMissingUnitKeySetFromOrder(order).size;
+  if (missingCount > 0 && totalUnits > 0 && missingCount < totalUnits) return "partial";
+  return "full";
+}
+
 const PICKUP_FAILED_REASON_OPTIONS = [
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨",
   "Recolección reagendada. 📦✨ Nos comunicamos contigo y acordamos realizar un nuevo intento de recolección el día de mañana, ya que no te encontrabas en el domicilio indicado. 🚚",
@@ -3308,6 +3323,9 @@ export const loader = async ({ request }) => {
       const hasPreparerMissingItems =
         String(preparerAssignment?.status || "").trim().toLowerCase() === "not_located" ||
         preparerMissingUnitKeySet.size > 0;
+      const preparerNotLocatedScope = hasPreparerMissingItems
+        ? preparerNotLocatedScopeFromOrder(preparerOrderData || {}, requestWithAttemptCount.items || [])
+        : "";
       const itemsWithPreparerStatus = (requestWithAttemptCount.items || []).map((item) => {
         const itemKey = String(item?.lineItemId || item?.id || item?.title || "item");
         const preparerItem = preparerItemByKey.get(itemKey) || {};
@@ -3336,6 +3354,7 @@ export const loader = async ({ request }) => {
             ? preparerAssignment?.updatedAt || preparerAssignment?.assignedAt
             : null),
         preparerMissingUnitKeys: [...preparerMissingUnitKeySet],
+        preparerNotLocatedScope,
         preparerAssignmentStatus: preparerAssignment?.status || "",
         courierActivities: requestActivities,
         historyEvents: enrichCourierHistoryEvents({
@@ -8039,6 +8058,10 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
     .map((assignment) => {
       const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
       const status = String(assignment.status || "").trim().toLowerCase();
+      const displayStatus =
+        status === "not_located" && preparerNotLocatedScopeFromOrder(order) === "partial"
+          ? "partial"
+          : status;
       return {
         rawAssignment: assignment,
         id: assignment.id,
@@ -8046,7 +8069,7 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
         preparerName: String(assignment.preparerName || "").trim() || "Preparador",
         sequence: 0,
         orderNumber: String(order.orderNumber || assignment.orderNumber || "").trim() || "-",
-        status,
+        status: displayStatus,
       };
     });
   const preparerHistoryById = completedPreparerAssignments.reduce((groups, assignment) => {
@@ -8313,10 +8336,14 @@ function PreparersSection({ preparers, preparerAssignments = [], courierOrders =
                   <strong>Orden #{order.orderNumber}</strong>
                   <span
                     className={`${styles.preparerHistoryMark} ${
-                      order.status === "not_located" ? styles.preparerHistoryMarkMissing : styles.preparerHistoryMarkReady
+                      order.status === "partial"
+                        ? styles.preparerHistoryMarkPartial
+                        : order.status === "not_located"
+                          ? styles.preparerHistoryMarkMissing
+                          : styles.preparerHistoryMarkReady
                     }`}
                   >
-                    {order.status === "not_located" ? "x" : "✓"}
+                    {order.status === "partial" ? "-" : order.status === "not_located" ? "x" : "✓"}
                   </span>
                 </div>
               ))}
@@ -8491,7 +8518,9 @@ function CourierOrderCard({
   const statusBadgeClass = courierHistoryView && normalizedVisibleStatus === "pendiente"
     ? styles.courierBadgeStatusPending
     : normalizedVisibleStatus === "no_localizado"
-      ? styles.courierBadgeStatusNotLocated
+      ? request.preparerNotLocatedScope === "full"
+        ? styles.courierBadgeStatusNotLocatedFull
+        : styles.courierBadgeStatusNotLocated
     : ["entregado", "recibido", "recibida", "reembolsada"].includes(normalizedVisibleStatus)
       ? styles.courierBadgeStatusSuccess
     : courierHistoryView && isCourierHistoryReprogrammed && isRouteTimeReprogrammed

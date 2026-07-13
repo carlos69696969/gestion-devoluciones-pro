@@ -413,6 +413,7 @@ export async function action({ request }) {
 function preparerStatusLabel(status) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "ready") return "listo";
+  if (normalized === "partial") return "incompleto";
   if (normalized === "not_located") return "no localizado";
   return "pendiente";
 }
@@ -425,10 +426,29 @@ function isPreparerAssignmentDone(status) {
 function preparerAssignmentDisplayStatus(assignment) {
   const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
   const status = String(assignment?.status || "assigned").trim().toLowerCase();
-  if (isPreparerAssignmentDone(status)) return status;
+  if (status === "ready") return "ready";
+  if (status === "not_located") return preparerOrderCompletionStatus(order, status);
   return isReprogrammedPreparerOrder(order)
     ? "assigned"
     : status;
+}
+
+function preparerOrderCompletionStatus(order = {}, status = "") {
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  if (normalizedStatus === "ready") return "ready";
+  if (normalizedStatus !== "not_located") return normalizedStatus || "assigned";
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const totalUnits = items.reduce((count, item) => count + Math.max(1, Number(item?.quantity || 1)), 0);
+  const missingUnitKeys = new Set(
+    [
+      ...(Array.isArray(order?.preparerMissingUnitKeys) ? order.preparerMissingUnitKeys : []),
+      ...items.flatMap((item) => (Array.isArray(item?.preparerMissingUnitKeys) ? item.preparerMissingUnitKeys : [])),
+    ]
+      .map((unitKey) => String(unitKey || "").trim())
+      .filter(Boolean),
+  );
+  if (missingUnitKeys.size > 0 && totalUnits > 0 && missingUnitKeys.size < totalUnits) return "partial";
+  return "not_located";
 }
 
 function formatPreparerAddress(order) {
@@ -448,6 +468,7 @@ function formatPreparerAddress(order) {
 function preparerOrderMark(status) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "ready") return "✓";
+  if (normalized === "partial") return "-";
   if (normalized === "not_located") return "x";
   return "";
 }
@@ -585,6 +606,8 @@ export default function PreparerPortal() {
                           className={`${styles.preparerCheckBox} ${
                             status === "ready"
                               ? styles.preparerCheckBoxReady
+                              : status === "partial"
+                                ? styles.preparerCheckBoxPartial
                               : status === "not_located"
                                 ? styles.preparerCheckBoxMissing
                                 : ""
