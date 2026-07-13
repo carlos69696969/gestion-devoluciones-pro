@@ -188,9 +188,10 @@ export async function loader({ request }) {
     .map((assignment) => String(assignment.requestId || "").trim())
     .filter(Boolean);
   let liveCourierOrderByRequestId = new Map();
+  let liveCourierOrderByOrderNumber = new Map();
   if (access && assignmentRequestIds.length) {
     try {
-      const { fetchCourierOrdersByIdsForShop, resolveCourierPortalShop } = await import("../utils/courier.server");
+      const { fetchCourierOrdersByIdsForShop, fetchCourierOrdersForShop, resolveCourierPortalShop } = await import("../utils/courier.server");
       const portalShop = await resolveCourierPortalShop(request);
       const sessionCandidatesByShop = new Map();
       for (const sessionCandidate of portalShop.allSessionCandidates || portalShop.sessionCandidates || []) {
@@ -200,9 +201,10 @@ export async function loader({ request }) {
         current.push(sessionCandidate);
         sessionCandidatesByShop.set(candidateShop, current);
       }
-      const sessionCandidates = sessionCandidatesByShop.get(access.shop) || portalShop.sessionCandidates || [];
+      const liveShop = sessionCandidatesByShop.has(access.shop) ? access.shop : portalShop.shop || access.shop;
+      const sessionCandidates = sessionCandidatesByShop.get(liveShop) || portalShop.sessionCandidates || [];
       const liveCourierOrders = await fetchCourierOrdersByIdsForShop({
-        shop: access.shop,
+        shop: liveShop,
         sessionCandidates,
         orderIds: assignmentRequestIds,
       });
@@ -211,6 +213,34 @@ export async function loader({ request }) {
           .map((order) => [String(order?.id || "").trim(), order])
           .filter(([requestId]) => requestId),
       );
+      liveCourierOrderByOrderNumber = new Map(
+        liveCourierOrders
+          .map((order) => [String(order?.orderNumber || "").replace(/\D/g, ""), order])
+          .filter(([orderNumber]) => orderNumber),
+      );
+      const assignmentOrderNumbers = assignments
+        .map((assignment) => {
+          const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+          return String(orderData.orderNumber || assignment.orderNumber || "").replace(/\D/g, "");
+        })
+        .filter(Boolean);
+      const missingLiveOrderNumbers = assignmentOrderNumbers.filter((orderNumber) => !liveCourierOrderByOrderNumber.has(orderNumber));
+      if (missingLiveOrderNumbers.length) {
+        const liveCourierRouteOrders = await fetchCourierOrdersForShop({
+          shop: liveShop,
+          sessionCandidates,
+        });
+        for (const order of liveCourierRouteOrders) {
+          const requestId = String(order?.id || "").trim();
+          const orderNumber = String(order?.orderNumber || "").replace(/\D/g, "");
+          if (requestId && !liveCourierOrderByRequestId.has(requestId)) {
+            liveCourierOrderByRequestId.set(requestId, order);
+          }
+          if (orderNumber && !liveCourierOrderByOrderNumber.has(orderNumber)) {
+            liveCourierOrderByOrderNumber.set(orderNumber, order);
+          }
+        }
+      }
     } catch (error) {
       console.error("No se pudieron sincronizar ordenes vivas para preparador", error);
     }
@@ -233,21 +263,25 @@ export async function loader({ request }) {
   }
   assignments = assignments.map((assignment) => {
     const requestId = String(assignment.requestId || "").trim();
-    const liveCourierOrder = liveCourierOrderByRequestId.get(requestId) || null;
+    const storedOrderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+    const orderNumber = String(storedOrderData.orderNumber || assignment.orderNumber || "").replace(/\D/g, "");
+    const liveCourierOrder =
+      liveCourierOrderByRequestId.get(requestId) ||
+      liveCourierOrderByOrderNumber.get(orderNumber) ||
+      null;
     const activity = latestFinalActivityByRequestId.get(requestId);
     const activityStatus = activity ? preparerCourierStatusFromActivityAction(activity.action, "") : "";
     const liveStatus = String(liveCourierOrder?.status || "").trim().toLowerCase();
     const nextStatus = liveStatus || activityStatus;
     if (!nextStatus && !liveCourierOrder) return assignment;
-    const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
     return {
       ...assignment,
       orderData: {
-        ...orderData,
+        ...storedOrderData,
         ...(liveCourierOrder || {}),
-        items: orderData.items || liveCourierOrder?.items || [],
-        status: nextStatus || orderData.status,
-        courierActivityStatus: activityStatus || orderData.courierActivityStatus || "",
+        items: storedOrderData.items || liveCourierOrder?.items || [],
+        status: nextStatus || storedOrderData.status,
+        courierActivityStatus: activityStatus || storedOrderData.courierActivityStatus || "",
       },
     };
   });
