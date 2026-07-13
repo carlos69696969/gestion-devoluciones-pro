@@ -230,13 +230,26 @@ async function getTransferredPreparerNotice(request, expectedShop = "") {
     select: { orderData: true },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
   });
+  const transferAssignments = assignments.map((assignment) => {
+    const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+    const transferredAt = new Date(orderData.preparerTransferredAt || "").getTime();
+    const finishedAt = new Date(orderData.preparerSessionFinishedAt || "").getTime();
+    return {
+      transferredToName: String(orderData.preparerTransferredToName || "").trim(),
+      transferredAtMs: Number.isFinite(transferredAt) ? transferredAt : 0,
+      finishedAtMs: Number.isFinite(finishedAt) ? finishedAt : 0,
+    };
+  });
   const transferredToName =
-    assignments
-      .map((assignment) => {
-        const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
-        return String(orderData.preparerTransferredToName || "").trim();
-      })
+    transferAssignments
+      .map((assignment) => assignment.transferredToName)
       .find(Boolean) || "";
+  const transferFinished = transferAssignments.some((assignment) =>
+    assignment.transferredToName === transferredToName &&
+    assignment.finishedAtMs > 0 &&
+    (!assignment.transferredAtMs || assignment.finishedAtMs >= assignment.transferredAtMs)
+  );
+  if (transferFinished) return "";
   return transferredToName
     ? `Tu cuenta ha sido traspasada. Espera que ${transferredToName} termine de despachar todas las ordenes.`
     : "";

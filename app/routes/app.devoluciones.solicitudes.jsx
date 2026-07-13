@@ -4139,6 +4139,7 @@ export const action = async ({ request }) => {
               preparerOriginalName: orderData.preparerOriginalName || preparer.name,
               preparerTransferredToName: newPreparerName,
               preparerTransferredAt: new Date().toISOString(),
+              preparerSessionFinishedAt: null,
             },
           },
         });
