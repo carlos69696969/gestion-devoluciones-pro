@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { useEffect, useState } from "react";
-import { createCookie, Form, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
+import { createCookie, Form, redirect, useActionData, useLoaderData, useNavigation, useRevalidator, useSearchParams } from "react-router";
 import prisma from "../db.server";
 import styles from "../styles/repartidor.module.css";
 
@@ -600,6 +600,7 @@ export default function PreparerPortal() {
   const { shop, preparerName, transferredToName = "", isLoggedIn, assignments = [] } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
+  const revalidator = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
   const [enlargedImage, setEnlargedImage] = useState(null);
   const [readyUnitKeys, setReadyUnitKeys] = useState([]);
@@ -629,6 +630,27 @@ export default function PreparerPortal() {
     setMissingReviewOpen(false);
     setReviewUnitKeys([]);
   }, [dispatchAssignment?.id]);
+
+  useEffect(() => {
+    if (!isLoggedIn) return undefined;
+    const revalidateAccess = () => {
+      if (revalidator.state === "idle") {
+        revalidator.revalidate();
+      }
+    };
+    const intervalId = window.setInterval(revalidateAccess, 4000);
+    const handleFocus = () => revalidateAccess();
+    const handleVisibilityChange = () => {
+      if (!document.hidden) revalidateAccess();
+    };
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isLoggedIn, revalidator]);
 
   const handleTabChange = (nextTab) => {
     const nextParams = new URLSearchParams(searchParams);
