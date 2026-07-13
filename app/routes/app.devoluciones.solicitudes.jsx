@@ -8140,22 +8140,17 @@ function PreparersSection({
         first.sequence - second.sequence ||
         comparePreparerAssignmentsForPortal(first.rawAssignment, second.rawAssignment),
     );
-  const activePreparerAssignments = preparerAssignments
-    .filter((assignment) => {
-      const status = String(assignment.status || "").trim().toLowerCase();
-      return status !== "ready" && status !== "not_located";
-    })
-    .sort(comparePreparerAssignmentsForPortal);
-  const activePreparerSummary = [...activePreparerAssignments.reduce((groups, assignment) => {
+  const activePreparerSummary = [...allPreparerAssignmentDetails.reduce((groups, assignment) => {
     const key = String(assignment.preparerId || assignment.preparerName || "").trim();
     if (!key) return groups;
     const current = groups.get(key) || {
       id: key,
-      preparerName: String(assignment.preparerName || "").trim() || "Preparador",
+      preparerName: assignment.preparerName,
       count: 0,
-      orders: allPreparerAssignmentDetails.filter((order) => String(order.preparerId || order.preparerName) === key),
+      orders: [],
     };
     current.count += 1;
+    current.orders.push(assignment);
     groups.set(key, current);
     return groups;
   }, new Map()).values()];

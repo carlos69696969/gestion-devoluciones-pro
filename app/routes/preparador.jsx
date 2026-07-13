@@ -238,7 +238,7 @@ async function getTransferredPreparerNotice(request, expectedShop = "") {
       })
       .find(Boolean) || "";
   return transferredToName
-    ? `Tu cuenta ha sido traspasada a ${transferredToName}. Espera a que ${transferredToName} termine de despachar todas las ordenes.`
+    ? `Tu cuenta ha sido traspasada. Espera que ${transferredToName} termine de despachar todas las ordenes.`
     : "";
 }
 
@@ -737,7 +737,7 @@ export default function PreparerPortal() {
               </p>
               {transferredToName ? (
                 <p className={styles.subtitle}>
-                  Cuenta transferida a {transferredToName}
+                  Cuenta traspasada a {transferredToName}
                 </p>
               ) : null}
             </div>
@@ -1021,25 +1021,30 @@ export default function PreparerPortal() {
       <div className={styles.accessContainer}>
         <section className={`${styles.card} ${styles.accessCard}`}>
           <p className={styles.eyebrow}>Portal del preparador</p>
-          <h1 className={styles.cardTitle}>Ingresa tu codigo</h1>
-          <p className={styles.subtitle}>Tu codigo es necesario para acceder a tus ordenes de preparacion.</p>
-          <Form method="post" className={styles.accessForm}>
-            <input type="hidden" name="shop" value={shop || ""} />
-            <input
-              className={styles.accessInput}
-              name="code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              placeholder="000000"
-              required
-            />
-            <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Validando..." : "Entrar"}
-            </button>
-          </Form>
-          {transferNotice ? <p className={styles.error}>{transferNotice}</p> : null}
-          {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
+          {transferNotice ? (
+            <p className={styles.error}>{transferNotice}</p>
+          ) : (
+            <>
+              <h1 className={styles.cardTitle}>Ingresa tu codigo</h1>
+              <p className={styles.subtitle}>Tu codigo es necesario para acceder a tus ordenes de preparacion.</p>
+              <Form method="post" className={styles.accessForm}>
+                <input type="hidden" name="shop" value={shop || ""} />
+                <input
+                  className={styles.accessInput}
+                  name="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="000000"
+                  required
+                />
+                <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Validando..." : "Entrar"}
+                </button>
+              </Form>
+              {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
+            </>
+          )}
         </section>
       </div>
     </main>
