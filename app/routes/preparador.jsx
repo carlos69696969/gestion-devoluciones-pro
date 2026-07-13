@@ -18,7 +18,6 @@ const ADMIN_COURIER_REPROGRAM_STATUSES = [
   "intento_fallido_2",
   "intento_fallido_3",
 ];
-const PREPARER_ACTIVE_ACCESS_TTL_MS = 60 * 60 * 26 * 1000;
 
 function preparerPortalCookies() {
   const options = {
@@ -49,13 +48,6 @@ function accessIdFromRequest(request) {
 
 function accessSearchParam(accessId) {
   return accessId ? `&access=${encodeURIComponent(accessId)}` : "";
-}
-
-function isPreparerAccessActive(preparer, now = new Date()) {
-  if (!preparer?.activeAccessId) return false;
-  const startedAtMs = new Date(preparer.activeAccessStartedAt || 0).getTime();
-  if (!Number.isFinite(startedAtMs)) return false;
-  return now.getTime() - startedAtMs < PREPARER_ACTIVE_ACCESS_TTL_MS;
 }
 
 function normalizedPreparerSessions(access = {}) {
@@ -193,12 +185,9 @@ async function getPreparerAccess(request, expectedShop = "") {
       id: Number(selectedAccess.preparerId),
       shop: accessShop,
     },
-    select: { id: true, shop: true, name: true, activeAccessId: true, activeAccessStartedAt: true },
+    select: { id: true, shop: true, name: true },
   });
-  if (!preparer) return null;
-  const accessId = sessionAccess ? requestedAccessId : "";
-  if (isPreparerAccessActive(preparer) && preparer.activeAccessId !== accessId) return null;
-  return { ...preparer, accessId };
+  return preparer ? { ...preparer, accessId: sessionAccess ? requestedAccessId : "" } : null;
 }
 
 async function generateUniquePreparerCode(shop) {
@@ -368,11 +357,7 @@ export async function action({ request }) {
     if (access) {
       await prisma.preparer.update({
         where: { id: access.id },
-        data: {
-          code: await generateUniquePreparerCode(access.shop),
-          activeAccessId: null,
-          activeAccessStartedAt: null,
-        },
+        data: { code: await generateUniquePreparerCode(access.shop) },
       });
     }
     if (currentAccessId) {
@@ -451,17 +436,16 @@ export async function action({ request }) {
 
   const preparerCandidates = await prisma.preparer.findMany({
     where: shop ? { shop, code } : { code },
-    select: { id: true, shop: true, name: true, activeAccessId: true, activeAccessStartedAt: true },
+    select: { id: true, shop: true, name: true },
     take: 2,
   });
-  if (!preparerCandidates.length) return { ok: false, error: "Codigo invalido." };
+  if (!preparerCandidates.length) {
+    return { ok: false, error: "Codigo invalido o esta cuenta ya inicio sesion." };
+  }
   if (!shop && preparerCandidates.length > 1) {
     return { ok: false, error: "Este codigo existe en mas de una tienda. Abre el enlace del preparador desde Shopify." };
   }
   const preparer = preparerCandidates[0];
-  if (isPreparerAccessActive(preparer)) {
-    return { ok: false, error: "Esta cuenta ya inicio sesion en otro dispositivo." };
-  }
   const hasAssignedOrders = await hasActivePreparerAssignments({
     shop: preparer.shop,
     preparerId: preparer.id,
@@ -473,10 +457,7 @@ export async function action({ request }) {
   const accessId = createPreparerAccessId();
   await prisma.preparer.update({
     where: { id: preparer.id },
-    data: {
-      activeAccessId: accessId,
-      activeAccessStartedAt: new Date(),
-    },
+    data: { code: await generateUniquePreparerCode(preparer.shop) },
   });
 
   currentSessions[accessId] = {
@@ -628,7 +609,6 @@ export default function PreparerPortal() {
         <div className={styles.container}>
           <header className={styles.header}>
             <div>
-              <p className={styles.eyebrow}>Portal del preparador</p>
               <h1 className={styles.title}>Cariana preparadores</h1>
               <p className={styles.subtitle}>
                 {preparerName ? `Preparador: ${preparerName}` : "Ordenes asignadas para preparacion."}
