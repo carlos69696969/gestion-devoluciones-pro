@@ -9,6 +9,14 @@ const COURIER_REPROGRAM_ACTIONS = [
   "courier_route_delivery_reprogrammed",
   "courier_route_return_reprogrammed",
 ];
+const ADMIN_COURIER_REPROGRAM_STATUSES = [
+  "no_entregado",
+  "no_recibido",
+  "reintento_pendiente",
+  "intento_fallido_1",
+  "intento_fallido_2",
+  "intento_fallido_3",
+];
 
 function preparerPortalCookies() {
   const options = {
@@ -78,6 +86,10 @@ function isReprogrammedPreparerOrder(orderData = {}) {
       .filter(Boolean),
   );
   return (
+    ADMIN_COURIER_REPROGRAM_STATUSES.includes(status) ||
+    ADMIN_COURIER_REPROGRAM_STATUSES.includes(currentStatus) ||
+    ADMIN_COURIER_REPROGRAM_STATUSES.includes(visibleStatus) ||
+    ADMIN_COURIER_REPROGRAM_STATUSES.includes(courierActivityStatus) ||
     status === "reintento_pendiente" ||
     status === "reprogramado" ||
     status === "reprogramada" ||
