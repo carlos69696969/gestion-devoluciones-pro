@@ -195,6 +195,53 @@ async function getPreparerAccess(request, expectedShop = "") {
   return preparer ? { ...preparer, accessId: sessionAccess ? requestedAccessId : "" } : null;
 }
 
+async function getTransferredPreparerNotice(request, expectedShop = "") {
+  const { accessCookie } = preparerPortalCookies();
+  const cookieHeader = request.headers.get("Cookie");
+  const access = (await accessCookie.parse(cookieHeader)) || {};
+  const requestedAccessId = accessIdFromRequest(request);
+  const sessions = normalizedPreparerSessions(access);
+  const sessionAccess = requestedAccessId ? sessions[requestedAccessId] : null;
+  const legacyAccess = access?.shop && access?.preparerId
+    ? {
+        shop: cleanShop(access.shop),
+        preparerId: Number(access.preparerId || 0),
+        accessCode: String(access.accessCode || "").trim(),
+      }
+    : null;
+  const selectedAccess = sessionAccess || (!requestedAccessId ? legacyAccess : null);
+  if (!selectedAccess?.shop || !selectedAccess?.preparerId || !selectedAccess.accessCode) return "";
+  const accessShop = cleanShop(selectedAccess.shop);
+  const requestedShop = cleanShop(expectedShop);
+  if (requestedShop && accessShop !== requestedShop) return "";
+  const preparer = await prisma.preparer.findFirst({
+    where: {
+      id: Number(selectedAccess.preparerId),
+      shop: accessShop,
+    },
+    select: { id: true, code: true },
+  });
+  if (!preparer || String(preparer.code || "").trim() === selectedAccess.accessCode) return "";
+  const assignments = await prisma.preparerAssignment.findMany({
+    where: {
+      shop: accessShop,
+      preparerId: preparer.id,
+    },
+    select: { orderData: true },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+  });
+  const transferredToName =
+    assignments
+      .map((assignment) => {
+        const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+        return String(orderData.preparerTransferredToName || "").trim();
+      })
+      .find(Boolean) || "";
+  return transferredToName
+    ? `Tu cuenta ha sido traspasada a ${transferredToName}. Espera a que ${transferredToName} termine de despachar todas las ordenes.`
+    : "";
+}
+
 async function generateUniquePreparerCode(shop) {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -228,6 +275,7 @@ export async function loader({ request }) {
   const url = new URL(request.url);
   const shop = cleanShop(url.searchParams.get("shop"));
   const access = await getPreparerAccess(request, shop);
+  const transferNotice = access ? "" : await getTransferredPreparerNotice(request, shop);
   let assignments = access
     ? await prisma.preparerAssignment.findMany({
         where: {
@@ -382,6 +430,7 @@ export async function loader({ request }) {
         return String(orderData.preparerTransferredToName || "").trim();
       })
       .find(Boolean) || "",
+    transferNotice,
     isLoggedIn: Boolean(access),
     assignments,
   };
@@ -597,7 +646,7 @@ function preparerOrderNumberValue(assignment) {
 }
 
 export default function PreparerPortal() {
-  const { shop, preparerName, transferredToName = "", isLoggedIn, assignments = [] } = useLoaderData();
+  const { shop, preparerName, transferredToName = "", transferNotice = "", isLoggedIn, assignments = [] } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
@@ -989,6 +1038,7 @@ export default function PreparerPortal() {
               {isSubmitting ? "Validando..." : "Entrar"}
             </button>
           </Form>
+          {transferNotice ? <p className={styles.error}>{transferNotice}</p> : null}
           {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
         </section>
       </div>
