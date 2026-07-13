@@ -6675,7 +6675,6 @@ export default function ReturnsRequests() {
           courierOrders={courierOrders}
           routeOrdersPayload={courierRouteOrdersPayload}
           isSubmitting={isSubmitting}
-          actionData={actionData}
         />
       ) : null}
     </s-page>
@@ -8059,9 +8058,9 @@ function PreparersSection({
   courierOrders = [],
   routeOrdersPayload = [],
   isSubmitting,
-  actionData,
 }) {
   const location = useLocation();
+  const createPreparerFetcher = useFetcher();
   const distributeFetcher = useFetcher();
   const transferPreparerFetcher = useFetcher();
   const [showForm, setShowForm] = useState(false);
@@ -8074,6 +8073,7 @@ function PreparersSection({
   const [selectedPreparerHistory, setSelectedPreparerHistory] = useState(null);
   const [showDistributionMessage, setShowDistributionMessage] = useState(false);
   const preparersAction = `${location.pathname}${location.search || ""}`;
+  const isCreatePreparerSubmitting = createPreparerFetcher.state !== "idle";
   const isDistributing = distributeFetcher.state !== "idle";
   const isTransferPreparerSubmitting = transferPreparerFetcher.state !== "idle";
   const selectedPreparerIdSet = new Set(selectedPreparerIds.map((preparerId) => String(preparerId)));
@@ -8231,11 +8231,10 @@ function PreparersSection({
   }, [showDistributionMessage]);
 
   useEffect(() => {
-    if (actionData?.ok && actionData?.intent === "create_preparer") {
-      setShowForm(false);
-      setCode("");
-    }
-  }, [actionData]);
+    if (!createPreparerFetcher.data?.ok || createPreparerFetcher.data?.intent !== "create_preparer") return;
+    setShowForm(false);
+    setCode("");
+  }, [createPreparerFetcher.data]);
 
   useEffect(() => {
     if (!transferPreparerFetcher.data?.ok) return;
@@ -8287,7 +8286,7 @@ function PreparersSection({
         ) : null}
 
         {showForm ? (
-          <Form method="post" action={preparersAction} className={`${styles.card} ${styles.courierCreateForm}`}>
+          <createPreparerFetcher.Form method="post" action={preparersAction} className={`${styles.card} ${styles.courierCreateForm}`}>
             <input type="hidden" name="intent" value="create_preparer" />
             <label className={styles.label}>
               Nombre del preparador
@@ -8312,11 +8311,11 @@ function PreparersSection({
             <button
               className={`${styles.btn} ${styles.btnPrimary}`}
               type="submit"
-              disabled={isSubmitting || !code}
+              disabled={isSubmitting || isCreatePreparerSubmitting || !code}
             >
               Guardar
             </button>
-          </Form>
+          </createPreparerFetcher.Form>
         ) : null}
 
         <div className={styles.courierDirectory}>
