@@ -4181,7 +4181,7 @@ export const action = async ({ request }) => {
       const orderId = String(order?.id || "").trim();
       if (orderId && !orderById.has(orderId)) orderById.set(orderId, order);
     }
-    const orderSequenceValue = (order) => {
+    const orderSortValue = (order) => {
       const sequence = Number(order?.sequenceNumber || 0) || 0;
       const orderNumber = Number(String(order?.orderNumber || "").replace(/\D/g, "") || 0) || 0;
       return { sequence, orderNumber };
@@ -4192,9 +4192,9 @@ export const action = async ({ request }) => {
     )
       .filter((order) => String(order?.id || "").trim())
       .sort((firstOrder, secondOrder) => {
-        const first = orderSequenceValue(firstOrder);
-        const second = orderSequenceValue(secondOrder);
-        return first.sequence - second.sequence || first.orderNumber - second.orderNumber;
+        const first = orderSortValue(firstOrder);
+        const second = orderSortValue(secondOrder);
+        return first.orderNumber - second.orderNumber || first.sequence - second.sequence;
       })
       .map((order, index) => {
         const sequenceNumber = Number(order?.sequenceNumber || 0) || index + 1;
