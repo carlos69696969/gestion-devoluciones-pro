@@ -4195,7 +4195,7 @@ export const action = async ({ request }) => {
       .sort((firstOrder, secondOrder) => {
         const first = orderSortValue(firstOrder);
         const second = orderSortValue(secondOrder);
-        return first.orderNumber - second.orderNumber || first.sequence - second.sequence;
+        return first.sequence - second.sequence || first.orderNumber - second.orderNumber;
       })
       .map((order, index) => {
         const sequenceNumber = Number(order?.sequenceNumber || 0) || index + 1;
@@ -5830,7 +5830,7 @@ export default function ReturnsRequests() {
     const query = nextParams.toString();
     return query ? `${location.pathname}?${query}` : location.pathname;
   };
-  const courierRouteOrdersPayload = courierOrders.map((order) => ({
+  const courierRouteOrdersPayload = courierOrders.map((order, index) => ({
     id: order.id,
     orderNumber: order.orderNumber,
     courierLabel: order.courierLabel,
@@ -5848,7 +5848,7 @@ export default function ReturnsRequests() {
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
     status: order.status,
-    sequenceNumber: order.sequenceNumber,
+    sequenceNumber: Number(order.sequenceNumber || 0) || index + 1,
     attemptCount: order.attemptCount,
     items: order.items || [],
   }));
