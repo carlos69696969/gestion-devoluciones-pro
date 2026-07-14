@@ -364,7 +364,7 @@ export async function loader({ request }) {
         })
         .filter(Boolean);
       const missingLiveOrderNumbers = assignmentOrderNumbers.filter((orderNumber) => !liveCourierOrderByOrderNumber.has(orderNumber));
-      if (missingLiveOrderNumbers.length) {
+      if (missingLiveOrderNumbers.length || assignmentOrderNumbers.length) {
         const liveCourierRouteOrders = await fetchCourierOrdersForShop({
           shop: liveShop,
           sessionCandidates,
@@ -408,7 +408,9 @@ export async function loader({ request }) {
       liveCourierOrderByRequestId.get(requestId) ||
       liveCourierOrderByOrderNumber.get(orderNumber) ||
       null;
+    const liveSequenceNumber = Number(liveCourierOrder?.sequenceNumber || 0) || 0;
     const globalSequenceNumber =
+      liveSequenceNumber ||
       globalSequenceByRequestId.get(requestId) ||
       globalSequenceByOrderNumber.get(orderNumber) ||
       0;
