@@ -4181,8 +4181,14 @@ export const action = async ({ request }) => {
       const orderId = String(order?.id || "").trim();
       if (orderId && !orderById.has(orderId)) orderById.set(orderId, order);
     }
+    const routeSequenceByOrderId = new Map();
+    selectedOrderIds.forEach((orderId, index) => {
+      if (!routeSequenceByOrderId.has(orderId)) routeSequenceByOrderId.set(orderId, index + 1);
+    });
     const orderSequenceValue = (order) => {
-      const sequence = Number(order?.sequenceNumber || 0) || 0;
+      const orderId = String(order?.id || "").trim();
+      const routeSequence = routeSequenceByOrderId.get(orderId) || 0;
+      const sequence = routeSequence || Number(order?.sequenceNumber || 0) || 0;
       const orderNumber = Number(String(order?.orderNumber || "").replace(/\D/g, "") || 0) || 0;
       return { sequence, orderNumber };
     };
@@ -4195,6 +4201,11 @@ export const action = async ({ request }) => {
         const first = orderSequenceValue(firstOrder);
         const second = orderSequenceValue(secondOrder);
         return first.sequence - second.sequence || first.orderNumber - second.orderNumber;
+      })
+      .map((order, index) => {
+        const orderId = String(order?.id || "").trim();
+        const sequenceNumber = routeSequenceByOrderId.get(orderId) || Number(order?.sequenceNumber || 0) || index + 1;
+        return { ...order, sequenceNumber };
       });
     if (!orders.length) {
       return { ok: false, error: "No hay ordenes pendientes para distribuir." };
@@ -8096,7 +8107,7 @@ function PreparersSection({
   };
   const preparerAssignmentStoredSequence = (assignment) => {
     const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
-    return Number(order.sequenceNumber || assignment.sequence || 0) || 0;
+    return Number(assignment.sequence || order.sequenceNumber || 0) || 0;
   };
   const comparePreparerAssignmentsForPortal = (first, second) =>
     preparerAssignmentOrderNumberValue(first) - preparerAssignmentOrderNumberValue(second) ||
