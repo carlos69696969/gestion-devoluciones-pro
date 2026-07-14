@@ -1114,6 +1114,13 @@
   margin-bottom: 12px;
 }
 
+.courierOrdersCountGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
 .courierOrdersActions {
   position: relative;
   display: flex;

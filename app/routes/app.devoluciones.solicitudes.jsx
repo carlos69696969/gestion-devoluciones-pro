@@ -4191,6 +4191,7 @@ export const action = async ({ request }) => {
       : visibleOrders
     )
       .filter((order) => String(order?.id || "").trim())
+      .filter((order) => !isReturnCourierLabel(order?.courierLabel))
       .sort((firstOrder, secondOrder) => {
         const first = orderSortValue(firstOrder);
         const second = orderSortValue(secondOrder);
@@ -5637,6 +5638,8 @@ export default function ReturnsRequests() {
   const notLocatedCourierOrders = courierOrders.filter(
     (order) => String(order.status || "").trim().toLowerCase() === "no_localizado",
   );
+  const courierDeliveryOrders = courierOrders.filter((order) => !isReturnCourierLabel(order.courierLabel));
+  const courierReturnOrders = courierOrders.filter((order) => isReturnCourierLabel(order.courierLabel));
   const visibleCourierOrders = showOnlyNotLocatedCourierOrders ? notLocatedCourierOrders : courierOrders;
   const courierRouteActionData = courierRouteFetcher.data || null;
   const branchPickupDeliveryActionData = branchPickupDeliveryFetcher.data || null;
@@ -5849,6 +5852,8 @@ export default function ReturnsRequests() {
     attemptCount: order.attemptCount,
     items: order.items || [],
   }));
+  const preparerCourierOrders = courierDeliveryOrders;
+  const preparerRouteOrdersPayload = courierRouteOrdersPayload.filter((order) => !isReturnCourierLabel(order.courierLabel));
 
   const pageHeading =
     viewMode === VIEW_MODE.PICKUP
@@ -6089,7 +6094,10 @@ export default function ReturnsRequests() {
             <>
               <div className={styles.courierOrdersHeader}>
                 <div>
-                  <span className={styles.courierOrdersCount}>Numero de ordenes: {courierOrders.length}</span>
+                  <div className={styles.courierOrdersCountGroup}>
+                    <span className={styles.courierOrdersCount}>Numero de ordenes de entrega: {courierDeliveryOrders.length}</span>
+                    <span className={styles.courierOrdersCount}>Numero de devoluciones: {courierReturnOrders.length}</span>
+                  </div>
                   {plannedCourierRoutes.length ? (
                     <div className={styles.courierRoutePlanSummary}>
                       {plannedCourierRoutes.map((plan) => {
@@ -6687,8 +6695,8 @@ export default function ReturnsRequests() {
         <PreparersSection
           preparers={preparers}
           preparerAssignments={preparerAssignments}
-          courierOrders={courierOrders}
-          routeOrdersPayload={courierRouteOrdersPayload}
+          courierOrders={preparerCourierOrders}
+          routeOrdersPayload={preparerRouteOrdersPayload}
           isSubmitting={isSubmitting}
         />
       ) : null}
@@ -8168,6 +8176,10 @@ function PreparersSection({
     };
   };
   const allPreparerAssignmentDetails = preparerAssignments
+    .filter((assignment) => {
+      const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+      return !isReturnCourierLabel(order.courierLabel);
+    })
     .map(preparerAssignmentDetail)
     .sort(
       (first, second) =>
@@ -8193,6 +8205,7 @@ function PreparersSection({
       const status = String(assignment.status || "").trim().toLowerCase();
       if (status !== "ready" && status !== "not_located") return false;
       const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+      if (isReturnCourierLabel(order.courierLabel)) return false;
       const finishedAt = order.preparerSessionFinishedAt || "";
       if (!finishedAt || !Number.isFinite(new Date(finishedAt).getTime())) return false;
       if (mexicoActivityDateKey(finishedAt) !== todayMexicoKey) return false;
