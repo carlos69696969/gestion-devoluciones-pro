@@ -408,8 +408,10 @@ export async function loader({ request }) {
       liveCourierOrderByRequestId.get(requestId) ||
       liveCourierOrderByOrderNumber.get(orderNumber) ||
       null;
+    const assignmentSequenceNumber = Number(assignment.sequence || 0) || 0;
     const liveSequenceNumber = Number(liveCourierOrder?.sequenceNumber || 0) || 0;
     const globalSequenceNumber =
+      assignmentSequenceNumber ||
       liveSequenceNumber ||
       globalSequenceByRequestId.get(requestId) ||
       globalSequenceByOrderNumber.get(orderNumber) ||
@@ -426,6 +428,7 @@ export async function loader({ request }) {
         ...storedOrderData,
         ...(liveCourierOrder || {}),
         sequenceNumber:
+          assignmentSequenceNumber ||
           globalSequenceNumber ||
           liveCourierOrder?.sequenceNumber ||
           storedOrderData.sequenceNumber ||
@@ -673,7 +676,7 @@ function preparerOrderMark(status) {
 
 function preparerDisplaySequence(assignment, fallback = 0) {
   const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
-  return Number(assignment?.globalSequenceNumber || order.sequenceNumber || assignment?.sequence || fallback || 0) || 0;
+  return Number(assignment?.sequence || order.sequenceNumber || assignment?.globalSequenceNumber || fallback || 0) || 0;
 }
 
 function preparerOrderNumberValue(assignment) {
