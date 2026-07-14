@@ -690,14 +690,14 @@ export default function PreparerPortal() {
   const actionData = useActionData();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [enlargedImage, setEnlargedImage] = useState(null);
   const [readyUnitKeys, setReadyUnitKeys] = useState([]);
   const [missingReviewOpen, setMissingReviewOpen] = useState(false);
   const [reviewUnitKeys, setReviewUnitKeys] = useState([]);
   const isSubmitting = navigation.state === "submitting";
-  const requestedTab = String(searchParams.get("tab") || "ordenes").trim().toLowerCase();
-  const activeTab = requestedTab === "despachar" ? "despachar" : "ordenes";
+  const initialTab = String(searchParams.get("tab") || "ordenes").trim().toLowerCase();
+  const [activeTab, setActiveTab] = useState(initialTab === "despachar" ? "despachar" : "ordenes");
   const sortedAssignments = [...assignments].sort(
     (firstAssignment, secondAssignment) =>
       preparerDisplaySequence(firstAssignment) - preparerDisplaySequence(secondAssignment) ||
@@ -742,10 +742,7 @@ export default function PreparerPortal() {
   }, [isLoggedIn, revalidator]);
 
   const handleTabChange = (nextTab) => {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set("tab", nextTab);
-    if (shop) nextParams.set("shop", shop);
-    setSearchParams(nextParams);
+    setActiveTab(nextTab === "despachar" ? "despachar" : "ordenes");
   };
 
   if (isLoggedIn) {
