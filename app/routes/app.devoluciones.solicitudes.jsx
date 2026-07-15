@@ -3831,6 +3831,7 @@ export const action = async ({ request }) => {
     const requestId = String(formData.get("requestId") || "").trim();
     const orderNumber = String(formData.get("orderNumber") || "").trim();
     const displayedDeadline = String(formData.get("deadline") || "").trim();
+    const isRefundTestMode = String(formData.get("branchPickupRefundTestMode") || "").trim() === "1";
 
     try {
       return await refundExpiredBranchPickupOrder({
@@ -3839,6 +3840,7 @@ export const action = async ({ request }) => {
         requestId,
         orderNumber,
         displayedDeadline,
+        force: isRefundTestMode,
       });
     } catch (error) {
       return {
@@ -5744,6 +5746,7 @@ export default function ReturnsRequests() {
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
+  const [branchPickupRefundTestMode, setBranchPickupRefundTestMode] = useState(false);
   const [notReturnedTestMode, setNotReturnedTestMode] = useState(false);
   const isExpiringBranchDeliveryRequests = branchDeliveryExpirationFetcher.state !== "idle";
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
@@ -6749,6 +6752,17 @@ export default function ReturnsRequests() {
 
       {viewMode === VIEW_MODE.BRANCH_PICKUP ? (
         <s-section heading="Recoger en sucursal">
+          <div className={styles.branchPickupTestHeader}>
+            <label className={styles.branchPickupTestSwitch}>
+              <input
+                type="checkbox"
+                checked={branchPickupRefundTestMode}
+                onChange={(event) => setBranchPickupRefundTestMode(event.target.checked)}
+              />
+              <span className={styles.branchPickupTestSlider} aria-hidden="true" />
+              <span>Modo prueba reembolso</span>
+            </label>
+          </div>
           {courierOrders.length === 0 ? (
             <p>No hay ordenes para recoger en sucursal.</p>
           ) : (
@@ -6762,6 +6776,7 @@ export default function ReturnsRequests() {
                   key={request.id}
                   request={request}
                   branchPickupView
+                  branchPickupRefundTestMode={branchPickupRefundTestMode}
                   hideTransferredCourierBadge
                   isSubmitting={isSubmitting}
                   onBranchPickupDeliver={(selectedRequest) => {
@@ -6860,6 +6875,11 @@ export default function ReturnsRequests() {
               <input type="hidden" name="intent" value="branch_pickup_refund_expired" />
               <input type="hidden" name="requestId" value={String(branchPickupRefundRequest.id || "")} />
               <input type="hidden" name="orderNumber" value={String(branchPickupRefundRequest.orderNumber || "")} />
+              <input
+                type="hidden"
+                name="branchPickupRefundTestMode"
+                value={branchPickupRefundTestMode ? "1" : "0"}
+              />
               <input
                 type="hidden"
                 name="deadline"
@@ -8852,6 +8872,7 @@ function CourierOrderCard({
   hideTransferredCourierBadge = false,
   courierHistoryView = false,
   branchPickupView = false,
+  branchPickupRefundTestMode = false,
   isSubmitting = false,
   onBranchPickupDeliver = null,
   onBranchPickupRefund = null,
@@ -8988,7 +9009,7 @@ function CourierOrderCard({
     ? branchPickupFinalStatusLabel(request, effectiveHistoryEvents)
     : "";
   const isBranchPickupExpired = branchPickupView && isBranchPickupDeadlineExpired(request, displayedScheduledDate);
-  const shouldShowBranchPickupRefund = isBranchPickupExpired;
+  const shouldShowBranchPickupRefund = isBranchPickupExpired || (branchPickupView && branchPickupRefundTestMode);
   const branchPickupActionRequest = branchPickupView
     ? { ...request, branchPickupDeadlineLabel: scheduledFieldValue }
     : request;
