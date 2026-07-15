@@ -1091,6 +1091,20 @@ function addDays(dateValue, days) {
   return result;
 }
 
+function branchDeliveryExpirationDate(limitDateValue) {
+  const limitDate = new Date(limitDateValue);
+  if (!Number.isFinite(limitDate.getTime())) return null;
+  const expiresAt = new Date(limitDate);
+  expiresAt.setHours(0, 0, 0, 0);
+  expiresAt.setDate(expiresAt.getDate() + 1);
+  return expiresAt;
+}
+
+function isBranchDeliveryExpired(limitDateValue, now = new Date()) {
+  const expiresAt = branchDeliveryExpirationDate(limitDateValue);
+  return Boolean(expiresAt) && now.getTime() >= expiresAt.getTime();
+}
+
 function appendReasonEntry(rawValue, entry) {
   const entries = parseReasonEntries(rawValue);
   entries.push({
@@ -3004,6 +3018,58 @@ async function fetchBranchPickupOrderForDeadline(admin, shopifyOrderId) {
   return payload?.data?.order || null;
 }
 
+async function markBranchDeliveryNeverArrived({ shopDomain, requestRow, force = false }) {
+  if (!requestRow?.id) return { ok: false, skipped: true, reason: "missing_request" };
+  if (String(requestRow.returnMethod || "").toLowerCase() === "pickup") {
+    return { ok: false, skipped: true, reason: "not_branch_delivery" };
+  }
+  if (String(requestRow.status || "").toLowerCase() !== "aprobada") {
+    return { ok: false, skipped: true, reason: "not_approved" };
+  }
+  if (!force && !isBranchDeliveryExpired(requestRow.limitDate)) {
+    return { ok: false, skipped: true, reason: "not_expired" };
+  }
+
+  const updatedRequest = await prisma.returnRequest.update({
+    where: { id: requestRow.id },
+    data: {
+      status: "no_devuelto",
+      rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
+        kind: "never_arrived_branch",
+        reason: NEVER_ARRIVED_BRANCH_REASON,
+      }),
+    },
+  });
+  await emitReturnNotificationEvent({
+    shopDomain,
+    requestRow: updatedRequest,
+    intent: "mark_never_arrived",
+    note: NEVER_ARRIVED_BRANCH_REASON,
+  });
+  return { ok: true, requestId: requestRow.id };
+}
+
+async function expireBranchDeliveryRequestsForShop(shopDomain, { force = false } = {}) {
+  const where = {
+    shop: shopDomain,
+    returnMethod: { not: "pickup" },
+    status: "aprobada",
+    ...(force ? {} : { limitDate: { not: null } }),
+  };
+  const candidates = await prisma.returnRequest.findMany({
+    where,
+    include: { items: true },
+    orderBy: [{ limitDate: "asc" }, { id: "asc" }],
+  });
+  let expiredCount = 0;
+  for (const requestRow of candidates) {
+    if (!force && !isBranchDeliveryExpired(requestRow.limitDate)) continue;
+    const result = await markBranchDeliveryNeverArrived({ shopDomain, requestRow, force });
+    if (result.ok) expiredCount += 1;
+  }
+  return expiredCount;
+}
+
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
@@ -3033,6 +3099,10 @@ export const loader = async ({ request }) => {
     details: true,
     ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
   };
+
+  if (viewMode === VIEW_MODE.BRANCH) {
+    await expireBranchDeliveryRequestsForShop(session.shop);
+  }
 
   let rawRequests =
     viewMode === VIEW_MODE.COURIER ||
@@ -3252,7 +3322,7 @@ export const loader = async ({ request }) => {
       ? branchDeliveryDeadlineDate.toISOString()
       : "";
     const isBranchDeliveryDeadlineExpired =
-      hasValidBranchDeliveryDeadline && new Date().getTime() > branchDeliveryDeadlineDate.getTime();
+      hasValidBranchDeliveryDeadline && isBranchDeliveryExpired(requestRow.limitDate);
     return {
       ...requestRow,
       rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
@@ -3485,6 +3555,16 @@ export const action = async ({ request }) => {
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
   const id = Number(formData.get("id") || 0);
+
+  if (intent === "expire_branch_delivery_requests") {
+    const expiredCount = await expireBranchDeliveryRequestsForShop(session.shop, { force: true });
+    return {
+      ok: true,
+      message: expiredCount
+        ? `${expiredCount} solicitud(es) vencidas se enviaron al historial.`
+        : "No hay solicitudes aprobadas de entrega en sucursal para vencer.",
+    };
+  }
 
   if (intent === "branch_pickup_mark_delivered") {
     const requestId = String(formData.get("requestId") || "").trim();
@@ -4481,29 +4561,14 @@ export const action = async ({ request }) => {
     if (String(requestRow.status || "").toLowerCase() !== "aprobada") {
       return { ok: false, error: "Solo puedes marcar como nunca llego una solicitud aprobada." };
     }
-    const branchDeliveryDeadlineDate = requestRow.limitDate ? new Date(requestRow.limitDate) : null;
-    const isBranchDeliveryDeadlineExpired =
-      Boolean(branchDeliveryDeadlineDate) &&
-      Number.isFinite(branchDeliveryDeadlineDate.getTime()) &&
-      new Date().getTime() > branchDeliveryDeadlineDate.getTime();
+    const isBranchDeliveryDeadlineExpired = isBranchDeliveryExpired(requestRow.limitDate);
     if (!isBranchDeliveryTestMode && !isBranchDeliveryDeadlineExpired) {
       return { ok: false, error: "Aun no vence la fecha limite de entrega para marcar esta solicitud como nunca llego." };
     }
-    await prisma.returnRequest.update({
-      where: { id },
-      data: {
-        status: "no_devuelto",
-        rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
-          kind: "never_arrived_branch",
-          reason: NEVER_ARRIVED_BRANCH_REASON,
-        }),
-      },
-    });
-    await emitReturnNotificationEvent({
+    await markBranchDeliveryNeverArrived({
       shopDomain: session.shop,
       requestRow,
-      intent,
-      note: NEVER_ARRIVED_BRANCH_REASON,
+      force: isBranchDeliveryTestMode,
     });
     return { ok: true, message: "Solicitud marcada como nunca llego y enviada al historial." };
   }
@@ -5564,6 +5629,7 @@ export default function ReturnsRequests() {
   const courierRouteFetcher = useFetcher();
   const branchPickupDeliveryFetcher = useFetcher();
   const branchPickupRefundFetcher = useFetcher();
+  const branchDeliveryExpirationFetcher = useFetcher();
   const navigation = useNavigation();
   const location = useLocation();
   const isSubmitting = navigation.state === "submitting";
@@ -5584,6 +5650,7 @@ export default function ReturnsRequests() {
   const [branchPickupRefundTestMode, setBranchPickupRefundTestMode] = useState(false);
   const [branchDeliveryTestMode, setBranchDeliveryTestMode] = useState(false);
   const [notReturnedTestMode, setNotReturnedTestMode] = useState(false);
+  const isExpiringBranchDeliveryRequests = branchDeliveryExpirationFetcher.state !== "idle";
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
   const selectedCourierBulkOrderIdSet = new Set(selectedCourierBulkOrderIds.map((orderId) => String(orderId)));
   const selectedCourierBulkOrders = courierOrders.filter((order) =>
@@ -5897,6 +5964,21 @@ export default function ReturnsRequests() {
               <span className={styles.branchPickupTestSlider} aria-hidden="true" />
               Modo prueba
             </label>
+            <branchDeliveryExpirationFetcher.Form method="post">
+              <input type="hidden" name="intent" value="expire_branch_delivery_requests" />
+              <label className={styles.branchPickupTestSwitch}>
+                <input
+                  type="checkbox"
+                  checked={isExpiringBranchDeliveryRequests}
+                  disabled={isExpiringBranchDeliveryRequests || branchRequests.length === 0}
+                  onChange={(event) => {
+                    if (event.target.checked) event.currentTarget.form?.requestSubmit();
+                  }}
+                />
+                <span className={styles.branchPickupTestSlider} aria-hidden="true" />
+                Vencio el tiempo
+              </label>
+            </branchDeliveryExpirationFetcher.Form>
           </div>
           {branchRequests.length === 0 ? (
             <p>No hay solicitudes de entrega en sucursal.</p>
