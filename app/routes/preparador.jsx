@@ -408,11 +408,11 @@ export async function loader({ request }) {
       liveCourierOrderByRequestId.get(requestId) ||
       liveCourierOrderByOrderNumber.get(orderNumber) ||
       null;
-    const assignmentSequenceNumber = Number(assignment.sequence || 0) || 0;
     const liveSequenceNumber = Number(liveCourierOrder?.sequenceNumber || 0) || 0;
+    const assignmentSequenceNumber = Number(assignment.sequence || 0) || 0;
     const globalSequenceNumber =
-      assignmentSequenceNumber ||
       liveSequenceNumber ||
+      assignmentSequenceNumber ||
       globalSequenceByRequestId.get(requestId) ||
       globalSequenceByOrderNumber.get(orderNumber) ||
       0;
@@ -428,8 +428,9 @@ export async function loader({ request }) {
         ...storedOrderData,
         ...(liveCourierOrder || {}),
         sequenceNumber:
-          assignmentSequenceNumber ||
           globalSequenceNumber ||
+          liveSequenceNumber ||
+          assignmentSequenceNumber ||
           liveCourierOrder?.sequenceNumber ||
           storedOrderData.sequenceNumber ||
           assignment.sequence,
@@ -676,7 +677,7 @@ function preparerOrderMark(status) {
 
 function preparerDisplaySequence(assignment, fallback = 0) {
   const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
-  return Number(assignment?.sequence || order.sequenceNumber || assignment?.globalSequenceNumber || fallback || 0) || 0;
+  return Number(order.sequenceNumber || assignment?.globalSequenceNumber || assignment?.sequence || fallback || 0) || 0;
 }
 
 function preparerOrderNumberValue(assignment) {
