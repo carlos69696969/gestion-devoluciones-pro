@@ -412,9 +412,9 @@ export async function loader({ request }) {
     const assignmentSequenceNumber = Number(assignment.sequence || 0) || 0;
     const globalSequenceNumber =
       liveSequenceNumber ||
-      assignmentSequenceNumber ||
       globalSequenceByRequestId.get(requestId) ||
       globalSequenceByOrderNumber.get(orderNumber) ||
+      assignmentSequenceNumber ||
       0;
     const activity = latestFinalActivityByRequestId.get(requestId);
     const activityStatus = activity ? preparerCourierStatusFromActivityAction(activity.action, "") : "";
@@ -677,7 +677,7 @@ function preparerOrderMark(status) {
 
 function preparerDisplaySequence(assignment, fallback = 0) {
   const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
-  return Number(order.sequenceNumber || assignment?.globalSequenceNumber || assignment?.sequence || fallback || 0) || 0;
+  return Number(order.sequenceNumber || assignment?.globalSequenceNumber || fallback || assignment?.sequence || 0) || 0;
 }
 
 function preparerOrderNumberValue(assignment) {
