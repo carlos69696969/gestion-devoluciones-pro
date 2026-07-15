@@ -1101,6 +1101,14 @@ export const action = async ({ request }) => {
         latestPlannedRoute?.routeId && plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
       const plannedRoute =
         latestPlannedRoute?.routeId && !plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
+      const activeStartedRouteSession = activeStartedRoute?.routeId
+        ? await findActiveCourierRouteSession({
+            prisma,
+            shop,
+            courierId: courier.id,
+            routeId: activeStartedRoute.routeId,
+          })
+        : null;
       const activeStartedRouteWork = activeStartedRoute?.routeId
         ? await prisma.courierActivity.findFirst({
             where: {
@@ -1124,7 +1132,8 @@ export const action = async ({ request }) => {
             select: { id: true },
           })
         : null;
-      const reusableStartedRoute = activeStartedRoute && !activeStartedRouteWork ? activeStartedRoute : null;
+      const reusableStartedRoute =
+        activeStartedRoute && !activeStartedRouteWork && !activeStartedRouteSession ? activeStartedRoute : null;
       if (!resumedTransfer && !plannedRoute && !reusableStartedRoute && !activeStartedRoute) {
         return {
           ok: false,

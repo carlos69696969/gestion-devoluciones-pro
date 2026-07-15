@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -17,7 +18,8 @@ import android.webkit.WebViewClient;
 
 public class MainActivity extends Activity {
     private static final String SHOP_DOMAIN = "qc1u2w-ft.myshopify.com";
-    private static final String BASE_URL = "https://gestion-devoluciones-pro.onrender.com/repartidor?shop=" + SHOP_DOMAIN;
+    private static final String PORTAL_HOST = "gestion-devoluciones-pro.onrender.com";
+    private static final String BASE_URL = "https://" + PORTAL_HOST + "/repartidor?shop=" + SHOP_DOMAIN;
     private WebView webView;
 
     @Override
@@ -43,7 +45,7 @@ public class MainActivity extends Activity {
 
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         setContentView(webView);
-        webView.loadUrl(BASE_URL);
+        webView.loadUrl(portalUrl());
     }
 
     private class PortalWebViewClient extends WebViewClient {
@@ -63,7 +65,12 @@ public class MainActivity extends Activity {
         String normalizedUrl = url.trim();
 
         if (normalizedUrl.startsWith("http://") || normalizedUrl.startsWith("https://")) {
-            return false;
+            Uri uri = Uri.parse(normalizedUrl);
+            if (PORTAL_HOST.equalsIgnoreCase(uri.getHost())) {
+                return false;
+            }
+            openExternalIntent(new Intent(Intent.ACTION_VIEW, uri));
+            return true;
         }
 
         if (normalizedUrl.startsWith("tel:")) {
@@ -97,6 +104,20 @@ public class MainActivity extends Activity {
         } catch (ActivityNotFoundException error) {
             // If the target app is not installed, keep the portal open instead of showing a WebView error.
         }
+    }
+
+    private String portalUrl() {
+        return BASE_URL + "&sesion=" + getInstallSessionId();
+    }
+
+    private String getInstallSessionId() {
+        SharedPreferences preferences = getSharedPreferences("portal", MODE_PRIVATE);
+        String sessionId = preferences.getString("install_session_id", "");
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            sessionId = java.util.UUID.randomUUID().toString();
+            preferences.edit().putString("install_session_id", sessionId).apply();
+        }
+        return sessionId;
     }
 
     @Override
