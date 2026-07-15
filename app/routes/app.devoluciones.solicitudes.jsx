@@ -378,7 +378,7 @@ function formatBranchPickupRefundAmount(amount, currencyCode = "MXN") {
     maximumFractionDigits: 2,
   }).format(normalizedAmount);
   const currency = String(currencyCode || "MXN").trim().toUpperCase() || "MXN";
-  return `${formattedAmount} ${currency}`;
+  return `$${formattedAmount} ${currency}`;
 }
 
 function buildBranchPickupRefundNotificationCopy(orderNumber, refundAmount, currencyCode = "MXN") {
