@@ -4592,6 +4592,7 @@ export const action = async ({ request }) => {
       requestRow,
       intent,
       note: rejectionReason,
+      message: `📦 Pedido #${String(requestRow.orderNumber || "").replace(/^#/, "").trim() || "****"}. Después de revisar tu solicitud de devolución, lamentamos informarte que ha sido rechazada. Motivo: ${rejectionReason}.`,
     });
     return {
       ok: true,
