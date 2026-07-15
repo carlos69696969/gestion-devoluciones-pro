@@ -3070,6 +3070,142 @@ async function expireBranchDeliveryRequestsForShop(shopDomain, { force = false }
   return expiredCount;
 }
 
+async function refundExpiredBranchPickupOrder({
+  admin,
+  shopDomain,
+  requestId,
+  orderNumber = "",
+  displayedDeadline = "",
+  force = false,
+}) {
+  const cleanRequestId = String(requestId || "").trim();
+  const cleanOrderNumber = String(orderNumber || "").trim();
+  const cleanDisplayedDeadline = String(displayedDeadline || "").trim();
+  if (!cleanRequestId) return { ok: false, error: "Accion no valida." };
+
+  const branchOrder = await fetchBranchPickupOrderForDeadline(admin, cleanRequestId);
+  if (!branchOrder || !isCourierLocalDeliveryOrder(branchOrder)) {
+    return { ok: false, error: "No se encontro la orden para recoger en sucursal.", requestId: cleanRequestId };
+  }
+  const branchOrderStatus = getCourierRouteStatusFromTags(branchOrder.tags);
+  if (branchOrderStatus !== "recoger_en_sucursal") {
+    return { ok: false, error: "Esta orden ya no esta pendiente por recoger en sucursal.", requestId: cleanRequestId };
+  }
+  const displayedScheduledDate = getInitialCourierScheduledDate(branchOrder);
+  if (!force && !isBranchPickupDeadlineExpired(branchOrder, displayedScheduledDate)) {
+    return { ok: false, error: "Aun no vence la fecha limite para reembolsar esta orden.", requestId: cleanRequestId };
+  }
+
+  const resolvedOrderNumber = cleanOrderNumber || String(branchOrder?.name || "").replace("#", "").trim();
+  const refundResult = await refundShopifyOrderToOriginalPayment({
+    admin,
+    shopifyOrderId: cleanRequestId,
+    notePrefix: `Reembolso pedido #${resolvedOrderNumber || cleanRequestId.replace(/^gid:\/\/shopify\/Order\//, "")} no recogido en sucursal`,
+  });
+  await replaceShopifyOrderCourierStatusTag(admin, cleanRequestId, "reembolsada");
+  await prisma.deliveryCodeAssignment.updateMany({
+    where: {
+      shop: shopDomain,
+      shopifyOrderId: cleanRequestId,
+      active: true,
+    },
+    data: {
+      code: null,
+      active: false,
+      releasedAt: new Date(),
+    },
+  });
+  await emitBranchPickupRefundNotification({
+    shopDomain,
+    requestId: cleanRequestId,
+    orderNumber: resolvedOrderNumber,
+    refundAmount: refundResult.refundedSubtotal,
+    currencyCode: refundResult.currencyCode,
+  });
+  if (cleanDisplayedDeadline) {
+    try {
+      const branchPickupEvent = await prisma.courierEvent.findFirst({
+        where: {
+          shop: shopDomain,
+          requestId: cleanRequestId,
+          status: "recoger_en_sucursal",
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { id: true, note: true },
+      });
+      if (branchPickupEvent) {
+        const existingNote = String(branchPickupEvent.note || "").trim();
+        const deadlineNote = `branch_pickup_deadline_label:${cleanDisplayedDeadline}`;
+        await prisma.courierEvent.update({
+          where: { id: branchPickupEvent.id },
+          data: {
+            note: existingNote
+              ? `${existingNote.replace(/;?branch_pickup_deadline_label:[^;\n]+/i, "")};${deadlineNote}`
+              : deadlineNote,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("Branch pickup deadline event note could not be saved", error);
+    }
+  }
+
+  const latestCourierActivity = await prisma.courierActivity.findFirst({
+    where: {
+      shop: shopDomain,
+      requestId: cleanRequestId,
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      courierId: true,
+      courierName: true,
+      routeId: true,
+    },
+  });
+  await prisma.courierActivity.create({
+    data: {
+      shop: shopDomain,
+      courierId: Number(latestCourierActivity?.courierId || 0),
+      courierName: String(latestCourierActivity?.courierName || "Administrador").trim(),
+      requestId: cleanRequestId,
+      orderNumber: resolvedOrderNumber || null,
+      action: "courier_branch_pickup_refunded",
+      routeId: String(latestCourierActivity?.routeId || "") || null,
+    },
+  });
+
+  return {
+    ok: true,
+    message: `Pedido #${resolvedOrderNumber || cleanRequestId.replace(/^gid:\/\/shopify\/Order\//, "")} reembolsado por ${toMoney(refundResult.finalRefund)} ${refundResult.currencyCode || "MXN"}.`,
+    refundedBranchPickupRequestId: cleanRequestId,
+    deadline: cleanDisplayedDeadline,
+    shopifyRefundId: refundResult.refundId,
+  };
+}
+
+async function refundExpiredBranchPickupOrdersForShop(admin, shopDomain) {
+  const branchPickupOrders = await fetchBranchPickupCourierOrders(admin);
+  let refundedCount = 0;
+  for (const order of branchPickupOrders) {
+    const displayedScheduledDate = order.pickupDate;
+    if (!isBranchPickupDeadlineExpired(order, displayedScheduledDate)) continue;
+    const displayedDeadline = formatBranchPickupDeadlineDate(order, displayedScheduledDate);
+    try {
+      const result = await refundExpiredBranchPickupOrder({
+        admin,
+        shopDomain,
+        requestId: order.id,
+        orderNumber: order.orderNumber,
+        displayedDeadline,
+      });
+      if (result.ok) refundedCount += 1;
+    } catch (error) {
+      console.error("No se pudo reembolsar automaticamente una orden vencida en sucursal", error);
+    }
+  }
+  return refundedCount;
+}
+
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
@@ -3102,6 +3238,10 @@ export const loader = async ({ request }) => {
 
   if (viewMode === VIEW_MODE.BRANCH) {
     await expireBranchDeliveryRequestsForShop(session.shop);
+  }
+
+  if (viewMode === VIEW_MODE.BRANCH_PICKUP) {
+    await refundExpiredBranchPickupOrdersForShop(admin, session.shop);
   }
 
   let rawRequests =
@@ -3644,106 +3784,16 @@ export const action = async ({ request }) => {
     const orderNumber = String(formData.get("orderNumber") || "").trim();
     const displayedDeadline = String(formData.get("deadline") || "").trim();
     const isRefundTestMode = String(formData.get("branchPickupRefundTestMode") || "").trim() === "1";
-    if (!requestId) return { ok: false, error: "Accion no valida." };
 
     try {
-      const branchOrder = await fetchBranchPickupOrderForDeadline(admin, requestId);
-      if (!branchOrder || !isCourierLocalDeliveryOrder(branchOrder)) {
-        return { ok: false, error: "No se encontro la orden para recoger en sucursal.", requestId };
-      }
-      const branchOrderStatus = getCourierRouteStatusFromTags(branchOrder.tags);
-      if (branchOrderStatus !== "recoger_en_sucursal") {
-        return { ok: false, error: "Esta orden ya no esta pendiente por recoger en sucursal.", requestId };
-      }
-      const displayedScheduledDate = getInitialCourierScheduledDate(branchOrder);
-      if (!isRefundTestMode && !isBranchPickupDeadlineExpired(branchOrder, displayedScheduledDate)) {
-        return { ok: false, error: "Aun no vence la fecha limite para reembolsar esta orden.", requestId };
-      }
-
-      const refundResult = await refundShopifyOrderToOriginalPayment({
+      return await refundExpiredBranchPickupOrder({
         admin,
-        shopifyOrderId: requestId,
-        notePrefix: `Reembolso pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} no recogido en sucursal`,
-      });
-      await replaceShopifyOrderCourierStatusTag(admin, requestId, "reembolsada");
-      await prisma.deliveryCodeAssignment.updateMany({
-        where: {
-          shop: session.shop,
-          shopifyOrderId: requestId,
-          active: true,
-        },
-        data: {
-          code: null,
-          active: false,
-          releasedAt: new Date(),
-        },
-      });
-      await emitBranchPickupRefundNotification({
         shopDomain: session.shop,
         requestId,
         orderNumber,
-        refundAmount: refundResult.refundedSubtotal,
-        currencyCode: refundResult.currencyCode,
+        displayedDeadline,
+        force: isRefundTestMode,
       });
-      if (displayedDeadline) {
-        try {
-          const branchPickupEvent = await prisma.courierEvent.findFirst({
-            where: {
-              shop: session.shop,
-              requestId,
-              status: "recoger_en_sucursal",
-            },
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            select: { id: true, note: true },
-          });
-          if (branchPickupEvent) {
-            const existingNote = String(branchPickupEvent.note || "").trim();
-            const deadlineNote = `branch_pickup_deadline_label:${displayedDeadline}`;
-            await prisma.courierEvent.update({
-              where: { id: branchPickupEvent.id },
-              data: {
-                note: existingNote
-                  ? `${existingNote.replace(/;?branch_pickup_deadline_label:[^;\n]+/i, "")};${deadlineNote}`
-                  : deadlineNote,
-              },
-            });
-          }
-        } catch (error) {
-          console.error("Branch pickup deadline event note could not be saved", error);
-        }
-      }
-
-      const latestCourierActivity = await prisma.courierActivity.findFirst({
-        where: {
-          shop: session.shop,
-          requestId,
-        },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        select: {
-          courierId: true,
-          courierName: true,
-          routeId: true,
-        },
-      });
-      await prisma.courierActivity.create({
-        data: {
-          shop: session.shop,
-          courierId: Number(latestCourierActivity?.courierId || 0),
-          courierName: String(latestCourierActivity?.courierName || "Administrador").trim(),
-          requestId,
-          orderNumber: orderNumber || null,
-          action: "courier_branch_pickup_refunded",
-          routeId: String(latestCourierActivity?.routeId || "") || null,
-        },
-      });
-
-      return {
-        ok: true,
-        message: `Pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} reembolsado por ${toMoney(refundResult.finalRefund)} ${refundResult.currencyCode || "MXN"}.`,
-        refundedBranchPickupRequestId: requestId,
-        deadline: displayedDeadline,
-        shopifyRefundId: refundResult.refundId,
-      };
     } catch (error) {
       return {
         ok: false,
