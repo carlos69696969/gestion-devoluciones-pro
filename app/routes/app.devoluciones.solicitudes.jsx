@@ -4561,13 +4561,21 @@ export const action = async ({ request }) => {
       intent,
       note: approvedMessage,
     });
-    return { ok: true, message: "Solicitud aprobada correctamente." };
+    return {
+      ok: true,
+      message: "Solicitud aprobada correctamente.",
+      reviewActionRequestId: String(id),
+    };
   }
 
   if (intent === "reject_request") {
     const rejectionReason = String(formData.get("rejectionReason") || "").trim();
     if (!rejectionReason) {
-      return { ok: false, error: "Escribe el motivo de rechazo." };
+      return {
+        ok: false,
+        error: "No se puede rechazar si no hay un motivo.",
+        reviewActionRequestId: String(id),
+      };
     }
     await prisma.returnRequest.update({
       where: { id },
@@ -4585,7 +4593,11 @@ export const action = async ({ request }) => {
       intent,
       note: rejectionReason,
     });
-    return { ok: true, message: "Devolucion rechazada correctamente." };
+    return {
+      ok: true,
+      message: "Devolucion rechazada correctamente.",
+      reviewActionRequestId: String(id),
+    };
   }
 
   if (intent === "mark_in_route") {
@@ -5807,12 +5819,13 @@ export default function ReturnsRequests() {
   const branchPickupDeliveryActionData = branchPickupDeliveryFetcher.data || null;
   const branchPickupRefundActionData = branchPickupRefundFetcher.data || null;
   const automaticBranchPickupRefundActionData = automaticBranchPickupRefundFetcher.data || null;
+  const actionErrorMessage = actionData?.reviewActionRequestId ? "" : actionData?.error || "";
   const pageErrorMessage =
     branchPickupDeliveryActionData?.error ||
     branchPickupRefundActionData?.error ||
     automaticBranchPickupRefundActionData?.error ||
     courierRouteActionData?.error ||
-    actionData?.error ||
+    actionErrorMessage ||
     "";
   const pageSuccessMessage =
     branchPickupDeliveryActionData?.message ||
@@ -5823,8 +5836,10 @@ export default function ReturnsRequests() {
     "";
   const [visiblePageSuccessMessage, setVisiblePageSuccessMessage] = useState("");
   const [visibleRefundCardSuccess, setVisibleRefundCardSuccess] = useState(null);
+  const [visibleReviewCardMessage, setVisibleReviewCardMessage] = useState(null);
   const [visibleCourierCardSuccessMessages, setVisibleCourierCardSuccessMessages] = useState({});
   const refundSuccessTimeoutRef = useRef(null);
+  const reviewCardMessageTimeoutRef = useRef(null);
   const courierCardSuccessTimeoutRef = useRef(null);
   const automaticBranchPickupRefundAttemptRef = useRef(new Set());
 
@@ -5867,6 +5882,9 @@ export default function ReturnsRequests() {
     return () => {
       if (refundSuccessTimeoutRef.current) {
         window.clearTimeout(refundSuccessTimeoutRef.current);
+      }
+      if (reviewCardMessageTimeoutRef.current) {
+        window.clearTimeout(reviewCardMessageTimeoutRef.current);
       }
       if (courierCardSuccessTimeoutRef.current) {
         window.clearTimeout(courierCardSuccessTimeoutRef.current);
@@ -5959,6 +5977,21 @@ export default function ReturnsRequests() {
 
   useEffect(() => {
     if (!pageSuccessMessage) return;
+    if (actionData?.ok && actionData?.reviewActionRequestId) {
+      if (reviewCardMessageTimeoutRef.current) {
+        window.clearTimeout(reviewCardMessageTimeoutRef.current);
+      }
+      setVisibleReviewCardMessage({
+        requestId: String(actionData.reviewActionRequestId),
+        type: "success",
+        message: pageSuccessMessage,
+      });
+      reviewCardMessageTimeoutRef.current = window.setTimeout(() => {
+        setVisibleReviewCardMessage(null);
+        reviewCardMessageTimeoutRef.current = null;
+      }, 4000);
+      return;
+    }
     if (actionData?.ok && (actionData?.refundActionRequestId || actionData?.returnToCustomerActionRequestId)) {
       showRefundActionSuccess(
         actionData.refundActionRequestId || actionData.returnToCustomerActionRequestId,
@@ -5979,8 +6012,20 @@ export default function ReturnsRequests() {
     return () => window.clearTimeout(timeoutId);
   }, [pageSuccessMessage, actionData, courierRouteActionData]);
 
+  useEffect(() => {
+    if (!actionData?.error || !actionData?.reviewActionRequestId) return;
+    setVisibleReviewCardMessage({
+      requestId: String(actionData.reviewActionRequestId),
+      type: "error",
+      message: actionData.error,
+    });
+  }, [actionData]);
+
+  const visibleReviewCardMessageRequestId = visibleReviewCardMessage?.requestId || "";
   const reviewRequests = requests.filter(
-    (requestRow) => String(requestRow.status || "").toLowerCase() === "en_revision",
+    (requestRow) =>
+      String(requestRow.status || "").toLowerCase() === "en_revision" ||
+      (visibleReviewCardMessageRequestId && String(requestRow.id) === visibleReviewCardMessageRequestId),
   );
   const activeRequests = requests.filter((requestRow) => {
     const status = String(requestRow.status || "").toLowerCase();
@@ -6181,7 +6226,23 @@ export default function ReturnsRequests() {
           ) : (
             <div className={`${styles.wrap} ${styles.reqGrid}`}>
               {reviewRequests.map((request) => (
-                <RequestCard key={request.id} request={request} isSubmitting={isSubmitting} />
+                <RequestCard
+                  key={request.id}
+                  request={request}
+                  isSubmitting={isSubmitting}
+                  cardSuccessMessage={
+                    visibleReviewCardMessage?.type === "success" &&
+                    visibleReviewCardMessage.requestId === String(request.id)
+                      ? visibleReviewCardMessage.message
+                      : ""
+                  }
+                  cardErrorMessage={
+                    visibleReviewCardMessage?.type === "error" &&
+                    visibleReviewCardMessage.requestId === String(request.id)
+                      ? visibleReviewCardMessage.message
+                      : ""
+                  }
+                />
               ))}
             </div>
           )}
@@ -9240,6 +9301,7 @@ function RequestCard({
   showPickupDateSummary = false,
   branchDeliveryTestMode = false,
   forceShowNotReturnedAction = false,
+  cardErrorMessage = "",
   cardSuccessMessage = "",
   onRefundActionSuccess = null,
 }) {
@@ -9249,6 +9311,7 @@ function RequestCard({
   const [lazyMediaByItemId, setLazyMediaByItemId] = useState({});
   const [pickupAttemptReason, setPickupAttemptReason] = useState("");
   const [isPickupReasonModalOpen, setIsPickupReasonModalOpen] = useState(false);
+  const [reviewRejectError, setReviewRejectError] = useState("");
   const [rejectAfterFailedReason, setRejectAfterFailedReason] = useState("");
   const [isRejectAfterFailedReasonModalOpen, setIsRejectAfterFailedReasonModalOpen] = useState(false);
   const mediaFetcher = useFetcher();
@@ -9330,10 +9393,14 @@ function RequestCard({
     // Reset the field so the next attempt starts with a clean message.
     setPickupAttemptReason("");
     setIsPickupReasonModalOpen(false);
+    setReviewRejectError("");
   }, [request.status, request.updatedAt, request.id]);
+
+  const visibleCardErrorMessage = reviewRejectError || cardErrorMessage;
 
   return (
     <>
+      {visibleCardErrorMessage ? <p className={styles.errorMsg}>{visibleCardErrorMessage}</p> : null}
       {cardSuccessMessage ? <p className={styles.successMsg}>{cardSuccessMessage}</p> : null}
       <article className={styles.card}>
       <div className={styles.reqHeader}>
@@ -9635,6 +9702,13 @@ function RequestCard({
               action={currentFormAction}
               className={styles.rejectForm}
               onSubmit={(event) => {
+                const formData = new FormData(event.currentTarget);
+                const rejectionReason = String(formData.get("rejectionReason") || "").trim();
+                if (!rejectionReason) {
+                  event.preventDefault();
+                  setReviewRejectError("No se puede rechazar si no hay un motivo.");
+                  return;
+                }
                 const orderLabel = request.orderNumber ? ` #${request.orderNumber}` : "";
                 const confirmed = window.confirm(
                   `Estas seguro de rechazar la devolucion del pedido${orderLabel}?`,
@@ -9654,6 +9728,9 @@ function RequestCard({
                   const field = event.currentTarget;
                   field.style.height = "auto";
                   field.style.height = `${Math.min(field.scrollHeight, 112)}px`;
+                  if (String(field.value || "").trim()) {
+                    setReviewRejectError("");
+                  }
                 }}
               />
               <button className={`${styles.btn} ${styles.btnDanger}`} type="submit" disabled={isSubmitting}>
