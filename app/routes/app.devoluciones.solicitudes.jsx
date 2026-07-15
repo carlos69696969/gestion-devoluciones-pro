@@ -2468,6 +2468,7 @@ async function fetchOrderSnapshot(admin, orderId) {
               id
               title
               quantity
+              refundableQuantity
               variant {
                 id
                 title
@@ -2508,7 +2509,7 @@ async function fetchOrderSnapshot(admin, orderId) {
     lineItems: (order.lineItems?.edges || []).map(({ node }) => ({
       id: node.id,
       title: node.title,
-      quantity: Number(node.quantity || 0),
+      quantity: Number(node.refundableQuantity ?? node.quantity ?? 0),
       variantId: node.variant?.id || "",
       productId: node.product?.id || "",
       variantSummary: formatVariantSummary(node.variant),
@@ -2844,6 +2845,7 @@ function parseSelectedLineItemUnitCounts(selectedLineItemUnitKeys = []) {
 }
 
 function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemUnitKeys = []) {
+  const hasExplicitSelection = (selectedLineItemUnitKeys || []).length > 0;
   const selectedUnitCountsByLineId = parseSelectedLineItemUnitCounts(selectedLineItemUnitKeys);
   const selectedUnitKeysByLineId = new Map();
   for (const unitKey of selectedLineItemUnitKeys || []) {
@@ -2864,7 +2866,9 @@ function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemUnit
     const quantity = Math.max(0, Number(line.quantity || 0));
     if (!line?.id || quantity <= 0) continue;
     totalRefundableQuantity += quantity;
-    const selectedQuantity = Math.min(quantity, Math.max(0, Number(selectedUnitCountsByLineId.get(String(line.id)) || 0)));
+    const selectedQuantity = hasExplicitSelection
+      ? Math.min(quantity, Math.max(0, Number(selectedUnitCountsByLineId.get(String(line.id)) || 0)))
+      : quantity;
     if (selectedQuantity <= 0) continue;
     selectedRefundQuantity += selectedQuantity;
     subtotal += Number(line.unitPrice || 0) * selectedQuantity;
