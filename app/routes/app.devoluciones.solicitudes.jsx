@@ -3076,6 +3076,7 @@ async function refundExpiredBranchPickupOrder({
   requestId,
   orderNumber = "",
   displayedDeadline = "",
+  orderSnapshot = null,
   force = false,
 }) {
   const cleanRequestId = String(requestId || "").trim();
@@ -3091,8 +3092,9 @@ async function refundExpiredBranchPickupOrder({
   if (branchOrderStatus !== "recoger_en_sucursal") {
     return { ok: false, error: "Esta orden ya no esta pendiente por recoger en sucursal.", requestId: cleanRequestId };
   }
-  const displayedScheduledDate = getInitialCourierScheduledDate(branchOrder);
-  if (!force && !isBranchPickupDeadlineExpired(branchOrder, displayedScheduledDate)) {
+  const deadlineSourceOrder = orderSnapshot || branchOrder;
+  const displayedScheduledDate = orderSnapshot?.pickupDate || getInitialCourierScheduledDate(branchOrder);
+  if (!force && !isBranchPickupDeadlineExpired(deadlineSourceOrder, displayedScheduledDate)) {
     return { ok: false, error: "Aun no vence la fecha limite para reembolsar esta orden.", requestId: cleanRequestId };
   }
 
@@ -3183,9 +3185,13 @@ async function refundExpiredBranchPickupOrder({
   };
 }
 
-async function refundExpiredBranchPickupOrdersForShop(admin, shopDomain) {
-  const branchPickupOrders = await fetchBranchPickupCourierOrders(admin);
+async function refundExpiredBranchPickupOrdersForShop(admin, shopDomain, ordersForDeadlineCheck = null) {
+  const branchPickupOrders = Array.isArray(ordersForDeadlineCheck)
+    ? ordersForDeadlineCheck
+    : await fetchBranchPickupCourierOrders(admin);
   let refundedCount = 0;
+  const refundedRequestIds = [];
+  const failedRefunds = [];
   for (const order of branchPickupOrders) {
     const displayedScheduledDate = order.pickupDate;
     if (!isBranchPickupDeadlineExpired(order, displayedScheduledDate)) continue;
@@ -3197,13 +3203,31 @@ async function refundExpiredBranchPickupOrdersForShop(admin, shopDomain) {
         requestId: order.id,
         orderNumber: order.orderNumber,
         displayedDeadline,
+        orderSnapshot: order,
       });
-      if (result.ok) refundedCount += 1;
+      if (result.ok) {
+        refundedCount += 1;
+        refundedRequestIds.push(String(order.id || "").trim());
+      } else {
+        failedRefunds.push({
+          requestId: String(order.id || "").trim(),
+          orderNumber: String(order.orderNumber || "").trim(),
+          error: String(result.error || "No se pudo reembolsar automaticamente."),
+        });
+      }
     } catch (error) {
+      failedRefunds.push({
+        requestId: String(order.id || "").trim(),
+        orderNumber: String(order.orderNumber || "").trim(),
+        error: String(error?.message || error || "No se pudo reembolsar automaticamente."),
+      });
       console.error("No se pudo reembolsar automaticamente una orden vencida en sucursal", error);
     }
   }
-  return refundedCount;
+  if (failedRefunds.length) {
+    console.warn("Ordenes vencidas en sucursal no reembolsadas automaticamente", failedRefunds);
+  }
+  return { refundedCount, refundedRequestIds, failedRefunds };
 }
 
 export const loader = async ({ request }) => {
@@ -3238,10 +3262,6 @@ export const loader = async ({ request }) => {
 
   if (viewMode === VIEW_MODE.BRANCH) {
     await expireBranchDeliveryRequestsForShop(session.shop);
-  }
-
-  if (viewMode === VIEW_MODE.BRANCH_PICKUP) {
-    await refundExpiredBranchPickupOrdersForShop(admin, session.shop);
   }
 
   let rawRequests =
@@ -3589,10 +3609,18 @@ export const loader = async ({ request }) => {
         ? courierOrderTimestampMs(b) - courierOrderTimestampMs(a)
         : courierOrderTimestampMs(a) - courierOrderTimestampMs(b),
     );
-  const visibleCourierOrders =
+  let visibleCourierOrders =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS
       ? await sortCourierRouteOrdersByProximity(session.shop, courierOrders, routeStartAddress)
       : courierOrders;
+
+  if (viewMode === VIEW_MODE.BRANCH_PICKUP) {
+    const automaticRefundResult = await refundExpiredBranchPickupOrdersForShop(admin, session.shop, visibleCourierOrders);
+    if (automaticRefundResult.refundedRequestIds.length) {
+      const refundedIds = new Set(automaticRefundResult.refundedRequestIds);
+      visibleCourierOrders = visibleCourierOrders.filter((order) => !refundedIds.has(String(order.id || "").trim()));
+    }
+  }
 
   let couriers =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.COURIERS || viewMode === VIEW_MODE.COURIER_HISTORY
