@@ -3092,7 +3092,23 @@ async function refundExpiredBranchPickupOrder({
   if (branchOrderStatus !== "recoger_en_sucursal") {
     return { ok: false, error: "Esta orden ya no esta pendiente por recoger en sucursal.", requestId: cleanRequestId };
   }
-  const deadlineSourceOrder = orderSnapshot || branchOrder;
+  const branchPickupEvents = orderSnapshot
+    ? []
+    : await prisma.courierEvent.findMany({
+        where: {
+          shop: shopDomain,
+          requestId: cleanRequestId,
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      });
+  const deadlineSourceOrder = orderSnapshot || {
+    ...branchOrder,
+    historyEvents: branchPickupEvents.map((event) => ({
+      status: event.status,
+      note: event.note,
+      at: event.createdAt,
+    })),
+  };
   const displayedScheduledDate = orderSnapshot?.pickupDate || getInitialCourierScheduledDate(branchOrder);
   if (!force && !isBranchPickupDeadlineExpired(deadlineSourceOrder, displayedScheduledDate)) {
     return { ok: false, error: "Aun no vence la fecha limite para reembolsar esta orden.", requestId: cleanRequestId };
@@ -5707,6 +5723,7 @@ export default function ReturnsRequests() {
   const courierRouteFetcher = useFetcher();
   const branchPickupDeliveryFetcher = useFetcher();
   const branchPickupRefundFetcher = useFetcher();
+  const automaticBranchPickupRefundFetcher = useFetcher();
   const branchDeliveryExpirationFetcher = useFetcher();
   const navigation = useNavigation();
   const location = useLocation();
@@ -5788,15 +5805,18 @@ export default function ReturnsRequests() {
   const courierRouteActionData = courierRouteFetcher.data || null;
   const branchPickupDeliveryActionData = branchPickupDeliveryFetcher.data || null;
   const branchPickupRefundActionData = branchPickupRefundFetcher.data || null;
+  const automaticBranchPickupRefundActionData = automaticBranchPickupRefundFetcher.data || null;
   const pageErrorMessage =
     branchPickupDeliveryActionData?.error ||
     branchPickupRefundActionData?.error ||
+    automaticBranchPickupRefundActionData?.error ||
     courierRouteActionData?.error ||
     actionData?.error ||
     "";
   const pageSuccessMessage =
     branchPickupDeliveryActionData?.message ||
     branchPickupRefundActionData?.message ||
+    automaticBranchPickupRefundActionData?.message ||
     courierRouteActionData?.message ||
     actionData?.message ||
     "";
@@ -5805,6 +5825,7 @@ export default function ReturnsRequests() {
   const [visibleCourierCardSuccessMessages, setVisibleCourierCardSuccessMessages] = useState({});
   const refundSuccessTimeoutRef = useRef(null);
   const courierCardSuccessTimeoutRef = useRef(null);
+  const automaticBranchPickupRefundAttemptRef = useRef(new Set());
 
   const showRefundActionSuccess = (requestId, message) => {
     if (refundSuccessTimeoutRef.current) {
@@ -5853,7 +5874,13 @@ export default function ReturnsRequests() {
   }, []);
 
   useEffect(() => {
-    if (actionData?.ok || courierRouteActionData?.ok || branchPickupDeliveryActionData?.ok || branchPickupRefundActionData?.ok) {
+    if (
+      actionData?.ok ||
+      courierRouteActionData?.ok ||
+      branchPickupDeliveryActionData?.ok ||
+      branchPickupRefundActionData?.ok ||
+      automaticBranchPickupRefundActionData?.ok
+    ) {
       setShowCourierRouteModal(false);
       setSelectedCourierIds([]);
     }
@@ -5873,11 +5900,56 @@ export default function ReturnsRequests() {
     }
     if (
       (actionData?.ok && actionData?.refundedBranchPickupRequestId) ||
-      (branchPickupRefundActionData?.ok && branchPickupRefundActionData?.refundedBranchPickupRequestId)
+      (branchPickupRefundActionData?.ok && branchPickupRefundActionData?.refundedBranchPickupRequestId) ||
+      (automaticBranchPickupRefundActionData?.ok &&
+        automaticBranchPickupRefundActionData?.refundedBranchPickupRequestId)
     ) {
       setBranchPickupRefundRequest(null);
     }
-  }, [actionData, courierRouteActionData, branchPickupDeliveryActionData, branchPickupRefundActionData]);
+  }, [
+    actionData,
+    courierRouteActionData,
+    branchPickupDeliveryActionData,
+    branchPickupRefundActionData,
+    automaticBranchPickupRefundActionData,
+  ]);
+
+  useEffect(() => {
+    if (viewMode !== VIEW_MODE.BRANCH_PICKUP || automaticBranchPickupRefundFetcher.state !== "idle") return;
+    const expiredOrder = visibleCourierOrders.find((order) => {
+      const orderId = String(order?.id || "").trim();
+      if (!orderId || automaticBranchPickupRefundAttemptRef.current.has(orderId)) return false;
+      const presentation = buildAdminCourierPresentation(order);
+      const displayedScheduledDate = isReturnCourierLabel(order?.courierLabel)
+        ? order?.pickupDate
+        : presentation.scheduledDate || order?.pickupDate;
+      return isBranchPickupDeadlineExpired(order, displayedScheduledDate);
+    });
+    if (!expiredOrder) return;
+
+    const orderId = String(expiredOrder.id || "").trim();
+    const presentation = buildAdminCourierPresentation(expiredOrder);
+    const displayedScheduledDate = isReturnCourierLabel(expiredOrder.courierLabel)
+      ? expiredOrder.pickupDate
+      : presentation.scheduledDate || expiredOrder.pickupDate;
+    const formData = new FormData();
+    formData.set("intent", "branch_pickup_refund_expired");
+    formData.set("requestId", orderId);
+    formData.set("orderNumber", String(expiredOrder.orderNumber || ""));
+    formData.set("branchPickupRefundTestMode", "0");
+    formData.set("deadline", formatBranchPickupDeadlineDate(expiredOrder, displayedScheduledDate));
+    automaticBranchPickupRefundAttemptRef.current.add(orderId);
+    automaticBranchPickupRefundFetcher.submit(formData, {
+      method: "post",
+      action: `${location.pathname}${location.search}`,
+    });
+  }, [
+    viewMode,
+    visibleCourierOrders,
+    automaticBranchPickupRefundFetcher,
+    location.pathname,
+    location.search,
+  ]);
 
   useEffect(() => {
     if (showOnlyNotLocatedCourierOrders && notLocatedCourierOrders.length === 0) {
@@ -8808,7 +8880,7 @@ function CourierOrderCard({
   const courierRefundDetail = courierHistoryView ? latestCourierRefundDetail(request.courierActivities) : null;
   const hasCourierFullRefund = Boolean(courierRefundDetail?.fullRefund);
   const hasCourierPartialRefund = Boolean(courierRefundDetail && !courierRefundDetail.fullRefund);
-  const visibleStatus = statusOverride || request.status;
+  const visibleStatus = branchPickupView ? "recoger_en_sucursal" : statusOverride || request.status;
   const normalizedVisibleStatus = String(visibleStatus || "").trim().toLowerCase();
   const isAdminReprogrammed =
     adminCourierView &&
