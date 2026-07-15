@@ -5837,6 +5837,7 @@ export default function ReturnsRequests() {
   const [visiblePageSuccessMessage, setVisiblePageSuccessMessage] = useState("");
   const [visibleRefundCardSuccess, setVisibleRefundCardSuccess] = useState(null);
   const [visibleReviewCardMessage, setVisibleReviewCardMessage] = useState(null);
+  const [pendingReviewActionRequest, setPendingReviewActionRequest] = useState(null);
   const [visibleCourierCardSuccessMessages, setVisibleCourierCardSuccessMessages] = useState({});
   const refundSuccessTimeoutRef = useRef(null);
   const reviewCardMessageTimeoutRef = useRef(null);
@@ -5988,6 +5989,7 @@ export default function ReturnsRequests() {
       });
       reviewCardMessageTimeoutRef.current = window.setTimeout(() => {
         setVisibleReviewCardMessage(null);
+        setPendingReviewActionRequest(null);
         reviewCardMessageTimeoutRef.current = null;
       }, 4000);
       return;
@@ -6022,11 +6024,22 @@ export default function ReturnsRequests() {
   }, [actionData]);
 
   const visibleReviewCardMessageRequestId = visibleReviewCardMessage?.requestId || "";
-  const reviewRequests = requests.filter(
+  const reviewRequestsFromLoader = requests.filter(
     (requestRow) =>
       String(requestRow.status || "").toLowerCase() === "en_revision" ||
       (visibleReviewCardMessageRequestId && String(requestRow.id) === visibleReviewCardMessageRequestId),
   );
+  const hasReviewMessageCard =
+    Boolean(visibleReviewCardMessageRequestId) &&
+    reviewRequestsFromLoader.some((requestRow) => String(requestRow.id) === visibleReviewCardMessageRequestId);
+  const shouldShowPendingReviewCard =
+    pendingReviewActionRequest &&
+    visibleReviewCardMessageRequestId &&
+    String(pendingReviewActionRequest.id) === visibleReviewCardMessageRequestId &&
+    !hasReviewMessageCard;
+  const reviewRequests = shouldShowPendingReviewCard
+    ? [pendingReviewActionRequest, ...reviewRequestsFromLoader]
+    : reviewRequestsFromLoader;
   const activeRequests = requests.filter((requestRow) => {
     const status = String(requestRow.status || "").toLowerCase();
     return METHOD_QUEUE_STATUSES.has(status);
@@ -6230,6 +6243,7 @@ export default function ReturnsRequests() {
                   key={request.id}
                   request={request}
                   isSubmitting={isSubmitting}
+                  onReviewActionSubmit={setPendingReviewActionRequest}
                   cardSuccessMessage={
                     visibleReviewCardMessage?.type === "success" &&
                     visibleReviewCardMessage.requestId === String(request.id)
@@ -9303,6 +9317,7 @@ function RequestCard({
   forceShowNotReturnedAction = false,
   cardErrorMessage = "",
   cardSuccessMessage = "",
+  onReviewActionSubmit = null,
   onRefundActionSuccess = null,
 }) {
   const [viewerImage, setViewerImage] = useState(null);
@@ -9688,7 +9703,13 @@ function RequestCard({
                 const confirmed = window.confirm(
                   `Estas seguro de aprobar la solicitud del pedido${orderLabel}?`,
                 );
-                if (!confirmed) event.preventDefault();
+                if (!confirmed) {
+                  event.preventDefault();
+                  return;
+                }
+                if (typeof onReviewActionSubmit === "function") {
+                  onReviewActionSubmit(request);
+                }
               }}
             >
               <input type="hidden" name="intent" value="approve_request" />
@@ -9713,7 +9734,13 @@ function RequestCard({
                 const confirmed = window.confirm(
                   `Estas seguro de rechazar la devolucion del pedido${orderLabel}?`,
                 );
-                if (!confirmed) event.preventDefault();
+                if (!confirmed) {
+                  event.preventDefault();
+                  return;
+                }
+                if (typeof onReviewActionSubmit === "function") {
+                  onReviewActionSubmit(request);
+                }
               }}
             >
               <input type="hidden" name="intent" value="reject_request" />
