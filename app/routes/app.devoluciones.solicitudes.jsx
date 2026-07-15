@@ -5648,7 +5648,6 @@ export default function ReturnsRequests() {
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
   const [branchPickupRefundTestMode, setBranchPickupRefundTestMode] = useState(false);
-  const [branchDeliveryTestMode, setBranchDeliveryTestMode] = useState(false);
   const [notReturnedTestMode, setNotReturnedTestMode] = useState(false);
   const isExpiringBranchDeliveryRequests = branchDeliveryExpirationFetcher.state !== "idle";
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
@@ -5955,15 +5954,6 @@ export default function ReturnsRequests() {
       {viewMode === VIEW_MODE.BRANCH ? (
         <s-section heading="Entregas en sucursal">
           <div className={styles.branchPickupTestHeader}>
-            <label className={styles.branchPickupTestSwitch}>
-              <input
-                type="checkbox"
-                checked={branchDeliveryTestMode}
-                onChange={(event) => setBranchDeliveryTestMode(event.target.checked)}
-              />
-              <span className={styles.branchPickupTestSlider} aria-hidden="true" />
-              Modo prueba
-            </label>
             <branchDeliveryExpirationFetcher.Form method="post">
               <input type="hidden" name="intent" value="expire_branch_delivery_requests" />
               <label className={styles.branchPickupTestSwitch}>
@@ -5991,7 +5981,6 @@ export default function ReturnsRequests() {
                   isSubmitting={isSubmitting}
                   enableLazyMedia
                   useRefundQueueDateFormat
-                  branchDeliveryTestMode={branchDeliveryTestMode}
                 />
               ))}
             </div>
