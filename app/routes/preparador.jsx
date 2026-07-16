@@ -806,9 +806,9 @@ export default function PreparerPortal() {
       <main className={styles.page}>
         <div className={styles.container}>
           <header className={styles.header}>
-            <div>
+            <div className={styles.preparerHeaderIdentity}>
               <h1 className={styles.title}>Cariana preparadores</h1>
-              <p className={styles.subtitle}>
+              <p className={`${styles.subtitle} ${styles.preparerNameLine}`}>
                 {preparerName ? `Preparador: ${preparerName}` : "Ordenes asignadas para preparacion."}
               </p>
               {transferredToName ? (

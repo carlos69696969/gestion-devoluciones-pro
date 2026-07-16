@@ -145,6 +145,15 @@
   gap: 10px;
 }
 
+.preparerHeaderIdentity {
+  min-width: 0;
+}
+
+.preparerNameLine {
+  color: #374151;
+  font-weight: 600;
+}
+
 .preparerGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -1001,18 +1010,21 @@
 
 @media (max-width: 720px) {
   .container {
-    padding: 14px 22px 40px;
+    padding: 14px 16px 40px;
   }
 
   .header {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
-    gap: 10px;
-    margin-bottom: 14px;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 8px;
+    margin-bottom: 12px;
   }
 
   .preparerTopActions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
     gap: 8px;
   }
 
@@ -1022,7 +1034,15 @@
   }
 
   .preparerHeaderActions {
+    grid-column: 1;
+    grid-row: 1;
+    justify-items: start;
     gap: 8px;
+  }
+
+  .preparerSummary {
+    grid-column: 2;
+    grid-row: 1;
   }
 
   .reprintModeButton {
@@ -1049,14 +1069,22 @@
   }
 
   .preparerDispatchCard .cardHeader {
-    position: relative;
-    padding-right: 120px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 10px;
+    padding-right: 0;
+  }
+
+  .preparerDispatchCard .cardHeader > div {
+    display: contents;
   }
 
   .preparerDispatchStatusBadge {
-    position: absolute;
-    top: 0;
-    right: 0;
+    position: static;
+    justify-self: end;
+    grid-column: 2;
+    grid-row: 1;
   }
 
   .counterGroup {
@@ -1066,12 +1094,29 @@
   }
 
   .title {
-    font-size: 27px;
-    line-height: 1.08;
+    font-size: 25px;
+    line-height: 1.12;
+    white-space: nowrap;
   }
 
   .subtitle {
     margin-top: 4px;
+  }
+
+  .preparerNameLine {
+    white-space: nowrap;
+    font-size: 15px;
+    line-height: 1.25;
+  }
+
+  .preparerDispatchTitleRow {
+    padding-right: 0;
+  }
+
+  .preparerDispatchCard .cardTitle,
+  .preparerDispatchCard .subtitle {
+    grid-column: 1 / -1;
+    max-width: 100%;
   }
 
   .preparerOrderChecklist {
