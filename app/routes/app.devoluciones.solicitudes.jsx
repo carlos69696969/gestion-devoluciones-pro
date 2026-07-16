@@ -8481,8 +8481,13 @@ function PreparersSection({
     preparerAssignmentOrderNumberValue(first) - preparerAssignmentOrderNumberValue(second) ||
     preparerAssignmentStoredSequence(first) - preparerAssignmentStoredSequence(second) ||
     Number(first.id || 0) - Number(second.id || 0);
+  const globalSequenceByRequestId = new Map();
   const globalSequenceByOrderNumber = new Map();
-  [...courierOrders]
+  const routeSequenceSourceOrders = (Array.isArray(routeOrdersPayload) && routeOrdersPayload.length
+    ? routeOrdersPayload
+    : courierOrders
+  ).filter((order) => !isReturnCourierLabel(order?.courierLabel));
+  [...routeSequenceSourceOrders]
     .sort((firstOrder, secondOrder) => {
       const firstSequence = Number(firstOrder?.sequenceNumber || 0) || 0;
       const secondSequence = Number(secondOrder?.sequenceNumber || 0) || 0;
@@ -8491,15 +8496,25 @@ function PreparersSection({
       return firstSequence - secondSequence || firstOrderNumber - secondOrderNumber;
     })
     .forEach((order, index) => {
+      const requestId = String(order?.id || "").trim();
       const orderNumber = String(order?.orderNumber || "").replace(/\D/g, "");
+      const sequence = Number(order?.sequenceNumber || 0) || index + 1;
+      if (requestId && !globalSequenceByRequestId.has(requestId)) {
+        globalSequenceByRequestId.set(requestId, sequence);
+      }
       if (orderNumber && !globalSequenceByOrderNumber.has(orderNumber)) {
-        globalSequenceByOrderNumber.set(orderNumber, Number(order?.sequenceNumber || 0) || index + 1);
+        globalSequenceByOrderNumber.set(orderNumber, sequence);
       }
     });
   const preparerAssignmentDisplaySequence = (assignment) => {
     const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+    const requestId = String(assignment.requestId || order.id || "").trim();
     const orderNumber = String(order.orderNumber || assignment.orderNumber || "").replace(/\D/g, "");
-    return globalSequenceByOrderNumber.get(orderNumber) || preparerAssignmentStoredSequence(assignment);
+    return (
+      globalSequenceByRequestId.get(requestId) ||
+      globalSequenceByOrderNumber.get(orderNumber) ||
+      preparerAssignmentStoredSequence(assignment)
+    );
   };
   const todayMexicoKey = mexicoActivityDateKey(new Date());
   const todayPreparerHistoryLabel = new Intl.DateTimeFormat("es-MX", {
