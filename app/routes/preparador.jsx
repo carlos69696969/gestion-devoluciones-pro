@@ -720,6 +720,7 @@ export default function PreparerPortal() {
   const [readyUnitKeys, setReadyUnitKeys] = useState([]);
   const [missingReviewOpen, setMissingReviewOpen] = useState(false);
   const [reviewUnitKeys, setReviewUnitKeys] = useState([]);
+  const [reprintMode, setReprintMode] = useState(false);
   const isSubmitting = navigation.state === "submitting";
   const initialTab = String(searchParams.get("tab") || "ordenes").trim().toLowerCase();
   const [activeTab, setActiveTab] = useState(initialTab === "despachar" ? "despachar" : "ordenes");
@@ -770,6 +771,16 @@ export default function PreparerPortal() {
     setActiveTab(nextTab === "despachar" ? "despachar" : "ordenes");
   };
 
+  const handleReprintAssignment = (assignment, sequence, status) => {
+    if (!isPreparerAssignmentDone(status)) return;
+    const order = assignment?.orderData || {};
+    if (!window.confirm(`Quieres reimprimir la etiqueta de la orden #${order.orderNumber || assignment?.orderNumber || "-"}?`)) {
+      return;
+    }
+    printPreparerLabel(preparerLabelPayload(assignment, sequence));
+    setReprintMode(false);
+  };
+
   if (isLoggedIn) {
     const remainingAssignments = pendingAssignments;
     const dispatchOrder = dispatchAssignment?.orderData || {};
@@ -806,20 +817,42 @@ export default function PreparerPortal() {
                 </p>
               ) : null}
             </div>
-            <Form
-              method="post"
-              onSubmit={(event) => {
-                if (!window.confirm("Deseas finalizar?")) {
-                  event.preventDefault();
-                }
-              }}
-            >
-              <input type="hidden" name="intent" value="logout" />
-              <input type="hidden" name="shop" value={shop || ""} />
-              <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
-                Finalizar
+            <div className={styles.preparerHeaderActions}>
+              <Form
+                method="post"
+                onSubmit={(event) => {
+                  if (!window.confirm("Deseas finalizar?")) {
+                    event.preventDefault();
+                  }
+                }}
+              >
+                <input type="hidden" name="intent" value="logout" />
+                <input type="hidden" name="shop" value={shop || ""} />
+                <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
+                  Finalizar
+                </button>
+              </Form>
+              <button
+                className={`${styles.reprintModeButton} ${reprintMode ? styles.reprintModeButtonActive : ""}`}
+                type="button"
+                aria-label={reprintMode ? "Cancelar reimpresion" : "Reimprimir etiqueta"}
+                title={reprintMode ? "Cancelar reimpresion" : "Reimprimir etiqueta"}
+                onClick={() => {
+                  setActiveTab("ordenes");
+                  setReprintMode((current) => !current);
+                }}
+              >
+                <span className={styles.printerArt} aria-hidden="true">
+                  <span className={styles.printerArtPaper} />
+                  <span className={styles.printerArtBack} />
+                  <span className={styles.printerArtBody} />
+                  <span className={styles.printerArtButton} />
+                  <span className={styles.printerArtTray} />
+                  <span className={styles.printerArtLineOne} />
+                  <span className={styles.printerArtLineTwo} />
+                </span>
               </button>
-            </Form>
+            </div>
           </header>
 
           <div className={styles.preparerSummary}>
@@ -848,35 +881,26 @@ export default function PreparerPortal() {
 
               {activeTab === "ordenes" ? (
                 <div className={styles.preparerOrderChecklist}>
+                  {reprintMode ? (
+                    <p className={styles.reprintModeHint}>Toca una orden terminada para reimprimir su etiqueta.</p>
+                  ) : null}
                   {visibleAssignments.map((assignment) => {
                     const order = assignment.orderData || {};
                     const status = preparerAssignmentDisplayStatus(assignment);
                     const sequence = displaySequenceByAssignmentId.get(String(assignment.id)) || "";
                     const canReprintLabel = isPreparerAssignmentDone(status);
                     return (
-                      <div key={assignment.id} className={styles.preparerOrderCheckItem}>
+                      <button
+                        key={assignment.id}
+                        className={`${styles.preparerOrderCheckItem} ${reprintMode && canReprintLabel ? styles.preparerOrderCheckItemSelectable : ""}`}
+                        type="button"
+                        disabled={!reprintMode || !canReprintLabel}
+                        onClick={() => handleReprintAssignment(assignment, sequence, status)}
+                      >
                         <span className={styles.orderSequenceBadge}>
                           {sequence}
                         </span>
                         <strong>Orden #{order.orderNumber || assignment.orderNumber || "-"}</strong>
-                        {canReprintLabel ? (
-                          <button
-                            className={styles.reprintIconButton}
-                            type="button"
-                            aria-label={`Reimprimir etiqueta de la orden ${order.orderNumber || assignment.orderNumber || ""}`}
-                            title="Reimprimir etiqueta"
-                            onClick={() => {
-                              if (!window.confirm(`Quieres reimprimir la etiqueta de la orden #${order.orderNumber || assignment.orderNumber || "-"}?`)) {
-                                return;
-                              }
-                              printPreparerLabel(preparerLabelPayload(assignment, sequence));
-                            }}
-                          >
-                            <span className={styles.printerGlyph} aria-hidden="true" />
-                          </button>
-                        ) : (
-                          <span aria-hidden="true" />
-                        )}
                         <span
                           className={`${styles.preparerCheckBox} ${
                             status === "ready"
@@ -891,7 +915,7 @@ export default function PreparerPortal() {
                         >
                           {preparerOrderMark(status)}
                         </span>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>

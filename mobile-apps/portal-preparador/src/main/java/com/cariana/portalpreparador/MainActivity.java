@@ -57,6 +57,8 @@ public class MainActivity extends Activity {
     private static final int LABEL_DOTS = 816;
     private static final int SAFE_MIN = 24;
     private static final int SAFE_MAX = 792;
+    private final Object printerSocketLock = new Object();
+    private BluetoothSocket cachedPrinterSocket;
     private WebView webView;
 
     @Override
@@ -170,7 +172,6 @@ public class MainActivity extends Activity {
             new Thread(new Runnable() {
                 @Override
                 public void run() {
-                    BluetoothSocket socket = null;
                     try {
                         if (!hasBluetoothConnectPermission()) {
                             requestBluetoothConnectPermission();
@@ -194,7 +195,7 @@ public class MainActivity extends Activity {
                             return;
                         }
 
-                        socket = connectToPrinter(printer);
+                        BluetoothSocket socket = getPrinterSocket(printer);
                         OutputStream outputStream = socket.getOutputStream();
                         outputStream.write(buildPrepLabelTspl(cleanOrderNumber, cleanRouteNumber, cleanCustomerName, cleanAddress));
                         outputStream.flush();
@@ -203,17 +204,45 @@ public class MainActivity extends Activity {
                         requestBluetoothConnectPermission();
                         showToast("Permite Bluetooth para imprimir.");
                     } catch (Exception error) {
+                        closeCachedPrinterSocket();
                         showToast("No se pudo conectar con 4B-2054L. Apaga y prende la impresora e intenta de nuevo.");
-                    } finally {
-                        if (socket != null) {
-                            try {
-                                socket.close();
-                            } catch (IOException ignored) {}
-                        }
                     }
                 }
             }).start();
         }
+    }
+
+    private BluetoothSocket getPrinterSocket(BluetoothDevice printer) throws Exception {
+        synchronized (printerSocketLock) {
+            if (cachedPrinterSocket != null && cachedPrinterSocket.isConnected()) {
+                return cachedPrinterSocket;
+            }
+            closeCachedPrinterSocketLocked();
+            cachedPrinterSocket = connectToPrinter(printer);
+            return cachedPrinterSocket;
+        }
+    }
+
+    private void warmUpPrinterConnection() {
+        if (!hasBluetoothConnectPermission()) {
+            return;
+        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+                    if (adapter == null || !adapter.isEnabled()) {
+                        return;
+                    }
+                    BluetoothDevice printer = findBondedLabelPrinter(adapter);
+                    if (printer == null) {
+                        return;
+                    }
+                    getPrinterSocket(printer);
+                } catch (Exception ignored) {}
+            }
+        }).start();
     }
 
     private BluetoothSocket connectToPrinter(BluetoothDevice printer) throws Exception {
@@ -272,6 +301,20 @@ public class MainActivity extends Activity {
         } catch (IOException ignored) {}
     }
 
+    private void closeCachedPrinterSocket() {
+        synchronized (printerSocketLock) {
+            closeCachedPrinterSocketLocked();
+        }
+    }
+
+    private void closeCachedPrinterSocketLocked() {
+        if (cachedPrinterSocket == null) {
+            return;
+        }
+        closeSocket(cachedPrinterSocket);
+        cachedPrinterSocket = null;
+    }
+
     private boolean hasBluetoothConnectPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return true;
@@ -293,9 +336,18 @@ public class MainActivity extends Activity {
 
     private void requestBluetoothPermissionOnLaunch() {
         if (hasBluetoothConnectPermission()) {
+            warmUpPrinterConnection();
             return;
         }
         requestBluetoothConnectPermission();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 420 && hasBluetoothConnectPermission()) {
+            warmUpPrinterConnection();
+        }
     }
 
     private BluetoothDevice findBondedLabelPrinter(BluetoothAdapter adapter) {
@@ -717,5 +769,11 @@ public class MainActivity extends Activity {
             return;
         }
         super.onBackPressed();
+    }
+
+    @Override
+    protected void onDestroy() {
+        closeCachedPrinterSocket();
+        super.onDestroy();
     }
 }

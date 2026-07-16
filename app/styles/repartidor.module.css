@@ -8,7 +8,7 @@
 .container {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 28px 16px 56px;
+  padding: 20px 16px 48px;
 }
 
 .accessContainer {
@@ -136,8 +136,8 @@
   justify-content: flex-end;
   align-items: flex-end;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 .preparerGrid {
@@ -156,20 +156,41 @@
 }
 
 .preparerOrderCheckItem {
+  appearance: none;
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 44px 34px;
+  grid-template-columns: 32px minmax(0, 1fr) 34px;
   gap: 10px;
   align-items: center;
+  width: 100%;
   min-height: 52px;
   padding: 10px 12px;
   border: 1px solid #dfe3e8;
   border-radius: 12px;
   background: #f9fafb;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 
 .preparerOrderCheckItem strong {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.preparerOrderCheckItem:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.preparerOrderCheckItemSelectable {
+  border-color: #0b6bcb;
+  background: #eff6ff;
+  cursor: pointer;
+}
+
+.preparerOrderCheckItemSelectable:focus-visible {
+  outline: 3px solid rgba(0, 91, 211, 0.28);
+  outline-offset: 2px;
 }
 
 .preparerCheckBox {
@@ -203,63 +224,6 @@
   border-color: #d82c0d;
   background: #fff4f4;
   color: #b42318;
-}
-
-.reprintIconButton {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  border: 2px solid #0b6bcb;
-  border-radius: 9px;
-  background: #eff6ff;
-  color: #0b6bcb;
-  font-size: 26px;
-  font-weight: 900;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.reprintIconButton:focus-visible {
-  outline: 3px solid rgba(0, 91, 211, 0.28);
-  outline-offset: 2px;
-}
-
-.printerGlyph {
-  position: relative;
-  display: block;
-  width: 24px;
-  height: 20px;
-  border: 3px solid currentColor;
-  border-radius: 4px;
-}
-
-.printerGlyph::before {
-  content: "";
-  position: absolute;
-  left: 3px;
-  top: -10px;
-  width: 14px;
-  height: 8px;
-  border: 3px solid currentColor;
-  border-bottom: 0;
-  border-radius: 3px 3px 0 0;
-  background: #eff6ff;
-}
-
-.printerGlyph::after {
-  content: "";
-  position: absolute;
-  left: 4px;
-  bottom: -9px;
-  width: 14px;
-  height: 9px;
-  border: 3px solid currentColor;
-  border-top: 0;
-  border-radius: 0 0 3px 3px;
-  background: #eff6ff;
 }
 
 .preparerDispatchCard {
@@ -591,7 +555,129 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
+}
+
+.preparerHeaderActions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.preparerHeaderActions form {
+  margin: 0;
+}
+
+.reprintModeButton {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 74px;
+  height: 64px;
+  border: 1px solid #bfdbfe;
+  border-radius: 18px;
+  background: #eff6ff;
+  cursor: pointer;
+}
+
+.reprintModeButtonActive {
+  border-color: #005bd3;
+  background: #dbeafe;
+  box-shadow: 0 0 0 3px rgba(0, 91, 211, 0.14);
+}
+
+.reprintModeButton:focus-visible {
+  outline: 3px solid rgba(0, 91, 211, 0.28);
+  outline-offset: 2px;
+}
+
+.printerArt {
+  position: relative;
+  width: 52px;
+  height: 48px;
+  display: block;
+}
+
+.printerArtPaper {
+  position: absolute;
+  left: 15px;
+  top: 0;
+  width: 26px;
+  height: 22px;
+  border-radius: 5px 5px 1px 1px;
+  background: #e5edf3;
+}
+
+.printerArtBack {
+  position: absolute;
+  left: 8px;
+  top: 9px;
+  width: 38px;
+  height: 18px;
+  border-radius: 8px 8px 2px 2px;
+  background: #687783;
+}
+
+.printerArtBody {
+  position: absolute;
+  left: 2px;
+  top: 20px;
+  width: 48px;
+  height: 24px;
+  border-radius: 8px;
+  background: #57a9e8;
+}
+
+.printerArtButton {
+  position: absolute;
+  right: 8px;
+  top: 25px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.printerArtTray {
+  position: absolute;
+  left: 12px;
+  top: 34px;
+  width: 32px;
+  height: 14px;
+  border-radius: 5px;
+  background: #dfe8ee;
+  border-top: 6px solid #263238;
+}
+
+.printerArtLineOne,
+.printerArtLineTwo {
+  position: absolute;
+  left: 20px;
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+  background: #9fb0ba;
+}
+
+.printerArtLineOne {
+  top: 40px;
+}
+
+.printerArtLineTwo {
+  top: 45px;
+}
+
+.reprintModeHint {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .eyebrow {
@@ -612,7 +698,7 @@
 }
 
 .subtitle {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: #6d7175;
   font-size: 15px;
   line-height: 1.45;
@@ -905,8 +991,45 @@
 }
 
 @media (max-width: 720px) {
+  .container {
+    padding: 14px 22px 40px;
+  }
+
   .header {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .preparerHeaderActions {
+    gap: 8px;
+  }
+
+  .reprintModeButton {
+    width: 66px;
+    height: 58px;
+    border-radius: 16px;
+  }
+
+  .printerArt {
+    transform: scale(0.86);
+  }
+
+  .preparerSummary {
+    align-items: flex-end;
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+
+  .card {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .tabRow {
+    margin-bottom: 12px;
   }
 
   .cardHeader {
@@ -920,7 +1043,25 @@
   }
 
   .title {
-    font-size: 28px;
+    font-size: 27px;
+    line-height: 1.08;
+  }
+
+  .subtitle {
+    margin-top: 4px;
+  }
+
+  .preparerOrderChecklist {
+    gap: 8px;
+  }
+
+  .preparerOrderCheckItem {
+    min-height: 56px;
+    padding: 10px;
+  }
+
+  .preparerDispatchCard {
+    padding: 14px;
   }
 }
 
