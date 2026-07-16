@@ -405,10 +405,10 @@ public class MainActivity extends Activity {
         drawLine(canvas, 54, 402, 762, 402, 2);
 
         drawPersonIcon(canvas, 68, 428);
-        Paint customerMeasurePaint = textPaint(27, true);
+        Paint customerMeasurePaint = textPaint(23, true);
         List<String> customerLines = wrapTextByWidth(customerName, 620, 2, customerMeasurePaint);
         int customerY = customerLines.size() > 1 ? 438 : 452;
-        Paint customerPaint = textPaint(customerLines.size() > 1 ? 24 : customerTextSize(customerName), true);
+        Paint customerPaint = textPaint(customerLines.size() > 1 ? 21 : customerTextSize(customerName), true);
         for (String line : customerLines) {
             drawText(canvas, line, 128, customerY, customerPaint);
             customerY += 30;
@@ -534,9 +534,9 @@ public class MainActivity extends Activity {
 
     private int customerTextSize(String customerName) {
         int length = String.valueOf(customerName == null ? "" : customerName).length();
-        if (length > 34) return 23;
-        if (length > 28) return 25;
-        return 27;
+        if (length > 34) return 20;
+        if (length > 28) return 21;
+        return 23;
     }
 
     private int addressTextSize(List<String> lines) {
