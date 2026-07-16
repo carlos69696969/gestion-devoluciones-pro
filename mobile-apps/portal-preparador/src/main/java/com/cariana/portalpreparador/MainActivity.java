@@ -318,7 +318,7 @@ public class MainActivity extends Activity {
         String cleanOrderNumber = tsplText(orderNumber).replaceAll("[^0-9A-Za-z-]", "");
         String displayOrderNumber = cleanOrderNumber.length() > 0 ? cleanOrderNumber : tsplText(orderNumber);
         String displayRouteNumber = truncateForLabel(tsplText(routeNumber), 3);
-        String displayCustomerName = truncateForLabel(tsplText(customerName).toUpperCase(), 20);
+        String displayCustomerName = truncateForLabel(tsplText(customerName).toUpperCase(), 28);
         StringBuilder command = new StringBuilder();
         command.append("SIZE 100 mm,100 mm\r\n");
         command.append("GAP 2 mm,0 mm\r\n");
@@ -328,31 +328,45 @@ public class MainActivity extends Activity {
         command.append("DENSITY 10\r\n");
         command.append("CLS\r\n");
         command.append("BOX 16,16,784,784,4\r\n");
-        command.append("TEXT 302,44,\"4\",0,2,2,\"CARIANA\"\r\n");
-        command.append("TEXT 286,108,\"2\",0,1,1,\"GRACIAS POR ELEGIRNOS\"\r\n");
-        command.append("BAR 166,126,94,3\r\n");
-        command.append("BAR 540,126,94,3\r\n");
-        command.append("CIRCLE 116,258,92,8\r\n");
-        command.append("TEXT 90,220,\"5\",0,2,2,\"").append(displayRouteNumber).append("\"\r\n");
-        command.append("BAR 232,168,3,160\r\n");
-        command.append("TEXT 398,174,\"3\",0,2,2,\"PEDIDO\"\r\n");
-        command.append("TEXT 286,220,\"5\",0,2,2,\"#").append(displayOrderNumber).append("\"\r\n");
-        command.append("BAR 48,350,704,2\r\n");
-        command.append("TEXT 70,380,\"3\",0,1,2,\"CLIENTE\"\r\n");
-        command.append("TEXT 164,372,\"4\",0,2,2,\"").append(displayCustomerName).append("\"\r\n");
-        command.append("TEXT 164,428,\"2\",0,1,1,\"GRACIAS POR TU COMPRA\"\r\n");
-        command.append("BAR 48,468,704,2\r\n");
-        command.append("TEXT 70,504,\"3\",0,1,2,\"DOMICILIO:\"\r\n");
-        int y = 538;
+        appendHummingbird(command);
+        command.append("TEXT 306,70,\"4\",0,2,2,\"CARIANA\"\r\n");
+        command.append("TEXT 292,132,\"2\",0,1,1,\"GRACIAS POR ELEGIRNOS\"\r\n");
+        command.append("BAR 170,150,92,3\r\n");
+        command.append("BAR 538,150,92,3\r\n");
+        command.append("CIRCLE 116,280,92,8\r\n");
+        command.append("TEXT 84,242,\"5\",0,2,2,\"").append(displayRouteNumber).append("\"\r\n");
+        command.append("BAR 232,194,3,154\r\n");
+        command.append("TEXT 396,196,\"3\",0,2,2,\"PEDIDO\"\r\n");
+        command.append("TEXT 286,242,\"5\",0,2,2,\"#").append(displayOrderNumber).append("\"\r\n");
+        command.append("BAR 48,372,704,2\r\n");
+        command.append("TEXT 70,398,\"3\",0,1,1,\"CLIENTE\"\r\n");
+        command.append("TEXT 166,392,\"3\",0,2,2,\"").append(displayCustomerName).append("\"\r\n");
+        command.append("TEXT 166,446,\"2\",0,1,1,\"GRACIAS POR TU COMPRA\"\r\n");
+        command.append("BAR 48,486,704,2\r\n");
+        command.append("TEXT 70,520,\"3\",0,1,2,\"DOMICILIO:\"\r\n");
+        int y = 556;
         for (String line : wrapForTspl(address, 35, 3)) {
             command.append("TEXT 70,").append(y).append(",\"3\",0,1,1,\"").append(tsplText(line).toUpperCase()).append("\"\r\n");
             y += 30;
         }
-        command.append("BAR 48,630,704,2\r\n");
-        command.append("BARCODE 70,660,\"128\",86,1,0,2,4,\"").append(displayOrderNumber).append("\"\r\n");
-        command.append("QRCODE 632,650,L,5,A,0,\"").append(displayOrderNumber).append("\"\r\n");
+        command.append("BAR 48,650,704,2\r\n");
+        command.append("BARCODE 70,680,\"128\",92,1,0,3,4,\"").append(displayOrderNumber).append("\"\r\n");
+        command.append("QRCODE 632,666,L,5,A,0,\"").append(displayOrderNumber).append("\"\r\n");
         command.append("PRINT 1,1\r\n");
         return command.toString().getBytes(StandardCharsets.ISO_8859_1);
+    }
+
+    private void appendHummingbird(StringBuilder command) {
+        command.append("BAR 344,38,48,3\r\n");
+        command.append("BAR 390,36,38,3\r\n");
+        command.append("BAR 424,40,30,3\r\n");
+        command.append("BAR 392,42,5,28\r\n");
+        command.append("BAR 384,50,32,4\r\n");
+        command.append("BAR 416,50,58,3\r\n");
+        command.append("BAR 382,60,28,3\r\n");
+        command.append("BAR 368,70,18,3\r\n");
+        command.append("CIRCLE 414,52,10,3\r\n");
+        command.append("BAR 424,50,54,2\r\n");
     }
 
     private String normalizeLabelText(String value, String fallback) {
