@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { createCookie, Form, redirect, useActionData, useLoaderData, useNavigation, useRevalidator, useSearchParams } from "react-router";
 import prisma from "../db.server";
 import styles from "../styles/repartidor.module.css";
+import { geocodeAddressWithCache, haversineDistanceMeters } from "../utils/googleMaps.server";
 
 const COURIER_ADMIN_REPROGRAM_ACTION = "courier_admin_order_reprogrammed";
 const COURIER_REPROGRAM_ACTIONS = [
@@ -35,6 +36,165 @@ function preparerPortalCookies() {
 
 function cleanShop(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function normalizeRouteAddressText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function routeAddressTokens(value) {
+  const ignoredTokens = new Set([
+    "av",
+    "avenida",
+    "calle",
+    "blvd",
+    "boulevard",
+    "col",
+    "colonia",
+    "cp",
+    "mexico",
+    "ags",
+    "aguascalientes",
+  ]);
+  return normalizeRouteAddressText(value)
+    .split(" ")
+    .filter((token) => token.length > 2 && !ignoredTokens.has(token));
+}
+
+function postalCodeFromRouteAddress(value) {
+  const match = String(value || "").match(/\b\d{5}\b/);
+  return match ? Number(match[0]) : 0;
+}
+
+function routeAddressTextFromOrder(order) {
+  return [
+    order?.pickupAddress,
+    order?.pickupNeighborhood,
+    order?.pickupCity,
+    order?.pickupState,
+    order?.pickupPostalCode,
+    order?.pickupCountry || "Mexico",
+  ]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function routeAddressSignature(value) {
+  return {
+    normalized: normalizeRouteAddressText(value),
+    postalCode: postalCodeFromRouteAddress(value),
+    tokens: routeAddressTokens(value),
+  };
+}
+
+function routeAddressDistance(firstAddress, secondAddress) {
+  if (!firstAddress?.normalized || !secondAddress?.normalized) return Number.MAX_SAFE_INTEGER;
+  const firstTokenSet = new Set(firstAddress.tokens || []);
+  const secondTokens = secondAddress.tokens || [];
+  const sharedTokenCount = secondTokens.filter((token) => firstTokenSet.has(token)).length;
+  const postalDifference =
+    firstAddress.postalCode && secondAddress.postalCode
+      ? Math.abs(firstAddress.postalCode - secondAddress.postalCode)
+      : 50000;
+  return postalDifference * 10 - sharedTokenCount * 1000 + Math.abs(firstAddress.normalized.length - secondAddress.normalized.length);
+}
+
+async function sortPreparerRouteOrdersByGoogleMapsProximity(shop, orders, routeStartAddress = "") {
+  const cleanShopDomain = cleanShop(shop);
+  if (!cleanShopDomain || !String(process.env.GOOGLE_MAPS_API_KEY || "").trim()) return null;
+
+  const startPoint = await geocodeAddressWithCache(cleanShopDomain, routeStartAddress);
+  if (!startPoint) return null;
+
+  const geocodedOrders = [];
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const orderId = String(order?.id || "").trim();
+    if (!orderId) continue;
+    const point = await geocodeAddressWithCache(cleanShopDomain, routeAddressTextFromOrder(order));
+    if (!point) return null;
+    geocodedOrders.push({ order, point });
+  }
+  if (!geocodedOrders.length) return [];
+
+  const sortedOrders = [];
+  const pendingOrders = [...geocodedOrders];
+  let currentPoint = startPoint;
+
+  while (pendingOrders.length) {
+    let nearestIndex = 0;
+    let nearestDistance = Number.MAX_SAFE_INTEGER;
+    for (let index = 0; index < pendingOrders.length; index += 1) {
+      const distance = haversineDistanceMeters(currentPoint, pendingOrders[index].point);
+      if (
+        distance < nearestDistance ||
+        (distance === nearestDistance &&
+          String(pendingOrders[index].order?.orderNumber || "").localeCompare(
+            String(pendingOrders[nearestIndex].order?.orderNumber || ""),
+            "es",
+            { numeric: true, sensitivity: "base" },
+          ) < 0)
+      ) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    }
+    const [nextOrder] = pendingOrders.splice(nearestIndex, 1);
+    sortedOrders.push(nextOrder.order);
+    currentPoint = nextOrder.point;
+  }
+
+  return sortedOrders.map((order, index) => ({ ...order, sequenceNumber: index + 1 }));
+}
+
+function sortPreparerRouteOrdersByProximityFallback(orders, routeStartAddress = "") {
+  const pendingOrders = (Array.isArray(orders) ? orders : [])
+    .filter((order) => String(order?.id || "").trim())
+    .map((order) => ({
+      order,
+      signature: routeAddressSignature(routeAddressTextFromOrder(order)),
+    }));
+  const sortedOrders = [];
+  let currentSignature = routeAddressSignature(routeStartAddress);
+  if (!currentSignature.normalized && pendingOrders.length) {
+    currentSignature = pendingOrders[0].signature;
+  }
+
+  while (pendingOrders.length) {
+    let nearestIndex = 0;
+    let nearestDistance = Number.MAX_SAFE_INTEGER;
+    for (let index = 0; index < pendingOrders.length; index += 1) {
+      const distance = routeAddressDistance(currentSignature, pendingOrders[index].signature);
+      if (
+        distance < nearestDistance ||
+        (distance === nearestDistance &&
+          String(pendingOrders[index].order?.orderNumber || "").localeCompare(
+            String(pendingOrders[nearestIndex].order?.orderNumber || ""),
+            "es",
+            { numeric: true, sensitivity: "base" },
+          ) < 0)
+      ) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    }
+    const [nextOrder] = pendingOrders.splice(nearestIndex, 1);
+    sortedOrders.push(nextOrder.order);
+    currentSignature = nextOrder.signature;
+  }
+
+  return sortedOrders.map((order, index) => ({ ...order, sequenceNumber: index + 1 }));
+}
+
+async function sortPreparerRouteOrdersByProximity(shop, orders, routeStartAddress = "") {
+  const googleSortedOrders = await sortPreparerRouteOrdersByGoogleMapsProximity(shop, orders, routeStartAddress);
+  return googleSortedOrders || sortPreparerRouteOrdersByProximityFallback(orders, routeStartAddress);
 }
 
 function createPreparerAccessId() {
@@ -303,6 +463,8 @@ export async function loader({ request }) {
     .filter(Boolean);
   let liveCourierOrderByRequestId = new Map();
   let liveCourierOrderByOrderNumber = new Map();
+  let routeSequenceByRequestId = new Map();
+  let routeSequenceByOrderNumber = new Map();
   if (access && assignmentRequestIds.length) {
     try {
       const { fetchCourierOrdersByIdsForShop, fetchCourierOrdersForShop, resolveCourierPortalShop } = await import("../utils/courier.server");
@@ -344,6 +506,31 @@ export async function loader({ request }) {
           shop: liveShop,
           sessionCandidates,
         });
+        const routeSettings = await prisma.returnSettings.findUnique({
+          where: { shop: liveShop },
+          select: { branchAddress: true },
+        });
+        const sortedRouteOrders = await sortPreparerRouteOrdersByProximity(
+          liveShop,
+          liveCourierRouteOrders,
+          String(routeSettings?.branchAddress || "").trim(),
+        );
+        routeSequenceByRequestId = new Map(
+          sortedRouteOrders
+            .map((order, index) => [
+              String(order?.id || "").trim(),
+              Number(order?.sequenceNumber || 0) || index + 1,
+            ])
+            .filter(([requestId]) => requestId),
+        );
+        routeSequenceByOrderNumber = new Map(
+          sortedRouteOrders
+            .map((order, index) => [
+              String(order?.orderNumber || "").replace(/\D/g, ""),
+              Number(order?.sequenceNumber || 0) || index + 1,
+            ])
+            .filter(([orderNumber]) => orderNumber),
+        );
         for (const order of liveCourierRouteOrders) {
           const requestId = String(order?.id || "").trim();
           const orderNumber = String(order?.orderNumber || "").replace(/\D/g, "");
@@ -386,8 +573,10 @@ export async function loader({ request }) {
     const liveSequenceNumber = Number(liveCourierOrder?.sequenceNumber || 0) || 0;
     const assignmentSequenceNumber = Number(assignment.sequence || 0) || 0;
     const routeSequenceNumber =
-      liveSequenceNumber ||
+      routeSequenceByRequestId.get(requestId) ||
+      routeSequenceByOrderNumber.get(orderNumber) ||
       assignmentSequenceNumber ||
+      liveSequenceNumber ||
       Number(storedOrderData.sequenceNumber || 0) ||
       0;
     const activity = latestFinalActivityByRequestId.get(requestId);
