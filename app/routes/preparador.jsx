@@ -937,7 +937,11 @@ export default function PreparerPortal() {
                             </h2>
                           </div>
                           <h3 className={styles.cardTitle}>{dispatchOrder.customerName || "Cliente"}</h3>
-                          {dispatchAddress ? <p className={styles.subtitle}>{dispatchAddress}</p> : null}
+                          {dispatchAddress ? (
+                            <p className={`${styles.subtitle} ${styles.preparerDispatchAddress}`}>
+                              {dispatchAddress}
+                            </p>
+                          ) : null}
                         </div>
                         <span className={`${styles.counterBadge} ${styles.preparerStatusBadge} ${styles.preparerDispatchStatusBadge}`}>
                           {preparerStatusLabel(dispatchStatus)}

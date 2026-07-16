@@ -1010,7 +1010,7 @@
 
 @media (max-width: 720px) {
   .container {
-    padding: 14px 16px 40px;
+    padding: 14px 8px 40px;
   }
 
   .header {
@@ -1019,13 +1019,14 @@
     align-items: stretch;
     gap: 8px;
     margin-bottom: 12px;
+    padding: 0 16px;
   }
 
   .preparerTopActions {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
-    gap: 8px;
+    gap: 14px;
   }
 
   .preparerSummary {
@@ -1036,10 +1037,12 @@
   .preparerHeaderActions {
     grid-column: 1;
     grid-row: 1;
-    display: flex;
+    display: grid;
+    grid-template-columns: auto minmax(74px, 1fr);
     align-items: center;
     justify-content: flex-start;
-    gap: 8px;
+    gap: 12px;
+    width: 100%;
   }
 
   .preparerSummary {
@@ -1048,6 +1051,7 @@
   }
 
   .reprintModeButton {
+    justify-self: center;
     width: 66px;
     height: 58px;
     border-radius: 16px;
@@ -1060,6 +1064,11 @@
   .card {
     padding: 14px;
     border-radius: 14px;
+  }
+
+  .container > .card {
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .tabRow {
@@ -1119,6 +1128,10 @@
   .preparerDispatchCard .subtitle {
     grid-column: 1 / -1;
     max-width: 100%;
+  }
+
+  .preparerDispatchAddress {
+    display: none;
   }
 
   .preparerOrderChecklist {
