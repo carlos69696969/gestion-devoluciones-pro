@@ -389,29 +389,29 @@ public class MainActivity extends Activity {
         paint.setStrokeWidth(4);
         canvas.drawRoundRect(new RectF(SAFE_MIN, SAFE_MIN, SAFE_MAX, SAFE_MAX), 28, 28, paint);
 
-        drawLogo(canvas, 338, 24, 140, 82);
-        drawCenteredText(canvas, "CARIANA", 408, 156, 54, true);
-        drawCenteredText(canvas, "GRACIAS POR ELEGIRNOS", 408, 190, 23, false);
-        drawLine(canvas, 174, 186, 260, 186, 3);
-        drawLine(canvas, 556, 186, 642, 186, 3);
+        drawLogo(canvas, 328, 24, 160, 92);
+        drawCenteredText(canvas, "CARIANA", 408, 162, 62, true);
+        drawCenteredText(canvas, "GRACIAS POR ELEGIRNOS", 408, 200, 25, false);
+        drawLine(canvas, 162, 196, 260, 196, 3);
+        drawLine(canvas, 556, 196, 654, 196, 3);
 
         paint.setStyle(Paint.Style.FILL);
         canvas.drawCircle(124, 304, 76, paint);
         drawCenteredText(canvas, routeNumber, 124, 334, routeTextSize(routeNumber), true, Color.WHITE);
         drawLine(canvas, 232, 228, 232, 373, 3);
 
-        drawCenteredText(canvas, "PEDIDO", 512, 264, 32, true);
+        drawCenteredText(canvas, "PEDIDO", 512, 262, 32, true);
         drawCenteredText(canvas, "#" + orderNumber, 512, 350, orderTextSize(orderNumber), true);
         drawLine(canvas, 54, 402, 762, 402, 2);
 
         drawPersonIcon(canvas, 68, 428);
-        Paint customerMeasurePaint = textPaint(34, true);
+        Paint customerMeasurePaint = textPaint(27, true);
         List<String> customerLines = wrapTextByWidth(customerName, 620, 2, customerMeasurePaint);
-        int customerY = customerLines.size() > 1 ? 443 : 452;
-        Paint customerPaint = textPaint(customerLines.size() > 1 ? 28 : customerTextSize(customerName), true);
+        int customerY = customerLines.size() > 1 ? 438 : 452;
+        Paint customerPaint = textPaint(customerLines.size() > 1 ? 24 : customerTextSize(customerName), true);
         for (String line : customerLines) {
             drawText(canvas, line, 128, customerY, customerPaint);
-            customerY += 34;
+            customerY += 30;
         }
         drawCenteredText(canvas, "GRACIAS POR TU COMPRA", 408, 502, 23, false);
         drawLine(canvas, 54, 528, 762, 528, 2);
@@ -534,10 +534,9 @@ public class MainActivity extends Activity {
 
     private int customerTextSize(String customerName) {
         int length = String.valueOf(customerName == null ? "" : customerName).length();
-        if (length > 28) return 28;
-        if (length > 22) return 30;
-        if (length > 16) return 32;
-        return 34;
+        if (length > 34) return 23;
+        if (length > 28) return 25;
+        return 27;
     }
 
     private int addressTextSize(List<String> lines) {
@@ -557,8 +556,8 @@ public class MainActivity extends Activity {
 
     private int orderTextSize(String orderNumber) {
         int length = String.valueOf(orderNumber == null ? "" : orderNumber).length();
-        if (length > 5) return 58;
-        return 72;
+        if (length > 5) return 70;
+        return 84;
     }
 
     private BitMatrix createBarcodeMatrix(String value, int width, int height) {
