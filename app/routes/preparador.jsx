@@ -817,48 +817,51 @@ export default function PreparerPortal() {
                 </p>
               ) : null}
             </div>
-            <div className={styles.preparerHeaderActions}>
-              <Form
-                method="post"
-                onSubmit={(event) => {
-                  if (!window.confirm("Deseas finalizar?")) {
-                    event.preventDefault();
-                  }
-                }}
-              >
-                <input type="hidden" name="intent" value="logout" />
-                <input type="hidden" name="shop" value={shop || ""} />
-                <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
-                  Finalizar
-                </button>
-              </Form>
-              <button
-                className={`${styles.reprintModeButton} ${reprintMode ? styles.reprintModeButtonActive : ""}`}
-                type="button"
-                aria-label={reprintMode ? "Cancelar reimpresion" : "Reimprimir etiqueta"}
-                title={reprintMode ? "Cancelar reimpresion" : "Reimprimir etiqueta"}
-                onClick={() => {
-                  setActiveTab("ordenes");
-                  setReprintMode((current) => !current);
-                }}
-              >
-                <span className={styles.printerArt} aria-hidden="true">
-                  <span className={styles.printerArtPaper} />
-                  <span className={styles.printerArtBack} />
-                  <span className={styles.printerArtBody} />
-                  <span className={styles.printerArtButton} />
-                  <span className={styles.printerArtTray} />
-                  <span className={styles.printerArtLineOne} />
-                  <span className={styles.printerArtLineTwo} />
-                </span>
-              </button>
+            <div className={styles.preparerTopActions}>
+              <div className={styles.preparerSummary}>
+                <span className={styles.counterBadge}>Ordenes {visibleAssignments.length}</span>
+                <span className={styles.counterBadge}>Restantes {remainingAssignments.length}</span>
+              </div>
+              {activeTab === "ordenes" ? (
+                <div className={styles.preparerHeaderActions}>
+                  <Form
+                    method="post"
+                    onSubmit={(event) => {
+                      if (!window.confirm("Deseas finalizar?")) {
+                        event.preventDefault();
+                      }
+                    }}
+                  >
+                    <input type="hidden" name="intent" value="logout" />
+                    <input type="hidden" name="shop" value={shop || ""} />
+                    <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
+                      Finalizar
+                    </button>
+                  </Form>
+                  <button
+                    className={`${styles.reprintModeButton} ${reprintMode ? styles.reprintModeButtonActive : ""}`}
+                    type="button"
+                    aria-label={reprintMode ? "Cancelar reimpresion" : "Reimprimir etiqueta"}
+                    title={reprintMode ? "Cancelar reimpresion" : "Reimprimir etiqueta"}
+                    onClick={() => {
+                      setActiveTab("ordenes");
+                      setReprintMode((current) => !current);
+                    }}
+                  >
+                    <span className={styles.printerArt} aria-hidden="true">
+                      <span className={styles.printerArtPaper} />
+                      <span className={styles.printerArtBack} />
+                      <span className={styles.printerArtBody} />
+                      <span className={styles.printerArtButton} />
+                      <span className={styles.printerArtTray} />
+                      <span className={styles.printerArtLineOne} />
+                      <span className={styles.printerArtLineTwo} />
+                    </span>
+                  </button>
+                </div>
+              ) : null}
             </div>
           </header>
-
-          <div className={styles.preparerSummary}>
-            <span className={styles.counterBadge}>Ordenes {visibleAssignments.length}</span>
-            <span className={styles.counterBadge}>Restantes {remainingAssignments.length}</span>
-          </div>
 
           {visibleAssignments.length ? (
             <section className={styles.card}>
@@ -936,7 +939,7 @@ export default function PreparerPortal() {
                           <h3 className={styles.cardTitle}>{dispatchOrder.customerName || "Cliente"}</h3>
                           {dispatchAddress ? <p className={styles.subtitle}>{dispatchAddress}</p> : null}
                         </div>
-                        <span className={`${styles.counterBadge} ${styles.preparerStatusBadge}`}>
+                        <span className={`${styles.counterBadge} ${styles.preparerStatusBadge} ${styles.preparerDispatchStatusBadge}`}>
                           {preparerStatusLabel(dispatchStatus)}
                         </span>
                       </div>

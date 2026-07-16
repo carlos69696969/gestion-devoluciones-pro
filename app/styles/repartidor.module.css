@@ -137,7 +137,12 @@
   align-items: flex-end;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 10px;
+}
+
+.preparerTopActions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
 }
 
 .preparerGrid {
@@ -148,6 +153,10 @@
 
 .preparerStatusBadge {
   text-transform: capitalize;
+}
+
+.preparerDispatchStatusBadge {
+  white-space: nowrap;
 }
 
 .preparerOrderChecklist {
@@ -1000,7 +1009,16 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     gap: 10px;
-    margin-bottom: 8px;
+    margin-bottom: 14px;
+  }
+
+  .preparerTopActions {
+    gap: 8px;
+  }
+
+  .preparerSummary {
+    align-items: flex-end;
+    gap: 5px;
   }
 
   .preparerHeaderActions {
@@ -1017,12 +1035,6 @@
     transform: scale(0.86);
   }
 
-  .preparerSummary {
-    align-items: flex-end;
-    gap: 5px;
-    margin-bottom: 8px;
-  }
-
   .card {
     padding: 14px;
     border-radius: 14px;
@@ -1034,6 +1046,17 @@
 
   .cardHeader {
     flex-direction: column;
+  }
+
+  .preparerDispatchCard .cardHeader {
+    position: relative;
+    padding-right: 120px;
+  }
+
+  .preparerDispatchStatusBadge {
+    position: absolute;
+    top: 0;
+    right: 0;
   }
 
   .counterGroup {

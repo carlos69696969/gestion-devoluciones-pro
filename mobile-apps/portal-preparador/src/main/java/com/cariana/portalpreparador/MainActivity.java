@@ -24,6 +24,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.text.TextUtils;
+import android.view.MotionEvent;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -60,6 +61,8 @@ public class MainActivity extends Activity {
     private final Object printerSocketLock = new Object();
     private BluetoothSocket cachedPrinterSocket;
     private WebView webView;
+    private float pullRefreshStartY = -1f;
+    private boolean pullRefreshReady;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -82,11 +85,38 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
         webView.addJavascriptInterface(new PortalBridge(), "Android");
+        installPullToRefresh();
 
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         setContentView(webView);
         webView.loadUrl(portalUrl());
         requestBluetoothPermissionOnLaunch();
+    }
+
+    private void installPullToRefresh() {
+        webView.setOnTouchListener((view, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    pullRefreshStartY = event.getY();
+                    pullRefreshReady = webView.getScrollY() <= 0;
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    if (pullRefreshReady && webView.getScrollY() <= 0 && event.getY() - pullRefreshStartY > 150f) {
+                        pullRefreshReady = false;
+                        webView.reload();
+                        Toast.makeText(this, "Actualizando...", Toast.LENGTH_SHORT).show();
+                    }
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    pullRefreshStartY = -1f;
+                    pullRefreshReady = false;
+                    break;
+                default:
+                    break;
+            }
+            return false;
+        });
     }
 
     private class PortalWebViewClient extends WebViewClient {
