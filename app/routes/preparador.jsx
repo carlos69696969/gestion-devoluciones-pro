@@ -667,6 +667,20 @@ function formatPreparerAddress(order) {
     .join(", ");
 }
 
+function printPreparerLabel({ orderNumber, routeNumber, customerName, address }) {
+  try {
+    if (!window.Android || typeof window.Android.printPrepLabel !== "function") return;
+    window.Android.printPrepLabel(
+      String(orderNumber || ""),
+      String(routeNumber || ""),
+      String(customerName || ""),
+      String(address || ""),
+    );
+  } catch (_error) {
+    // Printing is a native Android enhancement; the preparer flow must continue if unavailable.
+  }
+}
+
 function preparerOrderMark(status) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "ready") return "✓";
@@ -754,6 +768,9 @@ export default function PreparerPortal() {
     const dispatchStatus = preparerAssignmentDisplayStatus(dispatchAssignment);
     const isDispatchCompleted = !isDispatchReprogrammed && isPreparerAssignmentDone(dispatchStatus);
     const dispatchAddress = formatPreparerAddress(dispatchOrder);
+    const dispatchSequence = dispatchAssignment
+      ? displaySequenceByAssignmentId.get(String(dispatchAssignment.id)) || ""
+      : "";
     const dispatchUnitKeys = dispatchItems.flatMap((item) => itemUnitKeys(item));
     const readyUnitKeySet = new Set(readyUnitKeys);
     const uncheckedUnitKeys = dispatchUnitKeys.filter((unitKey) => !readyUnitKeySet.has(unitKey));
@@ -856,7 +873,7 @@ export default function PreparerPortal() {
                         <div>
                           <div className={styles.preparerDispatchTitleRow}>
                             <span className={styles.orderSequenceBadge}>
-                              {displaySequenceByAssignmentId.get(String(dispatchAssignment.id)) || ""}
+                              {dispatchSequence}
                             </span>
                             <h2 className={styles.preparerDispatchOrderNumber}>
                               #{dispatchOrder.orderNumber || dispatchAssignment.orderNumber || "-"}
@@ -887,7 +904,14 @@ export default function PreparerPortal() {
                           if (isDispatchReprogrammed) {
                             if (!window.confirm("Confirmas que esta orden esta lista?")) {
                               event.preventDefault();
+                              return;
                             }
+                            printPreparerLabel({
+                              orderNumber: dispatchOrder.orderNumber || dispatchAssignment.orderNumber || "-",
+                              routeNumber: dispatchSequence,
+                              customerName: dispatchOrder.customerName || "Cliente",
+                              address: dispatchAddress,
+                            });
                             return;
                           }
                           if (uncheckedUnitKeys.length) {
@@ -901,7 +925,14 @@ export default function PreparerPortal() {
                           }
                           if (!window.confirm("Confirmas que esta orden esta lista?")) {
                             event.preventDefault();
+                            return;
                           }
+                          printPreparerLabel({
+                            orderNumber: dispatchOrder.orderNumber || dispatchAssignment.orderNumber || "-",
+                            routeNumber: dispatchSequence,
+                            customerName: dispatchOrder.customerName || "Cliente",
+                            address: dispatchAddress,
+                          });
                         }}
                       >
                         <input type="hidden" name="intent" value="preparer_mark_ready" />
