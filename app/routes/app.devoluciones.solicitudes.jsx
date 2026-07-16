@@ -6050,7 +6050,18 @@ export default function ReturnsRequests() {
     });
   }, [actionData]);
 
-  const visibleReviewCardMessageRequestId = visibleReviewCardMessage?.requestId || "";
+  const immediateReviewCardMessage = actionData?.reviewActionRequestId
+    ? {
+        requestId: String(actionData.reviewActionRequestId),
+        type: actionData.ok ? "success" : "error",
+        message: String(actionData.ok ? actionData.message || "" : actionData.error || "").trim(),
+      }
+    : null;
+  const activeReviewCardMessage = immediateReviewCardMessage?.message
+    ? immediateReviewCardMessage
+    : visibleReviewCardMessage;
+  const activePendingReviewActionRequest = actionData?.reviewActionRequest || pendingReviewActionRequest;
+  const visibleReviewCardMessageRequestId = activeReviewCardMessage?.requestId || "";
   const reviewRequestsFromLoader = requests.filter(
     (requestRow) =>
       String(requestRow.status || "").toLowerCase() === "en_revision" ||
@@ -6060,12 +6071,12 @@ export default function ReturnsRequests() {
     Boolean(visibleReviewCardMessageRequestId) &&
     reviewRequestsFromLoader.some((requestRow) => String(requestRow.id) === visibleReviewCardMessageRequestId);
   const shouldShowPendingReviewCard =
-    pendingReviewActionRequest &&
+    activePendingReviewActionRequest &&
     visibleReviewCardMessageRequestId &&
-    String(pendingReviewActionRequest.id) === visibleReviewCardMessageRequestId &&
+    String(activePendingReviewActionRequest.id) === visibleReviewCardMessageRequestId &&
     !hasReviewMessageCard;
   const reviewRequests = shouldShowPendingReviewCard
-    ? [pendingReviewActionRequest, ...reviewRequestsFromLoader]
+    ? [activePendingReviewActionRequest, ...reviewRequestsFromLoader]
     : reviewRequestsFromLoader;
   const activeRequests = requests.filter((requestRow) => {
     const status = String(requestRow.status || "").toLowerCase();
@@ -6272,15 +6283,15 @@ export default function ReturnsRequests() {
                   isSubmitting={isSubmitting}
                   onReviewActionSubmit={setPendingReviewActionRequest}
                   cardSuccessMessage={
-                    visibleReviewCardMessage?.type === "success" &&
-                    visibleReviewCardMessage.requestId === String(request.id)
-                      ? visibleReviewCardMessage.message
+                    activeReviewCardMessage?.type === "success" &&
+                    activeReviewCardMessage.requestId === String(request.id)
+                      ? activeReviewCardMessage.message
                       : ""
                   }
                   cardErrorMessage={
-                    visibleReviewCardMessage?.type === "error" &&
-                    visibleReviewCardMessage.requestId === String(request.id)
-                      ? visibleReviewCardMessage.message
+                    activeReviewCardMessage?.type === "error" &&
+                    activeReviewCardMessage.requestId === String(request.id)
+                      ? activeReviewCardMessage.message
                       : ""
                   }
                 />
