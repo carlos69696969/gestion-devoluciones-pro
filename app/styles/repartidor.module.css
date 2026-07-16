@@ -157,7 +157,7 @@
 
 .preparerOrderCheckItem {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 34px;
+  grid-template-columns: 32px minmax(0, 1fr) 44px 34px;
   gap: 10px;
   align-items: center;
   min-height: 52px;
@@ -203,6 +203,63 @@
   border-color: #d82c0d;
   background: #fff4f4;
   color: #b42318;
+}
+
+.reprintIconButton {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 2px solid #0b6bcb;
+  border-radius: 9px;
+  background: #eff6ff;
+  color: #0b6bcb;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.reprintIconButton:focus-visible {
+  outline: 3px solid rgba(0, 91, 211, 0.28);
+  outline-offset: 2px;
+}
+
+.printerGlyph {
+  position: relative;
+  display: block;
+  width: 24px;
+  height: 20px;
+  border: 3px solid currentColor;
+  border-radius: 4px;
+}
+
+.printerGlyph::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: -10px;
+  width: 14px;
+  height: 8px;
+  border: 3px solid currentColor;
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background: #eff6ff;
+}
+
+.printerGlyph::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  bottom: -9px;
+  width: 14px;
+  height: 9px;
+  border: 3px solid currentColor;
+  border-top: 0;
+  border-radius: 0 0 3px 3px;
+  background: #eff6ff;
 }
 
 .preparerDispatchCard {
@@ -324,23 +381,6 @@
   color: #047857;
   font-size: 16px;
   font-weight: 900;
-}
-
-.reprintLabelPanel {
-  display: grid;
-  gap: 14px;
-}
-
-.reprintLabelHint {
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid #bfdbfe;
-  border-radius: 12px;
-  background: #eff6ff;
-  color: #1e40af;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.35;
 }
 
 .preparerProductCheck {
