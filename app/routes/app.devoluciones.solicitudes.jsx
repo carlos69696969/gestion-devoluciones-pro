@@ -1139,6 +1139,27 @@ function latestReasonFromRaw(rawValue) {
   return "";
 }
 
+function reviewActionRequestSnapshot(requestRow) {
+  if (!requestRow) return null;
+  const reasonEntries = parseReasonEntries(requestRow.rejectionReason);
+  const visibleReasonEntries = reasonEntries.filter((entry) => !isSystemProgressEntry(entry));
+  return {
+    ...requestRow,
+    status: "en_revision",
+    rejectionReason: latestReasonFromRaw(requestRow.rejectionReason),
+    timelineEntries: reasonEntries,
+    reasonEntries: visibleReasonEntries,
+    wasReturnedToCustomer: reasonEntries.some((entry) => isReturnedToCustomerEntry(entry)),
+    returnedToCustomerAt: latestReturnedToCustomerAtFromRaw(requestRow.rejectionReason),
+    items: (requestRow.items || []).map((item) => ({
+      ...item,
+      imageUrl: item.imageUrl || "",
+      imageAlt: item.imageAlt || "",
+      variantSummary: item.variantSummary || "",
+    })),
+  };
+}
+
 function reasonEntryLabel(entry) {
   const kind = String(entry?.kind || "").toLowerCase();
   if (kind === "attempt_failed_1") return "Primer intento";
@@ -4565,6 +4586,7 @@ export const action = async ({ request }) => {
       ok: true,
       message: "Solicitud aprobada correctamente.",
       reviewActionRequestId: String(id),
+      reviewActionRequest: reviewActionRequestSnapshot(requestRow),
     };
   }
 
@@ -4596,8 +4618,9 @@ export const action = async ({ request }) => {
     });
     return {
       ok: true,
-      message: "Devolucion rechazada correctamente.",
+      message: "Esta orden se rechazo correctamente.",
       reviewActionRequestId: String(id),
+      reviewActionRequest: reviewActionRequestSnapshot(requestRow),
     };
   }
 
@@ -5982,6 +6005,9 @@ export default function ReturnsRequests() {
     if (actionData?.ok && actionData?.reviewActionRequestId) {
       if (reviewCardMessageTimeoutRef.current) {
         window.clearTimeout(reviewCardMessageTimeoutRef.current);
+      }
+      if (actionData.reviewActionRequest) {
+        setPendingReviewActionRequest(actionData.reviewActionRequest);
       }
       setVisibleReviewCardMessage({
         requestId: String(actionData.reviewActionRequestId),
