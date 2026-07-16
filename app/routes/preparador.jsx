@@ -298,31 +298,6 @@ export async function loader({ request }) {
         orderBy: [{ sequence: "asc" }, { id: "asc" }],
       })
     : [];
-  const globalAssignments = access
-    ? await prisma.preparerAssignment.findMany({
-        where: { shop: access.shop },
-        orderBy: [{ id: "asc" }],
-      })
-    : [];
-  const sortedGlobalAssignments = [...globalAssignments].sort(
-    (firstAssignment, secondAssignment) =>
-      preparerOrderNumberValue(firstAssignment) - preparerOrderNumberValue(secondAssignment) ||
-      Number(firstAssignment.id || 0) - Number(secondAssignment.id || 0),
-  );
-  const globalSequenceByRequestId = new Map();
-  const globalSequenceByOrderNumber = new Map();
-  sortedGlobalAssignments.forEach((assignment, index) => {
-    const storedOrderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
-    const requestId = String(assignment.requestId || "").trim();
-    const orderNumber = String(storedOrderData.orderNumber || assignment.orderNumber || "").replace(/\D/g, "");
-    const sequence = index + 1;
-    if (requestId && !globalSequenceByRequestId.has(requestId)) {
-      globalSequenceByRequestId.set(requestId, sequence);
-    }
-    if (orderNumber && !globalSequenceByOrderNumber.has(orderNumber)) {
-      globalSequenceByOrderNumber.set(orderNumber, sequence);
-    }
-  });
   const assignmentRequestIds = assignments
     .map((assignment) => String(assignment.requestId || "").trim())
     .filter(Boolean);
@@ -410,25 +385,24 @@ export async function loader({ request }) {
       null;
     const liveSequenceNumber = Number(liveCourierOrder?.sequenceNumber || 0) || 0;
     const assignmentSequenceNumber = Number(assignment.sequence || 0) || 0;
-    const globalSequenceNumber =
+    const routeSequenceNumber =
       liveSequenceNumber ||
-      globalSequenceByRequestId.get(requestId) ||
-      globalSequenceByOrderNumber.get(orderNumber) ||
       assignmentSequenceNumber ||
+      Number(storedOrderData.sequenceNumber || 0) ||
       0;
     const activity = latestFinalActivityByRequestId.get(requestId);
     const activityStatus = activity ? preparerCourierStatusFromActivityAction(activity.action, "") : "";
     const liveStatus = String(liveCourierOrder?.status || "").trim().toLowerCase();
     const nextStatus = liveStatus || activityStatus;
-    if (!nextStatus && !liveCourierOrder && !globalSequenceNumber) return assignment;
+    if (!nextStatus && !liveCourierOrder && !routeSequenceNumber) return assignment;
     return {
       ...assignment,
-      globalSequenceNumber: globalSequenceNumber || preparerDisplaySequence(assignment),
+      globalSequenceNumber: routeSequenceNumber || preparerDisplaySequence(assignment),
       orderData: {
         ...storedOrderData,
         ...(liveCourierOrder || {}),
         sequenceNumber:
-          globalSequenceNumber ||
+          routeSequenceNumber ||
           liveSequenceNumber ||
           assignmentSequenceNumber ||
           liveCourierOrder?.sequenceNumber ||
