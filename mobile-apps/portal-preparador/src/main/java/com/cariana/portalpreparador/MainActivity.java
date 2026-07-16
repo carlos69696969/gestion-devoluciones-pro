@@ -10,13 +10,20 @@ import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.RectF;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.text.TextUtils;
-import android.util.Base64;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -27,22 +34,29 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.MultiFormatWriter;
+import com.google.zxing.common.BitMatrix;
 
 public class MainActivity extends Activity {
     private static final String SHOP_DOMAIN = "qc1u2w-ft.myshopify.com";
     private static final String PORTAL_HOST = "gestion-devoluciones-pro.onrender.com";
     private static final String BASE_URL = "https://" + PORTAL_HOST + "/preparador?shop=" + SHOP_DOMAIN;
     private static final String LABEL_PRINTER_MAC = "10:23:81:BE:81:FC";
-    private static final int LOGO_WIDTH_BYTES = 20;
-    private static final int LOGO_HEIGHT = 92;
-    private static final String HUMMINGBIRD_LOGO_BASE64 =
-        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAB4AAAAAAAAAAAAAAAAAAAAAAAAAD4AAAAAAAAAAAAAAAAAAAAAAAAAH4AAAAAAAAAAAAAAAAAAAAAAAAAPwAAAAAAAAAAAAAAAAAAAAAAAAAfgAAAAAAAAAAAAAAAAAAAAAAAACfgAAAAAAAAAAAAAAAAAAAAAAAAO/AAAAAAAAAAAAAAAAAAAAAAAAAe+AAAAAAAAAAAAAAAAAAAAAAAAB98AAAAAAAAAAAAAAAAAAAAAAAAD/8AAAAAAAAAAAAAAAAAAAAAAAAD/4AAAAAAAAAAAAAAAAAAAAAAAAb/wAAAAAAAAAAAAAAAAAAADgAAB7/gAAAAAAAAAAAAAAAAAAAP+AAD//AAAAAAAAAAAAAAAAAAAA//gAH/+AAAAAAAAAAAAAAAAAAAA//4AH/8AAAAAAAAAAAAAAAAAAAAf/8B//wAAAAAAAAAAAAAAAAAAADj/+D//gAAcAAAAAAAAAAAAAAAAP8f/H//AAP+AAAAAAAAAAAAAAAAf///n/+AD/+AAAAAAAAAAAAAAAAf///x/8Af//P8AAAAAAAAAAAAAAD///x/4D/H///4AAAAAAAAAAAAA////5/gf8//gAAAAAAAAAAAAAAB////5/D///AAAAAAAAAAAAAAAAB////4+f//wAAAAAAAAAAAAAAAAAD///5z//+AAAAAAAAAAAAAAAAAD////4///wAAAAAAAAAAAAAAAAAH///////+AAAAAAAAAAAAAAAAAAP+f/////wAAAAAAAAAAAAAAAAAAD//////+AAAAAAAAAAAAAAAAAAAP//////4AAAAAAAAAAAAAAAAAAAef/////gAAAAAAAAAAAAAAAAAAAH/////8AAAAAAAAAAAAAAAAAAAAff////wAAAAAAAAAAAAAAAAAAAAH7////AAAAAAAAAAAAAAAAAAAAAee///8AAAAAAAAAAAAAAAAAAAAAH7///gAAAAAAAAAAAAAAAAAAAAAef//+AAAAAAAAAAAAAAAAAAAAAAD///wAAAAAAAAAAAAAAAAAAAAAAf///AAAAAAAAAAAAAAAAAAAAAAD///4AAAAAAAAAAAAAAAAAAAAAAf///gAAAAAAAAAAAAAAAAAAAAAD///8AAAAAAAAAAAAAAAAAAAAAAf///gAAAAAAAAAAAAAAAAAAAAAD///8AAAAAAAAAAAAAAAAAAAAAAf///gAAAAAAAAAAAAAAAAAAAAAB///4AAAAAAAAAAAAAAAAAAAAAAP//+AAAAAAAAAAAAAAAAAAAAAAB///gAAAAAAAAAAAAAAAAAAAAAAP//wAAAAAAAAAAAAAAAAAAAAAAA//wAAAAAAAAAAAAAAAAAAAAAAAH/wAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAD/AAAAAAAAAAAAAAAAAAAAAAAAAfxgAAAAAAAAAAAAAAAAAAAAAAAD+eAAAAAAAAAAAAAAAAAAAAAAAAPn4AAAAAAAAAAAAAAAAAAAAAAAB8/gAAAAAAAAAAAAAAAAAAAAAAAHv+AAAAAAAAAAAAAAAAAAAAAAAA9+4AAAAAAAAAAAAAAAAAAAAAAADv7wAAAAAAAAAAAAAAAAAAAAAAAd/vAAAAAAAAAAAAAAAAAAAAAAABv+8AAAAAAAAAAAAAAAAAAAAAAAN+7wAAAAAAAAAAAAAAAAAAAAAAAv7vAAAAAAAAAAAAAAAAAAAAAAAA7u8AAAAAAAAAAAAAAAAAAAAAAAH+5gAAAAAAAAAAAAAAAAAAAAAAA//gAAAAAAAAAAAAAAAAAAAAAAAD3eAAAAAAAAAAAAAAAAAAAAAAAAPd4AAAAAAAAAAAAAAAAAAAAAAAB/3AAAAAAAAAAAAAAAAAAAAAAAAHvIAAAAAAAAAAAAAAAAAAAAAAAAe8AAAAAAAAAAAAAAAAAAAAAAAAD7gAAAAAAAAAAAAAAAAAAAAAAAAPMAAAAAAAAAAAAAAAAAAAAAAAAA8AAAAAAAAAAAAAAAAAAAAAAAAADwAAAAAAAAAAAAAAAAAAAAAAAAAOAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
+    private static final int LABEL_DOTS = 816;
+    private static final int SAFE_MIN = 24;
+    private static final int SAFE_MAX = 792;
     private WebView webView;
 
     @Override
@@ -324,11 +338,13 @@ public class MainActivity extends Activity {
         String cleanOrderNumber = tsplText(orderNumber).replaceAll("[^0-9A-Za-z-]", "");
         String displayOrderNumber = cleanOrderNumber.length() > 0 ? cleanOrderNumber : tsplText(orderNumber);
         String displayRouteNumber = truncateForLabel(tsplText(routeNumber), 3);
-        String displayCustomerName = tsplText(customerName).toUpperCase();
-        String qrValue = "PEDIDO:" + displayOrderNumber;
-        String[] customerLines = wrapForTspl(displayCustomerName, displayCustomerName.length() > 23 ? 24 : 28, 2);
-        String[] addressLines = wrapForTspl(address, 36, 3);
-
+        Bitmap labelBitmap = renderPrepLabelBitmap(
+            displayOrderNumber,
+            displayRouteNumber,
+            tsplText(customerName).toUpperCase(),
+            tsplText(address).toUpperCase()
+        );
+        saveLabelPreview(labelBitmap, displayOrderNumber);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         appendCommand(output,
             "SIZE 102 mm,102 mm\r\n" +
@@ -339,45 +355,12 @@ public class MainActivity extends Activity {
             "SPEED 4\r\n" +
             "DENSITY 10\r\n" +
             "CLS\r\n" +
-            "BOX 24,24,792,792,4\r\n"
+            "BITMAP 0,0,102,816,0,"
         );
-        appendLogoBitmap(output, 328, 28);
-
-        StringBuilder command = new StringBuilder();
-        command.append("TEXT 288,104,\"4\",0,2,2,\"CARIANA\"\r\n");
-        command.append("TEXT 286,172,\"2\",0,1,1,\"GRACIAS POR ELEGIRNOS\"\r\n");
-        command.append("BAR 174,192,94,3\r\n");
-        command.append("BAR 548,192,94,3\r\n");
-        appendFilledCircle(command, 116, 308, 78);
-        command.append("TEXT ").append(routeTextX(displayRouteNumber)).append(",260,\"5\",0,2,2,\"")
-            .append(displayRouteNumber).append("\"\r\n");
-        command.append("REVERSE 62,246,108,104\r\n");
-        command.append("BAR 232,232,3,132\r\n");
-        command.append("TEXT 392,230,\"3\",0,2,2,\"PEDIDO\"\r\n");
-        command.append("TEXT 286,286,\"5\",0,2,2,\"#").append(displayOrderNumber).append("\"\r\n");
-        command.append("BAR 54,394,708,2\r\n");
-        command.append("TEXT 74,418,\"3\",0,1,1,\"CLIENTE\"\r\n");
-        if (customerLines[1].trim().isEmpty()) {
-            command.append("TEXT 166,410,\"3\",0,2,2,\"").append(tsplText(customerLines[0])).append("\"\r\n");
-            command.append("TEXT 166,472,\"2\",0,1,1,\"GRACIAS POR TU COMPRA\"\r\n");
-        } else {
-            command.append("TEXT 166,410,\"3\",0,1,2,\"").append(tsplText(customerLines[0])).append("\"\r\n");
-            command.append("TEXT 166,444,\"3\",0,1,2,\"").append(tsplText(customerLines[1])).append("\"\r\n");
-            command.append("TEXT 166,486,\"2\",0,1,1,\"GRACIAS POR TU COMPRA\"\r\n");
-        }
-        command.append("BAR 54,536,708,2\r\n");
-        command.append("TEXT 74,560,\"3\",0,1,2,\"DOMICILIO:\"\r\n");
-        int y = 594;
-        for (String line : addressLines) {
-            if (line.trim().isEmpty()) continue;
-            command.append("TEXT 74,").append(y).append(",\"3\",0,1,1,\"").append(tsplText(line).toUpperCase()).append("\"\r\n");
-            y += 30;
-        }
-        command.append("BAR 54,684,708,2\r\n");
-        command.append("BARCODE 74,704,\"128\",72,1,0,3,4,\"").append(displayOrderNumber).append("\"\r\n");
-        command.append("QRCODE 638,696,L,5,A,0,\"").append(tsplText(qrValue)).append("\"\r\n");
-        command.append("PRINT 1,1\r\n");
-        appendCommand(output, command.toString());
+        try {
+            output.write(bitmapToTsplBytes(labelBitmap, 175));
+        } catch (IOException ignored) {}
+        appendCommand(output, "\r\nPRINT 1,1\r\n");
         return output.toByteArray();
     }
 
@@ -387,35 +370,273 @@ public class MainActivity extends Activity {
         } catch (IOException ignored) {}
     }
 
-    private void appendLogoBitmap(ByteArrayOutputStream output, int x, int y) {
-        byte[] logoBytes = Base64.decode(HUMMINGBIRD_LOGO_BASE64, Base64.DEFAULT);
-        appendCommand(output, "BITMAP " + x + "," + y + "," + LOGO_WIDTH_BYTES + "," + LOGO_HEIGHT + ",0,");
-        try {
-            output.write(logoBytes);
-        } catch (IOException ignored) {}
-        appendCommand(output, "\r\n");
+    private Bitmap renderPrepLabelBitmap(String orderNumber, String routeNumber, String customerName, String address) {
+        Bitmap bitmap = Bitmap.createBitmap(LABEL_DOTS, LABEL_DOTS, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        canvas.drawColor(Color.WHITE);
+
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.BLACK);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(4);
+        canvas.drawRoundRect(new RectF(SAFE_MIN, SAFE_MIN, SAFE_MAX, SAFE_MAX), 28, 28, paint);
+
+        drawLogo(canvas, 338, 24, 140, 82);
+        drawCenteredText(canvas, "CARIANA", 408, 156, 54, true);
+        drawCenteredText(canvas, "GRACIAS POR ELEGIRNOS", 408, 190, 23, false);
+        drawLine(canvas, 174, 186, 260, 186, 3);
+        drawLine(canvas, 556, 186, 642, 186, 3);
+
+        paint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(124, 304, 76, paint);
+        drawCenteredText(canvas, routeNumber, 124, 334, routeTextSize(routeNumber), true, Color.WHITE);
+        drawLine(canvas, 232, 228, 232, 373, 3);
+
+        drawCenteredText(canvas, "PEDIDO", 512, 264, 32, true);
+        drawCenteredText(canvas, "#" + orderNumber, 512, 350, orderTextSize(orderNumber), true);
+        drawLine(canvas, 54, 402, 762, 402, 2);
+
+        drawPersonIcon(canvas, 68, 428);
+        List<String> customerLines = wrapTextByWidth(customerName, 620, 2, textPaint(42, true));
+        int customerY = customerLines.size() > 1 ? 445 : 455;
+        Paint customerPaint = textPaint(customerLines.size() > 1 ? 34 : customerTextSize(customerName), true);
+        for (String line : customerLines) {
+            drawText(canvas, line, 128, customerY, customerPaint);
+            customerY += 38;
+        }
+        drawCenteredText(canvas, "GRACIAS POR TU COMPRA", 408, 502, 23, false);
+        drawLine(canvas, 54, 528, 762, 528, 2);
+
+        drawLocationIcon(canvas, 66, 556);
+        drawText(canvas, "DOMICILIO:", 128, 577, textPaint(30, true));
+        List<String> addressLines = wrapTextByWidth(address, 620, 3, textPaint(27, true));
+        int[] addressY = {610, 644, 678};
+        Paint addressPaint = textPaint(addressTextSize(addressLines), true);
+        for (int i = 0; i < addressLines.size() && i < 3; i++) {
+            drawText(canvas, addressLines.get(i), 128, addressY[i], addressPaint);
+        }
+        drawLine(canvas, 54, 688, 762, 688, 2);
+
+        drawMatrix(canvas, createBarcodeMatrix(orderNumber, 510, 70), 62, 712, 510, 70);
+        drawMatrix(canvas, createQrMatrix("PEDIDO:" + orderNumber, 88, 88), 646, 704, 88, 88);
+        return thresholdBitmap(bitmap, 178);
     }
 
-    private void appendFilledCircle(StringBuilder command, int centerX, int centerY, int radius) {
-        for (int dy = -radius; dy <= radius; dy += 4) {
-            int halfWidth = (int) Math.round(Math.sqrt((radius * radius) - (dy * dy)));
-            int x = centerX - halfWidth;
-            int y = centerY + dy;
-            command.append("BAR ")
-                .append(x)
-                .append(",")
-                .append(y)
-                .append(",")
-                .append(halfWidth * 2)
-                .append(",4\r\n");
+    private Paint textPaint(float size, boolean bold) {
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.BLACK);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, bold ? Typeface.BOLD : Typeface.NORMAL));
+        paint.setTextSize(size);
+        return paint;
+    }
+
+    private void drawText(Canvas canvas, String text, float x, float baseline, Paint paint) {
+        canvas.drawText(String.valueOf(text == null ? "" : text), x, baseline, paint);
+    }
+
+    private void drawCenteredText(Canvas canvas, String text, float centerX, float baseline, float size, boolean bold) {
+        drawCenteredText(canvas, text, centerX, baseline, size, bold, Color.BLACK);
+    }
+
+    private void drawCenteredText(Canvas canvas, String text, float centerX, float baseline, float size, boolean bold, int color) {
+        Paint paint = textPaint(size, bold);
+        paint.setColor(color);
+        String value = String.valueOf(text == null ? "" : text);
+        canvas.drawText(value, centerX - (paint.measureText(value) / 2f), baseline, paint);
+    }
+
+    private void drawLine(Canvas canvas, float startX, float startY, float stopX, float stopY, float width) {
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.BLACK);
+        paint.setStrokeWidth(width);
+        paint.setStyle(Paint.Style.STROKE);
+        canvas.drawLine(startX, startY, stopX, stopY, paint);
+    }
+
+    private void drawLogo(Canvas canvas, int x, int y, int width, int height) {
+        Bitmap logo = BitmapFactory.decodeResource(getResources(), getResources().getIdentifier("cariana_hummingbird", "drawable", getPackageName()));
+        if (logo == null) return;
+        Paint white = new Paint();
+        white.setColor(Color.WHITE);
+        white.setStyle(Paint.Style.FILL);
+        canvas.drawRect(x, y, x + width, y + height, white);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        Rect src = new Rect(0, 0, logo.getWidth(), logo.getHeight());
+        RectF dst = fitCenter(src.width(), src.height(), x, y, width, height);
+        canvas.drawBitmap(logo, src, dst, paint);
+    }
+
+    private RectF fitCenter(int sourceWidth, int sourceHeight, int x, int y, int width, int height) {
+        float scale = Math.min(width / (float) sourceWidth, height / (float) sourceHeight);
+        float drawWidth = sourceWidth * scale;
+        float drawHeight = sourceHeight * scale;
+        float left = x + ((width - drawWidth) / 2f);
+        float top = y + ((height - drawHeight) / 2f);
+        return new RectF(left, top, left + drawWidth, top + drawHeight);
+    }
+
+    private void drawPersonIcon(Canvas canvas, int x, int y) {
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.BLACK);
+        paint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(x + 24, y + 14, 14, paint);
+        canvas.drawRoundRect(new RectF(x + 3, y + 34, x + 45, y + 68), 8, 8, paint);
+    }
+
+    private void drawLocationIcon(Canvas canvas, int x, int y) {
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.BLACK);
+        paint.setStyle(Paint.Style.FILL);
+        android.graphics.Path path = new android.graphics.Path();
+        path.moveTo(x + 26, y + 70);
+        path.cubicTo(x - 8, y + 26, x + 2, y, x + 26, y);
+        path.cubicTo(x + 52, y, x + 62, y + 26, x + 26, y + 70);
+        canvas.drawPath(path, paint);
+        paint.setColor(Color.WHITE);
+        canvas.drawCircle(x + 26, y + 24, 11, paint);
+    }
+
+    private List<String> wrapTextByWidth(String text, float maxWidth, int maxLines, Paint paint) {
+        String normalized = normalizeLabelText(text, "-").replaceAll("\\s+", " ").trim();
+        String[] words = normalized.split(" ");
+        List<String> lines = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (String word : words) {
+            String candidate = current.length() == 0 ? word : current + " " + word;
+            if (paint.measureText(candidate) <= maxWidth || current.length() == 0) {
+                current = new StringBuilder(candidate);
+                continue;
+            }
+            lines.add(current.toString());
+            current = new StringBuilder(word);
+            if (lines.size() >= maxLines - 1) break;
+        }
+        if (current.length() > 0 && lines.size() < maxLines) {
+            String remaining = current.toString();
+            while (paint.measureText(remaining) > maxWidth && remaining.length() > 1) {
+                remaining = remaining.substring(0, remaining.length() - 1).trim();
+            }
+            lines.add(remaining);
+        }
+        if (lines.isEmpty()) lines.add("-");
+        return lines;
+    }
+
+    private int customerTextSize(String customerName) {
+        int length = String.valueOf(customerName == null ? "" : customerName).length();
+        if (length > 24) return 34;
+        if (length > 18) return 38;
+        return 44;
+    }
+
+    private int addressTextSize(List<String> lines) {
+        for (String line : lines) {
+            if (line.length() > 34) return 23;
+            if (line.length() > 28) return 25;
+        }
+        return 27;
+    }
+
+    private int routeTextSize(String routeNumber) {
+        int length = String.valueOf(routeNumber == null ? "" : routeNumber).length();
+        if (length <= 1) return 92;
+        if (length == 2) return 70;
+        return 56;
+    }
+
+    private int orderTextSize(String orderNumber) {
+        int length = String.valueOf(orderNumber == null ? "" : orderNumber).length();
+        if (length > 5) return 58;
+        return 72;
+    }
+
+    private BitMatrix createBarcodeMatrix(String value, int width, int height) {
+        try {
+            return new MultiFormatWriter().encode(value, BarcodeFormat.CODE_128, width, height);
+        } catch (Exception error) {
+            return null;
         }
     }
 
-    private int routeTextX(String routeNumber) {
-        int length = String.valueOf(routeNumber == null ? "" : routeNumber).length();
-        if (length <= 1) return 90;
-        if (length == 2) return 66;
-        return 48;
+    private BitMatrix createQrMatrix(String value, int width, int height) {
+        try {
+            java.util.Map<EncodeHintType, Object> hints = new java.util.EnumMap<>(EncodeHintType.class);
+            hints.put(EncodeHintType.MARGIN, 0);
+            return new MultiFormatWriter().encode(value, BarcodeFormat.QR_CODE, width, height, hints);
+        } catch (Exception error) {
+            return null;
+        }
+    }
+
+    private void drawMatrix(Canvas canvas, BitMatrix matrix, int x, int y, int width, int height) {
+        if (matrix == null) return;
+        Paint paint = new Paint();
+        paint.setColor(Color.BLACK);
+        paint.setStyle(Paint.Style.FILL);
+        float cellWidth = width / (float) matrix.getWidth();
+        float cellHeight = height / (float) matrix.getHeight();
+        for (int matrixY = 0; matrixY < matrix.getHeight(); matrixY++) {
+            for (int matrixX = 0; matrixX < matrix.getWidth(); matrixX++) {
+                if (!matrix.get(matrixX, matrixY)) continue;
+                canvas.drawRect(
+                    x + matrixX * cellWidth,
+                    y + matrixY * cellHeight,
+                    x + (matrixX + 1) * cellWidth,
+                    y + (matrixY + 1) * cellHeight,
+                    paint
+                );
+            }
+        }
+    }
+
+    private Bitmap thresholdBitmap(Bitmap source, int threshold) {
+        Bitmap target = Bitmap.createBitmap(source.getWidth(), source.getHeight(), Bitmap.Config.ARGB_8888);
+        for (int y = 0; y < source.getHeight(); y++) {
+            for (int x = 0; x < source.getWidth(); x++) {
+                int color = source.getPixel(x, y);
+                int alpha = Color.alpha(color);
+                int red = Color.red(color);
+                int green = Color.green(color);
+                int blue = Color.blue(color);
+                int luminance = (int) ((0.299f * red) + (0.587f * green) + (0.114f * blue));
+                target.setPixel(x, y, alpha > 0 && luminance < threshold ? Color.BLACK : Color.WHITE);
+            }
+        }
+        return target;
+    }
+
+    private byte[] bitmapToTsplBytes(Bitmap bitmap, int threshold) {
+        int widthBytes = bitmap.getWidth() / 8;
+        byte[] bytes = new byte[widthBytes * bitmap.getHeight()];
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            for (int byteX = 0; byteX < widthBytes; byteX++) {
+                int value = 0;
+                for (int bit = 0; bit < 8; bit++) {
+                    int pixelX = byteX * 8 + bit;
+                    int color = bitmap.getPixel(pixelX, y);
+                    int luminance = (int) ((0.299f * Color.red(color)) + (0.587f * Color.green(color)) + (0.114f * Color.blue(color)));
+                    if (luminance < threshold) {
+                        value |= (0x80 >> bit);
+                    }
+                }
+                bytes[y * widthBytes + byteX] = (byte) value;
+            }
+        }
+        return bytes;
+    }
+
+    private void saveLabelPreview(Bitmap bitmap, String orderNumber) {
+        try {
+            File directory = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+            if (directory == null) return;
+            if (!directory.exists()) directory.mkdirs();
+            File file = new File(directory, "cariana-etiqueta-" + tsplText(orderNumber).replaceAll("[^0-9A-Za-z-]", "") + ".png");
+            FileOutputStream stream = new FileOutputStream(file);
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
+            stream.flush();
+            stream.close();
+        } catch (Exception ignored) {}
     }
 
     private String normalizeLabelText(String value, String fallback) {
