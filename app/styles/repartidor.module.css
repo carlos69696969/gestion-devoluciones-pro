@@ -1036,7 +1036,9 @@
   .preparerHeaderActions {
     grid-column: 1;
     grid-row: 1;
-    justify-items: start;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
     gap: 8px;
   }
 
