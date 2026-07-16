@@ -223,21 +223,33 @@ public class MainActivity extends Activity {
         BluetoothDevice fallback = null;
         for (BluetoothDevice device : bondedDevices) {
             if (device == null) continue;
-            if (fallback == null) fallback = device;
             String name = "";
             try {
                 name = String.valueOf(device.getName()).toLowerCase();
             } catch (SecurityException ignored) {}
             if (
+                name.contains("soundcore") ||
+                name.contains("headphone") ||
+                name.contains("earbud") ||
+                name.contains("audio") ||
+                name.contains("tv")
+            ) {
+                continue;
+            }
+            if (
                 name.contains("hstem") ||
+                name.contains("4b") ||
+                name.contains("2054") ||
                 name.contains("420") ||
                 name.contains("xp") ||
                 name.contains("xprinter") ||
                 name.contains("printer") ||
-                name.contains("label")
+                name.contains("label") ||
+                name.contains("pos")
             ) {
                 return device;
             }
+            if (fallback == null) fallback = device;
         }
         return fallback;
     }
