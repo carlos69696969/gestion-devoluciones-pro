@@ -8487,18 +8487,10 @@ function PreparersSection({
     ? routeOrdersPayload
     : courierOrders
   ).filter((order) => !isReturnCourierLabel(order?.courierLabel));
-  [...routeSequenceSourceOrders]
-    .sort((firstOrder, secondOrder) => {
-      const firstSequence = Number(firstOrder?.sequenceNumber || 0) || 0;
-      const secondSequence = Number(secondOrder?.sequenceNumber || 0) || 0;
-      const firstOrderNumber = Number(String(firstOrder?.orderNumber || "").replace(/\D/g, "") || 0) || 0;
-      const secondOrderNumber = Number(String(secondOrder?.orderNumber || "").replace(/\D/g, "") || 0) || 0;
-      return firstSequence - secondSequence || firstOrderNumber - secondOrderNumber;
-    })
-    .forEach((order, index) => {
+  routeSequenceSourceOrders.forEach((order, index) => {
       const requestId = String(order?.id || "").trim();
       const orderNumber = String(order?.orderNumber || "").replace(/\D/g, "");
-      const sequence = Number(order?.sequenceNumber || 0) || index + 1;
+      const sequence = index + 1;
       if (requestId && !globalSequenceByRequestId.has(requestId)) {
         globalSequenceByRequestId.set(requestId, sequence);
       }
