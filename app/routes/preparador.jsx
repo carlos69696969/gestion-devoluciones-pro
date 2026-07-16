@@ -272,7 +272,7 @@ async function hasActivePreparerAssignments({ shop, preparerId }) {
     where: {
       shop,
       preparerId,
-      status: { notIn: ["ready", "not_located"] },
+      status: { notIn: ["ready", "partial", "not_located"] },
     },
     select: { id: true },
   });
@@ -534,7 +534,14 @@ export async function action({ request }) {
       },
     });
     if (!assignment) return { ok: false, error: "Orden invalida." };
-    const nextStatus = submitAction === "not_located" || missingUnitKeys.length ? "not_located" : "ready";
+    const hasReadyUnits = readyUnitKeys.length > 0;
+    const hasMissingUnits = missingUnitKeys.length > 0;
+    const nextStatus =
+      hasReadyUnits && (submitAction === "not_located" || hasMissingUnits)
+        ? "partial"
+        : submitAction === "not_located" || hasMissingUnits
+          ? "not_located"
+          : "ready";
     const nextOrderData = normalizeOrderItemsWithPreparerStatus(assignment.orderData, readyUnitKeys, missingUnitKeys);
     if (isReprogrammedOrder || isReprogrammedPreparerOrder(assignment.orderData)) {
       nextOrderData.preparerReprogrammedHandledAt = new Date().toISOString();
@@ -622,13 +629,14 @@ function preparerStatusLabel(status) {
 
 function isPreparerAssignmentDone(status) {
   const normalized = String(status || "").trim().toLowerCase();
-  return normalized === "ready" || normalized === "not_located";
+  return normalized === "ready" || normalized === "partial" || normalized === "not_located";
 }
 
 function preparerAssignmentDisplayStatus(assignment) {
   const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
   const status = String(assignment?.status || "assigned").trim().toLowerCase();
   if (status === "ready") return "ready";
+  if (status === "partial") return "partial";
   if (status === "not_located") return preparerOrderCompletionStatus(order, status);
   return isReprogrammedPreparerOrder(order)
     ? "assigned"
@@ -959,6 +967,10 @@ export default function PreparerPortal() {
                               : "Confirmas que estos productos no fueron localizados?";
                             if (!window.confirm(message)) {
                               event.preventDefault();
+                              return;
+                            }
+                            if (!isDispatchReprogrammed && readyUnitKeys.length > 0) {
+                              printPreparerLabel(preparerLabelPayload(dispatchAssignment, dispatchSequence));
                             }
                             return;
                           }
