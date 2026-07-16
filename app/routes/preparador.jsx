@@ -632,6 +632,11 @@ function isPreparerAssignmentDone(status) {
   return normalized === "ready" || normalized === "partial" || normalized === "not_located";
 }
 
+function canReprintPreparerLabel(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  return normalized === "ready" || normalized === "partial";
+}
+
 function preparerAssignmentDisplayStatus(assignment) {
   const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
   const status = String(assignment?.status || "assigned").trim().toLowerCase();
@@ -780,7 +785,7 @@ export default function PreparerPortal() {
   };
 
   const handleReprintAssignment = (assignment, sequence, status) => {
-    if (!isPreparerAssignmentDone(status)) return;
+    if (!canReprintPreparerLabel(status)) return;
     const order = assignment?.orderData || {};
     if (!window.confirm(`Quieres reimprimir la etiqueta de la orden #${order.orderNumber || assignment?.orderNumber || "-"}?`)) {
       return;
@@ -899,7 +904,7 @@ export default function PreparerPortal() {
                     const order = assignment.orderData || {};
                     const status = preparerAssignmentDisplayStatus(assignment);
                     const sequence = displaySequenceByAssignmentId.get(String(assignment.id)) || "";
-                    const canReprintLabel = isPreparerAssignmentDone(status);
+                    const canReprintLabel = canReprintPreparerLabel(status);
                     return (
                       <button
                         key={assignment.id}
