@@ -609,18 +609,20 @@ public class MainActivity extends Activity {
     private byte[] bitmapToTsplBytes(Bitmap bitmap, int threshold) {
         int widthBytes = bitmap.getWidth() / 8;
         byte[] bytes = new byte[widthBytes * bitmap.getHeight()];
+        java.util.Arrays.fill(bytes, (byte) 0xFF);
         for (int y = 0; y < bitmap.getHeight(); y++) {
             for (int byteX = 0; byteX < widthBytes; byteX++) {
-                int value = 0;
                 for (int bit = 0; bit < 8; bit++) {
                     int pixelX = byteX * 8 + bit;
                     int color = bitmap.getPixel(pixelX, y);
+                    int alpha = Color.alpha(color);
                     int luminance = (int) ((0.299f * Color.red(color)) + (0.587f * Color.green(color)) + (0.114f * Color.blue(color)));
-                    if (luminance < threshold) {
-                        value |= (0x80 >> bit);
+                    if (alpha > 0 && luminance < threshold) {
+                        int byteIndex = y * widthBytes + byteX;
+                        int bitMask = 0x80 >> bit;
+                        bytes[byteIndex] = (byte) (bytes[byteIndex] & ~bitMask);
                     }
                 }
-                bytes[y * widthBytes + byteX] = (byte) value;
             }
         }
         return bytes;
