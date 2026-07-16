@@ -1,6 +1,6 @@
 ﻿/* eslint-disable react/prop-types */
 import { useEffect, useRef, useState } from "react";
-import { Form, Link, useActionData, useFetcher, useLoaderData, useLocation, useNavigation } from "react-router";
+import { Form, Link, redirect, useActionData, useFetcher, useLoaderData, useLocation, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -1158,6 +1158,14 @@ function reviewActionRequestSnapshot(requestRow) {
       variantSummary: item.variantSummary || "",
     })),
   };
+}
+
+function redirectWithReviewActionFlash(request, requestId, message) {
+  const url = new URL(request.url);
+  url.searchParams.set("reviewActionRequestId", String(requestId || ""));
+  url.searchParams.set("reviewActionMessage", String(message || ""));
+  url.searchParams.set("reviewActionAt", String(Date.now()));
+  return redirect(`${url.pathname}${url.search}`);
 }
 
 function reasonEntryLabel(entry) {
@@ -4582,12 +4590,7 @@ export const action = async ({ request }) => {
       intent,
       note: approvedMessage,
     });
-    return {
-      ok: true,
-      message: "Solicitud aprobada correctamente.",
-      reviewActionRequestId: String(id),
-      reviewActionRequest: reviewActionRequestSnapshot(requestRow),
-    };
+    return redirectWithReviewActionFlash(request, id, "Esta orden se aprobo correctamente.");
   }
 
   if (intent === "reject_request") {
@@ -4616,12 +4619,7 @@ export const action = async ({ request }) => {
       note: rejectionReason,
       message: `📦 Pedido #${String(requestRow.orderNumber || "").replace(/^#/, "").trim() || "****"}. Después de revisar tu solicitud de devolución, lamentamos informarte que ha sido rechazada. Motivo: ${rejectionReason}.`,
     });
-    return {
-      ok: true,
-      message: "Esta orden se rechazo correctamente.",
-      reviewActionRequestId: String(id),
-      reviewActionRequest: reviewActionRequestSnapshot(requestRow),
-    };
+    return redirectWithReviewActionFlash(request, id, "Esta orden se rechazo correctamente.");
   }
 
   if (intent === "mark_in_route") {
@@ -5867,6 +5865,22 @@ export default function ReturnsRequests() {
   const reviewCardMessageTimeoutRef = useRef(null);
   const courierCardSuccessTimeoutRef = useRef(null);
   const automaticBranchPickupRefundAttemptRef = useRef(new Set());
+  const reviewActionParams = new URLSearchParams(location.search);
+  const flashedReviewActionRequestId = String(reviewActionParams.get("reviewActionRequestId") || "").trim();
+  const flashedReviewActionMessage = String(reviewActionParams.get("reviewActionMessage") || "").trim();
+  const flashedReviewActionAt = String(reviewActionParams.get("reviewActionAt") || "").trim();
+  const [dismissedReviewActionAt, setDismissedReviewActionAt] = useState("");
+  const reviewActionStorageKey = (requestId) => `cariana_review_action_request_${String(requestId || "").trim()}`;
+
+  const handleReviewActionSubmit = (requestRow) => {
+    if (!requestRow?.id) return;
+    setPendingReviewActionRequest(requestRow);
+    try {
+      window.sessionStorage.setItem(reviewActionStorageKey(requestRow.id), JSON.stringify(requestRow));
+    } catch (_error) {
+      // The UI can still fall back to in-memory state when storage is unavailable.
+    }
+  };
 
   const showRefundActionSuccess = (requestId, message) => {
     if (refundSuccessTimeoutRef.current) {
@@ -6050,6 +6064,30 @@ export default function ReturnsRequests() {
     });
   }, [actionData]);
 
+  useEffect(() => {
+    if (!flashedReviewActionRequestId || !flashedReviewActionMessage) return;
+    try {
+      const rawSnapshot = window.sessionStorage.getItem(reviewActionStorageKey(flashedReviewActionRequestId));
+      if (rawSnapshot) {
+        setPendingReviewActionRequest(JSON.parse(rawSnapshot));
+      }
+    } catch (_error) {}
+    setVisibleReviewCardMessage({
+      requestId: flashedReviewActionRequestId,
+      type: "success",
+      message: flashedReviewActionMessage,
+    });
+    const timeoutId = window.setTimeout(() => {
+      setDismissedReviewActionAt(flashedReviewActionAt || flashedReviewActionRequestId);
+      setVisibleReviewCardMessage(null);
+      setPendingReviewActionRequest(null);
+      try {
+        window.sessionStorage.removeItem(reviewActionStorageKey(flashedReviewActionRequestId));
+      } catch (_error) {}
+    }, 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [flashedReviewActionRequestId, flashedReviewActionMessage, flashedReviewActionAt]);
+
   const immediateReviewCardMessage = actionData?.reviewActionRequestId
     ? {
         requestId: String(actionData.reviewActionRequestId),
@@ -6057,8 +6095,20 @@ export default function ReturnsRequests() {
         message: String(actionData.ok ? actionData.message || "" : actionData.error || "").trim(),
       }
     : null;
+  const flashReviewCardMessage =
+    flashedReviewActionRequestId &&
+    flashedReviewActionMessage &&
+    dismissedReviewActionAt !== (flashedReviewActionAt || flashedReviewActionRequestId)
+      ? {
+          requestId: flashedReviewActionRequestId,
+          type: "success",
+          message: flashedReviewActionMessage,
+        }
+      : null;
   const activeReviewCardMessage = immediateReviewCardMessage?.message
     ? immediateReviewCardMessage
+    : flashReviewCardMessage?.message
+    ? flashReviewCardMessage
     : visibleReviewCardMessage;
   const activePendingReviewActionRequest = actionData?.reviewActionRequest || pendingReviewActionRequest;
   const visibleReviewCardMessageRequestId = activeReviewCardMessage?.requestId || "";
@@ -6281,7 +6331,7 @@ export default function ReturnsRequests() {
                   key={request.id}
                   request={request}
                   isSubmitting={isSubmitting}
-                  onReviewActionSubmit={setPendingReviewActionRequest}
+                  onReviewActionSubmit={handleReviewActionSubmit}
                   cardSuccessMessage={
                     activeReviewCardMessage?.type === "success" &&
                     activeReviewCardMessage.requestId === String(request.id)
