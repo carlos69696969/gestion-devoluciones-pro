@@ -172,10 +172,7 @@ public class MainActivity extends Activity {
                             return;
                         }
 
-                        socket = printer.createRfcommSocketToServiceRecord(
-                            UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-                        );
-                        socket.connect();
+                        socket = connectToPrinter(printer);
                         OutputStream outputStream = socket.getOutputStream();
                         outputStream.write(buildPrepLabelTspl(cleanOrderNumber, cleanRouteNumber, cleanCustomerName, cleanAddress));
                         outputStream.flush();
@@ -184,7 +181,7 @@ public class MainActivity extends Activity {
                         requestBluetoothConnectPermission();
                         showToast("Permite Bluetooth para imprimir.");
                     } catch (Exception error) {
-                        showToast("No se pudo imprimir. Revisa que la impresora este encendida y emparejada.");
+                        showToast("No se pudo conectar con 4B-2054L. Apaga y prende la impresora e intenta de nuevo.");
                     } finally {
                         if (socket != null) {
                             try {
@@ -195,6 +192,62 @@ public class MainActivity extends Activity {
                 }
             }).start();
         }
+    }
+
+    private BluetoothSocket connectToPrinter(BluetoothDevice printer) throws Exception {
+        BluetoothSocket socket = null;
+        Exception lastError = null;
+
+        try {
+            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+            if (adapter != null && adapter.isDiscovering()) {
+                adapter.cancelDiscovery();
+            }
+        } catch (SecurityException ignored) {}
+
+        try {
+            socket = printer.createRfcommSocketToServiceRecord(
+                UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+            );
+            socket.connect();
+            return socket;
+        } catch (Exception error) {
+            lastError = error;
+            closeSocket(socket);
+        }
+
+        try {
+            socket = printer.createInsecureRfcommSocketToServiceRecord(
+                UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+            );
+            socket.connect();
+            return socket;
+        } catch (Exception error) {
+            lastError = error;
+            closeSocket(socket);
+        }
+
+        try {
+            socket = (BluetoothSocket) printer.getClass()
+                .getMethod("createRfcommSocket", int.class)
+                .invoke(printer, 1);
+            socket.connect();
+            return socket;
+        } catch (Exception error) {
+            lastError = error;
+            closeSocket(socket);
+        }
+
+        throw lastError == null ? new IOException("Bluetooth printer connection failed") : lastError;
+    }
+
+    private void closeSocket(BluetoothSocket socket) {
+        if (socket == null) {
+            return;
+        }
+        try {
+            socket.close();
+        } catch (IOException ignored) {}
     }
 
     private boolean hasBluetoothConnectPermission() {
