@@ -35,6 +35,7 @@ public class MainActivity extends Activity {
     private static final String SHOP_DOMAIN = "qc1u2w-ft.myshopify.com";
     private static final String PORTAL_HOST = "gestion-devoluciones-pro.onrender.com";
     private static final String BASE_URL = "https://" + PORTAL_HOST + "/preparador?shop=" + SHOP_DOMAIN;
+    private static final String LABEL_PRINTER_MAC = "10:23:81:BE:81:FC";
     private WebView webView;
 
     @Override
@@ -224,9 +225,14 @@ public class MainActivity extends Activity {
         for (BluetoothDevice device : bondedDevices) {
             if (device == null) continue;
             String name = "";
+            String address = "";
             try {
                 name = String.valueOf(device.getName()).toLowerCase();
+                address = String.valueOf(device.getAddress()).toUpperCase();
             } catch (SecurityException ignored) {}
+            if (LABEL_PRINTER_MAC.equals(address)) {
+                return device;
+            }
             if (
                 name.contains("soundcore") ||
                 name.contains("headphone") ||
