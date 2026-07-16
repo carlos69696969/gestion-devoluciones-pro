@@ -326,6 +326,23 @@
   font-weight: 900;
 }
 
+.reprintLabelPanel {
+  display: grid;
+  gap: 14px;
+}
+
+.reprintLabelHint {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .preparerProductCheck {
   display: inline-flex;
   justify-content: flex-end;

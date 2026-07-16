@@ -28,6 +28,7 @@ import android.widget.Toast;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.Set;
 import java.util.UUID;
 
@@ -314,6 +315,10 @@ public class MainActivity extends Activity {
     }
 
     private byte[] buildPrepLabelTspl(String orderNumber, String routeNumber, String customerName, String address) {
+        String cleanOrderNumber = tsplText(orderNumber).replaceAll("[^0-9A-Za-z-]", "");
+        String displayOrderNumber = cleanOrderNumber.length() > 0 ? cleanOrderNumber : tsplText(orderNumber);
+        String displayRouteNumber = truncateForLabel(tsplText(routeNumber), 3);
+        String displayCustomerName = truncateForLabel(tsplText(customerName).toUpperCase(), 22);
         StringBuilder command = new StringBuilder();
         command.append("SIZE 100 mm,60 mm\r\n");
         command.append("GAP 2 mm,0 mm\r\n");
@@ -323,18 +328,27 @@ public class MainActivity extends Activity {
         command.append("DENSITY 10\r\n");
         command.append("CLS\r\n");
         command.append("BOX 16,16,784,464,3\r\n");
-        command.append("TEXT 36,36,\"0\",0,2,2,\"CARIANA\"\r\n");
-        command.append("TEXT 36,104,\"0\",0,2,2,\"ORDEN #").append(tsplText(orderNumber)).append("\"\r\n");
-        command.append("CIRCLE 682,112,46,4\r\n");
-        command.append("TEXT 666,96,\"0\",0,2,2,\"").append(tsplText(routeNumber)).append("\"\r\n");
-        command.append("TEXT 36,180,\"0\",0,1,2,\"CLIENTE\"\r\n");
-        command.append("TEXT 36,216,\"0\",0,2,2,\"").append(tsplText(customerName)).append("\"\r\n");
-        command.append("TEXT 36,292,\"0\",0,1,2,\"DIRECCION\"\r\n");
-        int y = 326;
-        for (String line : wrapForTspl(address, 33, 3)) {
-            command.append("TEXT 36,").append(y).append(",\"0\",0,1,2,\"").append(tsplText(line)).append("\"\r\n");
-            y += 36;
+        command.append("TEXT 292,34,\"4\",0,2,2,\"CARIANA\"\r\n");
+        command.append("TEXT 292,92,\"2\",0,1,1,\"GRACIAS POR ELEGIRNOS\"\r\n");
+        command.append("BAR 180,112,92,3\r\n");
+        command.append("BAR 530,112,92,3\r\n");
+        command.append("CIRCLE 112,202,90,8\r\n");
+        command.append("TEXT 86,166,\"5\",0,2,2,\"").append(displayRouteNumber).append("\"\r\n");
+        command.append("BAR 230,132,3,132\r\n");
+        command.append("TEXT 396,132,\"3\",0,2,2,\"PEDIDO\"\r\n");
+        command.append("TEXT 292,174,\"5\",0,2,2,\"#").append(displayOrderNumber).append("\"\r\n");
+        command.append("BAR 48,278,704,2\r\n");
+        command.append("TEXT 70,302,\"3\",0,1,2,\"CLIENTE\"\r\n");
+        command.append("TEXT 160,296,\"4\",0,2,2,\"").append(displayCustomerName).append("\"\r\n");
+        command.append("BAR 48,354,704,2\r\n");
+        command.append("TEXT 70,374,\"3\",0,1,2,\"DOMICILIO:\"\r\n");
+        int y = 386;
+        for (String line : wrapForTspl(address, 34, 2)) {
+            command.append("TEXT 70,").append(y).append(",\"3\",0,1,1,\"").append(tsplText(line).toUpperCase()).append("\"\r\n");
+            y += 26;
         }
+        command.append("BARCODE 70,438,\"128\",38,1,0,2,4,\"").append(displayOrderNumber).append("\"\r\n");
+        command.append("QRCODE 632,364,L,4,A,0,\"").append(displayOrderNumber).append("\"\r\n");
         command.append("PRINT 1,1\r\n");
         return command.toString().getBytes(StandardCharsets.ISO_8859_1);
     }
@@ -345,12 +359,22 @@ public class MainActivity extends Activity {
     }
 
     private String tsplText(String value) {
-        return String.valueOf(value == null ? "" : value)
+        String normalized = Normalizer.normalize(String.valueOf(value == null ? "" : value), Normalizer.Form.NFD)
+            .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+        return normalized
             .replace("\\", "/")
             .replace("\"", "'")
             .replace("\r", " ")
             .replace("\n", " ")
             .trim();
+    }
+
+    private String truncateForLabel(String value, int maxChars) {
+        String text = normalizeLabelText(value, "-").replaceAll("\\s+", " ");
+        if (text.length() <= maxChars) {
+            return text;
+        }
+        return text.substring(0, Math.max(0, maxChars)).trim();
     }
 
     private String[] wrapForTspl(String value, int maxChars, int maxLines) {

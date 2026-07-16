@@ -681,6 +681,16 @@ function printPreparerLabel({ orderNumber, routeNumber, customerName, address })
   }
 }
 
+function preparerLabelPayload(assignment, routeNumber = "") {
+  const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+  return {
+    orderNumber: order.orderNumber || assignment?.orderNumber || "-",
+    routeNumber,
+    customerName: order.customerName || "Cliente",
+    address: formatPreparerAddress(order),
+  };
+}
+
 function preparerOrderMark(status) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "ready") return "✓";
@@ -721,6 +731,15 @@ export default function PreparerPortal() {
   );
   const visibleAssignments = sortedAssignments;
   const pendingAssignments = sortedAssignments.filter((assignment) => !isPreparerAssignmentDone(assignment?.status));
+  const readyAssignments = sortedAssignments
+    .filter((assignment) => preparerAssignmentDisplayStatus(assignment) === "ready")
+    .sort((firstAssignment, secondAssignment) => {
+      const firstOrder = firstAssignment?.orderData && typeof firstAssignment.orderData === "object" ? firstAssignment.orderData : {};
+      const secondOrder = secondAssignment?.orderData && typeof secondAssignment.orderData === "object" ? secondAssignment.orderData : {};
+      const firstCompletedAt = new Date(firstAssignment?.completedAt || firstOrder.preparerCompletedAt || 0).getTime() || 0;
+      const secondCompletedAt = new Date(secondAssignment?.completedAt || secondOrder.preparerCompletedAt || 0).getTime() || 0;
+      return secondCompletedAt - firstCompletedAt || Number(secondAssignment?.id || 0) - Number(firstAssignment?.id || 0);
+    });
   const displaySequenceByAssignmentId = new Map(
     visibleAssignments.map((assignment, index) => [
       String(assignment.id),
@@ -728,6 +747,7 @@ export default function PreparerPortal() {
     ]),
   );
   const dispatchAssignment = pendingAssignments[0] || null;
+  const lastReadyAssignment = readyAssignments[0] || null;
 
   useEffect(() => {
     setReadyUnitKeys([]);
@@ -770,6 +790,11 @@ export default function PreparerPortal() {
     const dispatchAddress = formatPreparerAddress(dispatchOrder);
     const dispatchSequence = dispatchAssignment
       ? displaySequenceByAssignmentId.get(String(dispatchAssignment.id)) || ""
+      : "";
+    const lastReadyOrder = lastReadyAssignment?.orderData || {};
+    const lastReadyAddress = formatPreparerAddress(lastReadyOrder);
+    const lastReadySequence = lastReadyAssignment
+      ? displaySequenceByAssignmentId.get(String(lastReadyAssignment.id)) || ""
       : "";
     const dispatchUnitKeys = dispatchItems.flatMap((item) => itemUnitKeys(item));
     const readyUnitKeySet = new Set(readyUnitKeys);
@@ -906,12 +931,7 @@ export default function PreparerPortal() {
                               event.preventDefault();
                               return;
                             }
-                            printPreparerLabel({
-                              orderNumber: dispatchOrder.orderNumber || dispatchAssignment.orderNumber || "-",
-                              routeNumber: dispatchSequence,
-                              customerName: dispatchOrder.customerName || "Cliente",
-                              address: dispatchAddress,
-                            });
+                            printPreparerLabel(preparerLabelPayload(dispatchAssignment, dispatchSequence));
                             return;
                           }
                           if (uncheckedUnitKeys.length) {
@@ -927,12 +947,7 @@ export default function PreparerPortal() {
                             event.preventDefault();
                             return;
                           }
-                          printPreparerLabel({
-                            orderNumber: dispatchOrder.orderNumber || dispatchAssignment.orderNumber || "-",
-                            routeNumber: dispatchSequence,
-                            customerName: dispatchOrder.customerName || "Cliente",
-                            address: dispatchAddress,
-                          });
+                          printPreparerLabel(preparerLabelPayload(dispatchAssignment, dispatchSequence));
                         }}
                       >
                         <input type="hidden" name="intent" value="preparer_mark_ready" />
@@ -1059,7 +1074,41 @@ export default function PreparerPortal() {
                       </Form>
                     </>
                   ) : (
-                    <p className={styles.empty}>No hay ordenes para despachar.</p>
+                    lastReadyAssignment ? (
+                      <div className={styles.reprintLabelPanel}>
+                        <div className={styles.cardHeader}>
+                          <div>
+                            <div className={styles.preparerDispatchTitleRow}>
+                              <span className={styles.orderSequenceBadge}>
+                                {lastReadySequence}
+                              </span>
+                              <h2 className={styles.preparerDispatchOrderNumber}>
+                                #{lastReadyOrder.orderNumber || lastReadyAssignment.orderNumber || "-"}
+                              </h2>
+                            </div>
+                            <h3 className={styles.cardTitle}>{lastReadyOrder.customerName || "Cliente"}</h3>
+                            {lastReadyAddress ? <p className={styles.subtitle}>{lastReadyAddress}</p> : null}
+                          </div>
+                          <span className={`${styles.counterBadge} ${styles.preparerStatusBadge}`}>
+                            listo
+                          </span>
+                        </div>
+                        <p className={styles.reprintLabelHint}>
+                          Esta fue la ultima orden marcada como lista. Si la etiqueta no salio, puedes volver a imprimirla.
+                        </p>
+                        <button
+                          className={styles.accessButton}
+                          type="button"
+                          onClick={() =>
+                            printPreparerLabel(preparerLabelPayload(lastReadyAssignment, lastReadySequence))
+                          }
+                        >
+                          Reimprimir etiqueta
+                        </button>
+                      </div>
+                    ) : (
+                      <p className={styles.empty}>No hay ordenes para despachar.</p>
+                    )
                   )}
                 </article>
               )}
