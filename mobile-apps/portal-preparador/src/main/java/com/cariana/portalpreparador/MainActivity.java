@@ -84,6 +84,7 @@ public class MainActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         setContentView(webView);
         webView.loadUrl(portalUrl());
+        requestBluetoothPermissionOnLaunch();
     }
 
     private class PortalWebViewClient extends WebViewClient {
@@ -290,6 +291,13 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void requestBluetoothPermissionOnLaunch() {
+        if (hasBluetoothConnectPermission()) {
+            return;
+        }
+        requestBluetoothConnectPermission();
+    }
+
     private BluetoothDevice findBondedLabelPrinter(BluetoothAdapter adapter) {
         Set<BluetoothDevice> bondedDevices = adapter.getBondedDevices();
         if (bondedDevices == null || bondedDevices.isEmpty()) {
@@ -397,12 +405,13 @@ public class MainActivity extends Activity {
         drawLine(canvas, 54, 402, 762, 402, 2);
 
         drawPersonIcon(canvas, 68, 428);
-        List<String> customerLines = wrapTextByWidth(customerName, 620, 2, textPaint(42, true));
-        int customerY = customerLines.size() > 1 ? 445 : 455;
-        Paint customerPaint = textPaint(customerLines.size() > 1 ? 34 : customerTextSize(customerName), true);
+        Paint customerMeasurePaint = textPaint(34, true);
+        List<String> customerLines = wrapTextByWidth(customerName, 620, 2, customerMeasurePaint);
+        int customerY = customerLines.size() > 1 ? 443 : 452;
+        Paint customerPaint = textPaint(customerLines.size() > 1 ? 28 : customerTextSize(customerName), true);
         for (String line : customerLines) {
             drawText(canvas, line, 128, customerY, customerPaint);
-            customerY += 38;
+            customerY += 34;
         }
         drawCenteredText(canvas, "GRACIAS POR TU COMPRA", 408, 502, 23, false);
         drawLine(canvas, 54, 528, 762, 528, 2);
@@ -525,9 +534,10 @@ public class MainActivity extends Activity {
 
     private int customerTextSize(String customerName) {
         int length = String.valueOf(customerName == null ? "" : customerName).length();
-        if (length > 24) return 34;
-        if (length > 18) return 38;
-        return 44;
+        if (length > 28) return 28;
+        if (length > 22) return 30;
+        if (length > 16) return 32;
+        return 34;
     }
 
     private int addressTextSize(List<String> lines) {
