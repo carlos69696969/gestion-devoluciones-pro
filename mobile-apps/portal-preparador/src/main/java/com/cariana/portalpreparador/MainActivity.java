@@ -16,6 +16,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.text.TextUtils;
+import android.util.Base64;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -25,6 +26,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -37,6 +39,10 @@ public class MainActivity extends Activity {
     private static final String PORTAL_HOST = "gestion-devoluciones-pro.onrender.com";
     private static final String BASE_URL = "https://" + PORTAL_HOST + "/preparador?shop=" + SHOP_DOMAIN;
     private static final String LABEL_PRINTER_MAC = "10:23:81:BE:81:FC";
+    private static final int LOGO_WIDTH_BYTES = 20;
+    private static final int LOGO_HEIGHT = 92;
+    private static final String HUMMINGBIRD_LOGO_BASE64 =
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAB4AAAAAAAAAAAAAAAAAAAAAAAAAD4AAAAAAAAAAAAAAAAAAAAAAAAAH4AAAAAAAAAAAAAAAAAAAAAAAAAPwAAAAAAAAAAAAAAAAAAAAAAAAAfgAAAAAAAAAAAAAAAAAAAAAAAACfgAAAAAAAAAAAAAAAAAAAAAAAAO/AAAAAAAAAAAAAAAAAAAAAAAAAe+AAAAAAAAAAAAAAAAAAAAAAAAB98AAAAAAAAAAAAAAAAAAAAAAAAD/8AAAAAAAAAAAAAAAAAAAAAAAAD/4AAAAAAAAAAAAAAAAAAAAAAAAb/wAAAAAAAAAAAAAAAAAAADgAAB7/gAAAAAAAAAAAAAAAAAAAP+AAD//AAAAAAAAAAAAAAAAAAAA//gAH/+AAAAAAAAAAAAAAAAAAAA//4AH/8AAAAAAAAAAAAAAAAAAAAf/8B//wAAAAAAAAAAAAAAAAAAADj/+D//gAAcAAAAAAAAAAAAAAAAP8f/H//AAP+AAAAAAAAAAAAAAAAf///n/+AD/+AAAAAAAAAAAAAAAAf///x/8Af//P8AAAAAAAAAAAAAAD///x/4D/H///4AAAAAAAAAAAAA////5/gf8//gAAAAAAAAAAAAAAB////5/D///AAAAAAAAAAAAAAAAB////4+f//wAAAAAAAAAAAAAAAAAD///5z//+AAAAAAAAAAAAAAAAAD////4///wAAAAAAAAAAAAAAAAAH///////+AAAAAAAAAAAAAAAAAAP+f/////wAAAAAAAAAAAAAAAAAAD//////+AAAAAAAAAAAAAAAAAAAP//////4AAAAAAAAAAAAAAAAAAAef/////gAAAAAAAAAAAAAAAAAAAH/////8AAAAAAAAAAAAAAAAAAAAff////wAAAAAAAAAAAAAAAAAAAAH7////AAAAAAAAAAAAAAAAAAAAAee///8AAAAAAAAAAAAAAAAAAAAAH7///gAAAAAAAAAAAAAAAAAAAAAef//+AAAAAAAAAAAAAAAAAAAAAAD///wAAAAAAAAAAAAAAAAAAAAAAf///AAAAAAAAAAAAAAAAAAAAAAD///4AAAAAAAAAAAAAAAAAAAAAAf///gAAAAAAAAAAAAAAAAAAAAAD///8AAAAAAAAAAAAAAAAAAAAAAf///gAAAAAAAAAAAAAAAAAAAAAD///8AAAAAAAAAAAAAAAAAAAAAAf///gAAAAAAAAAAAAAAAAAAAAAB///4AAAAAAAAAAAAAAAAAAAAAAP//+AAAAAAAAAAAAAAAAAAAAAAB///gAAAAAAAAAAAAAAAAAAAAAAP//wAAAAAAAAAAAAAAAAAAAAAAA//wAAAAAAAAAAAAAAAAAAAAAAAH/wAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAD/AAAAAAAAAAAAAAAAAAAAAAAAAfxgAAAAAAAAAAAAAAAAAAAAAAAD+eAAAAAAAAAAAAAAAAAAAAAAAAPn4AAAAAAAAAAAAAAAAAAAAAAAB8/gAAAAAAAAAAAAAAAAAAAAAAAHv+AAAAAAAAAAAAAAAAAAAAAAAA9+4AAAAAAAAAAAAAAAAAAAAAAADv7wAAAAAAAAAAAAAAAAAAAAAAAd/vAAAAAAAAAAAAAAAAAAAAAAABv+8AAAAAAAAAAAAAAAAAAAAAAAN+7wAAAAAAAAAAAAAAAAAAAAAAAv7vAAAAAAAAAAAAAAAAAAAAAAAA7u8AAAAAAAAAAAAAAAAAAAAAAAH+5gAAAAAAAAAAAAAAAAAAAAAAA//gAAAAAAAAAAAAAAAAAAAAAAAD3eAAAAAAAAAAAAAAAAAAAAAAAAPd4AAAAAAAAAAAAAAAAAAAAAAAB/3AAAAAAAAAAAAAAAAAAAAAAAAHvIAAAAAAAAAAAAAAAAAAAAAAAAe8AAAAAAAAAAAAAAAAAAAAAAAAD7gAAAAAAAAAAAAAAAAAAAAAAAAPMAAAAAAAAAAAAAAAAAAAAAAAAA8AAAAAAAAAAAAAAAAAAAAAAAAADwAAAAAAAAAAAAAAAAAAAAAAAAAOAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
     private WebView webView;
 
     @Override
@@ -318,55 +324,98 @@ public class MainActivity extends Activity {
         String cleanOrderNumber = tsplText(orderNumber).replaceAll("[^0-9A-Za-z-]", "");
         String displayOrderNumber = cleanOrderNumber.length() > 0 ? cleanOrderNumber : tsplText(orderNumber);
         String displayRouteNumber = truncateForLabel(tsplText(routeNumber), 3);
-        String displayCustomerName = truncateForLabel(tsplText(customerName).toUpperCase(), 28);
+        String displayCustomerName = tsplText(customerName).toUpperCase();
+        String qrValue = "PEDIDO:" + displayOrderNumber;
+        String[] customerLines = wrapForTspl(displayCustomerName, displayCustomerName.length() > 23 ? 24 : 28, 2);
+        String[] addressLines = wrapForTspl(address, 36, 3);
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        appendCommand(output,
+            "SIZE 102 mm,102 mm\r\n" +
+            "GAP 2 mm,0 mm\r\n" +
+            "DIRECTION 1\r\n" +
+            "REFERENCE 0,0\r\n" +
+            "OFFSET 0 mm\r\n" +
+            "SPEED 4\r\n" +
+            "DENSITY 10\r\n" +
+            "CLS\r\n" +
+            "BOX 24,24,792,792,4\r\n"
+        );
+        appendLogoBitmap(output, 328, 28);
+
         StringBuilder command = new StringBuilder();
-        command.append("SIZE 100 mm,100 mm\r\n");
-        command.append("GAP 2 mm,0 mm\r\n");
-        command.append("DIRECTION 1\r\n");
-        command.append("REFERENCE 0,0\r\n");
-        command.append("SPEED 4\r\n");
-        command.append("DENSITY 10\r\n");
-        command.append("CLS\r\n");
-        command.append("BOX 16,16,784,784,4\r\n");
-        appendHummingbird(command);
-        command.append("TEXT 306,70,\"4\",0,2,2,\"CARIANA\"\r\n");
-        command.append("TEXT 292,132,\"2\",0,1,1,\"GRACIAS POR ELEGIRNOS\"\r\n");
-        command.append("BAR 170,150,92,3\r\n");
-        command.append("BAR 538,150,92,3\r\n");
-        command.append("CIRCLE 116,280,92,8\r\n");
-        command.append("TEXT 84,242,\"5\",0,2,2,\"").append(displayRouteNumber).append("\"\r\n");
-        command.append("BAR 232,194,3,154\r\n");
-        command.append("TEXT 396,196,\"3\",0,2,2,\"PEDIDO\"\r\n");
-        command.append("TEXT 286,242,\"5\",0,2,2,\"#").append(displayOrderNumber).append("\"\r\n");
-        command.append("BAR 48,372,704,2\r\n");
-        command.append("TEXT 70,398,\"3\",0,1,1,\"CLIENTE\"\r\n");
-        command.append("TEXT 166,392,\"3\",0,2,2,\"").append(displayCustomerName).append("\"\r\n");
-        command.append("TEXT 166,446,\"2\",0,1,1,\"GRACIAS POR TU COMPRA\"\r\n");
-        command.append("BAR 48,486,704,2\r\n");
-        command.append("TEXT 70,520,\"3\",0,1,2,\"DOMICILIO:\"\r\n");
-        int y = 556;
-        for (String line : wrapForTspl(address, 35, 3)) {
-            command.append("TEXT 70,").append(y).append(",\"3\",0,1,1,\"").append(tsplText(line).toUpperCase()).append("\"\r\n");
+        command.append("TEXT 288,104,\"4\",0,2,2,\"CARIANA\"\r\n");
+        command.append("TEXT 286,172,\"2\",0,1,1,\"GRACIAS POR ELEGIRNOS\"\r\n");
+        command.append("BAR 174,192,94,3\r\n");
+        command.append("BAR 548,192,94,3\r\n");
+        appendFilledCircle(command, 116, 308, 78);
+        command.append("TEXT ").append(routeTextX(displayRouteNumber)).append(",260,\"5\",0,2,2,\"")
+            .append(displayRouteNumber).append("\"\r\n");
+        command.append("REVERSE 62,246,108,104\r\n");
+        command.append("BAR 232,232,3,132\r\n");
+        command.append("TEXT 392,230,\"3\",0,2,2,\"PEDIDO\"\r\n");
+        command.append("TEXT 286,286,\"5\",0,2,2,\"#").append(displayOrderNumber).append("\"\r\n");
+        command.append("BAR 54,394,708,2\r\n");
+        command.append("TEXT 74,418,\"3\",0,1,1,\"CLIENTE\"\r\n");
+        if (customerLines[1].trim().isEmpty()) {
+            command.append("TEXT 166,410,\"3\",0,2,2,\"").append(tsplText(customerLines[0])).append("\"\r\n");
+            command.append("TEXT 166,472,\"2\",0,1,1,\"GRACIAS POR TU COMPRA\"\r\n");
+        } else {
+            command.append("TEXT 166,410,\"3\",0,1,2,\"").append(tsplText(customerLines[0])).append("\"\r\n");
+            command.append("TEXT 166,444,\"3\",0,1,2,\"").append(tsplText(customerLines[1])).append("\"\r\n");
+            command.append("TEXT 166,486,\"2\",0,1,1,\"GRACIAS POR TU COMPRA\"\r\n");
+        }
+        command.append("BAR 54,536,708,2\r\n");
+        command.append("TEXT 74,560,\"3\",0,1,2,\"DOMICILIO:\"\r\n");
+        int y = 594;
+        for (String line : addressLines) {
+            if (line.trim().isEmpty()) continue;
+            command.append("TEXT 74,").append(y).append(",\"3\",0,1,1,\"").append(tsplText(line).toUpperCase()).append("\"\r\n");
             y += 30;
         }
-        command.append("BAR 48,650,704,2\r\n");
-        command.append("BARCODE 70,680,\"128\",92,1,0,3,4,\"").append(displayOrderNumber).append("\"\r\n");
-        command.append("QRCODE 632,666,L,5,A,0,\"").append(displayOrderNumber).append("\"\r\n");
+        command.append("BAR 54,684,708,2\r\n");
+        command.append("BARCODE 74,704,\"128\",72,1,0,3,4,\"").append(displayOrderNumber).append("\"\r\n");
+        command.append("QRCODE 638,696,L,5,A,0,\"").append(tsplText(qrValue)).append("\"\r\n");
         command.append("PRINT 1,1\r\n");
-        return command.toString().getBytes(StandardCharsets.ISO_8859_1);
+        appendCommand(output, command.toString());
+        return output.toByteArray();
     }
 
-    private void appendHummingbird(StringBuilder command) {
-        command.append("BAR 344,38,48,3\r\n");
-        command.append("BAR 390,36,38,3\r\n");
-        command.append("BAR 424,40,30,3\r\n");
-        command.append("BAR 392,42,5,28\r\n");
-        command.append("BAR 384,50,32,4\r\n");
-        command.append("BAR 416,50,58,3\r\n");
-        command.append("BAR 382,60,28,3\r\n");
-        command.append("BAR 368,70,18,3\r\n");
-        command.append("CIRCLE 414,52,10,3\r\n");
-        command.append("BAR 424,50,54,2\r\n");
+    private void appendCommand(ByteArrayOutputStream output, String command) {
+        try {
+            output.write(command.getBytes(StandardCharsets.ISO_8859_1));
+        } catch (IOException ignored) {}
+    }
+
+    private void appendLogoBitmap(ByteArrayOutputStream output, int x, int y) {
+        byte[] logoBytes = Base64.decode(HUMMINGBIRD_LOGO_BASE64, Base64.DEFAULT);
+        appendCommand(output, "BITMAP " + x + "," + y + "," + LOGO_WIDTH_BYTES + "," + LOGO_HEIGHT + ",0,");
+        try {
+            output.write(logoBytes);
+        } catch (IOException ignored) {}
+        appendCommand(output, "\r\n");
+    }
+
+    private void appendFilledCircle(StringBuilder command, int centerX, int centerY, int radius) {
+        for (int dy = -radius; dy <= radius; dy += 4) {
+            int halfWidth = (int) Math.round(Math.sqrt((radius * radius) - (dy * dy)));
+            int x = centerX - halfWidth;
+            int y = centerY + dy;
+            command.append("BAR ")
+                .append(x)
+                .append(",")
+                .append(y)
+                .append(",")
+                .append(halfWidth * 2)
+                .append(",4\r\n");
+        }
+    }
+
+    private int routeTextX(String routeNumber) {
+        int length = String.valueOf(routeNumber == null ? "" : routeNumber).length();
+        if (length <= 1) return 90;
+        if (length == 2) return 66;
+        return 48;
     }
 
     private String normalizeLabelText(String value, String fallback) {
