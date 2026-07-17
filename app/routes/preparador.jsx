@@ -555,6 +555,51 @@ export async function loader({ request }) {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       })
     : [];
+  const assignmentRouteIds = [
+    ...new Set(
+      activities
+        .map((activity) => String(activity.routeId || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  const routeActivitiesForSequence = assignmentRouteIds.length
+    ? await prisma.courierActivity.findMany({
+        where: {
+          shop: access.shop,
+          routeId: { in: assignmentRouteIds },
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      })
+    : [];
+  const routeAssignedRequestIds = [];
+  const routeOrderNumberByRequestId = new Map();
+  for (const activity of routeActivitiesForSequence) {
+    const action = String(activity.action || "").trim().toLowerCase();
+    const requestId = String(activity.requestId || "").trim();
+    if (
+      action !== "courier_route_order_assigned" ||
+      !requestId ||
+      requestId.startsWith("route:") ||
+      requestId.startsWith("session:")
+    ) {
+      continue;
+    }
+    const orderNumber = String(activity.orderNumber || "").replace(/\D/g, "");
+    if (orderNumber && !routeOrderNumberByRequestId.has(requestId)) {
+      routeOrderNumberByRequestId.set(requestId, orderNumber);
+    }
+    if (!routeAssignedRequestIds.includes(requestId)) {
+      routeAssignedRequestIds.push(requestId);
+    }
+  }
+  routeAssignedRequestIds.forEach((requestId, index) => {
+    const sequence = index + 1;
+    const orderNumber = routeOrderNumberByRequestId.get(requestId) || "";
+    routeSequenceByRequestId.set(requestId, sequence);
+    if (orderNumber) {
+      routeSequenceByOrderNumber.set(orderNumber, sequence);
+    }
+  });
   const latestFinalActivityByRequestId = new Map();
   for (const activity of activities) {
     if (!isPreparerCourierFinalActivityAction(activity.action)) continue;
@@ -576,8 +621,8 @@ export async function loader({ request }) {
       routeSequenceByRequestId.get(requestId) ||
       routeSequenceByOrderNumber.get(orderNumber) ||
       assignmentSequenceNumber ||
-      liveSequenceNumber ||
       Number(storedOrderData.sequenceNumber || 0) ||
+      liveSequenceNumber ||
       0;
     const activity = latestFinalActivityByRequestId.get(requestId);
     const activityStatus = activity ? preparerCourierStatusFromActivityAction(activity.action, "") : "";
@@ -594,10 +639,10 @@ export async function loader({ request }) {
         ...(liveCourierOrder || {}),
         sequenceNumber:
           routeSequenceNumber ||
-          liveSequenceNumber ||
           assignmentSequenceNumber ||
-          liveCourierOrder?.sequenceNumber ||
           storedOrderData.sequenceNumber ||
+          liveSequenceNumber ||
+          liveCourierOrder?.sequenceNumber ||
           assignment.sequence,
         items: storedItems.length ? storedItems : liveItems,
         status: nextStatus || storedOrderData.status,
