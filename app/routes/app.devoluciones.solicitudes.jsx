@@ -3406,7 +3406,7 @@ export const loader = async ({ request }) => {
           ]
       : [];
   const routeSettings =
-    viewMode === VIEW_MODE.COURIER
+    viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS
       ? await prisma.returnSettings.findUnique({
           where: { shop: session.shop },
           select: { branchAddress: true },
