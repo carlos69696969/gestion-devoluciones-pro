@@ -7,6 +7,7 @@ import {
   fetchBranchPickupCourierOrdersForShop,
   fetchCourierOrdersForShop,
 } from "../utils/courier.server";
+import { getCourierRouteStatusFromTags } from "../utils/courier.shared";
 
 const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
@@ -53,6 +54,74 @@ function returnRequestItemsSignature(requestRow) {
   return `${String(requestRow?.orderNumber || "").trim()}|${itemParts.join(",")}`;
 }
 
+function isCourierLocalDeliveryOrder(orderNode) {
+  const shippingLines = Array.isArray(orderNode?.shippingLines?.nodes) ? orderNode.shippingLines.nodes : [];
+  return shippingLines.some((line) => {
+    const title = String(line?.title || "").toLowerCase();
+    const code = String(line?.code || "").toLowerCase();
+    const category = String(line?.deliveryCategory || "").toLowerCase();
+    return title.includes("local") || code.includes("local") || category.includes("local");
+  });
+}
+
+async function fetchCourierDeliveryCountFromAdmin(admin, queryString) {
+  const response = await admin.graphql(
+    `#graphql
+    query CourierDeliveryCount {
+      orders(first: 250, query: "${queryString}", sortKey: UPDATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            displayFulfillmentStatus
+            tags
+            shippingLines(first: 5) {
+              nodes {
+                title
+                code
+                deliveryCategory
+              }
+            }
+          }
+        }
+      }
+    }`,
+  );
+  const payload = await response.json();
+  const errors = payload?.errors || [];
+  if (errors.length) {
+    throw new Error(errors[0]?.message || "No se pudieron contar las ordenes repartidor.");
+  }
+  const orderIds = new Set();
+  for (const orderNode of payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || []) {
+    const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
+    const courierStatus = getCourierRouteStatusFromTags(orderNode?.tags);
+    if (
+      isCourierLocalDeliveryOrder(orderNode) &&
+      !["FULFILLED", "RESTOCKED"].includes(fulfillmentStatus) &&
+      !["recoger_en_sucursal", "reembolsada", "entregado"].includes(courierStatus)
+    ) {
+      orderIds.add(String(orderNode.id || ""));
+    }
+  }
+  return orderIds;
+}
+
+async function fetchCourierDeliveryCount(admin) {
+  const orderIds = new Set();
+  const errors = [];
+  for (const queryString of ["fulfillment_status:unfulfilled", "status:open"]) {
+    try {
+      for (const orderId of await fetchCourierDeliveryCountFromAdmin(admin, queryString)) {
+        if (orderId) orderIds.add(orderId);
+      }
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (!orderIds.size && errors.length) throw errors[0];
+  return orderIds.size;
+}
+
 async function activePlannedCourierDeliveryCount(shop) {
   const routePlans = await prisma.courierActivity.findMany({
     where: {
@@ -96,7 +165,7 @@ async function activePlannedCourierDeliveryCount(shop) {
 }
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   const requests = await prisma.returnRequest.findMany({
     where: {
@@ -168,13 +237,19 @@ export const loader = async ({ request }) => {
     console.error("No se pudieron contar las entregas del repartidor", error);
     return [];
   });
-  const plannedDeliveryCount = deliveryCourierOrders.length
+  const adminDeliveryCount = deliveryCourierOrders.length
+    ? 0
+    : await fetchCourierDeliveryCount(admin).catch((error) => {
+        console.error("No se pudieron contar las entregas del repartidor desde admin", error);
+        return 0;
+      });
+  const plannedDeliveryCount = deliveryCourierOrders.length || adminDeliveryCount
     ? 0
     : await activePlannedCourierDeliveryCount(session.shop).catch((error) => {
         console.error("No se pudieron contar las rutas activas del repartidor", error);
         return 0;
       });
-  navCounts.courier = deliveryCourierOrders.length || plannedDeliveryCount;
+  navCounts.courier = deliveryCourierOrders.length || adminDeliveryCount || plannedDeliveryCount;
 
   const branchPickupCourierOrders = await fetchBranchPickupCourierOrdersForShop({
     shop: session.shop,
