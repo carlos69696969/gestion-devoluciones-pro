@@ -642,17 +642,28 @@ export async function action({ request }) {
       });
       const pendingAssignments = assignments.filter((assignment) => !isPreparerAssignmentDone(assignment.status));
       if (pendingAssignments.length) {
-        return {
-          ok: false,
-          error: "Aun no has despachado todas tus ordenes. No puedes finalizar hasta despachar las ordenes pendientes.",
-          pendingOrders: pendingAssignments.map((assignment) => {
+        const pendingOrders = pendingAssignments
+          .map((assignment) => {
             const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
             return {
               id: assignment.id,
               orderNumber: String(orderData.orderNumber || assignment.orderNumber || "").trim() || "-",
               sequence: Number(orderData.sequenceNumber || assignment.sequence || 0) || 0,
             };
-          }),
+          })
+          .sort((firstOrder, secondOrder) => {
+            const firstSequence = Number(firstOrder.sequence || 0) || 0;
+            const secondSequence = Number(secondOrder.sequence || 0) || 0;
+            if (firstSequence !== secondSequence) return firstSequence - secondSequence;
+            const firstOrderNumber = Number(String(firstOrder.orderNumber || "").replace(/\D/g, "") || 0) || 0;
+            const secondOrderNumber = Number(String(secondOrder.orderNumber || "").replace(/\D/g, "") || 0) || 0;
+            if (firstOrderNumber !== secondOrderNumber) return firstOrderNumber - secondOrderNumber;
+            return Number(firstOrder.id || 0) - Number(secondOrder.id || 0);
+          });
+        return {
+          ok: false,
+          error: "Aún no has despachado todas tus órdenes. No puedes finalizar hasta despachar las órdenes pendientes.",
+          pendingOrders,
         };
       }
       await prisma.$transaction([
