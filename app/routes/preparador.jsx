@@ -508,7 +508,12 @@ export async function loader({ request }) {
   let routeSequenceByOrderNumber = new Map();
   if (access && assignmentRequestIds.length) {
     try {
-      const { fetchCourierOrdersByIdsForShop, fetchCourierOrdersForShop, resolveCourierPortalShop } = await import("../utils/courier.server");
+      const {
+        fetchCourierOrdersByIdsForShop,
+        fetchCourierOrdersForShop,
+        fetchPickupCourierOrders,
+        resolveCourierPortalShop,
+      } = await import("../utils/courier.server");
       const portalShop = await resolveCourierPortalShop(request);
       const sessionCandidatesByShop = new Map();
       for (const sessionCandidate of portalShop.allSessionCandidates || portalShop.sessionCandidates || []) {
@@ -543,10 +548,15 @@ export async function loader({ request }) {
         .filter(Boolean);
       const missingLiveOrderNumbers = assignmentOrderNumbers.filter((orderNumber) => !liveCourierOrderByOrderNumber.has(orderNumber));
       if (missingLiveOrderNumbers.length || assignmentOrderNumbers.length) {
-        const liveCourierRouteOrders = await fetchCourierOrdersForShop({
+        const liveDeliveryRouteOrders = await fetchCourierOrdersForShop({
           shop: liveShop,
           sessionCandidates,
         });
+        const livePickupRouteOrders = await fetchPickupCourierOrders(liveShop);
+        const liveCourierRouteOrders = [
+          ...liveDeliveryRouteOrders,
+          ...livePickupRouteOrders,
+        ];
         const routeSettings = await prisma.returnSettings.findUnique({
           where: { shop: liveShop },
           select: { branchAddress: true },
