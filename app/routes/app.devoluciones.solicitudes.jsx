@@ -6215,7 +6215,12 @@ export default function ReturnsRequests() {
     items: order.items || [],
   }));
   const preparerCourierOrders = courierDeliveryOrders;
-  const preparerRouteOrdersPayload = courierRouteOrdersPayload.filter((order) => !isReturnCourierLabel(order.courierLabel));
+  const preparerRouteOrdersPayload = preparerCourierOrders.map((order, index) => ({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    courierLabel: order.courierLabel,
+    sequenceNumber: Number(order.sequenceNumber || 0) || index + 1,
+  }));
 
   const pageHeading =
     viewMode === VIEW_MODE.PICKUP
@@ -8483,14 +8488,14 @@ function PreparersSection({
     Number(first.id || 0) - Number(second.id || 0);
   const globalSequenceByRequestId = new Map();
   const globalSequenceByOrderNumber = new Map();
-  const routeSequenceSourceOrders = (Array.isArray(routeOrdersPayload) && routeOrdersPayload.length
-    ? routeOrdersPayload
-    : courierOrders
+  const routeSequenceSourceOrders = (Array.isArray(courierOrders) && courierOrders.length
+    ? courierOrders
+    : routeOrdersPayload
   ).filter((order) => !isReturnCourierLabel(order?.courierLabel));
   routeSequenceSourceOrders.forEach((order, index) => {
       const requestId = String(order?.id || "").trim();
       const orderNumber = String(order?.orderNumber || "").replace(/\D/g, "");
-      const sequence = index + 1;
+      const sequence = Number(order?.sequenceNumber || 0) || index + 1;
       if (requestId && !globalSequenceByRequestId.has(requestId)) {
         globalSequenceByRequestId.set(requestId, sequence);
       }
