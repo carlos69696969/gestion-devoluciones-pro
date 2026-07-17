@@ -6,6 +6,7 @@ import styles from "../styles/repartidor.module.css";
 import { geocodeAddressWithCache, haversineDistanceMeters } from "../utils/googleMaps.server";
 
 const COURIER_ADMIN_REPROGRAM_ACTION = "courier_admin_order_reprogrammed";
+const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
 const COURIER_REPROGRAM_ACTIONS = [
   COURIER_ADMIN_REPROGRAM_ACTION,
   "courier_route_delivery_reprogrammed",
@@ -70,6 +71,46 @@ function routeAddressTokens(value) {
 function postalCodeFromRouteAddress(value) {
   const match = String(value || "").match(/\b\d{5}\b/);
   return match ? Number(match[0]) : 0;
+}
+
+function compareCourierActivitiesAscending(firstActivity, secondActivity) {
+  const timeDifference =
+    new Date(firstActivity?.createdAt || "").getTime() -
+    new Date(secondActivity?.createdAt || "").getTime();
+  if (timeDifference !== 0) return timeDifference;
+  return Number(firstActivity?.id || 0) - Number(secondActivity?.id || 0);
+}
+
+function insertMissingRouteSequenceIdsByOrderNumber(primaryIds, missingIds, orderNumberByRequestId) {
+  const sequenceIds = [...new Set((Array.isArray(primaryIds) ? primaryIds : []).filter(Boolean))];
+  const missingSequenceIds = [...new Set((Array.isArray(missingIds) ? missingIds : []).filter(Boolean))]
+    .filter((requestId) => !sequenceIds.includes(requestId))
+    .sort((firstId, secondId) =>
+      String(orderNumberByRequestId.get(firstId) || "").localeCompare(
+        String(orderNumberByRequestId.get(secondId) || ""),
+        "es",
+        { numeric: true, sensitivity: "base" },
+      ),
+    );
+
+  for (const missingId of missingSequenceIds) {
+    const missingOrderNumber = String(orderNumberByRequestId.get(missingId) || "").trim();
+    if (!missingOrderNumber) {
+      sequenceIds.push(missingId);
+      continue;
+    }
+    const insertIndex = sequenceIds.findIndex((requestId) => {
+      const orderNumber = String(orderNumberByRequestId.get(requestId) || "").trim();
+      return (
+        orderNumber &&
+        missingOrderNumber.localeCompare(orderNumber, "es", { numeric: true, sensitivity: "base" }) < 0
+      );
+    });
+    if (insertIndex >= 0) sequenceIds.splice(insertIndex, 0, missingId);
+    else sequenceIds.push(missingId);
+  }
+
+  return sequenceIds;
 }
 
 function routeAddressTextFromOrder(order) {
@@ -562,44 +603,161 @@ export async function loader({ request }) {
         .filter(Boolean),
     ),
   ];
-  const routeActivitiesForSequence = assignmentRouteIds.length
-    ? await prisma.courierActivity.findMany({
+  let routeActivitiesForSequence = [];
+  if (assignmentRouteIds.length) {
+    const seedRouteActivities = await prisma.courierActivity.findMany({
         where: {
           shop: access.shop,
           routeId: { in: assignmentRouteIds },
         },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      })
-    : [];
-  const routeAssignedRequestIds = [];
-  const routeOrderNumberByRequestId = new Map();
-  for (const activity of routeActivitiesForSequence) {
-    const action = String(activity.action || "").trim().toLowerCase();
-    const requestId = String(activity.requestId || "").trim();
-    if (
-      action !== "courier_route_order_assigned" ||
-      !requestId ||
-      requestId.startsWith("route:") ||
-      requestId.startsWith("session:")
-    ) {
-      continue;
+      });
+    const seedPlanTimes = seedRouteActivities
+      .filter((activity) => String(activity.action || "").trim().toLowerCase() === COURIER_ROUTE_PLANNED_ACTION)
+      .map((activity) => new Date(activity.createdAt || "").getTime())
+      .filter((time) => Number.isFinite(time));
+    const batchPlanActivities = seedPlanTimes.length
+      ? await prisma.courierActivity.findMany({
+          where: {
+            shop: access.shop,
+            action: COURIER_ROUTE_PLANNED_ACTION,
+            OR: seedPlanTimes.map((time) => ({
+              createdAt: {
+                gte: new Date(time - 15000),
+                lte: new Date(time + 15000),
+              },
+            })),
+          },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        })
+      : [];
+    const sequenceRouteIds = [
+      ...new Set(
+        [
+          ...assignmentRouteIds,
+          ...batchPlanActivities.map((activity) => String(activity.routeId || "").trim()),
+        ].filter(Boolean),
+      ),
+    ];
+    routeActivitiesForSequence = sequenceRouteIds.length
+      ? await prisma.courierActivity.findMany({
+          where: {
+            shop: access.shop,
+            routeId: { in: sequenceRouteIds },
+          },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        })
+      : seedRouteActivities;
+  }
+  const buildPreparerRouteAssignmentSequenceByRequestId = (routeId) => {
+    const cleanRouteId = String(routeId || "").trim();
+    if (!cleanRouteId) return { sequenceByRequestId: new Map(), orderNumberByRequestId: new Map() };
+
+    const routePlan = routeActivitiesForSequence
+      .filter(
+        (activity) =>
+          String(activity?.routeId || "").trim() === cleanRouteId &&
+          String(activity?.action || "").trim().toLowerCase() === COURIER_ROUTE_PLANNED_ACTION,
+      )
+      .sort(
+        (firstActivity, secondActivity) =>
+          new Date(secondActivity?.createdAt || "").getTime() -
+            new Date(firstActivity?.createdAt || "").getTime() ||
+          Number(secondActivity?.id || 0) - Number(firstActivity?.id || 0),
+      )[0];
+    const planStartedAt = routePlan?.createdAt ? new Date(routePlan.createdAt) : null;
+    const batchRouteIds = planStartedAt
+      ? [
+          ...new Set(
+            routeActivitiesForSequence
+              .filter((activity) => {
+                if (String(activity?.action || "").trim().toLowerCase() !== COURIER_ROUTE_PLANNED_ACTION) {
+                  return false;
+                }
+                if (!String(activity?.routeId || "").trim()) return false;
+                const activityTime = new Date(activity?.createdAt || "").getTime();
+                if (!Number.isFinite(activityTime)) return false;
+                return Math.abs(activityTime - planStartedAt.getTime()) <= 15000;
+              })
+              .sort(compareCourierActivitiesAscending)
+              .map((activity) => String(activity?.routeId || "").trim())
+              .filter(Boolean),
+          ),
+        ]
+      : [];
+    const finishedBatchRouteIds = new Set(
+      routeActivitiesForSequence
+        .filter(
+          (activity) =>
+            batchRouteIds.includes(String(activity?.routeId || "").trim()) &&
+            String(activity?.action || "").trim().toLowerCase() === "courier_route_finished",
+        )
+        .map((activity) => String(activity?.routeId || "").trim()),
+    );
+    const activeBatchRouteIds = batchRouteIds.filter((id) => !finishedBatchRouteIds.has(id));
+    const sequenceRouteIds = activeBatchRouteIds.length ? activeBatchRouteIds : [cleanRouteId];
+    const sequenceActivities = routeActivitiesForSequence
+      .filter(
+        (activity) =>
+          sequenceRouteIds.includes(String(activity?.routeId || "").trim()) &&
+          String(activity?.action || "").trim().toLowerCase() !== COURIER_ROUTE_PLANNED_ACTION &&
+          String(activity?.action || "").trim().toLowerCase() !== "courier_route_started" &&
+          String(activity?.action || "").trim().toLowerCase() !== "courier_route_finished",
+      )
+      .sort(compareCourierActivitiesAscending);
+    const orderNumberByRequestId = new Map();
+    for (const activity of sequenceActivities) {
+      const requestId = String(activity?.requestId || "").trim();
+      const orderNumber = String(activity?.orderNumber || "").trim();
+      if (requestId && orderNumber && !orderNumberByRequestId.has(requestId)) {
+        orderNumberByRequestId.set(requestId, orderNumber);
+      }
     }
-    const orderNumber = String(activity.orderNumber || "").replace(/\D/g, "");
-    if (orderNumber && !routeOrderNumberByRequestId.has(requestId)) {
-      routeOrderNumberByRequestId.set(requestId, orderNumber);
-    }
-    if (!routeAssignedRequestIds.includes(requestId)) {
-      routeAssignedRequestIds.push(requestId);
+    const assignedSequenceIds = [
+      ...new Set(
+        sequenceActivities
+          .filter((activity) => String(activity?.action || "").trim().toLowerCase() === "courier_route_order_assigned")
+          .map((activity) => String(activity?.requestId || "").trim())
+          .filter(
+            (requestId) =>
+              requestId &&
+              !requestId.startsWith("route:") &&
+              !requestId.startsWith("session:"),
+          ),
+      ),
+    ];
+    const missingSequenceIds = sequenceActivities
+      .map((activity) => String(activity?.requestId || "").trim())
+      .filter(
+        (requestId) =>
+          requestId &&
+          !requestId.startsWith("route:") &&
+          !requestId.startsWith("session:") &&
+          !assignedSequenceIds.includes(requestId),
+      );
+    const sequenceIds = insertMissingRouteSequenceIdsByOrderNumber(
+      assignedSequenceIds,
+      missingSequenceIds,
+      orderNumberByRequestId,
+    );
+
+    return {
+      sequenceByRequestId: new Map(sequenceIds.map((requestId, index) => [requestId, index + 1])),
+      orderNumberByRequestId,
+    };
+  };
+  for (const routeId of assignmentRouteIds) {
+    const { sequenceByRequestId, orderNumberByRequestId } = buildPreparerRouteAssignmentSequenceByRequestId(routeId);
+    for (const [requestId, sequence] of sequenceByRequestId.entries()) {
+      const orderNumber = String(orderNumberByRequestId.get(requestId) || "").replace(/\D/g, "");
+      if (requestId && !routeSequenceByRequestId.has(requestId)) {
+        routeSequenceByRequestId.set(requestId, sequence);
+      }
+      if (orderNumber && !routeSequenceByOrderNumber.has(orderNumber)) {
+        routeSequenceByOrderNumber.set(orderNumber, sequence);
+      }
     }
   }
-  routeAssignedRequestIds.forEach((requestId, index) => {
-    const sequence = index + 1;
-    const orderNumber = routeOrderNumberByRequestId.get(requestId) || "";
-    routeSequenceByRequestId.set(requestId, sequence);
-    if (orderNumber) {
-      routeSequenceByOrderNumber.set(orderNumber, sequence);
-    }
-  });
   const latestFinalActivityByRequestId = new Map();
   for (const activity of activities) {
     if (!isPreparerCourierFinalActivityAction(activity.action)) continue;
