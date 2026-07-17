@@ -50,6 +50,17 @@ function normalizeShop(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function formatVariantSummary(variantNode) {
+  if (!variantNode) return "";
+  const title = String(variantNode.title || "").trim();
+  if (title && title.toLowerCase() !== "default title") return title;
+  const selectedOptions = Array.isArray(variantNode.selectedOptions) ? variantNode.selectedOptions : [];
+  return selectedOptions
+    .map((option) => String(option?.value || "").trim())
+    .filter((value) => value && value.toLowerCase() !== "default title")
+    .join(" / ");
+}
+
 function addDays(dateValue, days) {
   const date = new Date(dateValue);
   if (!Number.isFinite(date.getTime())) return null;
@@ -2196,6 +2207,9 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
                 createdAt
                 updatedAt
                 displayFulfillmentStatus
+                currentTotalPriceSet {
+                  shopMoney { amount currencyCode }
+                }
                 fulfillments(first: 20) {
                   deliveredAt
                 }
@@ -2223,6 +2237,37 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
                     title
                     code
                     deliveryCategory
+                  }
+                }
+                lineItems(first: 100) {
+                  edges {
+                    node {
+                      id
+                      title
+                      quantity
+                      originalUnitPriceSet {
+                        shopMoney { amount currencyCode }
+                      }
+                      variant {
+                        id
+                        title
+                        selectedOptions {
+                          name
+                          value
+                        }
+                        image {
+                          url
+                          altText
+                        }
+                      }
+                      product {
+                        id
+                        featuredImage {
+                          url
+                          altText
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -2263,6 +2308,9 @@ async function fetchCourierOrdersByIds({ shop, accessToken, orderIds }) {
               createdAt
               updatedAt
               displayFulfillmentStatus
+              currentTotalPriceSet {
+                shopMoney { amount currencyCode }
+              }
               fulfillments(first: 20) {
                 deliveredAt
               }
@@ -2290,6 +2338,37 @@ async function fetchCourierOrdersByIds({ shop, accessToken, orderIds }) {
                   title
                   code
                   deliveryCategory
+                }
+              }
+              lineItems(first: 100) {
+                edges {
+                  node {
+                    id
+                    title
+                    quantity
+                    originalUnitPriceSet {
+                      shopMoney { amount currencyCode }
+                    }
+                    variant {
+                      id
+                      title
+                      selectedOptions {
+                        name
+                        value
+                      }
+                      image {
+                        url
+                        altText
+                      }
+                    }
+                    product {
+                      id
+                      featuredImage {
+                        url
+                        altText
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -2334,6 +2413,23 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
       .map((fulfillment) => String(fulfillment?.deliveredAt || "").trim())
       .filter(Boolean)
       .sort((firstDate, secondDate) => new Date(secondDate).getTime() - new Date(firstDate).getTime())[0] || "";
+  const lineItems = (orderNode.lineItems?.edges || []).map(({ node }) => ({
+    id: node.id,
+    lineItemId: node.id,
+    title: String(node.title || "").trim(),
+    quantity: Math.max(1, Number(node.quantity || 1)),
+    unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+    currencyCode: String(
+      node.originalUnitPriceSet?.shopMoney?.currencyCode ||
+        orderNode.currentTotalPriceSet?.shopMoney?.currencyCode ||
+        "MXN",
+    ),
+    variantId: node.variant?.id || "",
+    productId: node.product?.id || "",
+    variantSummary: formatVariantSummary(node.variant),
+    imageUrl: node.variant?.image?.url || node.product?.featuredImage?.url || "",
+    imageAlt: node.variant?.image?.altText || node.product?.featuredImage?.altText || node.title || "",
+  }));
   return {
     id: orderNode.id,
     orderNumber,
@@ -2354,6 +2450,9 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
     status: isShopifyDelivered ? "entregado" : getCourierRouteStatusFromTags(orderNode.tags),
     attemptCount,
     courierLabel: "Entrega",
+    estimatedRefund: Number(orderNode.currentTotalPriceSet?.shopMoney?.amount || 0),
+    currencyCode: String(orderNode.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
+    items: lineItems,
   };
 }
 

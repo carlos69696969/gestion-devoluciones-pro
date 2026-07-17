@@ -584,6 +584,8 @@ export async function loader({ request }) {
     const liveStatus = String(liveCourierOrder?.status || "").trim().toLowerCase();
     const nextStatus = liveStatus || activityStatus;
     if (!nextStatus && !liveCourierOrder && !routeSequenceNumber) return assignment;
+    const storedItems = Array.isArray(storedOrderData.items) ? storedOrderData.items : [];
+    const liveItems = Array.isArray(liveCourierOrder?.items) ? liveCourierOrder.items : [];
     return {
       ...assignment,
       globalSequenceNumber: routeSequenceNumber || preparerDisplaySequence(assignment),
@@ -597,7 +599,7 @@ export async function loader({ request }) {
           liveCourierOrder?.sequenceNumber ||
           storedOrderData.sequenceNumber ||
           assignment.sequence,
-        items: storedOrderData.items || liveCourierOrder?.items || [],
+        items: storedItems.length ? storedItems : liveItems,
         status: nextStatus || storedOrderData.status,
         courierActivityStatus: activityStatus || storedOrderData.courierActivityStatus || "",
       },
