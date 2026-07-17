@@ -8512,6 +8512,103 @@ function PreparersSection({
   const routeActivities = (Array.isArray(preparerRouteActivities) ? preparerRouteActivities : [])
     .filter((activity) => String(activity?.routeId || "").trim())
     .sort(compareRouteActivitiesAscending);
+  const buildPreparerRouteAssignmentSequenceByRequestId = (routeId) => {
+    const cleanRouteId = String(routeId || "").trim();
+    if (!cleanRouteId) return { sequenceByRequestId: new Map(), orderNumberByRequestId: new Map() };
+
+    const routePlan = routeActivities
+      .filter(
+        (activity) =>
+          String(activity?.routeId || "").trim() === cleanRouteId &&
+          String(activity?.action || "").trim().toLowerCase() === COURIER_ROUTE_PLANNED_ACTION,
+      )
+      .sort(
+        (firstActivity, secondActivity) =>
+          new Date(secondActivity?.createdAt || "").getTime() -
+            new Date(firstActivity?.createdAt || "").getTime() ||
+          Number(secondActivity?.id || 0) - Number(firstActivity?.id || 0),
+      )[0];
+    const planStartedAt = routePlan?.createdAt ? new Date(routePlan.createdAt) : null;
+    const batchRouteIds = planStartedAt
+      ? [
+          ...new Set(
+            routeActivities
+              .filter((activity) => {
+                if (String(activity?.action || "").trim().toLowerCase() !== COURIER_ROUTE_PLANNED_ACTION) {
+                  return false;
+                }
+                if (!String(activity?.routeId || "").trim()) return false;
+                const activityTime = new Date(activity?.createdAt || "").getTime();
+                if (!Number.isFinite(activityTime)) return false;
+                return Math.abs(activityTime - planStartedAt.getTime()) <= 15000;
+              })
+              .sort(compareRouteActivitiesAscending)
+              .map((activity) => String(activity?.routeId || "").trim())
+              .filter(Boolean),
+          ),
+        ]
+      : [];
+    const finishedBatchRouteIds = new Set(
+      routeActivities
+        .filter(
+          (activity) =>
+            batchRouteIds.includes(String(activity?.routeId || "").trim()) &&
+            String(activity?.action || "").trim().toLowerCase() === "courier_route_finished",
+        )
+        .map((activity) => String(activity?.routeId || "").trim()),
+    );
+    const activeBatchRouteIds = batchRouteIds.filter((id) => !finishedBatchRouteIds.has(id));
+    const sequenceRouteIds = activeBatchRouteIds.length ? activeBatchRouteIds : [cleanRouteId];
+    const sequenceActivities = routeActivities
+      .filter(
+        (activity) =>
+          sequenceRouteIds.includes(String(activity?.routeId || "").trim()) &&
+          String(activity?.action || "").trim().toLowerCase() !== COURIER_ROUTE_PLANNED_ACTION &&
+          String(activity?.action || "").trim().toLowerCase() !== "courier_route_started" &&
+          String(activity?.action || "").trim().toLowerCase() !== "courier_route_finished",
+      )
+      .sort(compareRouteActivitiesAscending);
+    const orderNumberByRequestId = new Map();
+    for (const activity of sequenceActivities) {
+      const requestId = String(activity?.requestId || "").trim();
+      const orderNumber = String(activity?.orderNumber || "").trim();
+      if (requestId && orderNumber && !orderNumberByRequestId.has(requestId)) {
+        orderNumberByRequestId.set(requestId, orderNumber);
+      }
+    }
+    const assignedSequenceIds = [
+      ...new Set(
+        sequenceActivities
+          .filter((activity) => String(activity?.action || "").trim().toLowerCase() === "courier_route_order_assigned")
+          .map((activity) => String(activity?.requestId || "").trim())
+          .filter(
+            (requestId) =>
+              requestId &&
+              !requestId.startsWith("route:") &&
+              !requestId.startsWith("session:"),
+          ),
+      ),
+    ];
+    const missingSequenceIds = sequenceActivities
+      .map((activity) => String(activity?.requestId || "").trim())
+      .filter(
+        (requestId) =>
+          requestId &&
+          !requestId.startsWith("route:") &&
+          !requestId.startsWith("session:") &&
+          !assignedSequenceIds.includes(requestId),
+      );
+    const sequenceIds = insertMissingRouteSequenceIdsByOrderNumber(
+      assignedSequenceIds,
+      missingSequenceIds,
+      orderNumberByRequestId,
+    );
+
+    return {
+      sequenceByRequestId: new Map(sequenceIds.map((requestId, index) => [requestId, index + 1])),
+      orderNumberByRequestId,
+    };
+  };
   const routePlanIds = [
     ...new Set(
       routeActivities
@@ -8534,41 +8631,18 @@ function PreparersSection({
     ...new Set(routeActivities.map((activity) => String(activity?.routeId || "").trim()).filter(Boolean)),
   ];
   const sequenceRouteIds = activeRouteIds.length ? activeRouteIds : fallbackRouteIds;
-  const assignedRouteActivities = routeActivities
-    .filter(
-      (activity) =>
-        sequenceRouteIds.includes(String(activity?.routeId || "").trim()) &&
-        String(activity?.action || "").trim().toLowerCase() === "courier_route_order_assigned",
-    )
-    .sort(compareRouteActivitiesAscending);
-  const routeSequenceRequestIds = [
-    ...new Set(
-      assignedRouteActivities
-        .map((activity) => String(activity?.requestId || "").trim())
-        .filter(
-          (requestId) =>
-            requestId &&
-            !requestId.startsWith("route:") &&
-            !requestId.startsWith("session:"),
-        ),
-    ),
-  ];
-  const routeOrderNumberByRequestId = new Map();
-  for (const activity of assignedRouteActivities) {
-    const requestId = String(activity?.requestId || "").trim();
-    const orderNumber = String(activity?.orderNumber || "").replace(/\D/g, "");
-    if (requestId && orderNumber && !routeOrderNumberByRequestId.has(requestId)) {
-      routeOrderNumberByRequestId.set(requestId, orderNumber);
+  for (const routeId of sequenceRouteIds) {
+    const { sequenceByRequestId, orderNumberByRequestId } = buildPreparerRouteAssignmentSequenceByRequestId(routeId);
+    for (const [requestId, sequence] of sequenceByRequestId.entries()) {
+      const orderNumber = String(orderNumberByRequestId.get(requestId) || "").replace(/\D/g, "");
+      if (requestId && !routeActivitySequenceByRequestId.has(requestId)) {
+        routeActivitySequenceByRequestId.set(requestId, sequence);
+      }
+      if (orderNumber && !routeActivitySequenceByOrderNumber.has(orderNumber)) {
+        routeActivitySequenceByOrderNumber.set(orderNumber, sequence);
+      }
     }
   }
-  routeSequenceRequestIds.forEach((requestId, index) => {
-    const sequence = index + 1;
-    routeActivitySequenceByRequestId.set(requestId, sequence);
-    const orderNumber = routeOrderNumberByRequestId.get(requestId);
-    if (orderNumber && !routeActivitySequenceByOrderNumber.has(orderNumber)) {
-      routeActivitySequenceByOrderNumber.set(orderNumber, sequence);
-    }
-  });
   const globalSequenceByRequestId = new Map();
   const globalSequenceByOrderNumber = new Map();
   const routeSequenceSourceOrders = (Array.isArray(courierOrders) && courierOrders.length
