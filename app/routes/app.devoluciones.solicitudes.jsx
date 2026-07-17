@@ -6,6 +6,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
   fetchBranchPickupCourierOrdersForShop,
+  fetchCourierOrdersForShop,
   getLatestCourierDeliveryDate,
   markCourierOrderAsDelivered,
   reprogramCourierDeliveryForNextRoute,
@@ -3384,12 +3385,25 @@ export const loader = async ({ request }) => {
   const courierOrdersRaw =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS
       ? [
-          ...(await safeLoaderArray("No se pudieron cargar las ordenes de entrega para repartidor/preparador", () =>
-            fetchCourierOrders(admin),
-          )).map((requestRow) => ({
-            ...requestRow,
-            courierLabel: "Entrega",
-          })),
+          ...new Map(
+            [
+              ...(await safeLoaderArray("No se pudieron cargar las ordenes de entrega para repartidor/preparador", () =>
+                fetchCourierOrders(admin),
+              )).map((requestRow) => ({
+                ...requestRow,
+                courierLabel: "Entrega",
+              })),
+              ...(await safeLoaderArray("No se pudieron cargar las ordenes de entrega compartidas para repartidor/preparador", () =>
+                fetchCourierOrdersForShop({
+                  shop: session.shop,
+                  sessionCandidates: [session],
+                }),
+              )).map((requestRow) => ({
+                ...requestRow,
+                courierLabel: "Entrega",
+              })),
+            ].map((requestRow) => [String(requestRow.id || ""), requestRow]),
+          ).values(),
           ...(await safeLoaderArray("No se pudieron cargar las devoluciones de recoleccion para repartidor/preparador", () =>
             fetchPickupCourierOrders(session.shop),
           )).map((requestRow) => ({
@@ -5203,11 +5217,11 @@ function getCourierStatusLabel(status) {
   return STATUS_LABEL[normalized] || normalized.replace(/_/g, " ");
 }
 
-async function fetchCourierOrders(admin) {
+async function fetchCourierOrderNodes(admin, queryString) {
   const response = await admin.graphql(
     `#graphql
     query CourierOrders {
-      orders(first: 250, query: "fulfillment_status:unfulfilled", sortKey: UPDATED_AT, reverse: true) {
+      orders(first: 250, query: "${queryString}", sortKey: UPDATED_AT, reverse: true) {
         edges {
           node {
             id
@@ -5286,7 +5300,26 @@ async function fetchCourierOrders(admin) {
     throw new Error(errors[0]?.message || "No se pudieron cargar las ordenes repartidor.");
   }
 
-  const nodes = payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || [];
+  return payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || [];
+}
+
+async function fetchCourierOrders(admin) {
+  const nodesById = new Map();
+  const errors = [];
+  for (const queryString of ["fulfillment_status:unfulfilled", "status:open"]) {
+    try {
+      for (const orderNode of await fetchCourierOrderNodes(admin, queryString)) {
+        const orderId = String(orderNode?.id || "").trim();
+        if (orderId) nodesById.set(orderId, orderNode);
+      }
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (!nodesById.size && errors.length) {
+    throw errors[0];
+  }
+  const nodes = Array.from(nodesById.values());
   return nodes
     .filter((orderNode) => {
       const status = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();

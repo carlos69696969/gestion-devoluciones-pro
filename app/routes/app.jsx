@@ -33,6 +33,8 @@ const MENU_COUNT_STATUSES = [
   "recibida",
   "por_devolver",
 ];
+const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
+const COURIER_ROUTE_ASSIGNED_ACTION = "courier_route_order_assigned";
 
 function itemKeyFromRecord(item) {
   const lineItemId = String(item?.lineItemId || "").trim();
@@ -49,6 +51,48 @@ function returnRequestItemsSignature(requestRow) {
     .map((item) => `${itemKeyFromRecord(item)}:${Math.max(1, Number(item?.quantity || 1))}`)
     .sort();
   return `${String(requestRow?.orderNumber || "").trim()}|${itemParts.join(",")}`;
+}
+
+async function activePlannedCourierDeliveryCount(shop) {
+  const routePlans = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      action: COURIER_ROUTE_PLANNED_ACTION,
+      routeId: { not: null },
+    },
+    select: { courierId: true, routeId: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
+  const latestRouteIdByCourierId = new Map();
+  for (const plan of routePlans) {
+    if (latestRouteIdByCourierId.has(plan.courierId)) continue;
+    const routeId = String(plan.routeId || "").trim();
+    if (routeId) latestRouteIdByCourierId.set(plan.courierId, routeId);
+  }
+  const routeIds = [...new Set([...latestRouteIdByCourierId.values()])];
+  if (!routeIds.length) return 0;
+
+  const finishedRoutes = await prisma.courierActivity.findMany({
+    where: { shop, routeId: { in: routeIds }, action: "courier_route_finished" },
+    select: { routeId: true },
+  });
+  const finishedRouteIds = new Set(finishedRoutes.map((activity) => String(activity.routeId || "").trim()));
+  const activeRouteIds = routeIds.filter((routeId) => !finishedRouteIds.has(routeId));
+  if (!activeRouteIds.length) return 0;
+
+  const assignments = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      routeId: { in: activeRouteIds },
+      action: COURIER_ROUTE_ASSIGNED_ACTION,
+    },
+    select: { requestId: true },
+  });
+  return new Set(
+    assignments
+      .map((assignment) => String(assignment.requestId || "").trim())
+      .filter((requestId) => requestId && !requestId.startsWith("pickup-")),
+  ).size;
 }
 
 export const loader = async ({ request }) => {
@@ -124,7 +168,13 @@ export const loader = async ({ request }) => {
     console.error("No se pudieron contar las entregas del repartidor", error);
     return [];
   });
-  navCounts.courier = deliveryCourierOrders.length;
+  const plannedDeliveryCount = deliveryCourierOrders.length
+    ? 0
+    : await activePlannedCourierDeliveryCount(session.shop).catch((error) => {
+        console.error("No se pudieron contar las rutas activas del repartidor", error);
+        return 0;
+      });
+  navCounts.courier = deliveryCourierOrders.length || plannedDeliveryCount;
 
   const branchPickupCourierOrders = await fetchBranchPickupCourierOrdersForShop({
     shop: session.shop,
