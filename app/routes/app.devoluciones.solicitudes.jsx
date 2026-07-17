@@ -8591,10 +8591,10 @@ function PreparersSection({
     const requestId = String(assignment.requestId || order.id || "").trim();
     const orderNumber = String(order.orderNumber || assignment.orderNumber || "").replace(/\D/g, "");
     return (
-      routeActivitySequenceByRequestId.get(requestId) ||
-      routeActivitySequenceByOrderNumber.get(orderNumber) ||
       globalSequenceByRequestId.get(requestId) ||
       globalSequenceByOrderNumber.get(orderNumber) ||
+      routeActivitySequenceByRequestId.get(requestId) ||
+      routeActivitySequenceByOrderNumber.get(orderNumber) ||
       preparerAssignmentStoredSequence(assignment)
     );
   };
