@@ -8724,7 +8724,14 @@ function PreparersSection({
         first.sequence - second.sequence ||
         comparePreparerAssignmentsForPortal(first.rawAssignment, second.rawAssignment),
     );
+  const isPreparerAssignmentSessionFinished = (assignment) => {
+    const rawAssignment = assignment?.rawAssignment || assignment || {};
+    const order = rawAssignment.orderData && typeof rawAssignment.orderData === "object" ? rawAssignment.orderData : {};
+    const finishedAt = order.preparerSessionFinishedAt || "";
+    return Boolean(finishedAt && Number.isFinite(new Date(finishedAt).getTime()));
+  };
   const activePreparerSummary = [...allPreparerAssignmentDetails.reduce((groups, assignment) => {
+    if (isPreparerAssignmentSessionFinished(assignment)) return groups;
     const key = String(assignment.preparerId || assignment.preparerName || "").trim();
     if (!key) return groups;
     const current = groups.get(key) || {
@@ -8741,7 +8748,7 @@ function PreparersSection({
   const completedPreparerAssignments = preparerAssignments
     .filter((assignment) => {
       const status = String(assignment.status || "").trim().toLowerCase();
-      if (status !== "ready" && status !== "not_located") return false;
+      if (status !== "ready" && status !== "partial" && status !== "not_located") return false;
       const order = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
       if (isReturnCourierLabel(order.courierLabel)) return false;
       const finishedAt = order.preparerSessionFinishedAt || "";

@@ -638,8 +638,23 @@ export async function action({ request }) {
           shop: access.shop,
           preparerId: access.id,
         },
-        select: { id: true, orderData: true },
+        select: { id: true, orderData: true, orderNumber: true, sequence: true, status: true },
       });
+      const pendingAssignments = assignments.filter((assignment) => !isPreparerAssignmentDone(assignment.status));
+      if (pendingAssignments.length) {
+        return {
+          ok: false,
+          error: "Aun no has despachado todas tus ordenes. No puedes finalizar hasta despachar las ordenes pendientes.",
+          pendingOrders: pendingAssignments.map((assignment) => {
+            const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+            return {
+              id: assignment.id,
+              orderNumber: String(orderData.orderNumber || assignment.orderNumber || "").trim() || "-",
+              sequence: Number(orderData.sequenceNumber || assignment.sequence || 0) || 0,
+            };
+          }),
+        };
+      }
       await prisma.$transaction([
         prisma.preparer.update({
           where: { id: access.id },
@@ -898,6 +913,7 @@ export default function PreparerPortal() {
   const [reviewUnitKeys, setReviewUnitKeys] = useState([]);
   const [reprintMode, setReprintMode] = useState(false);
   const isSubmitting = navigation.state === "submitting";
+  const pendingLogoutOrders = Array.isArray(actionData?.pendingOrders) ? actionData.pendingOrders : [];
   const initialTab = String(searchParams.get("tab") || "ordenes").trim().toLowerCase();
   const [activeTab, setActiveTab] = useState(initialTab === "despachar" ? "despachar" : "ordenes");
   const sortedAssignments = [...assignments].sort(
@@ -991,6 +1007,18 @@ export default function PreparerPortal() {
                 <p className={styles.subtitle}>
                   Cuenta traspasada a {transferredToName}
                 </p>
+              ) : null}
+              {pendingLogoutOrders.length ? (
+                <div className={styles.preparerInlineReviewMessage}>
+                  <p>{actionData?.error || "Aun tienes ordenes pendientes por despachar."}</p>
+                  <ul className={styles.preparerPendingList}>
+                    {pendingLogoutOrders.map((order) => (
+                      <li key={`${order.id || order.orderNumber}`}>
+                        {order.sequence ? `${order.sequence}. ` : ""}Orden #{order.orderNumber || "-"}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
             </div>
             <div className={styles.preparerTopActions}>
@@ -1310,7 +1338,7 @@ export default function PreparerPortal() {
               </div>
             </div>
           ) : null}
-          {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
+          {actionData?.error && !pendingLogoutOrders.length ? <p className={styles.error}>{actionData.error}</p> : null}
         </div>
       </main>
     );
