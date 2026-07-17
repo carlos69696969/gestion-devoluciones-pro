@@ -5,6 +5,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
+  fetchBranchPickupCourierOrdersForShop,
   getLatestCourierDeliveryDate,
   markCourierOrderAsDelivered,
   reprogramCourierDeliveryForNextRoute,
@@ -3397,12 +3398,27 @@ export const loader = async ({ request }) => {
           })),
         ]
       : viewMode === VIEW_MODE.BRANCH_PICKUP
-        ? (await safeLoaderArray("No se pudieron cargar las ordenes para recoger en sucursal", () =>
-            fetchBranchPickupCourierOrders(admin),
-          )).map((requestRow) => ({
-            ...requestRow,
-            courierLabel: "Entrega",
-          }))
+        ? [
+            ...new Map(
+              [
+                ...(await safeLoaderArray("No se pudieron cargar las ordenes para recoger en sucursal desde el contador", () =>
+                  fetchBranchPickupCourierOrdersForShop({
+                    shop: session.shop,
+                    sessionCandidates: [session],
+                  }),
+                )).map((requestRow) => ({
+                  ...requestRow,
+                  courierLabel: "Entrega",
+                })),
+                ...(await safeLoaderArray("No se pudieron cargar las ordenes para recoger en sucursal", () =>
+                  fetchBranchPickupCourierOrders(admin),
+                )).map((requestRow) => ({
+                  ...requestRow,
+                  courierLabel: "Entrega",
+                })),
+              ].map((requestRow) => [String(requestRow.id || ""), requestRow]),
+            ).values(),
+          ]
       : shouldLoadCourierHistoryOrders
         ? [
             ...new Map(
