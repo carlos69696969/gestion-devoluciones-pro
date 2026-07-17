@@ -418,6 +418,64 @@ async function getCourierDailyAccess(request, shop) {
   return access;
 }
 
+async function recoverCourierDailyAccessFromDeviceSession(request, shop) {
+  const { default: prisma } = await import("../db.server");
+  const deviceSessionId = courierPortalSessionId(request);
+  if (!deviceSessionId || deviceSessionId === "default") return null;
+
+  const sessionRequestId = `session:${deviceSessionId}`;
+  const sessionActivity = await prisma.courierActivity.findFirst({
+    where: {
+      shop: String(shop || "").trim().toLowerCase(),
+      requestId: sessionRequestId,
+      action: COURIER_ROUTE_SESSION_STARTED_ACTION,
+      routeId: { not: null },
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
+  if (
+    !sessionActivity ||
+    courierMexicoDateKey(sessionActivity.createdAt || new Date()) !== courierMexicoDateKey(new Date())
+  ) {
+    return null;
+  }
+
+  const activeRouteSession = await findActiveCourierRouteSession({
+    prisma,
+    shop,
+    courierId: Number(sessionActivity.courierId),
+    routeId: String(sessionActivity.routeId || ""),
+  });
+  if (!activeRouteSession || String(activeRouteSession.requestId || "").trim() !== sessionRequestId) {
+    return null;
+  }
+
+  const courier = await prisma.courier.findFirst({
+    where: {
+      id: Number(sessionActivity.courierId),
+      shop: String(shop || "").trim().toLowerCase(),
+    },
+    select: { id: true, name: true, code: true },
+  });
+  if (!courier) return null;
+
+  return {
+    shop: String(shop || "").trim().toLowerCase(),
+    courierId: courier.id,
+    courierName: courier.name,
+    operatorName: String(sessionActivity.courierName || "").trim() || courier.name,
+    dateKey: courierMexicoDateKey(new Date()),
+    routeId: String(sessionActivity.routeId || ""),
+    accessSessionId: deviceSessionId,
+    accessCode: courier.code,
+    transferredFromName: "",
+    transferredToName: "",
+    transferredAt: null,
+    deliveryConfirmationComplete: false,
+    returnConfirmationComplete: true,
+  };
+}
+
 async function hasCourierDeliveryConfirmation(request, dailyAccess, shop) {
   const { deliveryConfirmationCookie } = courierPortalCookies(request);
   const confirmation = await deliveryConfirmationCookie.parse(
@@ -1173,7 +1231,8 @@ export const action = async ({ request }) => {
           },
         });
       }
-      const accessSessionId = crypto.randomUUID();
+      const portalSessionId = courierPortalSessionId(request);
+      const accessSessionId = portalSessionId === "default" ? crypto.randomUUID() : portalSessionId;
       if (resumedTransfer) {
         await prisma.courierActivity.create({
           data: {
@@ -1625,6 +1684,15 @@ export const loader = async ({ request }) => {
   }
 
   const dailyAccess = shop ? await getCourierDailyAccess(request, shop) : null;
+  if (!dailyAccess && shop) {
+    const recoveredDailyAccess = await recoverCourierDailyAccessFromDeviceSession(request, shop);
+    if (recoveredDailyAccess) {
+      const { dailyAccessCookie } = courierPortalCookies(request);
+      const headers = new Headers();
+      headers.append("Set-Cookie", await dailyAccessCookie.serialize(recoveredDailyAccess));
+      return redirect(`${url.pathname}?${url.searchParams.toString()}`, { headers });
+    }
+  }
   if (dailyAccess?.transferred) {
     return {
       activeTab,
@@ -2981,6 +3049,7 @@ export default function RepartidorPublicPortal() {
                                 "Recibido",
                                 "courier_return_mark_received",
                                 "recibido",
+                                `${styles.actionButton} ${styles.actionButtonSuccess}`,
                               )}
                               {renderFailedPickupReasonForm(request)}
                             </>

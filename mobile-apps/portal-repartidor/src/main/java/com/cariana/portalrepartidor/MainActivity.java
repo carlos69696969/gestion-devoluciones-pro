@@ -8,6 +8,7 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.MotionEvent;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
@@ -15,12 +16,15 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Toast;
 
 public class MainActivity extends Activity {
     private static final String SHOP_DOMAIN = "qc1u2w-ft.myshopify.com";
     private static final String PORTAL_HOST = "gestion-devoluciones-pro.onrender.com";
     private static final String BASE_URL = "https://" + PORTAL_HOST + "/repartidor?shop=" + SHOP_DOMAIN;
     private WebView webView;
+    private float pullRefreshStartY = -1f;
+    private boolean pullRefreshReady;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -42,10 +46,43 @@ public class MainActivity extends Activity {
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+        CookieManager.getInstance().flush();
+        installPullToRefresh();
 
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         setContentView(webView);
-        webView.loadUrl(portalUrl());
+        if (savedInstanceState != null) {
+            webView.restoreState(savedInstanceState);
+        } else {
+            webView.loadUrl(portalUrl());
+        }
+    }
+
+    private void installPullToRefresh() {
+        webView.setOnTouchListener((view, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    pullRefreshStartY = event.getY();
+                    pullRefreshReady = webView.getScrollY() <= 0;
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    if (pullRefreshReady && webView.getScrollY() <= 0 && event.getY() - pullRefreshStartY > 150f) {
+                        pullRefreshReady = false;
+                        CookieManager.getInstance().flush();
+                        webView.reload();
+                        Toast.makeText(this, "Actualizando...", Toast.LENGTH_SHORT).show();
+                    }
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    pullRefreshStartY = -1f;
+                    pullRefreshReady = false;
+                    break;
+                default:
+                    break;
+            }
+            return false;
+        });
     }
 
     private class PortalWebViewClient extends WebViewClient {
@@ -118,6 +155,26 @@ public class MainActivity extends Activity {
             preferences.edit().putString("install_session_id", sessionId).apply();
         }
         return sessionId;
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (webView != null) {
+            webView.saveState(outState);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        CookieManager.getInstance().flush();
+        super.onPause();
+    }
+
+    @Override
+    protected void onStop() {
+        CookieManager.getInstance().flush();
+        super.onStop();
     }
 
     @Override
