@@ -6,6 +6,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
   fetchBranchPickupCourierOrdersForShop,
+  fetchCourierOrdersByIdsForShop,
   fetchCourierOrdersForShop,
   getLatestCourierDeliveryDate,
   markCourierOrderAsDelivered,
@@ -3387,6 +3388,17 @@ export const loader = async ({ request }) => {
       ? [
           ...new Map(
             [
+              ...(await safeLoaderArray("No se pudieron cargar las ordenes de rutas activas para repartidor/preparador", async () => {
+                const activeRequestIds = await activeCourierRouteAssignmentRequestIds(session.shop);
+                return fetchCourierOrdersByIdsForShop({
+                  shop: session.shop,
+                  sessionCandidates: [session],
+                  orderIds: activeRequestIds,
+                });
+              })).map((requestRow) => ({
+                ...requestRow,
+                courierLabel: "Entrega",
+              })),
               ...(await safeLoaderArray("No se pudieron cargar las ordenes de entrega para repartidor/preparador", () =>
                 fetchCourierOrders(admin),
               )).map((requestRow) => ({
@@ -7667,6 +7679,51 @@ async function plannedCourierRouteSummary(shop, courierIds) {
         count: Number(requestIds.length),
       };
     });
+}
+
+async function activeCourierRouteAssignmentRequestIds(shop) {
+  if (!shop) return [];
+  const plannedActivities = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      action: COURIER_ROUTE_PLANNED_ACTION,
+      routeId: { not: null },
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
+  const latestPlanByCourierId = new Map();
+  for (const activity of plannedActivities) {
+    if (latestPlanByCourierId.has(activity.courierId)) continue;
+    latestPlanByCourierId.set(activity.courierId, activity);
+  }
+  const routeIds = [
+    ...new Set([...latestPlanByCourierId.values()].map((activity) => String(activity.routeId || "").trim()).filter(Boolean)),
+  ];
+  if (!routeIds.length) return [];
+
+  const finishedRoutes = await prisma.courierActivity.findMany({
+    where: { shop, routeId: { in: routeIds }, action: "courier_route_finished" },
+    select: { routeId: true },
+  });
+  const finishedRouteIds = new Set(finishedRoutes.map((activity) => String(activity.routeId || "").trim()));
+  const activeRouteIds = routeIds.filter((routeId) => !finishedRouteIds.has(routeId));
+  if (!activeRouteIds.length) return [];
+
+  const assignments = await prisma.courierActivity.findMany({
+    where: {
+      shop,
+      routeId: { in: activeRouteIds },
+      action: "courier_route_order_assigned",
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  return [
+    ...new Set(
+      assignments
+        .map((assignment) => String(assignment.requestId || "").trim())
+        .filter((requestId) => requestId && !requestId.startsWith("pickup-")),
+    ),
+  ];
 }
 
 function isCourierBranchReturnOrder(order, routeAction = "") {
