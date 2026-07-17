@@ -3692,6 +3692,16 @@ export const loader = async ({ request }) => {
           orderBy: [{ sequence: "asc" }, { id: "asc" }],
         })
       : [];
+  const preparerRouteActivities =
+    viewMode === VIEW_MODE.PREPARERS && courierRouteIdsForCards.length
+      ? await prisma.courierActivity.findMany({
+          where: {
+            shop: session.shop,
+            routeId: { in: courierRouteIdsForCards },
+          },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        })
+      : [];
   if (
     (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryActivity) &&
     couriers.length
@@ -3759,6 +3769,7 @@ export const loader = async ({ request }) => {
     couriers,
     preparers,
     preparerAssignments,
+    preparerRouteActivities,
     courierActivities,
     courierRouteSnapshots,
     plannedCourierRoutes,
@@ -5749,6 +5760,7 @@ export default function ReturnsRequests() {
     couriers = [],
     preparers = [],
     preparerAssignments = [],
+    preparerRouteActivities = [],
     courierActivities = [],
     courierRouteSnapshots = [],
     plannedCourierRoutes = [],
@@ -7067,6 +7079,7 @@ export default function ReturnsRequests() {
         <PreparersSection
           preparers={preparers}
           preparerAssignments={preparerAssignments}
+          preparerRouteActivities={preparerRouteActivities}
           courierOrders={preparerCourierOrders}
           routeOrdersPayload={preparerRouteOrdersPayload}
           isSubmitting={isSubmitting}
@@ -8450,6 +8463,7 @@ function CouriersSection({ couriers, isSubmitting }) {
 function PreparersSection({
   preparers,
   preparerAssignments = [],
+  preparerRouteActivities = [],
   courierOrders = [],
   routeOrdersPayload = [],
   isSubmitting,
@@ -8486,6 +8500,75 @@ function PreparersSection({
     preparerAssignmentOrderNumberValue(first) - preparerAssignmentOrderNumberValue(second) ||
     preparerAssignmentStoredSequence(first) - preparerAssignmentStoredSequence(second) ||
     Number(first.id || 0) - Number(second.id || 0);
+  const routeActivitySequenceByRequestId = new Map();
+  const routeActivitySequenceByOrderNumber = new Map();
+  const compareRouteActivitiesAscending = (firstActivity, secondActivity) => {
+    const timeDifference =
+      new Date(firstActivity?.createdAt || "").getTime() -
+      new Date(secondActivity?.createdAt || "").getTime();
+    if (timeDifference !== 0) return timeDifference;
+    return Number(firstActivity?.id || 0) - Number(secondActivity?.id || 0);
+  };
+  const routeActivities = (Array.isArray(preparerRouteActivities) ? preparerRouteActivities : [])
+    .filter((activity) => String(activity?.routeId || "").trim())
+    .sort(compareRouteActivitiesAscending);
+  const routePlanIds = [
+    ...new Set(
+      routeActivities
+        .filter(
+          (activity) =>
+            String(activity?.action || "").trim().toLowerCase() === COURIER_ROUTE_PLANNED_ACTION,
+        )
+        .map((activity) => String(activity?.routeId || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  const finishedRouteIds = new Set(
+    routeActivities
+      .filter((activity) => String(activity?.action || "").trim().toLowerCase() === "courier_route_finished")
+      .map((activity) => String(activity?.routeId || "").trim())
+      .filter(Boolean),
+  );
+  const activeRouteIds = routePlanIds.filter((routeId) => !finishedRouteIds.has(routeId));
+  const fallbackRouteIds = [
+    ...new Set(routeActivities.map((activity) => String(activity?.routeId || "").trim()).filter(Boolean)),
+  ];
+  const sequenceRouteIds = activeRouteIds.length ? activeRouteIds : fallbackRouteIds;
+  const assignedRouteActivities = routeActivities
+    .filter(
+      (activity) =>
+        sequenceRouteIds.includes(String(activity?.routeId || "").trim()) &&
+        String(activity?.action || "").trim().toLowerCase() === "courier_route_order_assigned",
+    )
+    .sort(compareRouteActivitiesAscending);
+  const routeSequenceRequestIds = [
+    ...new Set(
+      assignedRouteActivities
+        .map((activity) => String(activity?.requestId || "").trim())
+        .filter(
+          (requestId) =>
+            requestId &&
+            !requestId.startsWith("route:") &&
+            !requestId.startsWith("session:"),
+        ),
+    ),
+  ];
+  const routeOrderNumberByRequestId = new Map();
+  for (const activity of assignedRouteActivities) {
+    const requestId = String(activity?.requestId || "").trim();
+    const orderNumber = String(activity?.orderNumber || "").replace(/\D/g, "");
+    if (requestId && orderNumber && !routeOrderNumberByRequestId.has(requestId)) {
+      routeOrderNumberByRequestId.set(requestId, orderNumber);
+    }
+  }
+  routeSequenceRequestIds.forEach((requestId, index) => {
+    const sequence = index + 1;
+    routeActivitySequenceByRequestId.set(requestId, sequence);
+    const orderNumber = routeOrderNumberByRequestId.get(requestId);
+    if (orderNumber && !routeActivitySequenceByOrderNumber.has(orderNumber)) {
+      routeActivitySequenceByOrderNumber.set(orderNumber, sequence);
+    }
+  });
   const globalSequenceByRequestId = new Map();
   const globalSequenceByOrderNumber = new Map();
   const routeSequenceSourceOrders = (Array.isArray(courierOrders) && courierOrders.length
@@ -8508,6 +8591,8 @@ function PreparersSection({
     const requestId = String(assignment.requestId || order.id || "").trim();
     const orderNumber = String(order.orderNumber || assignment.orderNumber || "").replace(/\D/g, "");
     return (
+      routeActivitySequenceByRequestId.get(requestId) ||
+      routeActivitySequenceByOrderNumber.get(orderNumber) ||
       globalSequenceByRequestId.get(requestId) ||
       globalSequenceByOrderNumber.get(orderNumber) ||
       preparerAssignmentStoredSequence(assignment)
