@@ -766,6 +766,15 @@ function pickupApprovedPortalMessage(requestItem) {
   return `📦Pedido #${orderNumber}. Tu solicitud fue aprobada exitosamente. Nuestro equipo recogerá tu pedido en el domicilio y fecha indicados por ti. 🚚 Gracias por confiar y ser parte de Cariana. 💙`;
 }
 
+function rejectedReturnPortalMessage(requestItem, reasonOverride = "") {
+  const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  const reason = normalizeDisplayedReasonText(reasonOverride || latestReasonFromRaw(requestItem?.rejectionReason));
+  if (/despu[eé]s de revisar.+rechazad[ao]/i.test(reason)) {
+    return reason;
+  }
+  return `📦 Pedido #${orderNumber}. Después de revisar tu solicitud de devolución, lamentamos informarte que ha sido rechazada. Motivo: ${reason || "No especificado"}.`;
+}
+
 function expiredReturnPortalMessage(requestItem) {
   const orderNumber = String(requestItem?.orderNumber || "").replace(/^#/, "").trim() || "****";
   return `Pedido #${orderNumber}. Estimado cliente, la fecha límite para entregar tu devolución ha expirado. Lamentablemente, ya no podremos aceptar el producto.`;
@@ -797,7 +806,7 @@ function timelineStatusDescription(status, requestItem) {
     return "El reembolso fue denegado. Revisa el motivo de denegacion.";
   }
   if (normalized === "rechazada") {
-    return "Tu solicitud fue rechazada. Revisa el motivo para mas detalle.";
+    return rejectedReturnPortalMessage(requestItem);
   }
   if (normalized === "no_devuelto") {
     return expiredReturnPortalMessage(requestItem);
@@ -945,6 +954,8 @@ function buildStatusTimeline(requestItem) {
       ? buildReturnRouteTimeRescheduleMessage(requestItem, routeTimeRescheduleDateFromReason(entry.reason))
       : kind === "never_arrived_branch"
       ? expiredReturnPortalMessage(requestItem)
+      : kind === "review_rejected"
+      ? rejectedReturnPortalMessage(requestItem, entry.reason)
       : kind === RETURNED_TO_CUSTOMER_KIND
         ? normalizeDisplayedReasonText(entry.reason) || RETURNED_TO_CUSTOMER_MESSAGE
         : normalizeDisplayedReasonText(entry.reason);
