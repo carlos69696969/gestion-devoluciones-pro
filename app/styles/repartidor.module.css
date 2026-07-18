@@ -1144,10 +1144,10 @@
 
   .courierPortalCardHeader {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     justify-content: stretch;
-    row-gap: 8px;
+    column-gap: 8px;
   }
 
   .courierPortalCardHeader .orderBadgeGroup,
@@ -1162,13 +1162,10 @@
   }
 
   .courierPortalCardHeader .statusGroup {
-    width: 100%;
-    justify-self: stretch;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-self: end;
     justify-content: flex-start;
-  }
-
-  .courierPortalCardHeader .statusGroup > :last-child {
-    margin-left: auto;
   }
 
   .title {
