@@ -681,7 +681,6 @@ function courierRefundedUnitKeySetFromDetails(details = []) {
           const cleanUnitKey = String(unitKey || "").trim();
           if (cleanUnitKey) explicitKeys.add(cleanUnitKey);
         }
-        refundedCountsByLineId.set(lineItemId, Number(refundedCountsByLineId.get(lineItemId) || 0) + itemUnitKeys.length);
       } else {
         refundedCountsByLineId.set(
           lineItemId,
