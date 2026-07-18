@@ -2473,6 +2473,7 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
             <div>
               <div className={styles.divider} />
               <h3 className={styles.sectionTitle}>1) Productos a devolver</h3>
+              <p className={styles.sectionHint}>Selecciona sólo los productos que quieres devolver.</p>
               {order.items.map((item) => {
                 const reason = reasonsByItem[item.id] || "";
                 const needsEvidence = evidenceSet.has(reasonKey(reason));

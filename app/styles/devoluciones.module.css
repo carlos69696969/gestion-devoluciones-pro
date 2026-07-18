@@ -187,6 +187,13 @@
   letter-spacing: -0.01em;
 }
 
+.sectionHint {
+  margin: -4px 0 10px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
 .fieldGrid {
   display: grid;
   gap: 10px;
