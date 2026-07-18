@@ -244,7 +244,8 @@ function itemKeyFromRecord(item) {
 function expandOrderItemsByUnit(items, blockedCountByKey = new Map(), rejectedReasonsByItemKey = new Map()) {
   const expanded = [];
   for (const item of items || []) {
-    const totalQuantity = Math.max(1, Number(item.quantity || 1));
+    const totalQuantity = Math.max(0, Number(item.quantity || 0));
+    if (totalQuantity <= 0 || Number(item.unitPrice || 0) <= 0) continue;
     const key = itemKeyFromRecord({
       lineItemId: item.lineItemId || item.id,
       variantId: item.variantId,
@@ -365,7 +366,7 @@ function normalizeOrder(orderNode) {
       imageAlt: node.variant?.image?.altText || node.product?.featuredImage?.altText || "",
       variantSummary: formatVariantSummary(node.variant),
       title: node.title,
-      quantity: node.quantity,
+      quantity: Number(node.refundableQuantity ?? node.quantity ?? 0),
       unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
     })),
   };
@@ -1145,6 +1146,7 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                       id
                       title
                       quantity
+                      refundableQuantity
                       product { id featuredImage { url altText } }
                       variant {
                         id
