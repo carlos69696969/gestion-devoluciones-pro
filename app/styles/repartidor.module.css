@@ -5,6 +5,21 @@
   font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
+.loginPage {
+  background-color: #f6f6f7;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.repartidorLoginPage {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.38)), url("/mobile-assets/repartidor-login.png");
+}
+
+.preparadorLoginPage {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.36)), url("/mobile-assets/preparador-login.png");
+}
+
 .container {
   max-width: 1120px;
   margin: 0 auto;
@@ -22,6 +37,12 @@
 .accessCard {
   width: min(100%, 420px);
   box-sizing: border-box;
+}
+
+.loginPage .accessCard {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(8px);
 }
 
 .confirmationCard {
@@ -518,14 +539,40 @@
 }
 
 .accessButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 0;
   border-radius: 999px;
+  min-height: 46px;
   padding: 13px 18px;
   background: #005bd3;
   color: #fff;
   font-size: 15px;
   font-weight: 800;
   cursor: pointer;
+}
+
+.accessButton:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
+.buttonSpinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.42);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .accessButtonLink {
@@ -715,6 +762,10 @@
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+
+.loginPage .eyebrow {
+  color: #005bd3;
 }
 
 .title {
@@ -909,6 +960,10 @@
 
 .logoutButton {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 1px solid #d1d5db;
   border-radius: 999px;
   background: #fff;
@@ -918,6 +973,16 @@
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.logoutButton:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
+.logoutButton .buttonSpinner {
+  border-color: rgba(55, 65, 81, 0.26);
+  border-top-color: #374151;
 }
 
 .logoutButton:hover {

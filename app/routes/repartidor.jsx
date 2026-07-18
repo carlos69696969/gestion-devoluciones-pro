@@ -2186,6 +2186,9 @@ export default function RepartidorPublicPortal() {
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
+  const activeSubmitIntent = String(navigation.formData?.get("intent") || "");
+  const isSubmitting = navigation.state !== "idle";
+  const isFinishingRoute = isSubmitting && activeSubmitIntent === "courier_finish_route";
   const revalidator = useRevalidator();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -2265,8 +2268,9 @@ export default function RepartidorPublicPortal() {
     );
   }
   if (requiresDailyAccess) {
+    const isLoginSubmitting = isSubmitting && activeSubmitIntent === "courier_daily_login";
     return (
-      <main className={styles.page}>
+      <main className={`${styles.page} ${styles.loginPage} ${styles.repartidorLoginPage}`}>
         <div className={styles.accessContainer}>
           <section className={`${styles.card} ${styles.accessCard}`}>
             <p className={styles.eyebrow}>Portal del repartidor</p>
@@ -2275,7 +2279,7 @@ export default function RepartidorPublicPortal() {
             {actionData?.loginError ? (
               <p className={styles.accessError} role="alert">{actionData.loginError}</p>
             ) : null}
-            <Form method="post" reloadDocument className={styles.accessForm}>
+            <Form method="post" className={styles.accessForm}>
               <input type="hidden" name="intent" value="courier_daily_login" />
               <input type="hidden" name="shop" value={shop || ""} />
               <input
@@ -2288,7 +2292,16 @@ export default function RepartidorPublicPortal() {
                 autoComplete="one-time-code"
                 required
               />
-              <button className={styles.accessButton} type="submit">Entrar</button>
+              <button className={styles.accessButton} type="submit" disabled={isLoginSubmitting}>
+                {isLoginSubmitting ? (
+                  <>
+                    <span className={styles.buttonSpinner} aria-hidden="true" />
+                    Entrando...
+                  </>
+                ) : (
+                  "Entrar"
+                )}
+              </button>
             </Form>
           </section>
         </div>
@@ -2626,8 +2639,6 @@ export default function RepartidorPublicPortal() {
     );
   };
 
-  const isSubmitting = navigation.state !== "idle";
-
   const renderCourierActionForm = (
     request,
     buttonLabel,
@@ -2746,7 +2757,16 @@ export default function RepartidorPublicPortal() {
             >
               <input type="hidden" name="intent" value="courier_finish_route" />
               <input type="hidden" name="shop" value={shop || ""} />
-              <button className={styles.logoutButton} type="submit">Finalizar ruta</button>
+              <button className={styles.logoutButton} type="submit" disabled={isFinishingRoute}>
+                {isFinishingRoute ? (
+                  <>
+                    <span className={styles.buttonSpinner} aria-hidden="true" />
+                    Cerrando...
+                  </>
+                ) : (
+                  "Finalizar ruta"
+                )}
+              </button>
             </Form>
           )}
           </header>
@@ -2827,7 +2847,16 @@ export default function RepartidorPublicPortal() {
                 ))}
               </div>
               <div className={styles.actionRow}>
-                <button className={styles.accessButton} type="submit">Finalizar ruta</button>
+                <button className={styles.accessButton} type="submit" disabled={isFinishingRoute}>
+                  {isFinishingRoute ? (
+                    <>
+                      <span className={styles.buttonSpinner} aria-hidden="true" />
+                      Cerrando...
+                    </>
+                  ) : (
+                    "Finalizar ruta"
+                  )}
+                </button>
                 <button
                   className={styles.actionButton}
                   type="button"

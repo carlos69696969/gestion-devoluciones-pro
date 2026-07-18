@@ -1131,6 +1131,7 @@ export default function PreparerPortal() {
   const { shop, preparerName, transferredToName = "", transferNotice = "", isLoggedIn, assignments = [] } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
+  const activeSubmitIntent = String(navigation.formData?.get("intent") || "");
   const revalidator = useRevalidator();
   const [searchParams] = useSearchParams();
   const [enlargedImage, setEnlargedImage] = useState(null);
@@ -1139,6 +1140,8 @@ export default function PreparerPortal() {
   const [reviewUnitKeys, setReviewUnitKeys] = useState([]);
   const [reprintMode, setReprintMode] = useState(false);
   const isSubmitting = navigation.state === "submitting";
+  const isLoginSubmitting = isSubmitting && !activeSubmitIntent;
+  const isLoggingOut = isSubmitting && activeSubmitIntent === "logout";
   const pendingLogoutOrders = Array.isArray(actionData?.pendingOrders) ? actionData.pendingOrders : [];
   const initialTab = String(searchParams.get("tab") || "ordenes").trim().toLowerCase();
   const [activeTab, setActiveTab] = useState(initialTab === "despachar" ? "despachar" : "ordenes");
@@ -1264,8 +1267,15 @@ export default function PreparerPortal() {
                   >
                     <input type="hidden" name="intent" value="logout" />
                     <input type="hidden" name="shop" value={shop || ""} />
-                    <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
-                      Finalizar
+                    <button className={styles.accessButton} type="submit" disabled={isLoggingOut}>
+                      {isLoggingOut ? (
+                        <>
+                          <span className={styles.buttonSpinner} aria-hidden="true" />
+                          Cerrando...
+                        </>
+                      ) : (
+                        "Finalizar"
+                      )}
                     </button>
                   </Form>
                   <button
@@ -1571,7 +1581,7 @@ export default function PreparerPortal() {
   }
 
   return (
-    <main className={styles.page}>
+    <main className={`${styles.page} ${styles.loginPage} ${styles.preparadorLoginPage}`}>
       <div className={styles.accessContainer}>
         <section className={`${styles.card} ${styles.accessCard}`}>
           <p className={styles.eyebrow}>Portal del preparador</p>
@@ -1592,8 +1602,15 @@ export default function PreparerPortal() {
                   placeholder="000000"
                   required
                 />
-                <button className={styles.accessButton} type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? "Validando..." : "Entrar"}
+                <button className={styles.accessButton} type="submit" disabled={isLoginSubmitting}>
+                  {isLoginSubmitting ? (
+                    <>
+                      <span className={styles.buttonSpinner} aria-hidden="true" />
+                      Entrando...
+                    </>
+                  ) : (
+                    "Entrar"
+                  )}
                 </button>
               </Form>
               {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}

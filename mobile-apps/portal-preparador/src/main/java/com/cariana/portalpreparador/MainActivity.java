@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -18,21 +19,33 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.text.TextUtils;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -60,7 +73,11 @@ public class MainActivity extends Activity {
     private static final int SAFE_MAX = 792;
     private final Object printerSocketLock = new Object();
     private BluetoothSocket cachedPrinterSocket;
+    private FrameLayout rootLayout;
     private WebView webView;
+    private View offlineView;
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private boolean offlineVisible;
     private float pullRefreshStartY = -1f;
     private boolean pullRefreshReady;
 
@@ -69,6 +86,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        rootLayout = new FrameLayout(this);
         webView = new WebView(this);
         webView.setBackgroundColor(Color.rgb(246, 246, 247));
         webView.setWebViewClient(new PortalWebViewClient());
@@ -86,10 +104,25 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
         webView.addJavascriptInterface(new PortalBridge(), "Android");
         installPullToRefresh();
+        offlineView = createOfflineView();
+        rootLayout.addView(webView, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        rootLayout.addView(offlineView, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        offlineView.setVisibility(View.GONE);
+        registerNetworkWatcher();
 
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-        setContentView(webView);
-        webView.loadUrl(portalUrl());
+        setContentView(rootLayout);
+        if (!isNetworkAvailable()) {
+            showOfflineView();
+        } else {
+            webView.loadUrl(portalUrl());
+        }
         requestBluetoothPermissionOnLaunch();
     }
 
@@ -128,6 +161,139 @@ public class MainActivity extends Activity {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
             return handleUrl(url);
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            super.onPageFinished(view, url);
+            if (isNetworkAvailable()) {
+                hideOfflineView();
+            }
+        }
+
+        @Override
+        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            super.onReceivedError(view, request, error);
+            if (request != null && request.isForMainFrame()) {
+                showOfflineView();
+            }
+        }
+
+        @Override
+        public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+            super.onReceivedError(view, errorCode, description, failingUrl);
+            showOfflineView();
+        }
+    }
+
+    private View createOfflineView() {
+        FrameLayout wrapper = new FrameLayout(this);
+        ImageView image = new ImageView(this);
+        image.setImageResource(getResources().getIdentifier("offline_screen", "drawable", getPackageName()));
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        wrapper.addView(image, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER_HORIZONTAL);
+        panel.setPadding(30, 0, 30, 0);
+
+        TextView title = new TextView(this);
+        title.setText("Sin conexion");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(26);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setGravity(Gravity.CENTER);
+        panel.addView(title);
+
+        TextView message = new TextView(this);
+        message.setText("Comprueba que estas conectado a Wi-Fi o tengas datos moviles.");
+        message.setTextColor(Color.WHITE);
+        message.setTextSize(16);
+        message.setGravity(Gravity.CENTER);
+        message.setPadding(0, 10, 0, 18);
+        panel.addView(message);
+
+        Button retryButton = new Button(this);
+        retryButton.setText("Reintentar");
+        retryButton.setTextColor(Color.WHITE);
+        retryButton.setTextSize(15);
+        retryButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        retryButton.setBackgroundColor(Color.rgb(0, 91, 211));
+        retryButton.setOnClickListener(view -> retryConnection());
+        panel.addView(retryButton, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+
+        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL
+        );
+        panelParams.setMargins(34, 0, 34, 86);
+        wrapper.addView(panel, panelParams);
+        return wrapper;
+    }
+
+    private void registerNetworkWatcher() {
+        ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (manager == null) return;
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                runOnUiThread(() -> retryConnection());
+            }
+
+            @Override
+            public void onLost(Network network) {
+                runOnUiThread(() -> showOfflineView());
+            }
+        };
+        try {
+            NetworkRequest request = new NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build();
+            manager.registerNetworkCallback(request, networkCallback);
+        } catch (Exception ignored) {}
+    }
+
+    private boolean isNetworkAvailable() {
+        ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (manager == null) return false;
+        Network network = manager.getActiveNetwork();
+        if (network == null) return false;
+        NetworkCapabilities capabilities = manager.getNetworkCapabilities(network);
+        return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+    }
+
+    private void showOfflineView() {
+        offlineVisible = true;
+        if (offlineView != null) offlineView.setVisibility(View.VISIBLE);
+        if (webView != null) webView.setVisibility(View.GONE);
+    }
+
+    private void hideOfflineView() {
+        offlineVisible = false;
+        if (offlineView != null) offlineView.setVisibility(View.GONE);
+        if (webView != null) webView.setVisibility(View.VISIBLE);
+    }
+
+    private void retryConnection() {
+        if (!isNetworkAvailable()) {
+            showOfflineView();
+            return;
+        }
+        hideOfflineView();
+        CookieManager.getInstance().flush();
+        String currentUrl = webView == null ? "" : webView.getUrl();
+        if (currentUrl == null || currentUrl.trim().isEmpty()) {
+            webView.loadUrl(portalUrl());
+        } else {
+            webView.reload();
         }
     }
 
@@ -793,6 +959,16 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (offlineVisible && isNetworkAvailable()) {
+            retryConnection();
+        } else if (!isNetworkAvailable()) {
+            showOfflineView();
+        }
+    }
+
+    @Override
     public void onBackPressed() {
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
@@ -803,6 +979,14 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (networkCallback != null) {
+            ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (manager != null) {
+                try {
+                    manager.unregisterNetworkCallback(networkCallback);
+                } catch (Exception ignored) {}
+            }
+        }
         closeCachedPrinterSocket();
         super.onDestroy();
     }
