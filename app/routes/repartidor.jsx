@@ -2992,7 +2992,9 @@ export default function RepartidorPublicPortal() {
                       )}
                     </div>
                   </div>
-                  <h3 className={adminStyles.courierOrderNumber}>#{request.orderNumber}</h3>
+                  <h3 className={`${adminStyles.courierOrderNumber} ${styles.courierPortalOrderNumber}`}>
+                    #{request.orderNumber}
+                  </h3>
                   <p className={adminStyles.courierCustomerName}>{request.customerName}</p>
                   <p className={adminStyles.courierField}>
                     <strong>Programado:</strong> {formatCourierScheduledDate(request.pickupDate)}

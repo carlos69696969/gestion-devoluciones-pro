@@ -1144,10 +1144,11 @@
 
   .courierPortalCardHeader {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: max-content minmax(0, 1fr);
     align-items: start;
     justify-content: stretch;
     column-gap: 8px;
+    min-height: 58px;
   }
 
   .courierPortalCardHeader .orderBadgeGroup,
@@ -1157,7 +1158,7 @@
   }
 
   .courierPortalCardHeader .orderBadgeGroup {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     justify-content: flex-start;
   }
 
@@ -1166,6 +1167,10 @@
     align-items: flex-end;
     justify-self: end;
     justify-content: flex-start;
+  }
+
+  .courierPortalOrderNumber {
+    margin-top: -24px;
   }
 
   .title {
