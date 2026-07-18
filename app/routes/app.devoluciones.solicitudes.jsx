@@ -5957,10 +5957,16 @@ export default function ReturnsRequests() {
     (sum, item) => sum + Number(item.unitPrice || 0),
     0,
   );
+  const completedCourierRefundUnitKeySet = new Set([
+    ...alreadyRefundedCourierUnitKeySet,
+    ...selectedCourierRefundUnitKeySet,
+  ]);
   const selectedCourierRefundIsFull =
     courierRefundUnitItems.length > 0 &&
-    alreadyRefundedCourierUnitKeySet.size === 0 &&
-    selectedCourierRefundUnitKeys.length === courierRefundUnitItems.length;
+    selectedCourierRefundItems.length > 0 &&
+    courierRefundUnitItems.every((item) =>
+      completedCourierRefundUnitKeySet.has(String(item.unitKey || "")),
+    );
   const selectedCourierRefundTotal = selectedCourierRefundIsFull
     ? Number(courierRefundRequest?.estimatedRefund || selectedCourierRefundSubtotal || 0)
     : selectedCourierRefundSubtotal;
