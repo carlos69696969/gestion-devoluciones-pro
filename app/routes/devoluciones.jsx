@@ -425,6 +425,22 @@ function formatCalendarDateKey(dateKey) {
   }).format(date);
 }
 
+function formatReturnMessageDate(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = match
+    ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12))
+    : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    timeZone: match ? "UTC" : undefined,
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.day} ${values.month} ${values.year}`;
+}
+
 function toMXN(value) {
   return Number(value || 0).toFixed(2);
 }
@@ -1731,13 +1747,13 @@ export const action = async ({ request }) => {
     if (selectedDateKey < minimumPickupDateKey) {
       return {
         ok: false,
-        error: `Elige una fecha de recoleccion a partir del ${formatCalendarDateKey(minimumPickupDateKey)}.`,
+        error: `Elige una fecha de recoleccion a partir del ${formatReturnMessageDate(minimumPickupDateKey)}.`,
       };
     }
     if (selectedDateKey > limitDate.toISOString().slice(0, 10)) {
       return {
         ok: false,
-        error: `Esa fecha sobrepasa el tiempo de devolucion. Fecha limite: ${limitDate.toLocaleDateString("es-MX")}.`,
+        error: `Esa fecha sobrepasa el tiempo de devolucion. Fecha limite: ${formatReturnMessageDate(limitDate)}.`,
       };
     }
   }
@@ -2399,10 +2415,10 @@ function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, i
         if (String(pickup.pickupDate || "").trim()) {
           const selectedDateKey = String(pickup.pickupDate || "").trim();
           if (selectedDateKey < minimumPickupDateISO) {
-            return `Elige una fecha de recoleccion a partir del ${formatCalendarDateKey(minimumPickupDateISO)}.`;
+            return `Elige una fecha de recoleccion a partir del ${formatReturnMessageDate(minimumPickupDateISO)}.`;
           }
           if (selectedDateKey > limitDateISO) {
-            return `Esa fecha sobrepasa el tiempo de devolucion. Fecha limite: ${limitDateObj.toLocaleDateString("es-MX")}.`;
+            return `Esa fecha sobrepasa el tiempo de devolucion. Fecha limite: ${formatReturnMessageDate(limitDateObj)}.`;
           }
         }
       }
