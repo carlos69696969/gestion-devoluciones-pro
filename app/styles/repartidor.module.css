@@ -758,6 +758,22 @@
   padding: 16px;
 }
 
+.courierPortalGrid {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.courierPortalCard {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.courierPortalCardHeader {
+  min-width: 0;
+}
+
 .cardTitle {
   margin: 0 0 6px;
   font-size: 20px;
@@ -1079,6 +1095,7 @@
   .container > .card {
     width: 100%;
     box-sizing: border-box;
+    overflow: hidden;
   }
 
   .tabRow {
@@ -1112,6 +1129,36 @@
     align-items: flex-start;
     flex-direction: row;
     flex-wrap: wrap;
+  }
+
+  .courierPortalGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: stretch;
+  }
+
+  .courierPortalCard {
+    padding: 12px 12px 10px;
+    overflow: hidden;
+  }
+
+  .courierPortalCardHeader {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    justify-content: stretch;
+    gap: 8px;
+  }
+
+  .courierPortalCardHeader .orderBadgeGroup,
+  .courierPortalCardHeader .statusGroup {
+    max-width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .courierPortalCardHeader .statusGroup {
+    justify-self: start;
   }
 
   .title {

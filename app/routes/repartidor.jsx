@@ -2884,17 +2884,17 @@ export default function RepartidorPublicPortal() {
           {!hasOrders ? (
             <p className={styles.empty}>{emptyMessage}</p>
           ) : (
-            <div className={adminStyles.courierGrid}>
+            <div className={`${adminStyles.courierGrid} ${styles.courierPortalGrid}`}>
               {visibleOrders.map((request, index) => (
                 <article
                   key={request.id}
-                  className={`${adminStyles.courierCard} ${
+                  className={`${adminStyles.courierCard} ${styles.courierPortalCard} ${
                     request.courierLabel === "Devolucion"
                       ? adminStyles.courierCardReturn
                       : adminStyles.courierCardDelivery
                   }`}
                 >
-                  <div className={adminStyles.courierHeader}>
+                  <div className={`${adminStyles.courierHeader} ${styles.courierPortalCardHeader}`}>
                     <div className={styles.orderBadgeGroup}>
                       <span className={styles.orderSequenceBadge}>
                         {sequenceByOrderId.get(String(request?.id || "")) || index + 1}
