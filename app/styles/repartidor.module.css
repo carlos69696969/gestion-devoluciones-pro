@@ -1144,21 +1144,31 @@
 
   .courierPortalCardHeader {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
     justify-content: stretch;
-    gap: 8px;
+    row-gap: 8px;
   }
 
   .courierPortalCardHeader .orderBadgeGroup,
   .courierPortalCardHeader .statusGroup {
     max-width: 100%;
     min-width: 0;
+  }
+
+  .courierPortalCardHeader .orderBadgeGroup {
+    flex-wrap: wrap;
     justify-content: flex-start;
   }
 
   .courierPortalCardHeader .statusGroup {
-    justify-self: end;
+    width: 100%;
+    justify-self: stretch;
+    justify-content: flex-start;
+  }
+
+  .courierPortalCardHeader .statusGroup > :last-child {
+    margin-left: auto;
   }
 
   .title {
