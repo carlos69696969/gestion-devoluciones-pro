@@ -280,6 +280,17 @@ function itemUnitKeys(item) {
   return Array.from({ length: quantity }, (_value, index) => itemUnitKey(item, index));
 }
 
+function expandItemsIntoPreparerUnits(items = []) {
+  return (Array.isArray(items) ? items : []).flatMap((item, itemIndex) =>
+    itemUnitKeys(item).map((unitKey, unitIndex) => ({
+      item,
+      itemIndex,
+      unitIndex,
+      unitKey,
+    })),
+  );
+}
+
 function normalizeOrderItemsWithPreparerStatus(orderData, readyUnitKeys = [], missingUnitKeys = []) {
   const readySet = new Set(readyUnitKeys.map((value) => String(value || "").trim()).filter(Boolean));
   const missingSet = new Set(missingUnitKeys.map((value) => String(value || "").trim()).filter(Boolean));
@@ -1218,10 +1229,10 @@ export default function PreparerPortal() {
     const uncheckedUnitKeys = dispatchUnitKeys.filter((unitKey) => !readyUnitKeySet.has(unitKey));
     const activeReviewUnitKeys = missingReviewOpen && reviewUnitKeys.length ? reviewUnitKeys : uncheckedUnitKeys;
     const activeReviewUnitKeySet = new Set(activeReviewUnitKeys);
-    const visibleDispatchItems = missingReviewOpen
-      ? dispatchItems.filter((item) => itemUnitKeys(item).some((unitKey) => activeReviewUnitKeySet.has(unitKey)))
-      : dispatchItems;
-    const reviewItemCount = visibleDispatchItems.length;
+    const visibleDispatchUnits = expandItemsIntoPreparerUnits(dispatchItems).filter(({ unitKey }) =>
+      missingReviewOpen ? activeReviewUnitKeySet.has(unitKey) : true,
+    );
+    const reviewItemCount = visibleDispatchUnits.length;
 
     return (
       <main className={styles.page}>
@@ -1454,12 +1465,11 @@ export default function PreparerPortal() {
                         ) : null}
                         {!isDispatchReprogrammed ? (
                         <div className={styles.preparerProductList}>
-                          {visibleDispatchItems.length ? (
-                            visibleDispatchItems.map((item, index) => {
-                              const unitKeys = itemUnitKeys(item);
-                              const checked = unitKeys.every((unitKey) => readyUnitKeySet.has(unitKey));
+                          {visibleDispatchUnits.length ? (
+                            visibleDispatchUnits.map(({ item, itemIndex, unitIndex, unitKey }) => {
+                              const checked = readyUnitKeySet.has(unitKey);
                               return (
-                                <div key={`${item.lineItemId || item.id || item.title || "item"}-${index}`} className={styles.preparerProductItem}>
+                                <div key={`${unitKey}-${itemIndex}-${unitIndex}`} className={styles.preparerProductItem}>
                                   {item.imageUrl ? (
                                     <button
                                       className={styles.preparerProductImageButton}
@@ -1483,7 +1493,7 @@ export default function PreparerPortal() {
                                   <div className={styles.preparerProductCopy}>
                                     <strong>{item.title || "Producto"}</strong>
                                     {item.variantSummary ? <span>Variante: {item.variantSummary}</span> : null}
-                                    <span>Cantidad: {Math.max(1, Number(item.quantity || 1))}</span>
+                                    <span>Cantidad: 1</span>
                                   </div>
                                   <label className={styles.preparerProductCheck}>
                                     <input
@@ -1493,10 +1503,8 @@ export default function PreparerPortal() {
                                       onChange={(event) => {
                                         setReadyUnitKeys((currentKeys) => {
                                           const nextKeys = new Set(currentKeys);
-                                          for (const unitKey of unitKeys) {
-                                            if (event.target.checked) nextKeys.add(unitKey);
-                                            else nextKeys.delete(unitKey);
-                                          }
+                                          if (event.target.checked) nextKeys.add(unitKey);
+                                          else nextKeys.delete(unitKey);
                                           return [...nextKeys];
                                         });
                                       }}
