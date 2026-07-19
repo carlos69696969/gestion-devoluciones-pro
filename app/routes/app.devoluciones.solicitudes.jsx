@@ -1520,6 +1520,19 @@ function isReturnCourierLabel(value) {
     .toLowerCase() === "devolucion";
 }
 
+function shouldShowInActiveCourierOrders(order) {
+  if (isReturnCourierLabel(order?.courierLabel)) return true;
+  const status = String(order?.status || order?.currentStatus || "").trim().toLowerCase();
+  return ![
+    "entregado",
+    "recibido",
+    "recibida",
+    "reembolsada",
+    "completada",
+    "recoger_en_sucursal",
+  ].includes(status);
+}
+
 function pickupRescheduleAttemptLabel(status) {
   const match = String(status || "").trim().toLowerCase().match(/^intento_fallido_(\d)$/);
   if (!match) return "";
@@ -3738,6 +3751,11 @@ export const loader = async ({ request }) => {
           : {}),
       };
     })
+    .filter((order) =>
+      viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS
+        ? shouldShowInActiveCourierOrders(order)
+        : true,
+    )
     .sort((a, b) =>
       viewMode === VIEW_MODE.COURIER_HISTORY
         ? courierOrderTimestampMs(b) - courierOrderTimestampMs(a)
@@ -3771,6 +3789,10 @@ export const loader = async ({ request }) => {
           }),
         )
       : [];
+  const activeCourierOrderIdSet = new Set(visibleCourierOrders.map((order) => String(order.id || "").trim()).filter(Boolean));
+  const activeCourierOrderNumberSet = new Set(
+    visibleCourierOrders.map((order) => String(order.orderNumber || "").trim()).filter(Boolean),
+  );
   const preparers =
     viewMode === VIEW_MODE.PREPARERS
       ? await safeLoaderArray("No se pudieron cargar los preparadores", () =>
@@ -3862,12 +3884,27 @@ export const loader = async ({ request }) => {
       : [];
   const plannedCourierRoutes =
     viewMode === VIEW_MODE.COURIER
-      ? await safeLoaderArray("No se pudieron cargar las rutas planeadas", () =>
-          plannedCourierRouteSummary(
-            session.shop,
-            couriers.map((courier) => courier.id),
-          ),
-        )
+      ? (await safeLoaderArray("No se pudieron cargar las rutas planeadas", () =>
+            plannedCourierRouteSummary(
+              session.shop,
+              couriers.map((courier) => courier.id),
+            ),
+          ))
+          .map((plan) => {
+            const requestIds = (plan.requestIds || []).filter((requestId) =>
+              activeCourierOrderIdSet.has(String(requestId || "").trim()),
+            );
+            const orderNumbers = (plan.orderNumbers || []).filter((orderNumber) =>
+              activeCourierOrderNumberSet.has(String(orderNumber || "").trim()),
+            );
+            return {
+              ...plan,
+              requestIds,
+              orderNumbers,
+              count: Math.max(requestIds.length, orderNumbers.length),
+            };
+          })
+          .filter((plan) => Number(plan.count || 0) > 0)
       : [];
 
   return {
