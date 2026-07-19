@@ -320,6 +320,17 @@ function courierDeliveryDate(rawValue) {
   return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : "";
 }
 
+function currentMexicoDateKey(value = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${lookup.year}-${lookup.month}-${lookup.day}`;
+}
+
 function initialCourierDeliveryDate(rawValue) {
   const date = new Date(rawValue);
   if (!Number.isFinite(date.getTime())) return "";
@@ -585,6 +596,62 @@ async function replaceCourierOrderStatusTag({ shopDomain, shopifyOrderId, status
     addTags: [cleanStatusTag],
     removeTags: COURIER_STATUS_TAGS.filter((tag) => tag !== cleanStatusTag),
   });
+}
+
+function isCourierDeliveryEnRouteAllowedStatus(status) {
+  const normalized = String(status || "").trim().toLowerCase();
+  return (
+    !normalized ||
+    normalized === "pendiente" ||
+    normalized === "assigned" ||
+    normalized === "no_entregado" ||
+    normalized === "reintento_pendiente" ||
+    normalized.startsWith("en_ruta")
+  );
+}
+
+function isFutureCourierScheduleDate(scheduledDate) {
+  const cleanDate = courierDeliveryDate(scheduledDate);
+  return cleanDate ? cleanDate > currentMexicoDateKey() : false;
+}
+
+async function fetchCurrentCourierDeliveryOrderState({ shopDomain, shopifyOrderId }) {
+  const shop = normalizeShop(shopDomain);
+  const orderId = String(shopifyOrderId || "").trim();
+  if (!shop || !orderId) return null;
+
+  const sessions = await resolveCourierShopSessions(shop);
+  let lastError = null;
+  for (const session of sessions) {
+    try {
+      const accessToken = String(session?.accessToken || "").trim();
+      if (!accessToken) continue;
+      const [orderNode] = await fetchCourierOrdersByIds({ shop, accessToken, orderIds: [orderId] });
+      if (!orderNode) continue;
+      const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").trim().toUpperCase();
+      const courierStatus = fulfillmentStatus === "FULFILLED"
+        ? "entregado"
+        : getCourierRouteStatusFromTags(orderNode?.tags);
+      return {
+        id: orderNode.id,
+        orderNumber: String(orderNode.name || "").replace("#", ""),
+        fulfillmentStatus,
+        courierStatus: String(courierStatus || "pendiente").trim().toLowerCase(),
+        scheduledDate: getCourierScheduledDate(orderNode),
+        tags: Array.isArray(orderNode?.tags) ? orderNode.tags : [],
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastError) {
+    console.error("Failed to fetch current courier delivery order state", {
+      shopDomain: shop,
+      shopifyOrderId: orderId,
+      error: String(lastError?.message || lastError || "unknown"),
+    });
+  }
+  return null;
 }
 
 async function resolveCourierShopSessions(shopDomain) {
@@ -1247,6 +1314,7 @@ export async function markCourierOrderAsEnRoute({
   customerPhone,
   currentStatus,
   currentAttemptCount,
+  currentScheduledDate,
 }) {
   const isPickupRequest = String(requestId || "").startsWith("pickup-");
 
@@ -1259,6 +1327,37 @@ export async function markCourierOrderAsEnRoute({
   const orderGid = String(requestId || "").trim();
   if (!shopDomain || !orderGid) {
     return { ok: false, error: "Accion no valida." };
+  }
+
+  const submittedStatus = String(currentStatus || "").trim().toLowerCase();
+  const submittedFutureReprogrammed =
+    submittedStatus === "reintento_pendiente" && isFutureCourierScheduleDate(currentScheduledDate);
+  if (!isCourierDeliveryEnRouteAllowedStatus(submittedStatus) || submittedFutureReprogrammed) {
+    return {
+      ok: false,
+      error: `No se envio la notificacion de en camino porque la orden #${
+        String(orderNumber || "").trim() || orderGid.replace(/^gid:\/\/shopify\/Order\//, "")
+      } ya esta en estado ${submittedStatus.replace(/_/g, " ") || "no disponible"}.`,
+    };
+  }
+
+  const currentOrderState = await fetchCurrentCourierDeliveryOrderState({
+    shopDomain,
+    shopifyOrderId: orderGid,
+  });
+  const currentRealStatus = currentOrderState?.courierStatus || "";
+  const isFutureReprogrammedOrder =
+    currentRealStatus === "reintento_pendiente" && isFutureCourierScheduleDate(currentOrderState?.scheduledDate);
+  if (
+    currentOrderState &&
+    (!isCourierDeliveryEnRouteAllowedStatus(currentRealStatus) || isFutureReprogrammedOrder)
+  ) {
+    return {
+      ok: false,
+      error: `No se envio la notificacion de en camino porque la orden #${
+        currentOrderState.orderNumber || String(orderNumber || "").trim() || orderGid.replace(/^gid:\/\/shopify\/Order\//, "")
+      } ya esta en estado ${currentRealStatus.replace(/_/g, " ")}.`,
+    };
   }
 
   const currentStep = getCourierRouteStep(currentStatus);
