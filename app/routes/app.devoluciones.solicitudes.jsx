@@ -125,6 +125,7 @@ const NOTIFICATIONS_API_BASE_URL = String(
 const NOTIFICATIONS_API_KEY = String(
   process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "",
 ).trim();
+const MEXICO_TIME_ZONE = "America/Mexico_City";
 
 const RETURN_EVENT_BY_INTENT = {
   approve_request: "return_approved",
@@ -153,6 +154,8 @@ function buildReturnEventPayload({ requestRow, intent, note, title = "", message
 
   const returnReference = buildReturnReference(requestRow);
   const cleanMessage = String(message || "").trim();
+  const eventDedupeKey =
+    mappedStatus === "return_expired" && requestRow.id ? `return:${requestRow.id}:return_expired` : "";
   return {
     status: mappedStatus,
     event: mappedStatus,
@@ -163,6 +166,8 @@ function buildReturnEventPayload({ requestRow, intent, note, title = "", message
     current_status_message: cleanMessage || String(note || "").trim(),
     return_reference: returnReference,
     return_id: requestRow.id || null,
+    return_request_id: requestRow.id || null,
+    event_dedupe_key: eventDedupeKey || null,
     order_number: requestRow.orderNumber || null,
     email: requestRow.customerEmail || null,
     customer_email: requestRow.customerEmail || null,
@@ -189,12 +194,11 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, not
   const eventPayload = buildReturnEventPayload({ requestRow, intent, note, title, message });
   if (!eventPayload) return;
 
-  const endpoints = NOTIFICATIONS_API_KEY
-    ? [
-        `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`,
-        `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`,
-      ]
-    : [`${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`];
+  const endpoints = [
+    NOTIFICATIONS_API_KEY
+      ? `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`
+      : `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`,
+  ];
 
   let lastFailure = null;
   for (const endpoint of endpoints) {
@@ -1093,18 +1097,42 @@ function addDays(dateValue, days) {
   return result;
 }
 
-function branchDeliveryExpirationDate(limitDateValue) {
-  const limitDate = new Date(limitDateValue);
-  if (!Number.isFinite(limitDate.getTime())) return null;
-  const expiresAt = new Date(limitDate);
-  expiresAt.setHours(0, 0, 0, 0);
-  expiresAt.setDate(expiresAt.getDate() + 1);
-  return expiresAt;
+function mexicoDateKey(dateValue = new Date()) {
+  if (!dateValue) return "";
+  const rawValue = String(dateValue || "").trim();
+  const dateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (dateMatch) return `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+
+  const date = new Date(dateValue);
+  if (!Number.isFinite(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: MEXICO_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return values.year && values.month && values.day ? `${values.year}-${values.month}-${values.day}` : "";
+}
+
+function addDaysToDateKey(dateKey, days) {
+  const [year, month, day] = String(dateKey || "")
+    .split("-")
+    .map((value) => Number(value));
+  if (!year || !month || !day) return "";
+  const result = new Date(Date.UTC(year, month - 1, day + Number(days || 0), 12, 0, 0));
+  return result.toISOString().slice(0, 10);
+}
+
+function branchDeliveryExpirationDateKey(limitDateValue) {
+  const limitDateKey = mexicoDateKey(limitDateValue);
+  return limitDateKey ? addDaysToDateKey(limitDateKey, 1) : "";
 }
 
 function isBranchDeliveryExpired(limitDateValue, now = new Date()) {
-  const expiresAt = branchDeliveryExpirationDate(limitDateValue);
-  return Boolean(expiresAt) && now.getTime() >= expiresAt.getTime();
+  const expiresDateKey = branchDeliveryExpirationDateKey(limitDateValue);
+  const nowDateKey = mexicoDateKey(now);
+  return Boolean(expiresDateKey && nowDateKey) && nowDateKey >= expiresDateKey;
 }
 
 function appendReasonEntry(rawValue, entry) {
@@ -3078,8 +3106,8 @@ async function markBranchDeliveryNeverArrived({ shopDomain, requestRow, force = 
     return { ok: false, skipped: true, reason: "not_expired" };
   }
 
-  const updatedRequest = await prisma.returnRequest.update({
-    where: { id: requestRow.id },
+  const updateResult = await prisma.returnRequest.updateMany({
+    where: { id: requestRow.id, status: "aprobada" },
     data: {
       status: "no_devuelto",
       rejectionReason: appendReasonEntry(requestRow.rejectionReason, {
@@ -3087,6 +3115,14 @@ async function markBranchDeliveryNeverArrived({ shopDomain, requestRow, force = 
         reason: NEVER_ARRIVED_BRANCH_REASON,
       }),
     },
+  });
+  if (!updateResult.count) {
+    return { ok: false, skipped: true, reason: "already_processed" };
+  }
+
+  const updatedRequest = await prisma.returnRequest.findUnique({
+    where: { id: requestRow.id },
+    include: { items: true },
   });
   await emitReturnNotificationEvent({
     shopDomain,
@@ -3343,10 +3379,6 @@ export const loader = async ({ request }) => {
     details: true,
     ...(includeEvidencePhotos ? { photoDataUrl: true } : {}),
   };
-
-  if (viewMode === VIEW_MODE.BRANCH) {
-    await expireBranchDeliveryRequestsForShop(session.shop);
-  }
 
   let rawRequests =
     viewMode === VIEW_MODE.COURIER ||
