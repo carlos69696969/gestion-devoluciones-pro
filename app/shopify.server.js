@@ -7,9 +7,11 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 import { startBranchDeliveryExpirationScheduler } from "./utils/branchDeliveryExpirationScheduler.server";
+import { startCourierBranchPickupExpirationScheduler } from "./utils/courierBranchPickupExpirationScheduler.server";
 
 if (process.env.npm_lifecycle_event !== "build") {
   startBranchDeliveryExpirationScheduler();
+  startCourierBranchPickupExpirationScheduler();
 }
 
 const requiredScopes = [

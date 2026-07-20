@@ -5907,23 +5907,24 @@ function formatBranchPickupDeadlineDate(request, displayedScheduledDate) {
   return formatCourierScheduledDate(deadlineDate.toISOString());
 }
 
-function branchPickupDeadlineDateValue(request, displayedScheduledDate) {
+function branchPickupDeadlineDateKey(request, displayedScheduledDate) {
   const directDeadlineDate = branchPickupDeadlineFromValue(request);
-  if (directDeadlineDate) {
-    directDeadlineDate.setHours(23, 59, 59, 999);
-    return directDeadlineDate;
-  }
+  const directDeadlineKey = directDeadlineDate ? mexicoDateKey(directDeadlineDate) : "";
+  if (directDeadlineKey) return directDeadlineKey;
   const sourceDate = branchPickupDeadlineSourceDate(request, displayedScheduledDate);
-  if (!sourceDate) return null;
-  const deadlineDate = new Date(sourceDate);
-  deadlineDate.setDate(deadlineDate.getDate() + 30);
-  deadlineDate.setHours(23, 59, 59, 999);
-  return deadlineDate;
+  const sourceDateKey = sourceDate ? mexicoDateKey(sourceDate) : "";
+  return sourceDateKey ? addDaysToDateKey(sourceDateKey, 30) : "";
+}
+
+function branchPickupDeadlineDateValue(request, displayedScheduledDate) {
+  const deadlineKey = branchPickupDeadlineDateKey(request, displayedScheduledDate);
+  return deadlineKey ? new Date(`${deadlineKey}T23:59:59.999-06:00`) : null;
 }
 
 function isBranchPickupDeadlineExpired(request, displayedScheduledDate) {
-  const deadlineDate = branchPickupDeadlineDateValue(request, displayedScheduledDate);
-  return Boolean(deadlineDate) && Date.now() > deadlineDate.getTime();
+  const deadlineKey = branchPickupDeadlineDateKey(request, displayedScheduledDate);
+  const todayKey = mexicoDateKey(new Date());
+  return Boolean(deadlineKey && todayKey) && todayKey > deadlineKey;
 }
 
 function formatCourierAddress(request) {
