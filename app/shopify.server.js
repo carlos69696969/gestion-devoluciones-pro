@@ -17,6 +17,7 @@ if (process.env.npm_lifecycle_event !== "build") {
 }
 
 const requiredScopes = [
+  "read_orders",
   "write_merchant_managed_fulfillment_orders",
   "write_assigned_fulfillment_orders",
   "write_fulfillments",
