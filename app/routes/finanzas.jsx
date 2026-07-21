@@ -219,10 +219,6 @@ async function fetchOrdersForToday({ shop, accessToken, start, end }) {
 
 function calculateDayTotals(orders) {
   const orderCount = orders.length;
-  const salesTotal = orders.reduce(
-    (sum, order) => sum + Number(order?.currentTotalPriceSet?.shopMoney?.amount || 0),
-    0,
-  );
   const itemCount = orders.reduce(
     (sum, order) =>
       sum +
@@ -233,18 +229,19 @@ function calculateDayTotals(orders) {
     (totals, order) => {
       const orderFinance = calculateOrderFinanceTotals(order);
       return {
+        salesTotal: totals.salesTotal + orderFinance.salesTotal,
         recoveredCostTotal: totals.recoveredCostTotal + orderFinance.recoveredCostTotal,
         taxesTotal: totals.taxesTotal + orderFinance.taxesTotal,
         profitTotal: totals.profitTotal + orderFinance.profitTotal,
       };
     },
-    { recoveredCostTotal: 0, taxesTotal: 0, profitTotal: 0 },
+    { salesTotal: 0, recoveredCostTotal: 0, taxesTotal: 0, profitTotal: 0 },
   );
 
   return {
     ...emptyTotals,
-    salesTotal,
-    averageTicket: orderCount ? salesTotal / orderCount : 0,
+    salesTotal: financeTotals.salesTotal,
+    averageTicket: orderCount ? financeTotals.salesTotal / orderCount : 0,
     operatingCostTotal: itemCount * OPERATING_COST_PER_ITEM,
     shippingTotal: orderCount * SHIPPING_COST_PER_ORDER,
     recoveredCostTotal: financeTotals.recoveredCostTotal,
@@ -262,20 +259,32 @@ function getProfitMarginRateForOrderTotal(orderTotal) {
 }
 
 function calculateOrderFinanceTotals(order) {
-  const orderTotal = Number(order?.currentTotalPriceSet?.shopMoney?.amount || 0);
-  const profitMarginRate = getProfitMarginRateForOrderTotal(orderTotal);
-  const recoveredCostRaw = (order?.lineItems?.nodes || []).reduce((itemSum, item) => {
+  const lineItems = order?.lineItems?.nodes || [];
+  const originalOrderTotal = lineItems.reduce((sum, item) => {
     const quantity = Math.max(0, Number(item?.quantity || 0));
     const unitPrice = Number(item?.originalUnitPriceSet?.shopMoney?.amount || 0);
-    const recoveredUnitCost = calculateRecoveredUnitCost(unitPrice);
-    return itemSum + Math.max(0, recoveredUnitCost) * quantity;
+    return sum + unitPrice * quantity;
   }, 0);
-  const recoveredCostTotal = Math.round(recoveredCostRaw);
+  const profitMarginRate = getProfitMarginRateForOrderTotal(originalOrderTotal);
+  const totals = lineItems.reduce(
+    (itemTotals, item) => {
+      const quantity = Math.max(0, Number(item?.quantity || 0));
+      const originalUnitPrice = Number(item?.originalUnitPriceSet?.shopMoney?.amount || 0);
+      const recoveredUnitCost = Math.round(Math.max(0, calculateRecoveredUnitCost(originalUnitPrice)));
+      const appliedUnitPrice = calculateAppliedUnitPrice(recoveredUnitCost, profitMarginRate);
+      return {
+        salesTotal: itemTotals.salesTotal + appliedUnitPrice * quantity,
+        recoveredCostTotal: itemTotals.recoveredCostTotal + recoveredUnitCost * quantity,
+      };
+    },
+    { salesTotal: 0, recoveredCostTotal: 0 },
+  );
+  const recoveredCostTotal = totals.recoveredCostTotal;
   const marginTotal = recoveredCostTotal * profitMarginRate;
   const taxesTotal = marginTotal * PROFIT_TAX_RATE;
   const profitTotal = marginTotal - taxesTotal;
 
-  return { recoveredCostTotal, taxesTotal, profitTotal };
+  return { salesTotal: totals.salesTotal, recoveredCostTotal, taxesTotal, profitTotal };
 }
 
 function calculateRecoveredUnitCost(unitPrice) {
@@ -283,6 +292,15 @@ function calculateRecoveredUnitCost(unitPrice) {
   return (
     (Number(unitPrice || 0) * (1 - TRANSACTION_RATE) - SHOPIFY_FIXED_COMMISSION_PER_ITEM - OPERATING_COST_PER_ITEM) /
     costRecoveryFactor
+  );
+}
+
+function calculateAppliedUnitPrice(recoveredUnitCost, profitMarginRate) {
+  const margin = recoveredUnitCost * profitMarginRate;
+  const taxes = margin * PROFIT_TAX_RATE;
+  return Math.floor(
+    (recoveredUnitCost + margin + taxes + SHOPIFY_FIXED_COMMISSION_PER_ITEM + OPERATING_COST_PER_ITEM) /
+      (1 - TRANSACTION_RATE),
   );
 }
 
