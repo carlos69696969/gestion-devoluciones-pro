@@ -7,6 +7,11 @@ const ADMIN_API_VERSION = "2025-10";
 const FINANCE_TIME_ZONE = "America/Mexico_City";
 const OPERATING_COST_PER_ITEM = 15;
 const SHIPPING_COST_PER_ORDER = 35;
+const SHOPIFY_FIXED_COMMISSION_PER_ITEM = 3;
+const PROFIT_MARGIN_RATE = 0.44;
+const PROFIT_TAX_RATE = 0.1;
+const TRANSACTION_RATE = 0.03;
+const COST_RECOVERY_FACTOR = 1 + PROFIT_MARGIN_RATE + PROFIT_MARGIN_RATE * PROFIT_TAX_RATE;
 
 function financeAccessCookie() {
   return createCookie("finance_portal_access_v1", {
@@ -177,6 +182,11 @@ async function fetchOrdersForToday({ shop, accessToken, start, end }) {
               lineItems(first: 250) {
                 nodes {
                   quantity
+                  originalUnitPriceSet {
+                    shopMoney {
+                      amount
+                    }
+                  }
                 }
               }
             }
@@ -204,12 +214,27 @@ function calculateDayTotals(orders) {
       (order?.lineItems?.nodes || []).reduce((itemSum, item) => itemSum + Math.max(0, Number(item?.quantity || 0)), 0),
     0,
   );
+  const recoveredCostTotal = orders.reduce((orderSum, order) => {
+    return (
+      orderSum +
+      (order?.lineItems?.nodes || []).reduce((itemSum, item) => {
+        const quantity = Math.max(0, Number(item?.quantity || 0));
+        const unitPrice = Number(item?.originalUnitPriceSet?.shopMoney?.amount || 0);
+        const recoveredUnitCost =
+          (unitPrice * (1 - TRANSACTION_RATE) - SHOPIFY_FIXED_COMMISSION_PER_ITEM - OPERATING_COST_PER_ITEM) /
+          COST_RECOVERY_FACTOR;
+        return itemSum + Math.max(0, recoveredUnitCost) * quantity;
+      }, 0)
+    );
+  }, 0);
+
   return {
     ...emptyTotals,
     salesTotal,
     averageTicket: orderCount ? salesTotal / orderCount : 0,
     operatingCostTotal: itemCount * OPERATING_COST_PER_ITEM,
     shippingTotal: orderCount * SHIPPING_COST_PER_ORDER,
+    recoveredCostTotal,
     orderCount,
     itemCount,
   };
