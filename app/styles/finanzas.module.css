@@ -1,7 +1,50 @@
+.publicShell {
+  min-height: 100vh;
+  background: #f6f7f9;
+  color: #111827;
+  padding: 0 20px 28px;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+.publicHeader {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 22px 0 8px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brandMark {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #0b5cab;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.brand strong,
+.brand small {
+  display: block;
+}
+
+.brand small {
+  color: #5f6b7a;
+  font-weight: 700;
+}
+
 .wrap {
   display: grid;
   gap: 16px;
   max-width: 1120px;
+  margin: 0 auto;
   font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
@@ -223,6 +266,10 @@
 }
 
 @media (max-width: 980px) {
+  .publicShell {
+    padding: 0 12px 20px;
+  }
+
   .hero,
   .filters,
   .actions {

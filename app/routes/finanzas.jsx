@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
 import styles from "../styles/finanzas.module.css";
 
 const STORAGE_KEY = "cariana_finance_transactions_v1";
@@ -37,10 +35,10 @@ function makeId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-  return null;
-};
+export const headers = () => ({
+  "Cache-Control": "no-store, max-age=0",
+  "X-Robots-Tag": "noindex, nofollow",
+});
 
 export default function FinanzasPortal() {
   const [transactions, setTransactions] = useState([]);
@@ -130,7 +128,17 @@ export default function FinanzasPortal() {
   }
 
   return (
-    <s-page heading="Control financiero">
+    <main className={styles.publicShell}>
+      <div className={styles.publicHeader}>
+        <div className={styles.brand}>
+          <span className={styles.brandMark}>CAR</span>
+          <div>
+            <strong>CARIANA</strong>
+            <small>Finanzas</small>
+          </div>
+        </div>
+      </div>
+
       <div className={styles.wrap}>
         <section className={styles.hero}>
           <div>
@@ -272,8 +280,6 @@ export default function FinanzasPortal() {
           </aside>
         </section>
       </div>
-    </s-page>
+    </main>
   );
 }
-
-export const headers = (headersArgs) => boundary.headers(headersArgs);
