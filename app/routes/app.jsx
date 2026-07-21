@@ -283,6 +283,7 @@ export default function App() {
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
         <s-link href={withEmbedParams("/app/devoluciones/admin")}>Administrador del panel</s-link>
+        <s-link href={withEmbedParams("/app/finanzas")}>Finanzas</s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/pickup")}>
           {withCount("Recoleccion a domicilio", navCounts?.pickup || 0)}
         </s-link>
