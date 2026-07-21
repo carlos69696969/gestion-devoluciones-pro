@@ -230,6 +230,7 @@ function calculateDayTotals(orders) {
       }, 0)
     );
   }, 0);
+  const taxesTotal = recoveredCostTotal * PROFIT_MARGIN_RATE * PROFIT_TAX_RATE;
 
   return {
     ...emptyTotals,
@@ -238,6 +239,7 @@ function calculateDayTotals(orders) {
     operatingCostTotal: itemCount * OPERATING_COST_PER_ITEM,
     shippingTotal: orderCount * SHIPPING_COST_PER_ORDER,
     recoveredCostTotal,
+    taxesTotal,
     orderCount,
     itemCount,
   };
