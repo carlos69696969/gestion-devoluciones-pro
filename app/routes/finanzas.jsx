@@ -11,6 +11,7 @@ const SHOPIFY_FIXED_COMMISSION_PER_ITEM = 3;
 const DEFAULT_PROFIT_MARGIN_RATE = 0.44;
 const HIGH_ORDER_PROFIT_MARGIN_RATE = 0.34;
 const VERY_HIGH_ORDER_PROFIT_MARGIN_RATE = 0.29;
+const COST_RECOVERY_MARGIN_RATE = 0.44;
 const PROFIT_TAX_RATE = 0.1;
 const TRANSACTION_RATE = 0.03;
 const INITIAL_TEST_ORDERS = [
@@ -255,8 +256,8 @@ function calculateDayTotals(orders) {
 }
 
 function getProfitMarginRateForOrderTotal(orderTotal) {
-  if (orderTotal > 999) return VERY_HIGH_ORDER_PROFIT_MARGIN_RATE;
-  if (orderTotal > 750) return HIGH_ORDER_PROFIT_MARGIN_RATE;
+  if (orderTotal >= 1000) return VERY_HIGH_ORDER_PROFIT_MARGIN_RATE;
+  if (orderTotal >= 750) return HIGH_ORDER_PROFIT_MARGIN_RATE;
   return DEFAULT_PROFIT_MARGIN_RATE;
 }
 
@@ -266,20 +267,19 @@ function calculateOrderFinanceTotals(order) {
   const recoveredCostRaw = (order?.lineItems?.nodes || []).reduce((itemSum, item) => {
     const quantity = Math.max(0, Number(item?.quantity || 0));
     const unitPrice = Number(item?.originalUnitPriceSet?.shopMoney?.amount || 0);
-    const recoveredUnitCost = calculateRecoveredUnitCost(unitPrice, profitMarginRate);
+    const recoveredUnitCost = calculateRecoveredUnitCost(unitPrice);
     return itemSum + Math.max(0, recoveredUnitCost) * quantity;
   }, 0);
   const recoveredCostTotal = Math.round(recoveredCostRaw);
-  const roundingAdjustment = recoveredCostTotal - recoveredCostRaw;
-  const marginTotal = recoveredCostRaw * profitMarginRate;
+  const marginTotal = recoveredCostTotal * profitMarginRate;
   const taxesTotal = marginTotal * PROFIT_TAX_RATE;
-  const profitTotal = marginTotal - taxesTotal - roundingAdjustment;
+  const profitTotal = marginTotal - taxesTotal;
 
   return { recoveredCostTotal, taxesTotal, profitTotal };
 }
 
-function calculateRecoveredUnitCost(unitPrice, profitMarginRate) {
-  const costRecoveryFactor = 1 + profitMarginRate + profitMarginRate * PROFIT_TAX_RATE;
+function calculateRecoveredUnitCost(unitPrice) {
+  const costRecoveryFactor = 1 + COST_RECOVERY_MARGIN_RATE + COST_RECOVERY_MARGIN_RATE * PROFIT_TAX_RATE;
   return (
     (Number(unitPrice || 0) * (1 - TRANSACTION_RATE) - SHOPIFY_FIXED_COMMISSION_PER_ITEM - OPERATING_COST_PER_ITEM) /
     costRecoveryFactor
