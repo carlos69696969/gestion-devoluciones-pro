@@ -29,6 +29,13 @@ const DEFAULT_EVIDENCE_DAYS = 120;
 const DEFAULT_PURGE_DAYS = 180;
 const DEFAULT_BATCH_SIZE = 200;
 const MAX_BATCH_SIZE = 500;
+const COURIER_HISTORY_SINCE = new Date("2026-06-10T00:00:00-06:00");
+const BRANCH_PICKUP_STATUSES = new Set([
+  "por_devolver",
+  "no_devuelto",
+  "reembolso_denegado",
+  "denegada",
+]);
 const NOTIFICATIONS_API_BASE_URL = String(
   process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
 ).replace(/\/+$/, "");
@@ -54,6 +61,84 @@ function cutoffDateFromDays(days) {
   at.setHours(0, 0, 0, 0);
   at.setDate(at.getDate() - days);
   return at;
+}
+
+function normalizeCourierAttrKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+function getCourierCustomAttribute(orderNode, candidateKeys) {
+  const attributes = Array.isArray(orderNode?.customAttributes) ? orderNode.customAttributes : [];
+  const normalizedKeys = new Set((candidateKeys || []).map((key) => normalizeCourierAttrKey(key)));
+  const match = attributes.find((attribute) => normalizedKeys.has(normalizeCourierAttrKey(attribute?.key)));
+  return String(match?.value || "").trim();
+}
+
+function getCourierScheduledDate(orderNode) {
+  return getCourierCustomAttribute(orderNode, [
+    "programado",
+    "pickupDate",
+    "pickup_date",
+    "delivery_date",
+    "deliveryDate",
+    "scheduled_date",
+    "scheduledDate",
+    "preferred_delivery_date",
+  ]);
+}
+
+function getInitialCourierScheduledDate(orderNode) {
+  const configuredDate = getCourierScheduledDate(orderNode);
+  if (configuredDate) return configuredDate;
+  const createdAt = new Date(orderNode?.createdAt);
+  if (!Number.isFinite(createdAt.getTime())) return String(orderNode?.createdAt || "");
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(createdAt);
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return new Date(Date.UTC(
+    Number(lookup.year),
+    Number(lookup.month) - 1,
+    Number(lookup.day) + 1,
+  )).toISOString().slice(0, 10);
+}
+
+function parseCourierDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const date = raw.includes("T") ? new Date(raw) : new Date(`${raw}T00:00:00`);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function courierScheduledDateIsBeforeCutoff(value, cutoff) {
+  const date = parseCourierDate(value);
+  return Boolean(date && date.getTime() < cutoff.getTime());
+}
+
+function isCourierLocalDeliveryOrder(orderNode) {
+  const shippingLines = Array.isArray(orderNode?.shippingLines?.nodes) ? orderNode.shippingLines.nodes : [];
+  return shippingLines.some((line) => {
+    const title = String(line?.title || "").toLowerCase();
+    const code = String(line?.code || "").toLowerCase();
+    const category = String(line?.deliveryCategory || "").toLowerCase();
+    return title.includes("local") || code.includes("local") || category.includes("local");
+  });
+}
+
+function getCourierRouteStatusFromTags(tags = []) {
+  const normalizedTags = (Array.isArray(tags) ? tags : []).map((tag) =>
+    String(tag || "").trim().toLowerCase(),
+  );
+  if (normalizedTags.includes("reembolsada")) return "reembolsada";
+  if (normalizedTags.includes("entregado")) return "entregado";
+  if (normalizedTags.includes("recoger en sucursal")) return "recoger_en_sucursal";
+  return "";
 }
 
 function normalizeMaintenanceInputs(formDataLike) {
@@ -228,6 +313,110 @@ function snapshotOrderEntries(snapshot) {
     .filter((entry) => isPurgeableCourierRequestId(entry.requestId));
 }
 
+async function fetchScheduledCourierHistoryOrderNodes(admin) {
+  const response = await admin.graphql(
+    `#graphql
+    query ScheduledCourierHistoryOrders {
+      orders(first: 250, query: "updated_at:>=2026-06-10", sortKey: UPDATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            name
+            createdAt
+            updatedAt
+            tags
+            customAttributes {
+              key
+              value
+            }
+            shippingLines(first: 5) {
+              nodes {
+                title
+                code
+                deliveryCategory
+              }
+            }
+          }
+        }
+      }
+    }`,
+  );
+  const payload = await response.json();
+  const errors = payload?.errors || [];
+  if (errors.length) {
+    throw new Error(errors[0]?.message || "No se pudo cargar el historial programado repartidor.");
+  }
+  return payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || [];
+}
+
+async function collectScheduledCourierHistoryPurgeEntries(admin, shop, purgeCutoff, batchSize) {
+  const entriesByRequestId = new Map();
+
+  try {
+    for (const orderNode of await fetchScheduledCourierHistoryOrderNodes(admin)) {
+      const requestId = String(orderNode?.id || "").trim();
+      if (!isPurgeableCourierRequestId(requestId)) continue;
+      const status = getCourierRouteStatusFromTags(orderNode?.tags);
+      const updatedAt = new Date(orderNode?.updatedAt || orderNode?.createdAt || 0);
+      if (
+        !isCourierLocalDeliveryOrder(orderNode) ||
+        !["entregado", "reembolsada"].includes(status) ||
+        !Number.isFinite(updatedAt.getTime()) ||
+        updatedAt.getTime() < COURIER_HISTORY_SINCE.getTime()
+      ) {
+        continue;
+      }
+      const scheduledDate = getInitialCourierScheduledDate(orderNode);
+      if (!courierScheduledDateIsBeforeCutoff(scheduledDate, purgeCutoff)) continue;
+      entriesByRequestId.set(requestId, {
+        shop,
+        requestId,
+        orderNumber: String(orderNode?.name || "").replace(/^#/, "").trim() || null,
+        cutoffAt: purgeCutoff,
+      });
+      if (entriesByRequestId.size >= batchSize) break;
+    }
+  } catch (error) {
+    console.error("No se pudieron marcar ordenes Shopify programadas para purga", error);
+  }
+
+  if (entriesByRequestId.size < batchSize) {
+    const cutoffDateKey = purgeCutoff.toISOString().slice(0, 10);
+    const pickupRows = await prisma.returnRequest.findMany({
+      where: {
+        shop,
+        returnMethod: "pickup",
+        status: { in: ["recibida", "rechazada", "reembolsada", "no_devuelto"] },
+        updatedAt: { gte: COURIER_HISTORY_SINCE },
+        OR: [
+          { pickupDate: { lt: cutoffDateKey } },
+          {
+            pickupDate: null,
+            createdAt: { lt: purgeCutoff },
+          },
+        ],
+      },
+      select: { id: true, orderNumber: true, pickupDate: true, createdAt: true },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      take: batchSize,
+    });
+    for (const requestRow of pickupRows) {
+      const requestId = `pickup-${requestRow.id}`;
+      const scheduledDate = String(requestRow.pickupDate || requestRow.createdAt || "").trim();
+      if (!courierScheduledDateIsBeforeCutoff(scheduledDate, purgeCutoff)) continue;
+      entriesByRequestId.set(requestId, {
+        shop,
+        requestId,
+        orderNumber: String(requestRow.orderNumber || "").replace(/^#/, "").trim() || null,
+        cutoffAt: purgeCutoff,
+      });
+      if (entriesByRequestId.size >= batchSize) break;
+    }
+  }
+
+  return Array.from(entriesByRequestId.values());
+}
+
 async function collectCourierHistoryPurgeEntries(shop, purgeCutoff, batchSize) {
   const [activityRows, eventRows, snapshotRows] = await Promise.all([
     prisma.courierActivity.findMany({
@@ -285,9 +474,10 @@ async function collectCourierHistoryPurgeEntries(shop, purgeCutoff, batchSize) {
   return Array.from(entriesByRequestId.values());
 }
 
-async function purgeCourierHistoryBatch(shop, inputs) {
+async function purgeCourierHistoryBatch(admin, shop, inputs) {
   const purgeCutoff = cutoffDateFromDays(inputs.purgeDays);
   let purgedOrderMarkers = 0;
+  let purgedScheduledOrderMarkers = 0;
   let deletedActivities = 0;
   let deletedEvents = 0;
   let deletedSnapshots = 0;
@@ -336,10 +526,31 @@ async function purgeCourierHistoryBatch(shop, inputs) {
       Number(deliveryCodeResult.count || 0) >= inputs.batchSize;
   }
 
-  return { purgedOrderMarkers, deletedActivities, deletedEvents, deletedSnapshots, deletedDeliveryCodes };
+  const scheduledPurgeEntries = await collectScheduledCourierHistoryPurgeEntries(
+    admin,
+    shop,
+    purgeCutoff,
+    inputs.batchSize,
+  );
+  if (scheduledPurgeEntries.length) {
+    const scheduledResult = await prisma.courierHistoryPurge.createMany({
+      data: scheduledPurgeEntries,
+      skipDuplicates: true,
+    });
+    purgedScheduledOrderMarkers += Number(scheduledResult.count || 0);
+  }
+
+  return {
+    purgedOrderMarkers,
+    purgedScheduledOrderMarkers,
+    deletedActivities,
+    deletedEvents,
+    deletedSnapshots,
+    deletedDeliveryCodes,
+  };
 }
 
-async function purgeHistoryBatch(shop, inputs) {
+async function purgeHistoryBatch(admin, shop, inputs) {
   const purgeCutoff = cutoffDateFromDays(inputs.purgeDays);
   let deletedRequests = 0;
 
@@ -365,7 +576,7 @@ async function purgeHistoryBatch(shop, inputs) {
     deletedRequests += Number(deleted.count || 0);
   }
 
-  const courierHistory = await purgeCourierHistoryBatch(shop, inputs);
+  const courierHistory = await purgeCourierHistoryBatch(admin, shop, inputs);
 
   return { deletedRequests, courierHistory };
 }
@@ -493,12 +704,12 @@ export const action = async ({ request }) => {
     };
   }
 
-  const result = await purgeHistoryBatch(session.shop, inputs);
+  const result = await purgeHistoryBatch(admin, session.shop, inputs);
   const preview = await getMaintenancePreview(session.shop, inputs);
   return {
     ok: true,
     intent,
-    message: `Purga completada. Ordenes de devoluciones eliminadas: ${result.deletedRequests}. Historial repartidor eliminado: ${result.courierHistory.deletedActivities} actividades, ${result.courierHistory.deletedEvents} eventos, ${result.courierHistory.deletedSnapshots} cierres de ruta.`,
+    message: `Purga completada. Ordenes de devoluciones eliminadas: ${result.deletedRequests}. Historial repartidor eliminado: ${result.courierHistory.deletedActivities} actividades, ${result.courierHistory.deletedEvents} eventos, ${result.courierHistory.deletedSnapshots} cierres de ruta. Ordenes programadas antiguas ocultadas: ${result.courierHistory.purgedScheduledOrderMarkers}.`,
     maintenance: { inputs, preview, result },
   };
 };
