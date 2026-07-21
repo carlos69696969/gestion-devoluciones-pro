@@ -1,4 +1,4 @@
-﻿/* eslint-disable react/prop-types */
+/* eslint-disable react/prop-types */
 import { useEffect, useRef, useState } from "react";
 import { Form, Link, redirect, useActionData, useFetcher, useLoaderData, useLocation, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -3366,6 +3366,21 @@ export const loader = async ({ request }) => {
     (requestedHistoryView === "all" ||
       requestedHistoryView === "courier_day" ||
       (Boolean(requestedHistoryDate) && !requestedHistoryRouteId));
+  const purgedCourierHistoryRequestIds =
+    viewMode === VIEW_MODE.COURIER_HISTORY
+      ? new Set(
+          (
+            await safeLoaderArray("No se pudieron cargar las ordenes purgadas del historial repartidor", () =>
+              prisma.courierHistoryPurge.findMany({
+                where: { shop: session.shop },
+                select: { requestId: true },
+              }),
+            )
+          )
+            .map((row) => String(row.requestId || "").trim())
+            .filter(Boolean),
+        )
+      : new Set();
   const where = buildViewWhere(session.shop, viewMode);
   const includeEvidencePhotos = shouldIncludeEvidencePhotos(viewMode);
   const itemSelect = {
@@ -3427,7 +3442,7 @@ export const loader = async ({ request }) => {
     );
   }
 
-  const courierOrdersRaw =
+  let courierOrdersRaw =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS
       ? [
           ...new Map(
@@ -3527,6 +3542,11 @@ export const loader = async ({ request }) => {
             ).values(),
           ]
       : [];
+  if (purgedCourierHistoryRequestIds.size) {
+    courierOrdersRaw = courierOrdersRaw.filter(
+      (requestRow) => !purgedCourierHistoryRequestIds.has(String(requestRow.id || "").trim()),
+    );
+  }
   const routeSettings =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS
       ? await safeLoaderValue("No se pudo cargar la direccion inicial de rutas", null, () =>
@@ -10557,4 +10577,3 @@ function RequestCard({
 }
 
 export const headers = (headersArgs) => boundary.headers(headersArgs);
-

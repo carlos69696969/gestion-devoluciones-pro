@@ -6,6 +6,25 @@ import prisma from "../db.server";
 import styles from "../styles/admin.module.css";
 
 const HISTORY_STATUSES = ["reembolsada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"];
+const COURIER_HISTORY_FINAL_ACTIONS = [
+  "courier_mark_delivered",
+  "courier_mark_not_delivered",
+  "courier_route_order_not_located",
+  "courier_return_mark_received",
+  "courier_return_pickup_attempt_failed",
+  "courier_return_reject_after_failed_pickups",
+  "courier_branch_pickup_refunded",
+  "courier_order_refund_detail",
+];
+const COURIER_HISTORY_FINAL_STATUSES = [
+  "entregado",
+  "recibido",
+  "recibida",
+  "rechazada",
+  "no_recibido",
+  "no_entregado",
+  "reembolsada",
+];
 const DEFAULT_EVIDENCE_DAYS = 120;
 const DEFAULT_PURGE_DAYS = 180;
 const DEFAULT_BATCH_SIZE = 200;
@@ -71,7 +90,21 @@ async function getMaintenancePreview(shop, inputs) {
   const purgeCutoff = cutoffDateFromDays(inputs.purgeDays);
   const baseWhere = historyWhere(shop);
 
-  const [historyTotal, purgeCandidates, oldestHistory, evidenceItemCandidates] = await Promise.all([
+  const [
+    historyTotal,
+    purgeCandidates,
+    oldestHistory,
+    evidenceItemCandidates,
+    courierActivityTotal,
+    courierEventTotal,
+    courierSnapshotTotal,
+    courierActivityCandidates,
+    courierEventCandidates,
+    courierSnapshotCandidates,
+    oldestCourierActivity,
+    oldestCourierEvent,
+    oldestCourierSnapshot,
+  ] = await Promise.all([
     prisma.returnRequest.count({ where: baseWhere }),
     prisma.returnRequest.count({
       where: {
@@ -93,18 +126,54 @@ async function getMaintenancePreview(shop, inputs) {
         },
       },
     }),
+    prisma.courierActivity.count({ where: { shop } }),
+    prisma.courierEvent.count({ where: { shop } }),
+    prisma.courierRouteSnapshot.count({ where: { shop } }),
+    prisma.courierActivity.count({ where: { shop, createdAt: { lt: purgeCutoff } } }),
+    prisma.courierEvent.count({ where: { shop, createdAt: { lt: purgeCutoff } } }),
+    prisma.courierRouteSnapshot.count({ where: { shop, finishedAt: { lt: purgeCutoff } } }),
+    prisma.courierActivity.findFirst({
+      where: { shop },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    }),
+    prisma.courierEvent.findFirst({
+      where: { shop },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    }),
+    prisma.courierRouteSnapshot.findFirst({
+      where: { shop },
+      orderBy: { finishedAt: "asc" },
+      select: { finishedAt: true },
+    }),
   ]);
+
+  const oldestCourierHistoryDates = [
+    oldestCourierActivity?.createdAt,
+    oldestCourierEvent?.createdAt,
+    oldestCourierSnapshot?.finishedAt,
+  ]
+    .filter(Boolean)
+    .map((value) => new Date(value))
+    .filter((date) => Number.isFinite(date.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
 
   return {
     historyTotal,
     purgeCandidates,
     evidenceItemCandidates,
     oldestHistoryAt: oldestHistory?.updatedAt ? oldestHistory.updatedAt.toISOString() : "",
+    courierHistoryTotal: courierActivityTotal + courierEventTotal + courierSnapshotTotal,
+    courierHistoryCandidates: courierActivityCandidates + courierEventCandidates + courierSnapshotCandidates,
+    courierActivityCandidates,
+    courierEventCandidates,
+    courierSnapshotCandidates,
+    oldestCourierHistoryAt: oldestCourierHistoryDates[0]?.toISOString?.() || "",
     evidenceCutoff: evidenceCutoff.toISOString(),
     purgeCutoff: purgeCutoff.toISOString(),
   };
 }
-
 async function cleanupEvidenceBatch(shop, inputs) {
   const evidenceCutoff = cutoffDateFromDays(inputs.evidenceDays);
   let touchedRequests = 0;
@@ -145,6 +214,131 @@ async function cleanupEvidenceBatch(shop, inputs) {
   return { touchedRequests, cleanedPhotos };
 }
 
+function isPurgeableCourierRequestId(value) {
+  const requestId = String(value || "").trim();
+  return Boolean(requestId && !requestId.startsWith("route:") && !requestId.startsWith("session:"));
+}
+
+function snapshotOrderEntries(snapshot) {
+  return (Array.isArray(snapshot?.orders) ? snapshot.orders : [])
+    .map((order) => ({
+      requestId: String(order?.id || "").trim(),
+      orderNumber: String(order?.orderNumber || "").replace(/^#/, "").trim() || null,
+    }))
+    .filter((entry) => isPurgeableCourierRequestId(entry.requestId));
+}
+
+async function collectCourierHistoryPurgeEntries(shop, purgeCutoff, batchSize) {
+  const [activityRows, eventRows, snapshotRows] = await Promise.all([
+    prisma.courierActivity.findMany({
+      where: {
+        shop,
+        createdAt: { lt: purgeCutoff },
+        action: { in: COURIER_HISTORY_FINAL_ACTIONS },
+      },
+      select: { requestId: true, orderNumber: true },
+      orderBy: { id: "asc" },
+      take: batchSize,
+    }),
+    prisma.courierEvent.findMany({
+      where: {
+        shop,
+        createdAt: { lt: purgeCutoff },
+        status: { in: COURIER_HISTORY_FINAL_STATUSES },
+      },
+      select: { requestId: true, orderNumber: true },
+      orderBy: { id: "asc" },
+      take: batchSize,
+    }),
+    prisma.courierRouteSnapshot.findMany({
+      where: {
+        shop,
+        finishedAt: { lt: purgeCutoff },
+      },
+      select: { orders: true },
+      orderBy: { id: "asc" },
+      take: batchSize,
+    }),
+  ]);
+
+  const entriesByRequestId = new Map();
+  for (const row of [...activityRows, ...eventRows]) {
+    const requestId = String(row.requestId || "").trim();
+    if (!isPurgeableCourierRequestId(requestId)) continue;
+    entriesByRequestId.set(requestId, {
+      shop,
+      requestId,
+      orderNumber: String(row.orderNumber || "").replace(/^#/, "").trim() || null,
+      cutoffAt: purgeCutoff,
+    });
+  }
+  for (const snapshot of snapshotRows) {
+    for (const entry of snapshotOrderEntries(snapshot)) {
+      entriesByRequestId.set(entry.requestId, {
+        shop,
+        requestId: entry.requestId,
+        orderNumber: entry.orderNumber,
+        cutoffAt: purgeCutoff,
+      });
+    }
+  }
+  return Array.from(entriesByRequestId.values());
+}
+
+async function purgeCourierHistoryBatch(shop, inputs) {
+  const purgeCutoff = cutoffDateFromDays(inputs.purgeDays);
+  let purgedOrderMarkers = 0;
+  let deletedActivities = 0;
+  let deletedEvents = 0;
+  let deletedSnapshots = 0;
+  let deletedDeliveryCodes = 0;
+
+  let keepRunning = true;
+  while (keepRunning) {
+    const purgeEntries = await collectCourierHistoryPurgeEntries(shop, purgeCutoff, inputs.batchSize);
+    if (purgeEntries.length) {
+      await prisma.courierHistoryPurge.createMany({
+        data: purgeEntries,
+        skipDuplicates: true,
+      });
+      purgedOrderMarkers += purgeEntries.length;
+    }
+
+    const [activityResult, eventResult, snapshotResult, deliveryCodeResult] = await Promise.all([
+      prisma.courierActivity.deleteMany({
+        where: { shop, createdAt: { lt: purgeCutoff } },
+      }),
+      prisma.courierEvent.deleteMany({
+        where: { shop, createdAt: { lt: purgeCutoff } },
+      }),
+      prisma.courierRouteSnapshot.deleteMany({
+        where: { shop, finishedAt: { lt: purgeCutoff } },
+      }),
+      prisma.deliveryCodeAssignment.deleteMany({
+        where: {
+          shop,
+          active: false,
+          releasedAt: { lt: purgeCutoff },
+        },
+      }),
+    ]);
+
+    deletedActivities += Number(activityResult.count || 0);
+    deletedEvents += Number(eventResult.count || 0);
+    deletedSnapshots += Number(snapshotResult.count || 0);
+    deletedDeliveryCodes += Number(deliveryCodeResult.count || 0);
+
+    keepRunning =
+      purgeEntries.length >= inputs.batchSize ||
+      Number(activityResult.count || 0) >= inputs.batchSize ||
+      Number(eventResult.count || 0) >= inputs.batchSize ||
+      Number(snapshotResult.count || 0) >= inputs.batchSize ||
+      Number(deliveryCodeResult.count || 0) >= inputs.batchSize;
+  }
+
+  return { purgedOrderMarkers, deletedActivities, deletedEvents, deletedSnapshots, deletedDeliveryCodes };
+}
+
 async function purgeHistoryBatch(shop, inputs) {
   const purgeCutoff = cutoffDateFromDays(inputs.purgeDays);
   let deletedRequests = 0;
@@ -171,9 +365,10 @@ async function purgeHistoryBatch(shop, inputs) {
     deletedRequests += Number(deleted.count || 0);
   }
 
-  return { deletedRequests };
-}
+  const courierHistory = await purgeCourierHistoryBatch(shop, inputs);
 
+  return { deletedRequests, courierHistory };
+}
 async function getOrCreateSettings(shop) {
   const existing = await prisma.returnSettings.findUnique({ where: { shop } });
   if (existing) return existing;
@@ -303,7 +498,7 @@ export const action = async ({ request }) => {
   return {
     ok: true,
     intent,
-    message: `Purga completada. Ordenes eliminadas definitivamente: ${result.deletedRequests}.`,
+    message: `Purga completada. Ordenes de devoluciones eliminadas: ${result.deletedRequests}. Historial repartidor eliminado: ${result.courierHistory.deletedActivities} actividades, ${result.courierHistory.deletedEvents} eventos, ${result.courierHistory.deletedSnapshots} cierres de ruta.`,
     maintenance: { inputs, preview, result },
   };
 };
@@ -464,7 +659,7 @@ export default function ReturnsAdmin() {
                 </label>
                 <label className={styles.label}>
                   Dias para purga definitiva
-                  <span className={styles.help}>Elimina por completo ordenes antiguas de historial.</span>
+                  <span className={styles.help}>Elimina por completo ordenes antiguas de historial y registros antiguos del historial repartidor.</span>
                   <input
                     className={styles.input}
                     name="purgeDays"
@@ -492,9 +687,15 @@ export default function ReturnsAdmin() {
                 <p className={styles.statRow}>Total de ordenes en historial: {maintenancePreview.historyTotal || 0}</p>
                 <p className={styles.statRow}>Fotos de evidencia candidatas a limpieza: {maintenancePreview.evidenceItemCandidates || 0}</p>
                 <p className={styles.statRow}>Ordenes candidatas a purga definitiva: {maintenancePreview.purgeCandidates || 0}</p>
+                <p className={styles.statRow}>Registros en historial repartidor: {maintenancePreview.courierHistoryTotal || 0}</p>
+                <p className={styles.statRow}>Registros de historial repartidor candidatos a purga: {maintenancePreview.courierHistoryCandidates || 0}</p>
+                <p className={styles.statRow}>Actividades repartidor candidatas: {maintenancePreview.courierActivityCandidates || 0}</p>
+                <p className={styles.statRow}>Eventos repartidor candidatos: {maintenancePreview.courierEventCandidates || 0}</p>
+                <p className={styles.statRow}>Cierres de ruta candidatos: {maintenancePreview.courierSnapshotCandidates || 0}</p>
                 <p className={styles.statRow}>Corte de limpieza: {formatDateLabel(maintenancePreview.evidenceCutoff)}</p>
                 <p className={styles.statRow}>Corte de purga: {formatDateLabel(maintenancePreview.purgeCutoff)}</p>
                 <p className={styles.statRow}>Orden historica mas antigua: {formatDateLabel(maintenancePreview.oldestHistoryAt)}</p>
+                <p className={styles.statRow}>Historial repartidor mas antiguo: {formatDateLabel(maintenancePreview.oldestCourierHistoryAt)}</p>
               </div>
 
               <div className={styles.actions}>
