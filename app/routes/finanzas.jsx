@@ -13,9 +13,12 @@ export const headers = () => ({
 export default function FinanzasPortal() {
   const totals = {
     salesTotal: 0,
-    expensesTotal: 0,
-    profitTotal: 0,
     averageTicket: 0,
+    operatingCostTotal: 0,
+    shippingTotal: 0,
+    taxesTotal: 0,
+    recoveredCostTotal: 0,
+    profitTotal: 0,
   };
 
   return (
@@ -42,18 +45,29 @@ export default function FinanzasPortal() {
             <span>Ventas</span>
             <strong>{currencyFormatter.format(totals.salesTotal)}</strong>
           </article>
-          <article className={`${styles.metric} ${styles.metricExpenses}`}>
-            <span>Costos operativos</span>
-            <strong>{currencyFormatter.format(totals.expensesTotal)}</strong>
-          </article>
-          <article className={`${styles.metric} ${styles.metricProfit}`}>
-            <span>Ganacia</span>
-            <strong>{currencyFormatter.format(totals.profitTotal)}</strong>
-          </article>
           <article className={`${styles.metric} ${styles.metricTicket}`}>
             <span>Ticket promedio</span>
             <strong>{currencyFormatter.format(totals.averageTicket)}</strong>
-            <small>Solo ventas</small>
+          </article>
+          <article className={`${styles.metric} ${styles.metricOperatingCost}`}>
+            <span>Costo operativo</span>
+            <strong>{currencyFormatter.format(totals.operatingCostTotal)}</strong>
+          </article>
+          <article className={`${styles.metric} ${styles.metricShipping}`}>
+            <span>Paqueteria</span>
+            <strong>{currencyFormatter.format(totals.shippingTotal)}</strong>
+          </article>
+          <article className={`${styles.metric} ${styles.metricTaxes}`}>
+            <span>Impuestos</span>
+            <strong>{currencyFormatter.format(totals.taxesTotal)}</strong>
+          </article>
+          <article className={`${styles.metric} ${styles.metricRecovered}`}>
+            <span>Costo recuperado</span>
+            <strong>{currencyFormatter.format(totals.recoveredCostTotal)}</strong>
+          </article>
+          <article className={`${styles.metric} ${styles.metricProfit}`}>
+            <span>Ganancias</span>
+            <strong>{currencyFormatter.format(totals.profitTotal)}</strong>
           </article>
         </section>
       </div>
