@@ -49,8 +49,11 @@ function isMyShopifyDomain(value) {
   return cleanShop(value).endsWith(".myshopify.com");
 }
 
-function configuredAccessCode() {
-  return String(process.env.FINANCE_ACCESS_CODE || process.env.FINANCE_PORTAL_CODE || "").trim();
+function configuredAccessCodes() {
+  return String(process.env.FINANCE_ACCESS_CODES || process.env.FINANCE_ACCESS_CODE || process.env.FINANCE_PORTAL_CODE || "")
+    .split(",")
+    .map((code) => code.trim())
+    .filter(Boolean);
 }
 
 function getTimeZoneParts(date, timeZone) {
@@ -97,11 +100,11 @@ function getTodayRangeInMexico() {
 }
 
 async function hasFinanceAccess(request) {
-  const accessCode = configuredAccessCode();
-  if (!accessCode) return false;
+  const accessCodes = configuredAccessCodes();
+  if (!accessCodes.length) return false;
   const cookie = financeAccessCookie();
   const access = await cookie.parse(request.headers.get("Cookie"));
-  return access?.ok === true;
+  return access?.ok === true && accessCodes.includes(String(access?.code || "").trim());
 }
 
 async function resolveFinanceSession(request) {
@@ -246,8 +249,8 @@ export const headers = () => ({
 });
 
 export async function loader({ request }) {
-  const accessCode = configuredAccessCode();
-  if (!accessCode) {
+  const accessCodes = configuredAccessCodes();
+  if (!accessCodes.length) {
     return {
       isLoggedIn: false,
       needsConfiguration: true,
@@ -294,7 +297,7 @@ export async function action({ request }) {
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
   const url = new URL(request.url);
-  const accessCode = configuredAccessCode();
+  const accessCodes = configuredAccessCodes();
 
   if (intent === "logout") {
     return redirect("/finanzas", {
@@ -304,13 +307,13 @@ export async function action({ request }) {
     });
   }
 
-  if (!accessCode) return { ok: false, error: "Falta configurar FINANCE_ACCESS_CODE en Render." };
+  if (!accessCodes.length) return { ok: false, error: "Falta configurar FINANCE_ACCESS_CODE en Render." };
   const code = String(formData.get("code") || "").trim();
-  if (code !== accessCode) return { ok: false, error: "Codigo incorrecto." };
+  if (!accessCodes.includes(code)) return { ok: false, error: "Codigo incorrecto." };
 
   return redirect(`/finanzas${url.search}`, {
     headers: {
-      "Set-Cookie": await financeAccessCookie().serialize({ ok: true }),
+      "Set-Cookie": await financeAccessCookie().serialize({ ok: true, code }),
     },
   });
 }
