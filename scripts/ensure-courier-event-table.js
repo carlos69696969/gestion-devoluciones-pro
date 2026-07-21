@@ -259,4 +259,19 @@ await prisma.$executeRawUnsafe(`
   ON "CourierHistoryPurge"("shop", "cutoffAt")
 `);
 
+await prisma.$executeRawUnsafe(`
+  ALTER TABLE "ReturnSettings"
+  ADD COLUMN IF NOT EXISTS "maintenanceEvidenceDays" INTEGER NOT NULL DEFAULT 120
+`);
+
+await prisma.$executeRawUnsafe(`
+  ALTER TABLE "ReturnSettings"
+  ADD COLUMN IF NOT EXISTS "maintenancePurgeDays" INTEGER NOT NULL DEFAULT 180
+`);
+
+await prisma.$executeRawUnsafe(`
+  ALTER TABLE "ReturnSettings"
+  ADD COLUMN IF NOT EXISTS "maintenanceBatchSize" INTEGER NOT NULL DEFAULT 200
+`);
+
 await prisma.$disconnect();

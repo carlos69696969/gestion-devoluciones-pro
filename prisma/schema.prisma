@@ -184,19 +184,22 @@ model CourierRouteSnapshot {
 }
 
 model ReturnSettings {
-  id                 Int      @id @default(autoincrement())
-  shop               String   @unique
-  pickupCost         Float    @default(100)
-  returnWindowDays   Int      @default(30)
-  returnReasons      String   @default("")
-  evidenceReasons    String   @default("")
-  branchInstructions String   @default("Entrega el paquete sellado con tu numero de pedido.")
-  branchAddress      String   @default("Sucursal principal por definir")
-  branchHours        String   @default("Lunes a Viernes de 9:00 a 18:00")
-  pickupInstructions String   @default("Ten el paquete listo y sellado para recoleccion.")
-  pickupHours        String   @default("Lunes a Viernes de 9:00 a 18:00")
-  updatedAt          DateTime @updatedAt
-  createdAt          DateTime @default(now())
+  id                      Int      @id @default(autoincrement())
+  shop                    String   @unique
+  pickupCost              Float    @default(100)
+  returnWindowDays        Int      @default(30)
+  returnReasons           String   @default("")
+  evidenceReasons         String   @default("")
+  branchInstructions      String   @default("Entrega el paquete sellado con tu numero de pedido.")
+  branchAddress           String   @default("Sucursal principal por definir")
+  branchHours             String   @default("Lunes a Viernes de 9:00 a 18:00")
+  pickupInstructions      String   @default("Ten el paquete listo y sellado para recoleccion.")
+  pickupHours             String   @default("Lunes a Viernes de 9:00 a 18:00")
+  maintenanceEvidenceDays Int      @default(120)
+  maintenancePurgeDays    Int      @default(180)
+  maintenanceBatchSize    Int      @default(200)
+  updatedAt               DateTime @updatedAt
+  createdAt               DateTime @default(now())
 }
 
 model PushDevice {

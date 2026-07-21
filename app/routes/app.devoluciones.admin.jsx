@@ -163,6 +163,17 @@ function normalizeMaintenanceInputs(formDataLike) {
   return { evidenceDays, purgeDays, batchSize };
 }
 
+function maintenanceInputsFromSettings(settings) {
+  return normalizeMaintenanceInputs({
+    get(name) {
+      if (name === "evidenceDays") return settings?.maintenanceEvidenceDays;
+      if (name === "purgeDays") return settings?.maintenancePurgeDays;
+      if (name === "batchSize") return settings?.maintenanceBatchSize;
+      return "";
+    },
+  });
+}
+
 function historyWhere(shop) {
   return {
     shop,
@@ -624,11 +635,7 @@ async function syncReturnSettingsToNotifications(shopDomain, settings) {
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const settings = await getOrCreateSettings(session.shop);
-  const inputs = {
-    evidenceDays: DEFAULT_EVIDENCE_DAYS,
-    purgeDays: DEFAULT_PURGE_DAYS,
-    batchSize: DEFAULT_BATCH_SIZE,
-  };
+  const inputs = maintenanceInputsFromSettings(settings);
   const preview = await getMaintenancePreview(session.shop, inputs);
   return { settings, maintenance: { inputs, preview } };
 };
@@ -664,6 +671,7 @@ export const action = async ({ request }) => {
 
   if (
     intent !== "maintenance_preview" &&
+    intent !== "maintenance_save_settings" &&
     intent !== "maintenance_cleanup_evidence" &&
     intent !== "maintenance_purge_history"
   ) {
@@ -678,6 +686,30 @@ export const action = async ({ request }) => {
       ok: true,
       intent,
       message: "Vista previa actualizada.",
+      maintenance: { inputs, preview },
+    };
+  }
+
+  if (intent === "maintenance_save_settings") {
+    await prisma.returnSettings.upsert({
+      where: { shop: session.shop },
+      update: {
+        maintenanceEvidenceDays: inputs.evidenceDays,
+        maintenancePurgeDays: inputs.purgeDays,
+        maintenanceBatchSize: inputs.batchSize,
+      },
+      create: {
+        shop: session.shop,
+        maintenanceEvidenceDays: inputs.evidenceDays,
+        maintenancePurgeDays: inputs.purgeDays,
+        maintenanceBatchSize: inputs.batchSize,
+      },
+    });
+    const preview = await getMaintenancePreview(session.shop, inputs);
+    return {
+      ok: true,
+      intent,
+      message: "Configuracion de limpieza guardada.",
       maintenance: { inputs, preview },
     };
   }
@@ -912,6 +944,15 @@ export default function ReturnsAdmin() {
               <div className={styles.actions}>
                 <button className={styles.btn} type="submit" name="intent" value="maintenance_preview" disabled={isSubmitting}>
                   Actualizar vista previa
+                </button>
+                <button
+                  className={`${styles.btn} ${styles.btnPrimary}`}
+                  type="submit"
+                  name="intent"
+                  value="maintenance_save_settings"
+                  disabled={isSubmitting}
+                >
+                  Guardar configuracion de limpieza
                 </button>
                 <button
                   className={`${styles.btn} ${styles.btnWarning}`}
