@@ -230,18 +230,19 @@ function calculateDayTotals(orders) {
       const orderFinance = calculateOrderFinanceTotals(order);
       return {
         salesTotal: totals.salesTotal + orderFinance.salesTotal,
+        originalSubtotalTotal: totals.originalSubtotalTotal + orderFinance.originalSubtotalTotal,
         recoveredCostTotal: totals.recoveredCostTotal + orderFinance.recoveredCostTotal,
         taxesTotal: totals.taxesTotal + orderFinance.taxesTotal,
         profitTotal: totals.profitTotal + orderFinance.profitTotal,
       };
     },
-    { salesTotal: 0, recoveredCostTotal: 0, taxesTotal: 0, profitTotal: 0 },
+    { salesTotal: 0, originalSubtotalTotal: 0, recoveredCostTotal: 0, taxesTotal: 0, profitTotal: 0 },
   );
 
   return {
     ...emptyTotals,
     salesTotal: financeTotals.salesTotal,
-    averageTicket: orderCount ? financeTotals.salesTotal / orderCount : 0,
+    averageTicket: orderCount ? financeTotals.originalSubtotalTotal / orderCount : 0,
     operatingCostTotal: itemCount * OPERATING_COST_PER_ITEM,
     shippingTotal: orderCount * SHIPPING_COST_PER_ORDER,
     recoveredCostTotal: financeTotals.recoveredCostTotal,
@@ -283,8 +284,10 @@ function calculateOrderFinanceTotals(order) {
   const marginTotal = recoveredCostTotal * profitMarginRate;
   const taxesTotal = marginTotal * PROFIT_TAX_RATE;
   const profitTotal = marginTotal - taxesTotal;
+  const actualSalesTotal = Number(order?.currentTotalPriceSet?.shopMoney?.amount || 0);
+  const salesTotal = order?.useActualSalesTotal === false ? totals.salesTotal : actualSalesTotal;
 
-  return { salesTotal: totals.salesTotal, recoveredCostTotal, taxesTotal, profitTotal };
+  return { salesTotal, originalSubtotalTotal: originalOrderTotal, recoveredCostTotal, taxesTotal, profitTotal };
 }
 
 function calculateRecoveredUnitCost(unitPrice) {
@@ -309,6 +312,7 @@ function calculateTestTotals(testOrders) {
     .map((order) => {
       const prices = order.products.map((price) => Number(price || 0)).filter((price) => price > 0);
       return {
+        useActualSalesTotal: false,
         cancelledAt: null,
         currentTotalPriceSet: {
           shopMoney: {
