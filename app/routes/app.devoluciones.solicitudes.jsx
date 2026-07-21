@@ -1571,7 +1571,8 @@ function pickupRescheduleAttemptLabel(status) {
 function courierEventLabel(status, attempt) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "reintento_pendiente" && Number(attempt || 0) <= 0) return "Reprogramado";
-  const attemptLabel = courierAttemptLabel(attempt);
+  const attemptNumber = Number(attempt || 0) > 0 ? attempt : 1;
+  const attemptLabel = courierAttemptLabel(attemptNumber);
   if (normalized === "en_ruta" || normalized.startsWith("en_ruta_")) return `${attemptLabel} en ruta`;
   if (normalized === "no_entregado") return `${attemptLabel} no entregado`;
   if (normalized === "reintento_pendiente") return `${attemptLabel} reprogramado`;

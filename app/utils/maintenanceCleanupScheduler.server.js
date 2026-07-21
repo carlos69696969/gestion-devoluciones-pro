@@ -447,6 +447,34 @@ async function collectCourierHistoryPurgeEntries(shop, purgeCutoff, batchSize) {
   return Array.from(entriesByRequestId.values());
 }
 
+async function deleteCourierRouteSnapshotsForPurgedOrders(shop, purgedRequestIds, batchSize) {
+  const purgedRequestIdSet = new Set(
+    (Array.isArray(purgedRequestIds) ? purgedRequestIds : [])
+      .map((requestId) => normalize(requestId))
+      .filter(Boolean),
+  );
+  if (!purgedRequestIdSet.size) return 0;
+
+  const snapshots = await prisma.courierRouteSnapshot.findMany({
+    where: { shop },
+    select: { id: true, orders: true },
+    orderBy: { id: "asc" },
+    take: batchSize,
+  });
+  const removableIds = snapshots
+    .filter((snapshot) => {
+      const entries = snapshotOrderEntries(snapshot);
+      return entries.length > 0 && entries.every((entry) => purgedRequestIdSet.has(entry.requestId));
+    })
+    .map((snapshot) => snapshot.id);
+  if (!removableIds.length) return 0;
+
+  const result = await prisma.courierRouteSnapshot.deleteMany({
+    where: { id: { in: removableIds } },
+  });
+  return Number(result.count || 0);
+}
+
 async function purgeCourierHistoryBatch({ shop, session, inputs, logger }) {
   const purgeCutoff = cutoffDateFromDays(inputs.purgeDays);
   let purgedOrderMarkers = 0;
@@ -455,49 +483,6 @@ async function purgeCourierHistoryBatch({ shop, session, inputs, logger }) {
   let deletedEvents = 0;
   let deletedSnapshots = 0;
   let deletedDeliveryCodes = 0;
-  let keepRunning = true;
-
-  while (keepRunning) {
-    const purgeEntries = await collectCourierHistoryPurgeEntries(shop, purgeCutoff, inputs.batchSize);
-    if (purgeEntries.length) {
-      const markerResult = await prisma.courierHistoryPurge.createMany({
-        data: purgeEntries,
-        skipDuplicates: true,
-      });
-      purgedOrderMarkers += Number(markerResult.count || 0);
-    }
-
-    const [activityResult, eventResult, snapshotResult, deliveryCodeResult] = await Promise.all([
-      prisma.courierActivity.deleteMany({
-        where: { shop, createdAt: { lt: purgeCutoff } },
-      }),
-      prisma.courierEvent.deleteMany({
-        where: { shop, createdAt: { lt: purgeCutoff } },
-      }),
-      prisma.courierRouteSnapshot.deleteMany({
-        where: { shop, finishedAt: { lt: purgeCutoff } },
-      }),
-      prisma.deliveryCodeAssignment.deleteMany({
-        where: {
-          shop,
-          active: false,
-          releasedAt: { lt: purgeCutoff },
-        },
-      }),
-    ]);
-
-    deletedActivities += Number(activityResult.count || 0);
-    deletedEvents += Number(eventResult.count || 0);
-    deletedSnapshots += Number(snapshotResult.count || 0);
-    deletedDeliveryCodes += Number(deliveryCodeResult.count || 0);
-
-    keepRunning =
-      purgeEntries.length >= inputs.batchSize ||
-      Number(activityResult.count || 0) >= inputs.batchSize ||
-      Number(eventResult.count || 0) >= inputs.batchSize ||
-      Number(snapshotResult.count || 0) >= inputs.batchSize ||
-      Number(deliveryCodeResult.count || 0) >= inputs.batchSize;
-  }
 
   const scheduledPurgeEntries = await collectScheduledCourierHistoryPurgeEntries({
     shop,
@@ -512,6 +497,31 @@ async function purgeCourierHistoryBatch({ shop, session, inputs, logger }) {
       skipDuplicates: true,
     });
     purgedScheduledOrderMarkers += Number(scheduledResult.count || 0);
+  }
+
+  const purgedRequestIds = scheduledPurgeEntries
+    .map((entry) => normalize(entry.requestId))
+    .filter(Boolean);
+  if (purgedRequestIds.length) {
+    const [activityResult, eventResult, deliveryCodeResult] = await Promise.all([
+      prisma.courierActivity.deleteMany({
+        where: { shop, requestId: { in: purgedRequestIds } },
+      }),
+      prisma.courierEvent.deleteMany({
+        where: { shop, requestId: { in: purgedRequestIds } },
+      }),
+      prisma.deliveryCodeAssignment.deleteMany({
+        where: {
+          shop,
+          active: false,
+          releasedAt: { lt: purgeCutoff },
+        },
+      }),
+    ]);
+    deletedActivities += Number(activityResult.count || 0);
+    deletedEvents += Number(eventResult.count || 0);
+    deletedDeliveryCodes += Number(deliveryCodeResult.count || 0);
+    deletedSnapshots += await deleteCourierRouteSnapshotsForPurgedOrders(shop, purgedRequestIds, inputs.batchSize);
   }
 
   return {
