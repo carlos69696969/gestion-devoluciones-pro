@@ -885,6 +885,7 @@ export default function ReturnsAdmin() {
           <div className={`${styles.card} ${styles.grid}`}>
             <p className={styles.help}>
               Esta seccion elimina peso del historial sin tocar ordenes activas. Se ejecuta en lotes para evitar que la app se congele.
+              La limpieza automatica usa los valores guardados aqui y corre cada madrugada.
             </p>
 
             <Form method="post" className={styles.grid}>
