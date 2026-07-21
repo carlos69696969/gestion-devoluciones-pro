@@ -40,6 +40,18 @@ export default function FinanzasPortal() {
           </div>
         </section>
 
+        <section className={styles.periodTabs} aria-label="Periodo financiero">
+          <button className={`${styles.periodButton} ${styles.periodButtonActive}`} type="button">
+            Dia
+          </button>
+          <button className={styles.periodButton} type="button">
+            Semana
+          </button>
+          <button className={styles.periodButton} type="button">
+            Historial
+          </button>
+        </section>
+
         <section className={styles.metrics} aria-label="Resumen financiero">
           <article className={`${styles.metric} ${styles.metricSales}`}>
             <span>Ventas</span>
