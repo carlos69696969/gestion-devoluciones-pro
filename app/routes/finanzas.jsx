@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createCookie, Form, redirect, useActionData, useLoaderData, useRevalidator } from "react-router";
 import prisma from "../db.server";
 import styles from "../styles/finanzas.module.css";
@@ -12,6 +12,10 @@ const PROFIT_MARGIN_RATE = 0.44;
 const PROFIT_TAX_RATE = 0.1;
 const TRANSACTION_RATE = 0.03;
 const COST_RECOVERY_FACTOR = 1 + PROFIT_MARGIN_RATE + PROFIT_MARGIN_RATE * PROFIT_TAX_RATE;
+const INITIAL_TEST_ORDERS = [
+  { name: "Orden 1", products: ["263", "340", ""] },
+  { name: "Orden 2", products: ["936", "", ""] },
+];
 
 function financeAccessCookie() {
   return createCookie("finance_portal_access_v1", {
@@ -223,9 +227,7 @@ function calculateDayTotals(orders) {
       (order?.lineItems?.nodes || []).reduce((itemSum, item) => {
         const quantity = Math.max(0, Number(item?.quantity || 0));
         const unitPrice = Number(item?.originalUnitPriceSet?.shopMoney?.amount || 0);
-        const recoveredUnitCost =
-          (unitPrice * (1 - TRANSACTION_RATE) - SHOPIFY_FIXED_COMMISSION_PER_ITEM - OPERATING_COST_PER_ITEM) /
-          COST_RECOVERY_FACTOR;
+        const recoveredUnitCost = calculateRecoveredUnitCost(unitPrice);
         return itemSum + Math.max(0, recoveredUnitCost) * quantity;
       }, 0)
     );
@@ -245,6 +247,41 @@ function calculateDayTotals(orders) {
     orderCount,
     itemCount,
   };
+}
+
+function calculateRecoveredUnitCost(unitPrice) {
+  return (
+    (Number(unitPrice || 0) * (1 - TRANSACTION_RATE) - SHOPIFY_FIXED_COMMISSION_PER_ITEM - OPERATING_COST_PER_ITEM) /
+    COST_RECOVERY_FACTOR
+  );
+}
+
+function calculateTestTotals(testOrders) {
+  const orders = testOrders
+    .map((order) => {
+      const prices = order.products.map((price) => Number(price || 0)).filter((price) => price > 0);
+      return {
+        cancelledAt: null,
+        currentTotalPriceSet: {
+          shopMoney: {
+            amount: prices.reduce((sum, price) => sum + price, 0),
+          },
+        },
+        lineItems: {
+          nodes: prices.map((price) => ({
+            quantity: 1,
+            originalUnitPriceSet: {
+              shopMoney: {
+                amount: price,
+              },
+            },
+          })),
+        },
+      };
+    })
+    .filter((order) => Number(order.currentTotalPriceSet.shopMoney.amount || 0) > 0);
+
+  return calculateDayTotals(orders);
 }
 
 export const headers = () => ({
@@ -326,6 +363,8 @@ export default function FinanzasPortal() {
   const { isLoggedIn, needsConfiguration, totals, error } = useLoaderData();
   const actionData = useActionData();
   const revalidator = useRevalidator();
+  const [testOrders, setTestOrders] = useState(INITIAL_TEST_ORDERS);
+  const testTotals = useMemo(() => calculateTestTotals(testOrders), [testOrders]);
 
   useEffect(() => {
     if (!isLoggedIn) return undefined;
@@ -334,6 +373,20 @@ export default function FinanzasPortal() {
     }, 60000);
     return () => window.clearInterval(interval);
   }, [isLoggedIn, revalidator]);
+
+  function updateTestProduct(orderIndex, productIndex, value) {
+    setTestOrders((currentOrders) =>
+      currentOrders.map((order, currentOrderIndex) => {
+        if (currentOrderIndex !== orderIndex) return order;
+        return {
+          ...order,
+          products: order.products.map((price, currentProductIndex) =>
+            currentProductIndex === productIndex ? value : price,
+          ),
+        };
+      }),
+    );
+  }
 
   if (!isLoggedIn) {
     return (
@@ -408,6 +461,45 @@ export default function FinanzasPortal() {
         </section>
 
         {error ? <p className={styles.errorText}>{error}</p> : null}
+
+        <section className={styles.testPanel} aria-label="Prueba temporal de calculos">
+          <div className={styles.testHeader}>
+            <h2>Prueba temporal</h2>
+            <span>No afecta las ventas reales</span>
+          </div>
+          <div className={styles.testOrders}>
+            {testOrders.map((order, orderIndex) => (
+              <article className={styles.testOrder} key={order.name}>
+                <h3>{order.name}</h3>
+                <div className={styles.testGrid}>
+                  {order.products.map((price, productIndex) => (
+                    <label className={styles.label} key={`${order.name}-${productIndex}`}>
+                      Producto {productIndex + 1}
+                      <input
+                        className={styles.input}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        value={price}
+                        onChange={(event) => updateTestProduct(orderIndex, productIndex, event.target.value)}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+          <div className={styles.testTotals}>
+            <span>Ventas: <strong>{currencyFormatter.format(testTotals.salesTotal)}</strong></span>
+            <span>Ticket: <strong>{currencyFormatter.format(testTotals.averageTicket)}</strong></span>
+            <span>Costo operativo: <strong>{currencyFormatter.format(testTotals.operatingCostTotal)}</strong></span>
+            <span>Paqueteria: <strong>{currencyFormatter.format(testTotals.shippingTotal)}</strong></span>
+            <span>Impuestos: <strong>{currencyFormatter.format(testTotals.taxesTotal)}</strong></span>
+            <span>Costo recuperado: <strong>{currencyFormatter.format(testTotals.recoveredCostTotal)}</strong></span>
+            <span>Ganancias: <strong>{currencyFormatter.format(testTotals.profitTotal)}</strong></span>
+          </div>
+        </section>
 
         <section className={styles.metrics} aria-label="Resumen financiero">
           <article className={`${styles.metric} ${styles.metricSales}`}>
