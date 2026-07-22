@@ -325,6 +325,16 @@ async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = 
                   amount
                 }
               }
+              currentShippingPriceSet {
+                shopMoney {
+                  amount
+                }
+              }
+              totalRefundedShippingSet {
+                shopMoney {
+                  amount
+                }
+              }
               lineItems(first: 250) {
                 nodes {
                   quantity
@@ -529,6 +539,7 @@ function extractRefundEventsFromOrders(orders, start, end) {
     const orderFinance = calculateOrderFinanceTotals(order);
     const originalOrderTotal = Number(orderFinance.originalSubtotalTotal || 0);
     const profitMarginRate = getProfitMarginRateForOrderTotal(originalOrderTotal);
+    let hasAppliedOrderShippingRefund = false;
     return (order?.refunds || [])
       .map((refund) => {
         const createdAt = refund?.createdAt ? new Date(refund.createdAt) : null;
@@ -545,10 +556,18 @@ function extractRefundEventsFromOrders(orders, start, end) {
         const refundSalesTotal = refundLineSubtotal || Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
         const totalRefundedAmount = Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
         const orderShippingTotal = Number(orderFinance.shippingTotal || 0);
-        const refundShippingTotal =
+        const orderRefundedShippingTotal = Number(order?.totalRefundedShippingSet?.shopMoney?.amount || 0);
+        const currentShippingTotal = Number(order?.currentShippingPriceSet?.shopMoney?.amount || 0);
+        const inferredRefundedShippingTotal = Math.max(0, orderShippingTotal - currentShippingTotal);
+        const explicitRefundedShippingTotal = Math.max(orderRefundedShippingTotal, inferredRefundedShippingTotal);
+        const refundShippingFromAmount =
           totalRefundedAmount > refundLineSubtotal + 0.01
             ? Math.min(orderShippingTotal, totalRefundedAmount - refundLineSubtotal)
             : 0;
+        const refundShippingTotal = hasAppliedOrderShippingRefund
+          ? refundShippingFromAmount
+          : Math.max(refundShippingFromAmount, Math.min(orderShippingTotal, explicitRefundedShippingTotal));
+        if (refundShippingTotal > 0) hasAppliedOrderShippingRefund = true;
         const refundedRecoveredCostTotal = refundLineItems.reduce((sum, refundLineItem) => {
           const quantity = Math.max(0, Number(refundLineItem?.quantity || 0));
           const unitPrice = Number(refundLineItem?.lineItem?.originalUnitPriceSet?.shopMoney?.amount || 0);
@@ -852,7 +871,7 @@ export default function FinanzasPortal() {
             <article className={styles.weekSummaryCard}>
               <span>
                 <strong>Resumen de la semana</strong>
-                {totals.hasRefunds ? <strong className={styles.refundsHeading}>Reembolsos</strong> : null}
+                {totals.hasRefunds ? <small>Reembolsos</small> : null}
               </span>
               <span>
                 Ventas
@@ -869,17 +888,17 @@ export default function FinanzasPortal() {
                 ) : null}
               </span>
               {totals.hasRefunds ? (
-                <div className={styles.weekNetTotals}>
-                  <span>
+                <>
+                  <span className={styles.weekNetCell}>
                     <strong>Total de la semana</strong>
                   </span>
-                  <span>
+                  <span className={styles.weekNetCell}>
                     <strong>{currencyFormatter.format(totals.netSalesTotal)}</strong>
                   </span>
-                  <span>
+                  <span className={styles.weekNetCell}>
                     <strong>{currencyFormatter.format(totals.netProfitTotal)}</strong>
                   </span>
-                </div>
+                </>
               ) : null}
             </article>
             <div className={styles.weekCards}>

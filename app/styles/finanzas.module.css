@@ -350,7 +350,7 @@
   gap: 10px;
 }
 
-.weekSummaryCard:has(.weekNetTotals) {
+.weekSummaryCard:has(.weekNetCell) {
   grid-template-rows: auto auto;
 }
 
@@ -374,31 +374,15 @@
   font-weight: 700;
 }
 
-.refundsHeading {
-  color: #111827 !important;
-  font-size: 18px !important;
-  line-height: 1.2;
-}
-
 .refundAmount,
 .metricRefund {
   color: #b42318 !important;
   font-weight: 900 !important;
 }
 
-.weekNetTotals {
-  grid-column: 1 / -1;
+.weekNetCell {
   border-top: 1px solid #b7d7f8;
   padding-top: 10px;
-  display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
-  align-items: center;
-  gap: 10px;
-}
-
-.weekNetTotals span {
-  display: grid;
-  gap: 3px;
 }
 
 .weekCard {
