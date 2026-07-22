@@ -374,6 +374,12 @@
   font-weight: 700;
 }
 
+.refundsHeading {
+  color: #111827 !important;
+  font-size: 18px !important;
+  line-height: 1.2;
+}
+
 .refundAmount,
 .metricRefund {
   color: #b42318 !important;
@@ -644,7 +650,6 @@
     grid-template-columns: 1.2fr 1fr 1fr;
   }
 
-  .weekNetTotals,
   .weekFullSummaryCard > div {
     grid-template-columns: 1fr;
   }

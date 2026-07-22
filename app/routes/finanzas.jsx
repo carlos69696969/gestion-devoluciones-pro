@@ -320,6 +320,11 @@ async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = 
                   amount
                 }
               }
+              totalShippingPriceSet {
+                shopMoney {
+                  amount
+                }
+              }
               lineItems(first: 250) {
                 nodes {
                   quantity
@@ -422,12 +427,13 @@ function calculateFinanceTotals(orders, refundEvents = []) {
       return {
         salesTotal: totals.salesTotal + orderFinance.salesTotal,
         originalSubtotalTotal: totals.originalSubtotalTotal + orderFinance.originalSubtotalTotal,
+        shippingTotal: totals.shippingTotal + orderFinance.shippingTotal,
         recoveredCostTotal: totals.recoveredCostTotal + orderFinance.recoveredCostTotal,
         taxesTotal: totals.taxesTotal + orderFinance.taxesTotal,
         profitTotal: totals.profitTotal + orderFinance.profitTotal,
       };
     },
-    { salesTotal: 0, originalSubtotalTotal: 0, recoveredCostTotal: 0, taxesTotal: 0, profitTotal: 0 },
+    { salesTotal: 0, originalSubtotalTotal: 0, shippingTotal: 0, recoveredCostTotal: 0, taxesTotal: 0, profitTotal: 0 },
   );
   const refundTotals = refundEvents.reduce(
     (totals, refundEvent) => ({
@@ -437,7 +443,7 @@ function calculateFinanceTotals(orders, refundEvents = []) {
     }),
     { refundSalesTotal: 0, refundProfitTotal: 0, refundShippingTotal: 0 },
   );
-  const shippingTotal = orderCount * SHIPPING_COST_PER_ORDER;
+  const shippingTotal = financeTotals.shippingTotal;
   const hasRefunds =
     refundTotals.refundSalesTotal > 0 || refundTotals.refundProfitTotal > 0 || refundTotals.refundShippingTotal > 0;
 
@@ -510,8 +516,10 @@ function calculateOrderFinanceTotals(order) {
   const profitTotal = marginTotal - taxesTotal;
   const actualSalesTotal = Number(order?.currentTotalPriceSet?.shopMoney?.amount || 0);
   const salesTotal = order?.useActualSalesTotal === false ? totals.salesTotal : actualSalesTotal;
+  const actualShippingTotal = Number(order?.totalShippingPriceSet?.shopMoney?.amount || 0);
+  const shippingTotal = order?.useActualSalesTotal === false ? SHIPPING_COST_PER_ORDER : actualShippingTotal;
 
-  return { salesTotal, originalSubtotalTotal: originalOrderTotal, recoveredCostTotal, taxesTotal, profitTotal };
+  return { salesTotal, originalSubtotalTotal: originalOrderTotal, shippingTotal, recoveredCostTotal, taxesTotal, profitTotal };
 }
 
 function extractRefundEventsFromOrders(orders, start, end) {
@@ -536,8 +544,11 @@ function extractRefundEventsFromOrders(orders, start, end) {
         }, 0);
         const refundSalesTotal = refundLineSubtotal || Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
         const totalRefundedAmount = Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
+        const orderShippingTotal = Number(orderFinance.shippingTotal || 0);
         const refundShippingTotal =
-          totalRefundedAmount > refundLineSubtotal + 0.01 ? SHIPPING_COST_PER_ORDER : 0;
+          totalRefundedAmount > refundLineSubtotal + 0.01
+            ? Math.min(orderShippingTotal, totalRefundedAmount - refundLineSubtotal)
+            : 0;
         const refundedRecoveredCostTotal = refundLineItems.reduce((sum, refundLineItem) => {
           const quantity = Math.max(0, Number(refundLineItem?.quantity || 0));
           const unitPrice = Number(refundLineItem?.lineItem?.originalUnitPriceSet?.shopMoney?.amount || 0);
@@ -841,7 +852,7 @@ export default function FinanzasPortal() {
             <article className={styles.weekSummaryCard}>
               <span>
                 <strong>Resumen de la semana</strong>
-                {totals.hasRefunds ? <small>Reembolsos</small> : null}
+                {totals.hasRefunds ? <strong className={styles.refundsHeading}>Reembolsos</strong> : null}
               </span>
               <span>
                 Ventas
@@ -863,11 +874,9 @@ export default function FinanzasPortal() {
                     <strong>Total de la semana</strong>
                   </span>
                   <span>
-                    Ventas
                     <strong>{currencyFormatter.format(totals.netSalesTotal)}</strong>
                   </span>
                   <span>
-                    Ganancias
                     <strong>{currencyFormatter.format(totals.netProfitTotal)}</strong>
                   </span>
                 </div>
@@ -935,9 +944,6 @@ export default function FinanzasPortal() {
                 <span>
                   Ganancias
                   <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netProfitTotal : totals.profitTotal)}</strong>
-                  {totals.hasRefunds ? (
-                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundProfitTotal)}</small>
-                  ) : null}
                 </span>
               </div>
             </article>
