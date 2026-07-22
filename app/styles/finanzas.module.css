@@ -230,6 +230,10 @@
   gap: 8px;
 }
 
+.monthCards {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
 .weekSummaryCard {
   min-height: 86px;
   border: 1px solid #b7d7f8;

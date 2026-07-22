@@ -99,8 +99,13 @@ function formatWeekLabel(start, end) {
   return `Semana del ${formatFinanceDate(start, { includeYear: false })} al ${formatFinanceDate(lastDay)}`;
 }
 
-function buildWeekBreakdown(start, end, salesOrders, refundEvents) {
-  const ordersByDay = salesOrders.reduce((groups, order) => {
+function formatMonthLabel(start) {
+  const parts = Object.fromEntries(datePartsFormatter.formatToParts(start).map((part) => [part.type, part.value]));
+  return `${capitalize(parts.month)} ${parts.year}`;
+}
+
+function groupOrdersByLocalDay(salesOrders) {
+  return salesOrders.reduce((groups, order) => {
     const createdAt = order?.createdAt ? new Date(order.createdAt) : null;
     if (!createdAt || Number.isNaN(createdAt.getTime())) return groups;
     const key = getLocalDateKey(createdAt);
@@ -109,7 +114,10 @@ function buildWeekBreakdown(start, end, salesOrders, refundEvents) {
       [key]: [...(groups[key] || []), order],
     };
   }, {});
-  const refundsByDay = refundEvents.reduce((groups, refundEvent) => {
+}
+
+function groupRefundsByLocalDay(refundEvents) {
+  return refundEvents.reduce((groups, refundEvent) => {
     const createdAt = refundEvent?.createdAt ? new Date(refundEvent.createdAt) : null;
     if (!createdAt || Number.isNaN(createdAt.getTime())) return groups;
     const key = getLocalDateKey(createdAt);
@@ -118,22 +126,39 @@ function buildWeekBreakdown(start, end, salesOrders, refundEvents) {
       [key]: [...(groups[key] || []), refundEvent],
     };
   }, {});
+}
 
+function buildFinanceDayEntries(start, dayCount, salesOrders, refundEvents) {
+  const ordersByDay = groupOrdersByLocalDay(salesOrders);
+  const refundsByDay = groupRefundsByLocalDay(refundEvents);
+
+  return Array.from({ length: dayCount }, (_, index) => {
+    const dayDate = new Date(start.getTime() + index * 24 * 60 * 60 * 1000);
+    const key = getLocalDateKey(dayDate);
+    const dayOrders = ordersByDay[key] || [];
+    const dayRefunds = refundsByDay[key] || [];
+    return {
+      key,
+      dayName: capitalize(dayNameFormatter.format(dayDate)),
+      dateLabel: formatFinanceDate(dayDate),
+      refunds: dayRefunds,
+      totals: calculateFinanceTotals(dayOrders, dayRefunds),
+    };
+  });
+}
+
+function buildWeekBreakdown(start, end, salesOrders, refundEvents) {
   return {
     label: formatWeekLabel(start, end),
-    days: Array.from({ length: 7 }, (_, index) => {
-      const dayDate = new Date(start.getTime() + index * 24 * 60 * 60 * 1000);
-      const key = getLocalDateKey(dayDate);
-      const dayOrders = ordersByDay[key] || [];
-      const dayRefunds = refundsByDay[key] || [];
-      return {
-        key,
-        dayName: capitalize(dayNameFormatter.format(dayDate)),
-        dateLabel: formatFinanceDate(dayDate),
-        refunds: dayRefunds,
-        totals: calculateFinanceTotals(dayOrders, dayRefunds),
-      };
-    }),
+    days: buildFinanceDayEntries(start, 7, salesOrders, refundEvents),
+  };
+}
+
+function buildMonthBreakdown(start, end, salesOrders, refundEvents) {
+  const dayCount = Math.max(0, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
+  return {
+    label: formatMonthLabel(start),
+    days: buildFinanceDayEntries(start, dayCount, salesOrders, refundEvents),
   };
 }
 
@@ -210,12 +235,25 @@ function getWeekRangeInMexico() {
   return { start, end };
 }
 
+function getMonthRangeInMexico() {
+  const today = getTimeZoneParts(new Date(), FINANCE_TIME_ZONE);
+  const nextMonth = today.month === 12 ? 1 : today.month + 1;
+  const nextMonthYear = today.month === 12 ? today.year + 1 : today.year;
+  const start = zonedTimeToUtc({ year: today.year, month: today.month, day: 1 }, FINANCE_TIME_ZONE);
+  const end = zonedTimeToUtc({ year: nextMonthYear, month: nextMonth, day: 1 }, FINANCE_TIME_ZONE);
+  return { start, end };
+}
+
 function normalizeFinancePeriod(value) {
-  return value === "week" ? "week" : "day";
+  if (value === "week") return "week";
+  if (value === "history") return "history";
+  return "day";
 }
 
 function getFinanceRangeInMexico(period) {
-  return period === "week" ? getWeekRangeInMexico() : getTodayRangeInMexico();
+  if (period === "week") return getWeekRangeInMexico();
+  if (period === "history") return getMonthRangeInMexico();
+  return getTodayRangeInMexico();
 }
 
 async function hasFinanceAccess(request) {
@@ -292,7 +330,12 @@ async function shopifyGraphql({ shop, accessToken, query, variables }) {
 }
 
 function formatFinanceLoadError(error, period) {
-  const base = period === "week" ? "No se pudieron cargar las ventas de la semana." : "No se pudieron cargar las ventas del dia.";
+  const base =
+    period === "history"
+      ? "No se pudieron cargar las ventas del historial."
+      : period === "week"
+        ? "No se pudieron cargar las ventas de la semana."
+        : "No se pudieron cargar las ventas del dia.";
   const status = Number(error?.status || 0);
   if (status === 401) return `${base} Shopify rechazo la sesion guardada (401). Abre la app desde Shopify para regenerar la conexion.`;
   if (status === 403) return `${base} Faltan permisos de Shopify para leer pedidos.`;
@@ -676,13 +719,22 @@ export async function loader({ request }) {
       period,
       totals: emptyTotals,
       week: { label: "", days: [] },
+      history: { label: "", days: [] },
       error: "Falta configurar FINANCE_ACCESS_CODE en Render.",
     };
   }
 
   const isLoggedIn = await hasFinanceAccess(request);
   if (!isLoggedIn) {
-    return { isLoggedIn: false, needsConfiguration: false, period, totals: emptyTotals, week: { label: "", days: [] }, error: "" };
+    return {
+      isLoggedIn: false,
+      needsConfiguration: false,
+      period,
+      totals: emptyTotals,
+      week: { label: "", days: [] },
+      history: { label: "", days: [] },
+      error: "",
+    };
   }
 
   const { start, end } = getFinanceRangeInMexico(period);
@@ -695,6 +747,7 @@ export async function loader({ request }) {
         period,
         totals: emptyTotals,
         week: { label: "", days: [] },
+        history: { label: "", days: [] },
         error: "No se encontro una sesion offline valida para consultar ventas.",
       };
     }
@@ -707,12 +760,14 @@ export async function loader({ request }) {
       console.error("Finance portal loaded sales but failed to load refunds", refundError);
     }
     const week = period === "week" ? buildWeekBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
+    const history = period === "history" ? buildMonthBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
     return {
       isLoggedIn: true,
       needsConfiguration: false,
       period,
       totals: calculateFinanceTotals(orders, refundEvents),
       week,
+      history,
       error: "",
     };
   } catch (error) {
@@ -723,6 +778,7 @@ export async function loader({ request }) {
       period,
       totals: emptyTotals,
       week: { label: period === "week" ? formatWeekLabel(start, end) : "", days: [] },
+      history: { label: period === "history" ? formatMonthLabel(start) : "", days: [] },
       error: formatFinanceLoadError(error, period),
     };
   }
@@ -754,18 +810,18 @@ export async function action({ request }) {
 }
 
 export default function FinanzasPortal() {
-  const { isLoggedIn, needsConfiguration, period, totals, week, error } = useLoaderData();
+  const { isLoggedIn, needsConfiguration, period, totals, week, history, error } = useLoaderData();
   const actionData = useActionData();
   const revalidator = useRevalidator();
-  const [selectedWeekDayKey, setSelectedWeekDayKey] = useState("");
-  const selectedWeekDay =
-    period === "week"
-      ? (week?.days || []).find((day) => day.key === selectedWeekDayKey) || null
-      : null;
+  const [selectedDetailDayKey, setSelectedDetailDayKey] = useState("");
+  const detailDays = period === "history" ? history?.days || [] : period === "week" ? week?.days || [] : [];
+  const selectedDetailDay = detailDays.find((day) => day.key === selectedDetailDayKey) || null;
+  const selectedWeekDay = selectedDetailDay;
+  const setSelectedWeekDayKey = setSelectedDetailDayKey;
 
   useEffect(() => {
-    if (period !== "week") setSelectedWeekDayKey("");
-  }, [period, week?.days]);
+    if (period !== "week" && period !== "history") setSelectedDetailDayKey("");
+  }, [period]);
 
   useEffect(() => {
     if (!isLoggedIn) return undefined;
@@ -842,9 +898,12 @@ export default function FinanzasPortal() {
           <Link className={`${styles.periodButton} ${period === "week" ? styles.periodButtonActive : ""}`} to="/finanzas?period=week">
             Semana
           </Link>
-          <button className={styles.periodButton} type="button" disabled>
+          <Link
+            className={`${styles.periodButton} ${period === "history" ? styles.periodButtonActive : ""}`}
+            to="/finanzas?period=history"
+          >
             Historial
-          </button>
+          </Link>
         </section>
 
         {error ? <p className={styles.errorText}>{error}</p> : null}
@@ -973,7 +1032,47 @@ export default function FinanzasPortal() {
           </section>
         ) : null}
 
-        {period === "week" && selectedWeekDay ? (
+        {period === "history" ? (
+          <section className={styles.weekPanel} aria-label="Historial mensual">
+            <h2>{history?.label || "Historial"}</h2>
+            <div className={`${styles.weekCards} ${styles.monthCards}`}>
+              {(history?.days || []).map((day) => (
+                <button
+                  className={`${styles.weekCard} ${selectedDetailDay?.key === day.key ? styles.weekCardActive : ""}`}
+                  type="button"
+                  key={day.key}
+                  onClick={() => setSelectedDetailDayKey(day.key)}
+                >
+                  <span>
+                    <strong>{day.dayName}</strong>
+                    <small>{day.dateLabel}</small>
+                    {day.totals.hasRefunds ? (
+                      <small className={styles.refundSourceHint}>
+                        Origen: {(day.refunds || []).map((refund) => refund.orderName).join(", ")}
+                      </small>
+                    ) : null}
+                  </span>
+                  <span>
+                    Ventas
+                    <strong>{currencyFormatter.format(day.totals.salesTotal)}</strong>
+                    {day.totals.hasRefunds ? (
+                      <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
+                    ) : null}
+                  </span>
+                  <span>
+                    Ganancias
+                    <strong>{currencyFormatter.format(day.totals.profitTotal)}</strong>
+                    {day.totals.hasRefunds ? (
+                      <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
+                    ) : null}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {(period === "week" || period === "history") && selectedWeekDay ? (
           <section className={styles.dayDetailOverlay} aria-label="Detalle financiero del dia">
             <div className={styles.dayDetailCard}>
               <div className={styles.weekDetailHeader}>
@@ -1116,7 +1215,7 @@ export default function FinanzasPortal() {
           </section>
         ) : null}
 
-        {period !== "week" ? (
+        {period === "day" ? (
           <section className={styles.financeDetailSection} aria-label="Detalle financiero">
           {totals.hasRefunds ? (
             <article className={styles.weekSummaryCard}>
