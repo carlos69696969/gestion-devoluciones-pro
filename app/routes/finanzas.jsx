@@ -65,8 +65,10 @@ const emptyTotals = {
   profitTotal: 0,
   refundSalesTotal: 0,
   refundProfitTotal: 0,
+  refundShippingTotal: 0,
   netSalesTotal: 0,
   netProfitTotal: 0,
+  netShippingTotal: 0,
   hasRefunds: false,
   orderCount: 0,
   itemCount: 0,
@@ -431,24 +433,29 @@ function calculateFinanceTotals(orders, refundEvents = []) {
     (totals, refundEvent) => ({
       refundSalesTotal: totals.refundSalesTotal + Number(refundEvent?.refundSalesTotal || 0),
       refundProfitTotal: totals.refundProfitTotal + Number(refundEvent?.refundProfitTotal || 0),
+      refundShippingTotal: totals.refundShippingTotal + Number(refundEvent?.refundShippingTotal || 0),
     }),
-    { refundSalesTotal: 0, refundProfitTotal: 0 },
+    { refundSalesTotal: 0, refundProfitTotal: 0, refundShippingTotal: 0 },
   );
-  const hasRefunds = refundTotals.refundSalesTotal > 0 || refundTotals.refundProfitTotal > 0;
+  const shippingTotal = orderCount * SHIPPING_COST_PER_ORDER;
+  const hasRefunds =
+    refundTotals.refundSalesTotal > 0 || refundTotals.refundProfitTotal > 0 || refundTotals.refundShippingTotal > 0;
 
   return {
     ...emptyTotals,
     salesTotal: financeTotals.salesTotal,
     averageTicket: orderCount ? financeTotals.originalSubtotalTotal / orderCount : 0,
     operatingCostTotal: itemCount * OPERATING_COST_PER_ITEM,
-    shippingTotal: orderCount * SHIPPING_COST_PER_ORDER,
+    shippingTotal,
     recoveredCostTotal: financeTotals.recoveredCostTotal,
     taxesTotal: financeTotals.taxesTotal,
     profitTotal: financeTotals.profitTotal,
     refundSalesTotal: refundTotals.refundSalesTotal,
     refundProfitTotal: refundTotals.refundProfitTotal,
+    refundShippingTotal: refundTotals.refundShippingTotal,
     netSalesTotal: financeTotals.salesTotal - refundTotals.refundSalesTotal,
     netProfitTotal: financeTotals.profitTotal - refundTotals.refundProfitTotal,
+    netShippingTotal: Math.max(0, shippingTotal - refundTotals.refundShippingTotal),
     hasRefunds,
     orderCount,
     itemCount,
@@ -528,6 +535,9 @@ function extractRefundEventsFromOrders(orders, start, end) {
           return sum + unitPrice * quantity;
         }, 0);
         const refundSalesTotal = refundLineSubtotal || Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
+        const totalRefundedAmount = Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
+        const refundShippingTotal =
+          totalRefundedAmount > refundLineSubtotal + 0.01 ? SHIPPING_COST_PER_ORDER : 0;
         const refundedRecoveredCostTotal = refundLineItems.reduce((sum, refundLineItem) => {
           const quantity = Math.max(0, Number(refundLineItem?.quantity || 0));
           const unitPrice = Number(refundLineItem?.lineItem?.originalUnitPriceSet?.shopMoney?.amount || 0);
@@ -535,7 +545,7 @@ function extractRefundEventsFromOrders(orders, start, end) {
           return sum + recoveredUnitCost * quantity;
         }, 0);
         const refundProfitTotal = refundedRecoveredCostTotal * profitMarginRate * (1 - PROFIT_TAX_RATE);
-        return { createdAt: refund.createdAt, refundSalesTotal, refundProfitTotal };
+        return { createdAt: refund.createdAt, refundSalesTotal, refundProfitTotal, refundShippingTotal };
       })
       .filter(Boolean);
   });
@@ -892,6 +902,45 @@ export default function FinanzasPortal() {
                 </button>
               ))}
             </div>
+            <article className={styles.weekFullSummaryCard}>
+              <h3>Total de toda la semana</h3>
+              <div>
+                <span>
+                  Ventas
+                  <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netSalesTotal : totals.salesTotal)}</strong>
+                </span>
+                <span>
+                  Ticket promedio
+                  <strong>{currencyFormatter.format(totals.averageTicket)}</strong>
+                </span>
+                <span>
+                  Costo operativo
+                  <strong>{currencyFormatter.format(totals.operatingCostTotal)}</strong>
+                </span>
+                <span>
+                  Paqueteria
+                  <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netShippingTotal : totals.shippingTotal)}</strong>
+                  {totals.refundShippingTotal > 0 ? (
+                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundShippingTotal)}</small>
+                  ) : null}
+                </span>
+                <span>
+                  Impuestos
+                  <strong>{currencyFormatter.format(totals.taxesTotal)}</strong>
+                </span>
+                <span>
+                  Costo recuperado
+                  <strong>{wholeCurrencyFormatter.format(totals.recoveredCostTotal)}</strong>
+                </span>
+                <span>
+                  Ganancias
+                  <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netProfitTotal : totals.profitTotal)}</strong>
+                  {totals.hasRefunds ? (
+                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundProfitTotal)}</small>
+                  ) : null}
+                </span>
+              </div>
+            </article>
           </section>
         ) : null}
 
