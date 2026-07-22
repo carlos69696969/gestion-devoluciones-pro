@@ -337,6 +337,39 @@
   gap: 8px;
 }
 
+.weekSummaryCard {
+  min-height: 86px;
+  border: 1px solid #b7d7f8;
+  border-radius: 8px;
+  background: #eef6ff;
+  color: #344054;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.weekSummaryCard span {
+  display: grid;
+  gap: 3px;
+  color: #5f6b7a;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.weekSummaryCard strong {
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.weekSummaryCard small {
+  color: #5f6b7a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .weekCard {
   min-height: 116px;
   border: 1px solid #d9dee7;
@@ -532,6 +565,11 @@
     min-height: 82px;
     grid-template-columns: 1.2fr 1fr 1fr;
     align-items: center;
+  }
+
+  .weekSummaryCard {
+    min-height: 82px;
+    grid-template-columns: 1.2fr 1fr 1fr;
   }
 
   .weekDetailHeader {

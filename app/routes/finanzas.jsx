@@ -48,7 +48,7 @@ const dayNameFormatter = new Intl.DateTimeFormat("es-MX", {
   weekday: "long",
 });
 
-const dateLabelFormatter = new Intl.DateTimeFormat("es-MX", {
+const datePartsFormatter = new Intl.DateTimeFormat("es-MX", {
   timeZone: FINANCE_TIME_ZONE,
   day: "numeric",
   month: "long",
@@ -81,9 +81,15 @@ function getLocalDateKey(date) {
   return `${parts.year}-${padDatePart(parts.month)}-${padDatePart(parts.day)}`;
 }
 
+function formatFinanceDate(date, { includeYear = true } = {}) {
+  const parts = Object.fromEntries(datePartsFormatter.formatToParts(date).map((part) => [part.type, part.value]));
+  const month = capitalize(parts.month);
+  return includeYear ? `${parts.day} de ${month} de ${parts.year}` : `${parts.day} de ${month}`;
+}
+
 function formatWeekLabel(start, end) {
   const lastDay = new Date(end.getTime() - 1000);
-  return `Semana del ${dateLabelFormatter.format(start)} al ${dateLabelFormatter.format(lastDay)}`;
+  return `Semana del ${formatFinanceDate(start, { includeYear: false })} al ${formatFinanceDate(lastDay)}`;
 }
 
 function buildWeekBreakdown(start, end, orders) {
@@ -106,7 +112,7 @@ function buildWeekBreakdown(start, end, orders) {
       return {
         key,
         dayName: capitalize(dayNameFormatter.format(dayDate)),
-        dateLabel: dateLabelFormatter.format(dayDate),
+        dateLabel: formatFinanceDate(dayDate),
         totals: calculateDayTotals(dayOrders),
       };
     }),
@@ -702,6 +708,20 @@ export default function FinanzasPortal() {
         {period === "week" ? (
           <section className={styles.weekPanel} aria-label="Resumen semanal">
             <h2>{week?.label || "Semana actual"}</h2>
+            <article className={styles.weekSummaryCard}>
+              <span>
+                <strong>Resumen de la semana</strong>
+                <small>Acumulado semanal</small>
+              </span>
+              <span>
+                Ventas
+                <strong>{currencyFormatter.format(totals.salesTotal)}</strong>
+              </span>
+              <span>
+                Ganancias
+                <strong>{currencyFormatter.format(totals.profitTotal)}</strong>
+              </span>
+            </article>
             <div className={styles.weekCards}>
               {(week?.days || []).map((day) => (
                 <button
