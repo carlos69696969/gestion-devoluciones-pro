@@ -126,7 +126,7 @@ async function resolveFinanceSession(request) {
   const incomingShop = cleanShop(url.searchParams.get("shop"));
   const configuredShop = cleanShop(process.env.SHOPIFY_SHOP_DOMAIN);
   const allSessions = await prisma.session.findMany({
-    select: { id: true, shop: true, isOnline: true, accessToken: true },
+    select: { id: true, shop: true, isOnline: true, accessToken: true, scope: true },
   });
   const offlineSessions = allSessions.filter((session) => session.isOnline === false && session.accessToken);
   const candidateShops = Array.from(
@@ -136,22 +136,36 @@ async function resolveFinanceSession(request) {
       ...allSessions.map((session) => cleanShop(session.shop)).filter(Boolean),
     ]),
   );
+  const candidates = [];
 
   for (const shop of candidateShops) {
     const canonicalOfflineId = `offline_${shop}`;
     const sessions = allSessions
       .filter((session) => cleanShop(session.shop) === shop && session.accessToken)
       .sort((first, second) => {
+        const firstHasOrdersScope = sessionHasScope(first, "read_orders");
+        const secondHasOrdersScope = sessionHasScope(second, "read_orders");
+        if (firstHasOrdersScope && !secondHasOrdersScope) return -1;
+        if (secondHasOrdersScope && !firstHasOrdersScope) return 1;
         if (first.id === canonicalOfflineId) return -1;
         if (second.id === canonicalOfflineId) return 1;
         if (first.isOnline === false && second.isOnline !== false) return -1;
         if (second.isOnline === false && first.isOnline !== false) return 1;
         return 0;
       });
-    if (sessions[0]) return { shop, accessToken: sessions[0].accessToken };
+    for (const session of sessions) {
+      candidates.push({ shop, accessToken: session.accessToken, sessionId: session.id });
+    }
   }
 
-  return { shop: candidateShops[0] || incomingShop || configuredShop, accessToken: "" };
+  return { shop: candidateShops[0] || incomingShop || configuredShop, sessions: candidates };
+}
+
+function sessionHasScope(session, scope) {
+  return String(session?.scope || "")
+    .split(",")
+    .map((value) => value.trim())
+    .includes(scope);
 }
 
 async function shopifyGraphql({ shop, accessToken, query, variables }) {
@@ -196,6 +210,11 @@ async function fetchOrdersForToday({ shop, accessToken, start, end }) {
                   amount
                 }
               }
+              subtotalPriceSet {
+                shopMoney {
+                  amount
+                }
+              }
               lineItems(first: 250) {
                 nodes {
                   quantity
@@ -217,6 +236,23 @@ async function fetchOrdersForToday({ shop, accessToken, start, end }) {
   }
 
   return orders.filter((order) => !order.cancelledAt);
+}
+
+async function fetchOrdersForTodayWithSessions({ sessions, start, end }) {
+  let lastError = null;
+  for (const session of sessions) {
+    try {
+      return await fetchOrdersForToday({ shop: session.shop, accessToken: session.accessToken, start, end });
+    } catch (error) {
+      lastError = error;
+      console.error("Finance portal failed with Shopify session", {
+        shop: session.shop,
+        sessionId: session.sessionId,
+        message: error?.message || String(error),
+      });
+    }
+  }
+  throw lastError || new Error("No se encontro una sesion valida para consultar ventas.");
 }
 
 function calculateDayTotals(orders) {
@@ -269,11 +305,12 @@ function getDiscountRateForOrderTotal(orderTotal) {
 
 function calculateOrderFinanceTotals(order) {
   const lineItems = order?.lineItems?.nodes || [];
-  const originalOrderTotal = lineItems.reduce((sum, item) => {
+  const lineItemsOriginalTotal = lineItems.reduce((sum, item) => {
     const quantity = Math.max(0, Number(item?.quantity || 0));
     const unitPrice = Number(item?.originalUnitPriceSet?.shopMoney?.amount || 0);
     return sum + unitPrice * quantity;
   }, 0);
+  const originalOrderTotal = Number(order?.subtotalPriceSet?.shopMoney?.amount || 0) || lineItemsOriginalTotal;
   const profitMarginRate = getProfitMarginRateForOrderTotal(originalOrderTotal);
   const discountRate = getDiscountRateForOrderTotal(originalOrderTotal);
   const totals = lineItems.reduce(
@@ -358,8 +395,8 @@ export async function loader({ request }) {
 
   const { start, end } = getTodayRangeInMexico();
   try {
-    const { shop, accessToken } = await resolveFinanceSession(request);
-    if (!shop || !accessToken) {
+    const { shop, sessions } = await resolveFinanceSession(request);
+    if (!shop || !sessions?.length) {
       return {
         isLoggedIn: true,
         needsConfiguration: false,
@@ -367,7 +404,7 @@ export async function loader({ request }) {
         error: "No se encontro una sesion offline valida para consultar ventas.",
       };
     }
-    const orders = await fetchOrdersForToday({ shop, accessToken, start, end });
+    const orders = await fetchOrdersForTodayWithSessions({ sessions, start, end });
     return {
       isLoggedIn: true,
       needsConfiguration: false,
