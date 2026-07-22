@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createCookie, Form, Link, redirect, useActionData, useLoaderData, useRevalidator } from "react-router";
 import prisma from "../db.server";
 import styles from "../styles/finanzas.module.css";
@@ -6,7 +6,6 @@ import styles from "../styles/finanzas.module.css";
 const ADMIN_API_VERSION = "2025-10";
 const FINANCE_TIME_ZONE = "America/Mexico_City";
 const OPERATING_COST_PER_ITEM = 15;
-const SHIPPING_COST_PER_ORDER = 35;
 const SHOPIFY_FIXED_COMMISSION_PER_ITEM = 3;
 const DEFAULT_PROFIT_MARGIN_RATE = 0.5;
 const HIGH_ORDER_PROFIT_MARGIN_RATE = 0.4;
@@ -16,11 +15,6 @@ const PROFIT_TAX_RATE = 0.1;
 const TRANSACTION_RATE = 0.03;
 const HIGH_ORDER_DISCOUNT_RATE = 0.1;
 const VERY_HIGH_ORDER_DISCOUNT_RATE = 0.15;
-const INITIAL_TEST_ORDERS = [
-  { name: "Orden 1", products: ["263", "340", ""] },
-  { name: "Orden 2", products: ["936", "", ""] },
-];
-
 function financeAccessCookie() {
   return createCookie("finance_portal_access_v1", {
     httpOnly: true,
@@ -295,7 +289,7 @@ async function shopifyGraphql({ shop, accessToken, query, variables }) {
   return payload.data;
 }
 
-async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = "created_at" }) {
+async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = "created_at", sortKey = "CREATED_AT" }) {
   const orders = [];
   let cursor = null;
   let hasNextPage = true;
@@ -308,7 +302,7 @@ async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = 
       variables: { cursor, query: shopifyQuery },
       query: `#graphql
         query FinanceOrders($cursor: String, $query: String!) {
-          orders(first: 250, after: $cursor, query: $query, sortKey: CREATED_AT) {
+          orders(first: 250, after: $cursor, query: $query, sortKey: ${sortKey}) {
             pageInfo {
               hasNextPage
               endCursor
@@ -418,6 +412,7 @@ async function fetchUpdatedOrdersForRangeWithSessions({ sessions, start, end }) 
         start,
         end,
         dateField: "updated_at",
+        sortKey: "UPDATED_AT",
       });
     } catch (error) {
       lastError = error;
@@ -555,9 +550,9 @@ function calculateOrderFinanceTotals(order) {
   const taxesTotal = marginTotal * PROFIT_TAX_RATE;
   const profitTotal = marginTotal - taxesTotal;
   const actualSalesTotal = Number(order?.currentTotalPriceSet?.shopMoney?.amount || 0);
-  const salesTotal = order?.useActualSalesTotal === false ? totals.salesTotal : actualSalesTotal;
+  const salesTotal = actualSalesTotal;
   const actualShippingTotal = Number(order?.totalShippingPriceSet?.shopMoney?.amount || 0);
-  const shippingTotal = order?.useActualSalesTotal === false ? SHIPPING_COST_PER_ORDER : actualShippingTotal;
+  const shippingTotal = actualShippingTotal;
 
   return { salesTotal, originalSubtotalTotal: originalOrderTotal, shippingTotal, recoveredCostTotal, taxesTotal, profitTotal };
 }
@@ -637,35 +632,6 @@ function calculateRecoveredUnitCost(unitPrice) {
   );
 }
 
-function calculateTestTotals(testOrders) {
-  const orders = testOrders
-    .map((order) => {
-      const prices = order.products.map((price) => Number(price || 0)).filter((price) => price > 0);
-      return {
-        useActualSalesTotal: false,
-        cancelledAt: null,
-        currentTotalPriceSet: {
-          shopMoney: {
-            amount: prices.reduce((sum, price) => sum + price, 0),
-          },
-        },
-        lineItems: {
-          nodes: prices.map((price) => ({
-            quantity: 1,
-            originalUnitPriceSet: {
-              shopMoney: {
-                amount: price,
-              },
-            },
-          })),
-        },
-      };
-    })
-    .filter((order) => Number(order.currentTotalPriceSet.shopMoney.amount || 0) > 0);
-
-  return calculateDayTotals(orders);
-}
-
 export const headers = () => ({
   "Cache-Control": "no-store, max-age=0",
   "X-Robots-Tag": "noindex, nofollow",
@@ -705,8 +671,13 @@ export async function loader({ request }) {
       };
     }
     const orders = await fetchOrdersForRangeWithSessions({ sessions, start, end });
-    const refundOrders = await fetchUpdatedOrdersForRangeWithSessions({ sessions, start, end });
-    const refundEvents = extractRefundEventsFromOrders(refundOrders, start, end);
+    let refundEvents = [];
+    try {
+      const refundOrders = await fetchUpdatedOrdersForRangeWithSessions({ sessions, start, end });
+      refundEvents = extractRefundEventsFromOrders(refundOrders, start, end);
+    } catch (refundError) {
+      console.error("Finance portal loaded sales but failed to load refunds", refundError);
+    }
     const week = period === "week" ? buildWeekBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
     return {
       isLoggedIn: true,
@@ -758,10 +729,7 @@ export default function FinanzasPortal() {
   const { isLoggedIn, needsConfiguration, period, totals, week, error } = useLoaderData();
   const actionData = useActionData();
   const revalidator = useRevalidator();
-  const [testOrders, setTestOrders] = useState(INITIAL_TEST_ORDERS);
-  const [isTestOpen, setIsTestOpen] = useState(false);
   const [selectedWeekDayKey, setSelectedWeekDayKey] = useState("");
-  const testTotals = useMemo(() => calculateTestTotals(testOrders), [testOrders]);
   const selectedWeekDay =
     period === "week"
       ? (week?.days || []).find((day) => day.key === selectedWeekDayKey) || null
@@ -778,20 +746,6 @@ export default function FinanzasPortal() {
     }, 60000);
     return () => window.clearInterval(interval);
   }, [isLoggedIn, revalidator]);
-
-  function updateTestProduct(orderIndex, productIndex, value) {
-    setTestOrders((currentOrders) =>
-      currentOrders.map((order, currentOrderIndex) => {
-        if (currentOrderIndex !== orderIndex) return order;
-        return {
-          ...order,
-          products: order.products.map((price, currentProductIndex) =>
-            currentProductIndex === productIndex ? value : price,
-          ),
-        };
-      }),
-    );
-  }
 
   if (!isLoggedIn) {
     return (
@@ -866,52 +820,6 @@ export default function FinanzasPortal() {
         </section>
 
         {error ? <p className={styles.errorText}>{error}</p> : null}
-
-        <section className={styles.testPanel} aria-label="Prueba temporal de calculos">
-          <div className={styles.testHeader}>
-            <div>
-              <h2>Prueba temporal</h2>
-              <span>No afecta las ventas reales</span>
-            </div>
-            <button className={styles.testToggle} type="button" onClick={() => setIsTestOpen((open) => !open)}>
-              {isTestOpen ? "Cerrar prueba" : "Abrir prueba"}
-            </button>
-          </div>
-          <div className={`${styles.testContent} ${isTestOpen ? styles.testContentOpen : ""}`}>
-            <div className={styles.testOrders}>
-              {testOrders.map((order, orderIndex) => (
-                <article className={styles.testOrder} key={order.name}>
-                  <h3>{order.name}</h3>
-                  <div className={styles.testGrid}>
-                    {order.products.map((price, productIndex) => (
-                      <label className={styles.label} key={`${order.name}-${productIndex}`}>
-                        Producto {productIndex + 1}
-                        <input
-                          className={styles.input}
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          inputMode="decimal"
-                          value={price}
-                          onChange={(event) => updateTestProduct(orderIndex, productIndex, event.target.value)}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </article>
-              ))}
-            </div>
-            <div className={styles.testTotals}>
-              <span>Ventas: <strong>{currencyFormatter.format(testTotals.salesTotal)}</strong></span>
-              <span>Ticket: <strong>{currencyFormatter.format(testTotals.averageTicket)}</strong></span>
-              <span>Costo operativo: <strong>{currencyFormatter.format(testTotals.operatingCostTotal)}</strong></span>
-              <span>Paqueteria: <strong>{currencyFormatter.format(testTotals.shippingTotal)}</strong></span>
-              <span>Impuestos: <strong>{currencyFormatter.format(testTotals.taxesTotal)}</strong></span>
-              <span>Costo recuperado: <strong>{wholeCurrencyFormatter.format(testTotals.recoveredCostTotal)}</strong></span>
-              <span>Ganancias: <strong>{currencyFormatter.format(testTotals.profitTotal)}</strong></span>
-            </div>
-          </div>
-        </section>
 
         {period === "week" ? (
           <section className={styles.weekPanel} aria-label="Resumen semanal">
