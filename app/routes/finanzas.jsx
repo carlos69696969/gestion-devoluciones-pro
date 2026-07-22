@@ -855,7 +855,7 @@ export default function FinanzasPortal() {
   const setSelectedWeekDayKey = setSelectedDetailDayKey;
 
   useEffect(() => {
-    if (period !== "week" && period !== "history") setSelectedDetailDayKey("");
+    setSelectedDetailDayKey("");
   }, [period]);
 
   useEffect(() => {
@@ -1069,43 +1069,26 @@ export default function FinanzasPortal() {
 
         {period === "history" ? (
           <section className={styles.weekPanel} aria-label="Historial mensual">
-            <h2>{history?.label || "Historial"}</h2>
-            <div className={`${styles.weekCards} ${styles.monthCards}`}>
-              {(history?.days || []).map((day) => (
-                <button
-                  className={`${styles.weekCard} ${day.isCut ? styles.cutCard : ""} ${
-                    selectedDetailDay?.key === day.key ? styles.weekCardActive : ""
-                  }`}
-                  type="button"
-                  key={day.key}
-                  onClick={() => setSelectedDetailDayKey(day.key)}
-                >
-                  <span>
-                    <strong>{day.dayName}</strong>
-                    <small>{day.dateLabel}</small>
-                    {day.totals.hasRefunds ? (
-                      <small className={styles.refundSourceHint}>
-                        Origen: {(day.refunds || []).map((refund) => refund.orderName).join(", ")}
-                      </small>
-                    ) : null}
-                  </span>
-                  <span>
-                    Ventas
-                    <strong>{currencyFormatter.format(day.totals.salesTotal)}</strong>
-                    {day.totals.hasRefunds ? (
-                      <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
-                    ) : null}
-                  </span>
-                  <span>
-                    Ganancias
-                    <strong>{currencyFormatter.format(day.totals.profitTotal)}</strong>
-                    {day.totals.hasRefunds ? (
-                      <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
-                    ) : null}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <h2>Historial</h2>
+            <article className={`${styles.weekCard} ${styles.monthOverviewCard}`}>
+              <span>
+                <strong>{history?.label || "Mes actual"}</strong>
+              </span>
+              <span>
+                Ventas
+                <strong>{currencyFormatter.format(totals.salesTotal)}</strong>
+                {totals.hasRefunds ? (
+                  <small className={styles.refundAmount}>{formatRefundAmount(totals.refundSalesTotal)}</small>
+                ) : null}
+              </span>
+              <span>
+                Ganancias
+                <strong>{currencyFormatter.format(totals.profitTotal)}</strong>
+                {totals.hasRefunds ? (
+                  <small className={styles.refundAmount}>{formatRefundAmount(totals.refundProfitTotal)}</small>
+                ) : null}
+              </span>
+            </article>
           </section>
         ) : null}
 

@@ -234,6 +234,12 @@
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.monthOverviewCard {
+  cursor: default;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  align-items: center;
+}
+
 .weekSummaryCard {
   min-height: 86px;
   border: 1px solid #b7d7f8;
