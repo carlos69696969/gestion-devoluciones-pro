@@ -1005,11 +1005,6 @@ export default function FinanzasPortal() {
                   <span>
                     <strong>{day.dayName}</strong>
                     <small>{day.dateLabel}</small>
-                    {day.totals.hasRefunds ? (
-                      <small className={styles.refundSourceHint}>
-                        Origen: {(day.refunds || []).map((refund) => refund.orderName).join(", ")}
-                      </small>
-                    ) : null}
                   </span>
                   <span>
                     Ventas
@@ -1044,9 +1039,6 @@ export default function FinanzasPortal() {
                   <strong>
                     {currencyFormatter.format(totals.hasRefunds ? totals.netOperatingCostTotal : totals.operatingCostTotal)}
                   </strong>
-                  {totals.refundOperatingCostTotal > 0 ? (
-                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundOperatingCostTotal)}</small>
-                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricShipping}`}>
                   <span>Paqueteria</span>
@@ -1058,20 +1050,12 @@ export default function FinanzasPortal() {
                 <article className={`${styles.metric} ${styles.metricTaxes}`}>
                   <span>Impuestos</span>
                   <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netTaxesTotal : totals.taxesTotal)}</strong>
-                  {totals.refundTaxesTotal > 0 ? (
-                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundTaxesTotal)}</small>
-                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricRecovered}`}>
                   <span>Costo recuperado</span>
                   <strong>
                     {wholeCurrencyFormatter.format(totals.hasRefunds ? totals.netRecoveredCostTotal : totals.recoveredCostTotal)}
                   </strong>
-                  {totals.refundRecoveredCostTotal > 0 ? (
-                    <small className={styles.refundAmount}>
-                      {formatRefundAmount(totals.refundRecoveredCostTotal, wholeCurrencyFormatter)}
-                    </small>
-                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricProfit}`}>
                   <span>Ganancias</span>
