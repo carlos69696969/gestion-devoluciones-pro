@@ -66,9 +66,15 @@ const emptyTotals = {
   refundSalesTotal: 0,
   refundProfitTotal: 0,
   refundShippingTotal: 0,
+  refundOperatingCostTotal: 0,
+  refundTaxesTotal: 0,
+  refundRecoveredCostTotal: 0,
   netSalesTotal: 0,
   netProfitTotal: 0,
   netShippingTotal: 0,
+  netOperatingCostTotal: 0,
+  netTaxesTotal: 0,
+  netRecoveredCostTotal: 0,
   hasRefunds: false,
   orderCount: 0,
   itemCount: 0,
@@ -452,18 +458,34 @@ function calculateFinanceTotals(orders, refundEvents = []) {
       refundSalesTotal: totals.refundSalesTotal + Number(refundEvent?.refundSalesTotal || 0),
       refundProfitTotal: totals.refundProfitTotal + Number(refundEvent?.refundProfitTotal || 0),
       refundShippingTotal: totals.refundShippingTotal + Number(refundEvent?.refundShippingTotal || 0),
+      refundOperatingCostTotal: totals.refundOperatingCostTotal + Number(refundEvent?.refundOperatingCostTotal || 0),
+      refundTaxesTotal: totals.refundTaxesTotal + Number(refundEvent?.refundTaxesTotal || 0),
+      refundRecoveredCostTotal: totals.refundRecoveredCostTotal + Number(refundEvent?.refundRecoveredCostTotal || 0),
     }),
-    { refundSalesTotal: 0, refundProfitTotal: 0, refundShippingTotal: 0 },
+    {
+      refundSalesTotal: 0,
+      refundProfitTotal: 0,
+      refundShippingTotal: 0,
+      refundOperatingCostTotal: 0,
+      refundTaxesTotal: 0,
+      refundRecoveredCostTotal: 0,
+    },
   );
   const shippingTotal = financeTotals.shippingTotal;
+  const operatingCostTotal = itemCount * OPERATING_COST_PER_ITEM;
   const hasRefunds =
-    refundTotals.refundSalesTotal > 0 || refundTotals.refundProfitTotal > 0 || refundTotals.refundShippingTotal > 0;
+    refundTotals.refundSalesTotal > 0 ||
+    refundTotals.refundProfitTotal > 0 ||
+    refundTotals.refundShippingTotal > 0 ||
+    refundTotals.refundOperatingCostTotal > 0 ||
+    refundTotals.refundTaxesTotal > 0 ||
+    refundTotals.refundRecoveredCostTotal > 0;
 
   return {
     ...emptyTotals,
     salesTotal: financeTotals.salesTotal,
     averageTicket: orderCount ? financeTotals.originalSubtotalTotal / orderCount : 0,
-    operatingCostTotal: itemCount * OPERATING_COST_PER_ITEM,
+    operatingCostTotal,
     shippingTotal,
     recoveredCostTotal: financeTotals.recoveredCostTotal,
     taxesTotal: financeTotals.taxesTotal,
@@ -471,9 +493,15 @@ function calculateFinanceTotals(orders, refundEvents = []) {
     refundSalesTotal: refundTotals.refundSalesTotal,
     refundProfitTotal: refundTotals.refundProfitTotal,
     refundShippingTotal: refundTotals.refundShippingTotal,
+    refundOperatingCostTotal: refundTotals.refundOperatingCostTotal,
+    refundTaxesTotal: refundTotals.refundTaxesTotal,
+    refundRecoveredCostTotal: refundTotals.refundRecoveredCostTotal,
     netSalesTotal: financeTotals.salesTotal - refundTotals.refundSalesTotal,
     netProfitTotal: financeTotals.profitTotal - refundTotals.refundProfitTotal,
     netShippingTotal: Math.max(0, shippingTotal - refundTotals.refundShippingTotal),
+    netOperatingCostTotal: Math.max(0, operatingCostTotal - refundTotals.refundOperatingCostTotal),
+    netTaxesTotal: Math.max(0, financeTotals.taxesTotal - refundTotals.refundTaxesTotal),
+    netRecoveredCostTotal: Math.max(0, financeTotals.recoveredCostTotal - refundTotals.refundRecoveredCostTotal),
     hasRefunds,
     orderCount,
     itemCount,
@@ -577,7 +605,14 @@ function extractRefundEventsFromOrders(orders, start, end) {
           const recoveredUnitCost = Math.round(Math.max(0, calculateRecoveredUnitCost(unitPrice)));
           return sum + recoveredUnitCost * quantity;
         }, 0);
-        const refundProfitTotal = refundedRecoveredCostTotal * profitMarginRate * (1 - PROFIT_TAX_RATE);
+        const refundedItemCount = refundLineItems.reduce(
+          (sum, refundLineItem) => sum + Math.max(0, Number(refundLineItem?.quantity || 0)),
+          0,
+        );
+        const refundOperatingCostTotal = refundedItemCount * OPERATING_COST_PER_ITEM;
+        const refundMarginTotal = refundedRecoveredCostTotal * profitMarginRate;
+        const refundTaxesTotal = refundMarginTotal * PROFIT_TAX_RATE;
+        const refundProfitTotal = refundMarginTotal - refundTaxesTotal;
         return {
           createdAt: refund.createdAt,
           orderName: order?.name || "Pedido",
@@ -585,6 +620,9 @@ function extractRefundEventsFromOrders(orders, start, end) {
           refundSalesTotal,
           refundProfitTotal,
           refundShippingTotal,
+          refundOperatingCostTotal,
+          refundTaxesTotal,
+          refundRecoveredCostTotal: refundedRecoveredCostTotal,
         };
       })
       .filter(Boolean);
@@ -958,7 +996,12 @@ export default function FinanzasPortal() {
                 </span>
                 <span>
                   Costo operativo
-                  <strong>{currencyFormatter.format(totals.operatingCostTotal)}</strong>
+                  <strong>
+                    {currencyFormatter.format(totals.hasRefunds ? totals.netOperatingCostTotal : totals.operatingCostTotal)}
+                  </strong>
+                  {totals.refundOperatingCostTotal > 0 ? (
+                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundOperatingCostTotal)}</small>
+                  ) : null}
                 </span>
                 <span>
                   Paqueteria
@@ -969,11 +1012,21 @@ export default function FinanzasPortal() {
                 </span>
                 <span>
                   Impuestos
-                  <strong>{currencyFormatter.format(totals.taxesTotal)}</strong>
+                  <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netTaxesTotal : totals.taxesTotal)}</strong>
+                  {totals.refundTaxesTotal > 0 ? (
+                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundTaxesTotal)}</small>
+                  ) : null}
                 </span>
                 <span>
                   Costo recuperado
-                  <strong>{wholeCurrencyFormatter.format(totals.recoveredCostTotal)}</strong>
+                  <strong>
+                    {wholeCurrencyFormatter.format(totals.hasRefunds ? totals.netRecoveredCostTotal : totals.recoveredCostTotal)}
+                  </strong>
+                  {totals.refundRecoveredCostTotal > 0 ? (
+                    <small className={styles.refundAmount}>
+                      {formatRefundAmount(totals.refundRecoveredCostTotal, wholeCurrencyFormatter)}
+                    </small>
+                  ) : null}
                 </span>
                 <span>
                   Ganancias
@@ -1015,19 +1068,63 @@ export default function FinanzasPortal() {
                 </article>
                 <article className={`${styles.metric} ${styles.metricOperatingCost}`}>
                   <span>Costo operativo</span>
-                  <strong>{currencyFormatter.format(selectedWeekDay.totals.operatingCostTotal)}</strong>
+                  <strong>
+                    {currencyFormatter.format(
+                      selectedWeekDay.totals.hasRefunds
+                        ? selectedWeekDay.totals.netOperatingCostTotal
+                        : selectedWeekDay.totals.operatingCostTotal,
+                    )}
+                  </strong>
+                  {selectedWeekDay.totals.refundOperatingCostTotal > 0 ? (
+                    <small className={styles.metricRefund}>
+                      {formatRefundAmount(selectedWeekDay.totals.refundOperatingCostTotal)}
+                    </small>
+                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricShipping}`}>
                   <span>Paqueteria</span>
-                  <strong>{currencyFormatter.format(selectedWeekDay.totals.shippingTotal)}</strong>
+                  <strong>
+                    {currencyFormatter.format(
+                      selectedWeekDay.totals.hasRefunds
+                        ? selectedWeekDay.totals.netShippingTotal
+                        : selectedWeekDay.totals.shippingTotal,
+                    )}
+                  </strong>
+                  {selectedWeekDay.totals.refundShippingTotal > 0 ? (
+                    <small className={styles.metricRefund}>
+                      {formatRefundAmount(selectedWeekDay.totals.refundShippingTotal)}
+                    </small>
+                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricTaxes}`}>
                   <span>Impuestos</span>
-                  <strong>{currencyFormatter.format(selectedWeekDay.totals.taxesTotal)}</strong>
+                  <strong>
+                    {currencyFormatter.format(
+                      selectedWeekDay.totals.hasRefunds
+                        ? selectedWeekDay.totals.netTaxesTotal
+                        : selectedWeekDay.totals.taxesTotal,
+                    )}
+                  </strong>
+                  {selectedWeekDay.totals.refundTaxesTotal > 0 ? (
+                    <small className={styles.metricRefund}>
+                      {formatRefundAmount(selectedWeekDay.totals.refundTaxesTotal)}
+                    </small>
+                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricRecovered}`}>
                   <span>Costo recuperado</span>
-                  <strong>{wholeCurrencyFormatter.format(selectedWeekDay.totals.recoveredCostTotal)}</strong>
+                  <strong>
+                    {wholeCurrencyFormatter.format(
+                      selectedWeekDay.totals.hasRefunds
+                        ? selectedWeekDay.totals.netRecoveredCostTotal
+                        : selectedWeekDay.totals.recoveredCostTotal,
+                    )}
+                  </strong>
+                  {selectedWeekDay.totals.refundRecoveredCostTotal > 0 ? (
+                    <small className={styles.metricRefund}>
+                      {formatRefundAmount(selectedWeekDay.totals.refundRecoveredCostTotal, wholeCurrencyFormatter)}
+                    </small>
+                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricProfit}`}>
                   <span>Ganancias</span>
@@ -1059,6 +1156,17 @@ export default function FinanzasPortal() {
                       </span>
                       {Number(refund.refundShippingTotal || 0) > 0 ? (
                         <span>Paqueteria: {formatRefundAmount(refund.refundShippingTotal)}</span>
+                      ) : null}
+                      {Number(refund.refundOperatingCostTotal || 0) > 0 ? (
+                        <span>Costo operativo: {formatRefundAmount(refund.refundOperatingCostTotal)}</span>
+                      ) : null}
+                      {Number(refund.refundTaxesTotal || 0) > 0 ? (
+                        <span>Impuestos: {formatRefundAmount(refund.refundTaxesTotal)}</span>
+                      ) : null}
+                      {Number(refund.refundRecoveredCostTotal || 0) > 0 ? (
+                        <span>
+                          Costo recuperado: {formatRefundAmount(refund.refundRecoveredCostTotal, wholeCurrencyFormatter)}
+                        </span>
                       ) : null}
                       <small>Fecha del reembolso: {formatFinanceDate(new Date(refund.createdAt))}</small>
                       {refund.orderCreatedAt ? (
@@ -1096,19 +1204,63 @@ export default function FinanzasPortal() {
             </article>
             <article className={`${styles.metric} ${styles.metricOperatingCost}`}>
               <span>Costo operativo</span>
-              <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).operatingCostTotal)}</strong>
+              <strong>
+                {currencyFormatter.format(
+                  (selectedWeekDay?.totals || totals).hasRefunds
+                    ? (selectedWeekDay?.totals || totals).netOperatingCostTotal
+                    : (selectedWeekDay?.totals || totals).operatingCostTotal,
+                )}
+              </strong>
+              {(selectedWeekDay?.totals || totals).refundOperatingCostTotal > 0 ? (
+                <small className={styles.metricRefund}>
+                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundOperatingCostTotal)}
+                </small>
+              ) : null}
             </article>
             <article className={`${styles.metric} ${styles.metricShipping}`}>
               <span>Paqueteria</span>
-              <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).shippingTotal)}</strong>
+              <strong>
+                {currencyFormatter.format(
+                  (selectedWeekDay?.totals || totals).hasRefunds
+                    ? (selectedWeekDay?.totals || totals).netShippingTotal
+                    : (selectedWeekDay?.totals || totals).shippingTotal,
+                )}
+              </strong>
+              {(selectedWeekDay?.totals || totals).refundShippingTotal > 0 ? (
+                <small className={styles.metricRefund}>
+                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundShippingTotal)}
+                </small>
+              ) : null}
             </article>
             <article className={`${styles.metric} ${styles.metricTaxes}`}>
               <span>Impuestos</span>
-              <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).taxesTotal)}</strong>
+              <strong>
+                {currencyFormatter.format(
+                  (selectedWeekDay?.totals || totals).hasRefunds
+                    ? (selectedWeekDay?.totals || totals).netTaxesTotal
+                    : (selectedWeekDay?.totals || totals).taxesTotal,
+                )}
+              </strong>
+              {(selectedWeekDay?.totals || totals).refundTaxesTotal > 0 ? (
+                <small className={styles.metricRefund}>
+                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundTaxesTotal)}
+                </small>
+              ) : null}
             </article>
             <article className={`${styles.metric} ${styles.metricRecovered}`}>
               <span>Costo recuperado</span>
-              <strong>{wholeCurrencyFormatter.format((selectedWeekDay?.totals || totals).recoveredCostTotal)}</strong>
+              <strong>
+                {wholeCurrencyFormatter.format(
+                  (selectedWeekDay?.totals || totals).hasRefunds
+                    ? (selectedWeekDay?.totals || totals).netRecoveredCostTotal
+                    : (selectedWeekDay?.totals || totals).recoveredCostTotal,
+                )}
+              </strong>
+              {(selectedWeekDay?.totals || totals).refundRecoveredCostTotal > 0 ? (
+                <small className={styles.metricRefund}>
+                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundRecoveredCostTotal, wholeCurrencyFormatter)}
+                </small>
+              ) : null}
             </article>
             <article className={`${styles.metric} ${styles.metricProfit}`}>
               <span>Ganancias</span>
