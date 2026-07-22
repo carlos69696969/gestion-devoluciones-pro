@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createCookie, Form, Link, redirect, useActionData, useLoaderData, useRevalidator } from "react-router";
+import { createCookie, Form, Link, redirect, useActionData, useLoaderData, useNavigation, useRevalidator } from "react-router";
 import prisma from "../db.server";
 import styles from "../styles/finanzas.module.css";
 
@@ -848,7 +848,12 @@ export default function FinanzasPortal() {
   const { isLoggedIn, needsConfiguration, period, totals, week, history, error } = useLoaderData();
   const actionData = useActionData();
   const revalidator = useRevalidator();
+  const navigation = useNavigation();
   const [selectedDetailDayKey, setSelectedDetailDayKey] = useState("");
+  const [isHistoryMonthOpen, setIsHistoryMonthOpen] = useState(false);
+  const activePeriod = navigation.location
+    ? normalizeFinancePeriod(new URLSearchParams(navigation.location.search).get("period"))
+    : period;
   const detailDays = period === "history" ? history?.days || [] : period === "week" ? week?.days || [] : [];
   const selectedDetailDay = detailDays.find((day) => day.key === selectedDetailDayKey) || null;
   const selectedWeekDay = selectedDetailDay;
@@ -856,6 +861,7 @@ export default function FinanzasPortal() {
 
   useEffect(() => {
     setSelectedDetailDayKey("");
+    setIsHistoryMonthOpen(false);
   }, [period]);
 
   useEffect(() => {
@@ -927,15 +933,24 @@ export default function FinanzasPortal() {
         </section>
 
         <section className={styles.periodTabs} aria-label="Periodo financiero">
-          <Link className={`${styles.periodButton} ${period === "day" ? styles.periodButtonActive : ""}`} to="/finanzas?period=day">
+          <Link
+            className={`${styles.periodButton} ${activePeriod === "day" ? styles.periodButtonActive : ""}`}
+            to="/finanzas?period=day"
+            prefetch="intent"
+          >
             Dia
           </Link>
-          <Link className={`${styles.periodButton} ${period === "week" ? styles.periodButtonActive : ""}`} to="/finanzas?period=week">
+          <Link
+            className={`${styles.periodButton} ${activePeriod === "week" ? styles.periodButtonActive : ""}`}
+            to="/finanzas?period=week"
+            prefetch="intent"
+          >
             Semana
           </Link>
           <Link
-            className={`${styles.periodButton} ${period === "history" ? styles.periodButtonActive : ""}`}
+            className={`${styles.periodButton} ${activePeriod === "history" ? styles.periodButtonActive : ""}`}
             to="/finanzas?period=history"
+            prefetch="intent"
           >
             Historial
           </Link>
@@ -1070,7 +1085,12 @@ export default function FinanzasPortal() {
         {period === "history" ? (
           <section className={styles.weekPanel} aria-label="Historial mensual">
             <h2>Historial</h2>
-            <article className={`${styles.weekCard} ${styles.monthOverviewCard}`}>
+            <button
+              className={`${styles.weekCard} ${styles.monthOverviewCard}`}
+              type="button"
+              onClick={() => setIsHistoryMonthOpen((isOpen) => !isOpen)}
+              aria-expanded={isHistoryMonthOpen}
+            >
               <span>
                 <strong>{history?.label || "Mes actual"}</strong>
               </span>
@@ -1088,7 +1108,45 @@ export default function FinanzasPortal() {
                   <small className={styles.refundAmount}>{formatRefundAmount(totals.refundProfitTotal)}</small>
                 ) : null}
               </span>
-            </article>
+            </button>
+            {isHistoryMonthOpen ? (
+              <div className={`${styles.weekCards} ${styles.monthCards}`}>
+                {(history?.days || []).map((day) => (
+                  <button
+                    className={`${styles.weekCard} ${day.isCut ? styles.cutCard : ""} ${
+                      selectedDetailDay?.key === day.key ? styles.weekCardActive : ""
+                    }`}
+                    type="button"
+                    key={day.key}
+                    onClick={() => setSelectedDetailDayKey(day.key)}
+                  >
+                    <span>
+                      <strong>{day.dayName}</strong>
+                      <small>{day.dateLabel}</small>
+                      {day.totals.hasRefunds ? (
+                        <small className={styles.refundSourceHint}>
+                          Origen: {(day.refunds || []).map((refund) => refund.orderName).join(", ")}
+                        </small>
+                      ) : null}
+                    </span>
+                    <span>
+                      Ventas
+                      <strong>{currencyFormatter.format(day.totals.salesTotal)}</strong>
+                      {day.totals.hasRefunds ? (
+                        <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
+                      ) : null}
+                    </span>
+                    <span>
+                      Ganancias
+                      <strong>{currencyFormatter.format(day.totals.profitTotal)}</strong>
+                      {day.totals.hasRefunds ? (
+                        <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
+                      ) : null}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </section>
         ) : null}
 

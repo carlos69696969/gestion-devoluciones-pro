@@ -235,7 +235,7 @@
 }
 
 .monthOverviewCard {
-  cursor: default;
+  cursor: pointer;
   grid-template-columns: 1.4fr 1fr 1fr;
   align-items: center;
 }
