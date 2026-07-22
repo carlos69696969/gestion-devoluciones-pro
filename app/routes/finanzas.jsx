@@ -14,6 +14,8 @@ const VERY_HIGH_ORDER_PROFIT_MARGIN_RATE = 0.35;
 const COST_RECOVERY_MARGIN_RATE = 0.5;
 const PROFIT_TAX_RATE = 0.1;
 const TRANSACTION_RATE = 0.03;
+const HIGH_ORDER_DISCOUNT_RATE = 0.1;
+const VERY_HIGH_ORDER_DISCOUNT_RATE = 0.15;
 const INITIAL_TEST_ORDERS = [
   { name: "Orden 1", products: ["263", "340", ""] },
   { name: "Orden 2", products: ["936", "", ""] },
@@ -259,6 +261,12 @@ function getProfitMarginRateForOrderTotal(orderTotal) {
   return DEFAULT_PROFIT_MARGIN_RATE;
 }
 
+function getDiscountRateForOrderTotal(orderTotal) {
+  if (orderTotal >= 1000) return VERY_HIGH_ORDER_DISCOUNT_RATE;
+  if (orderTotal >= 750) return HIGH_ORDER_DISCOUNT_RATE;
+  return 0;
+}
+
 function calculateOrderFinanceTotals(order) {
   const lineItems = order?.lineItems?.nodes || [];
   const originalOrderTotal = lineItems.reduce((sum, item) => {
@@ -267,14 +275,14 @@ function calculateOrderFinanceTotals(order) {
     return sum + unitPrice * quantity;
   }, 0);
   const profitMarginRate = getProfitMarginRateForOrderTotal(originalOrderTotal);
+  const discountRate = getDiscountRateForOrderTotal(originalOrderTotal);
   const totals = lineItems.reduce(
     (itemTotals, item) => {
       const quantity = Math.max(0, Number(item?.quantity || 0));
       const originalUnitPrice = Number(item?.originalUnitPriceSet?.shopMoney?.amount || 0);
       const recoveredUnitCost = Math.round(Math.max(0, calculateRecoveredUnitCost(originalUnitPrice)));
-      const appliedUnitPrice = calculateAppliedUnitPrice(recoveredUnitCost, profitMarginRate);
       return {
-        salesTotal: itemTotals.salesTotal + appliedUnitPrice * quantity,
+        salesTotal: itemTotals.salesTotal + originalUnitPrice * (1 - discountRate) * quantity,
         recoveredCostTotal: itemTotals.recoveredCostTotal + recoveredUnitCost * quantity,
       };
     },
@@ -295,15 +303,6 @@ function calculateRecoveredUnitCost(unitPrice) {
   return (
     (Number(unitPrice || 0) * (1 - TRANSACTION_RATE) - SHOPIFY_FIXED_COMMISSION_PER_ITEM - OPERATING_COST_PER_ITEM) /
     costRecoveryFactor
-  );
-}
-
-function calculateAppliedUnitPrice(recoveredUnitCost, profitMarginRate) {
-  const margin = recoveredUnitCost * profitMarginRate;
-  const taxes = margin * PROFIT_TAX_RATE;
-  return Math.floor(
-    (recoveredUnitCost + margin + taxes + SHOPIFY_FIXED_COMMISSION_PER_ITEM + OPERATING_COST_PER_ITEM) /
-      (1 - TRANSACTION_RATE),
   );
 }
 
