@@ -402,6 +402,7 @@
 }
 
 .dayDetailCard {
+  position: relative;
   width: min(100%, 860px);
   max-height: calc(100vh - 36px);
   overflow: auto;
@@ -415,15 +416,28 @@
 }
 
 .closeDetailButton {
-  min-height: 38px;
-  border: 1px solid #d9dee7;
-  border-radius: 8px;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 50%;
   background: #fff;
   color: #344054;
-  padding: 0 14px;
+  padding: 0;
   font: inherit;
+  font-size: 24px;
+  line-height: 1;
   font-weight: 800;
   cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.closeDetailButton:hover {
+  border-color: #d9dee7;
+  background: #f6f7f9;
 }
 
 .metrics {
@@ -533,10 +547,6 @@
   .dayDetailCard {
     max-height: calc(100vh - 20px);
     padding: 12px;
-  }
-
-  .closeDetailButton {
-    width: 100%;
   }
 
   .testHeader {

@@ -52,6 +52,7 @@ const dateLabelFormatter = new Intl.DateTimeFormat("es-MX", {
   timeZone: FINANCE_TIME_ZONE,
   day: "numeric",
   month: "long",
+  year: "numeric",
 });
 
 const emptyTotals = {
@@ -735,8 +736,13 @@ export default function FinanzasPortal() {
                   <h2>{selectedWeekDay.dayName}</h2>
                   <span>{selectedWeekDay.dateLabel}</span>
                 </div>
-                <button className={styles.closeDetailButton} type="button" onClick={() => setSelectedWeekDayKey("")}>
-                  Cerrar
+                <button
+                  className={styles.closeDetailButton}
+                  type="button"
+                  onClick={() => setSelectedWeekDayKey("")}
+                  aria-label="Cerrar detalle"
+                >
+                  ×
                 </button>
               </div>
               <div className={styles.metrics}>
