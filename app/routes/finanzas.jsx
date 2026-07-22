@@ -346,10 +346,24 @@ async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = 
                 }
               }
               refunds {
+                id
                 createdAt
+                processedAt
                 totalRefundedSet {
                   shopMoney {
                     amount
+                  }
+                }
+                transactions(first: 20) {
+                  nodes {
+                    kind
+                    status
+                    processedAt
+                    amountSet {
+                      shopMoney {
+                        amount
+                      }
+                    }
                   }
                 }
                 refundLineItems(first: 250) {
@@ -542,9 +556,20 @@ function extractRefundEventsFromOrders(orders, start, end) {
     let hasAppliedOrderShippingRefund = false;
     return (order?.refunds || [])
       .map((refund) => {
-        const createdAt = refund?.createdAt ? new Date(refund.createdAt) : null;
-        if (!createdAt || Number.isNaN(createdAt.getTime())) return null;
-        if (createdAt.getTime() < rangeStartMs || createdAt.getTime() >= rangeEndMs) return null;
+        const refundTransactions = refund?.transactions?.nodes || [];
+        const successfulRefundTransactions = refundTransactions.filter(
+          (transaction) =>
+            String(transaction?.kind || "").toUpperCase() === "REFUND" &&
+            String(transaction?.status || "").toUpperCase() === "SUCCESS",
+        );
+        if (refundTransactions.length > 0 && successfulRefundTransactions.length === 0) return null;
+        const financialDateValue =
+          successfulRefundTransactions.find((transaction) => transaction?.processedAt)?.processedAt ||
+          refund?.processedAt ||
+          refund?.createdAt;
+        const processedAt = financialDateValue ? new Date(financialDateValue) : null;
+        if (!processedAt || Number.isNaN(processedAt.getTime())) return null;
+        if (processedAt.getTime() < rangeStartMs || processedAt.getTime() >= rangeEndMs) return null;
         const refundLineItems = refund?.refundLineItems?.nodes || [];
         const refundLineSubtotal = refundLineItems.reduce((sum, refundLineItem) => {
           const subtotal = Number(refundLineItem?.subtotalSet?.shopMoney?.amount || 0);
@@ -553,8 +578,14 @@ function extractRefundEventsFromOrders(orders, start, end) {
           const unitPrice = Number(refundLineItem?.lineItem?.originalUnitPriceSet?.shopMoney?.amount || 0);
           return sum + unitPrice * quantity;
         }, 0);
-        const refundSalesTotal = refundLineSubtotal || Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
-        const totalRefundedAmount = Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
+        const transactionRefundTotal = successfulRefundTransactions.reduce(
+          (sum, transaction) => sum + Number(transaction?.amountSet?.shopMoney?.amount || 0),
+          0,
+        );
+        const totalRefundedAmount =
+          transactionRefundTotal || Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
+        if (totalRefundedAmount <= 0) return null;
+        const refundSalesTotal = refundLineSubtotal || totalRefundedAmount;
         const orderShippingTotal = Number(orderFinance.shippingTotal || 0);
         const orderRefundedShippingTotal = Number(order?.totalRefundedShippingSet?.shopMoney?.amount || 0);
         const currentShippingTotal = Number(order?.currentShippingPriceSet?.shopMoney?.amount || 0);
@@ -575,7 +606,7 @@ function extractRefundEventsFromOrders(orders, start, end) {
           return sum + recoveredUnitCost * quantity;
         }, 0);
         const refundProfitTotal = refundedRecoveredCostTotal * profitMarginRate * (1 - PROFIT_TAX_RATE);
-        return { createdAt: refund.createdAt, refundSalesTotal, refundProfitTotal, refundShippingTotal };
+        return { createdAt: financialDateValue, refundSalesTotal, refundProfitTotal, refundShippingTotal };
       })
       .filter(Boolean);
   });
