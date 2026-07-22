@@ -455,7 +455,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.weekFullSummaryCard span {
+.weekFullSummaryCard > div:not(.metrics) span {
   min-height: 68px;
   border: 1px solid #eef1f5;
   border-radius: 8px;
@@ -469,7 +469,7 @@
   line-height: 1.2;
 }
 
-.weekFullSummaryCard strong {
+.weekFullSummaryCard > div:not(.metrics) strong {
   color: #111827;
   font-size: 18px;
   line-height: 1.15;
