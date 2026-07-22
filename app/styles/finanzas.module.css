@@ -350,6 +350,10 @@
   gap: 10px;
 }
 
+.weekSummaryCard:has(.weekNetTotals) {
+  grid-template-rows: auto auto;
+}
+
 .weekSummaryCard span {
   display: grid;
   gap: 3px;
@@ -368,6 +372,27 @@
   color: #5f6b7a;
   font-size: 12px;
   font-weight: 700;
+}
+
+.refundAmount,
+.metricRefund {
+  color: #b42318 !important;
+  font-weight: 900 !important;
+}
+
+.weekNetTotals {
+  grid-column: 1 / -1;
+  border-top: 1px solid #b7d7f8;
+  padding-top: 10px;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.weekNetTotals span {
+  display: grid;
+  gap: 3px;
 }
 
 .weekCard {
@@ -527,6 +552,11 @@
 
 .metricRecovered {
   border-left: 4px solid #0e9384;
+}
+
+.metricNet {
+  border-left: 4px solid #111827;
+  background: #f9fafb;
 }
 
 .wide {

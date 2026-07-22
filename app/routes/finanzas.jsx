@@ -63,6 +63,11 @@ const emptyTotals = {
   taxesTotal: 0,
   recoveredCostTotal: 0,
   profitTotal: 0,
+  refundSalesTotal: 0,
+  refundProfitTotal: 0,
+  netSalesTotal: 0,
+  netProfitTotal: 0,
+  hasRefunds: false,
   orderCount: 0,
   itemCount: 0,
 };
@@ -92,14 +97,23 @@ function formatWeekLabel(start, end) {
   return `Semana del ${formatFinanceDate(start, { includeYear: false })} al ${formatFinanceDate(lastDay)}`;
 }
 
-function buildWeekBreakdown(start, end, orders) {
-  const ordersByDay = orders.reduce((groups, order) => {
+function buildWeekBreakdown(start, end, salesOrders, refundEvents) {
+  const ordersByDay = salesOrders.reduce((groups, order) => {
     const createdAt = order?.createdAt ? new Date(order.createdAt) : null;
     if (!createdAt || Number.isNaN(createdAt.getTime())) return groups;
     const key = getLocalDateKey(createdAt);
     return {
       ...groups,
       [key]: [...(groups[key] || []), order],
+    };
+  }, {});
+  const refundsByDay = refundEvents.reduce((groups, refundEvent) => {
+    const createdAt = refundEvent?.createdAt ? new Date(refundEvent.createdAt) : null;
+    if (!createdAt || Number.isNaN(createdAt.getTime())) return groups;
+    const key = getLocalDateKey(createdAt);
+    return {
+      ...groups,
+      [key]: [...(groups[key] || []), refundEvent],
     };
   }, {});
 
@@ -109,11 +123,12 @@ function buildWeekBreakdown(start, end, orders) {
       const dayDate = new Date(start.getTime() + index * 24 * 60 * 60 * 1000);
       const key = getLocalDateKey(dayDate);
       const dayOrders = ordersByDay[key] || [];
+      const dayRefunds = refundsByDay[key] || [];
       return {
         key,
         dayName: capitalize(dayNameFormatter.format(dayDate)),
         dateLabel: formatFinanceDate(dayDate),
-        totals: calculateDayTotals(dayOrders),
+        totals: calculateFinanceTotals(dayOrders, dayRefunds),
       };
     }),
   };
@@ -271,11 +286,11 @@ async function shopifyGraphql({ shop, accessToken, query, variables }) {
   return payload.data;
 }
 
-async function fetchOrdersForRange({ shop, accessToken, start, end }) {
+async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = "created_at" }) {
   const orders = [];
   let cursor = null;
   let hasNextPage = true;
-  const shopifyQuery = [`created_at:>=${start.toISOString()}`, `created_at:<${end.toISOString()}`, "status:any"].join(" ");
+  const shopifyQuery = [`${dateField}:>=${start.toISOString()}`, `${dateField}:<${end.toISOString()}`, "status:any"].join(" ");
 
   while (hasNextPage) {
     const data = await shopifyGraphql({
@@ -313,6 +328,31 @@ async function fetchOrdersForRange({ shop, accessToken, start, end }) {
                   }
                 }
               }
+              refunds {
+                createdAt
+                totalRefundedSet {
+                  shopMoney {
+                    amount
+                  }
+                }
+                refundLineItems(first: 250) {
+                  nodes {
+                    quantity
+                    subtotalSet {
+                      shopMoney {
+                        amount
+                      }
+                    }
+                    lineItem {
+                      originalUnitPriceSet {
+                        shopMoney {
+                          amount
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }`,
@@ -343,7 +383,30 @@ async function fetchOrdersForRangeWithSessions({ sessions, start, end }) {
   throw lastError || new Error("No se encontro una sesion valida para consultar ventas.");
 }
 
-function calculateDayTotals(orders) {
+async function fetchUpdatedOrdersForRangeWithSessions({ sessions, start, end }) {
+  let lastError = null;
+  for (const session of sessions) {
+    try {
+      return await fetchOrdersForRange({
+        shop: session.shop,
+        accessToken: session.accessToken,
+        start,
+        end,
+        dateField: "updated_at",
+      });
+    } catch (error) {
+      lastError = error;
+      console.error("Finance portal failed to load Shopify refunds with session", {
+        shop: session.shop,
+        sessionId: session.sessionId,
+        message: error?.message || String(error),
+      });
+    }
+  }
+  throw lastError || new Error("No se encontro una sesion valida para consultar reembolsos.");
+}
+
+function calculateFinanceTotals(orders, refundEvents = []) {
   const orderCount = orders.length;
   const itemCount = orders.reduce(
     (sum, order) =>
@@ -364,6 +427,14 @@ function calculateDayTotals(orders) {
     },
     { salesTotal: 0, originalSubtotalTotal: 0, recoveredCostTotal: 0, taxesTotal: 0, profitTotal: 0 },
   );
+  const refundTotals = refundEvents.reduce(
+    (totals, refundEvent) => ({
+      refundSalesTotal: totals.refundSalesTotal + Number(refundEvent?.refundSalesTotal || 0),
+      refundProfitTotal: totals.refundProfitTotal + Number(refundEvent?.refundProfitTotal || 0),
+    }),
+    { refundSalesTotal: 0, refundProfitTotal: 0 },
+  );
+  const hasRefunds = refundTotals.refundSalesTotal > 0 || refundTotals.refundProfitTotal > 0;
 
   return {
     ...emptyTotals,
@@ -374,9 +445,22 @@ function calculateDayTotals(orders) {
     recoveredCostTotal: financeTotals.recoveredCostTotal,
     taxesTotal: financeTotals.taxesTotal,
     profitTotal: financeTotals.profitTotal,
+    refundSalesTotal: refundTotals.refundSalesTotal,
+    refundProfitTotal: refundTotals.refundProfitTotal,
+    netSalesTotal: financeTotals.salesTotal - refundTotals.refundSalesTotal,
+    netProfitTotal: financeTotals.profitTotal - refundTotals.refundProfitTotal,
+    hasRefunds,
     orderCount,
     itemCount,
   };
+}
+
+function calculateDayTotals(orders) {
+  return calculateFinanceTotals(orders);
+}
+
+function formatRefundAmount(value, formatter = currencyFormatter) {
+  return `-${formatter.format(Number(value || 0))}`;
 }
 
 function getProfitMarginRateForOrderTotal(orderTotal) {
@@ -421,6 +505,40 @@ function calculateOrderFinanceTotals(order) {
   const salesTotal = order?.useActualSalesTotal === false ? totals.salesTotal : actualSalesTotal;
 
   return { salesTotal, originalSubtotalTotal: originalOrderTotal, recoveredCostTotal, taxesTotal, profitTotal };
+}
+
+function extractRefundEventsFromOrders(orders, start, end) {
+  const rangeStartMs = start.getTime();
+  const rangeEndMs = end.getTime();
+  return orders.flatMap((order) => {
+    const orderFinance = calculateOrderFinanceTotals(order);
+    const originalOrderTotal = Number(orderFinance.originalSubtotalTotal || 0);
+    const profitMarginRate = getProfitMarginRateForOrderTotal(originalOrderTotal);
+    return (order?.refunds || [])
+      .map((refund) => {
+        const createdAt = refund?.createdAt ? new Date(refund.createdAt) : null;
+        if (!createdAt || Number.isNaN(createdAt.getTime())) return null;
+        if (createdAt.getTime() < rangeStartMs || createdAt.getTime() >= rangeEndMs) return null;
+        const refundLineItems = refund?.refundLineItems?.nodes || [];
+        const refundLineSubtotal = refundLineItems.reduce((sum, refundLineItem) => {
+          const subtotal = Number(refundLineItem?.subtotalSet?.shopMoney?.amount || 0);
+          if (subtotal > 0) return sum + subtotal;
+          const quantity = Math.max(0, Number(refundLineItem?.quantity || 0));
+          const unitPrice = Number(refundLineItem?.lineItem?.originalUnitPriceSet?.shopMoney?.amount || 0);
+          return sum + unitPrice * quantity;
+        }, 0);
+        const refundSalesTotal = refundLineSubtotal || Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
+        const refundedRecoveredCostTotal = refundLineItems.reduce((sum, refundLineItem) => {
+          const quantity = Math.max(0, Number(refundLineItem?.quantity || 0));
+          const unitPrice = Number(refundLineItem?.lineItem?.originalUnitPriceSet?.shopMoney?.amount || 0);
+          const recoveredUnitCost = Math.round(Math.max(0, calculateRecoveredUnitCost(unitPrice)));
+          return sum + recoveredUnitCost * quantity;
+        }, 0);
+        const refundProfitTotal = refundedRecoveredCostTotal * profitMarginRate * (1 - PROFIT_TAX_RATE);
+        return { createdAt: refund.createdAt, refundSalesTotal, refundProfitTotal };
+      })
+      .filter(Boolean);
+  });
 }
 
 function calculateRecoveredUnitCost(unitPrice) {
@@ -499,12 +617,14 @@ export async function loader({ request }) {
       };
     }
     const orders = await fetchOrdersForRangeWithSessions({ sessions, start, end });
-    const week = period === "week" ? buildWeekBreakdown(start, end, orders) : { label: "", days: [] };
+    const refundOrders = await fetchUpdatedOrdersForRangeWithSessions({ sessions, start, end });
+    const refundEvents = extractRefundEventsFromOrders(refundOrders, start, end);
+    const week = period === "week" ? buildWeekBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
     return {
       isLoggedIn: true,
       needsConfiguration: false,
       period,
-      totals: calculateDayTotals(orders),
+      totals: calculateFinanceTotals(orders, refundEvents),
       week,
       error: "",
     };
@@ -711,16 +831,37 @@ export default function FinanzasPortal() {
             <article className={styles.weekSummaryCard}>
               <span>
                 <strong>Resumen de la semana</strong>
-                <small>Acumulado semanal</small>
+                {totals.hasRefunds ? <small>Reembolsos</small> : null}
               </span>
               <span>
                 Ventas
                 <strong>{currencyFormatter.format(totals.salesTotal)}</strong>
+                {totals.hasRefunds ? (
+                  <small className={styles.refundAmount}>{formatRefundAmount(totals.refundSalesTotal)}</small>
+                ) : null}
               </span>
               <span>
                 Ganancias
                 <strong>{currencyFormatter.format(totals.profitTotal)}</strong>
+                {totals.hasRefunds ? (
+                  <small className={styles.refundAmount}>{formatRefundAmount(totals.refundProfitTotal)}</small>
+                ) : null}
               </span>
+              {totals.hasRefunds ? (
+                <div className={styles.weekNetTotals}>
+                  <span>
+                    <strong>Total de la semana</strong>
+                  </span>
+                  <span>
+                    Ventas
+                    <strong>{currencyFormatter.format(totals.netSalesTotal)}</strong>
+                  </span>
+                  <span>
+                    Ganancias
+                    <strong>{currencyFormatter.format(totals.netProfitTotal)}</strong>
+                  </span>
+                </div>
+              ) : null}
             </article>
             <div className={styles.weekCards}>
               {(week?.days || []).map((day) => (
@@ -737,10 +878,16 @@ export default function FinanzasPortal() {
                   <span>
                     Ventas
                     <strong>{currencyFormatter.format(day.totals.salesTotal)}</strong>
+                    {day.totals.hasRefunds ? (
+                      <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
+                    ) : null}
                   </span>
                   <span>
                     Ganancias
                     <strong>{currencyFormatter.format(day.totals.profitTotal)}</strong>
+                    {day.totals.hasRefunds ? (
+                      <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
+                    ) : null}
                   </span>
                 </button>
               ))}
@@ -769,6 +916,9 @@ export default function FinanzasPortal() {
                 <article className={`${styles.metric} ${styles.metricSales}`}>
                   <span>Ventas</span>
                   <strong>{currencyFormatter.format(selectedWeekDay.totals.salesTotal)}</strong>
+                  {selectedWeekDay.totals.hasRefunds ? (
+                    <small className={styles.metricRefund}>{formatRefundAmount(selectedWeekDay.totals.refundSalesTotal)}</small>
+                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricTicket}`}>
                   <span>Ticket promedio</span>
@@ -793,7 +943,19 @@ export default function FinanzasPortal() {
                 <article className={`${styles.metric} ${styles.metricProfit}`}>
                   <span>Ganancias</span>
                   <strong>{currencyFormatter.format(selectedWeekDay.totals.profitTotal)}</strong>
+                  {selectedWeekDay.totals.hasRefunds ? (
+                    <small className={styles.metricRefund}>{formatRefundAmount(selectedWeekDay.totals.refundProfitTotal)}</small>
+                  ) : null}
                 </article>
+                {selectedWeekDay.totals.hasRefunds ? (
+                  <article className={`${styles.metric} ${styles.metricNet} ${styles.wide}`}>
+                    <span>Total del dia</span>
+                    <strong>
+                      {currencyFormatter.format(selectedWeekDay.totals.netSalesTotal)} /{" "}
+                      {currencyFormatter.format(selectedWeekDay.totals.netProfitTotal)} ganancias
+                    </strong>
+                  </article>
+                ) : null}
               </div>
             </div>
           </section>
@@ -811,6 +973,11 @@ export default function FinanzasPortal() {
             <article className={`${styles.metric} ${styles.metricSales}`}>
               <span>Ventas</span>
               <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).salesTotal)}</strong>
+              {(selectedWeekDay?.totals || totals).hasRefunds ? (
+                <small className={styles.metricRefund}>
+                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundSalesTotal)}
+                </small>
+              ) : null}
             </article>
             <article className={`${styles.metric} ${styles.metricTicket}`}>
               <span>Ticket promedio</span>
@@ -835,7 +1002,21 @@ export default function FinanzasPortal() {
             <article className={`${styles.metric} ${styles.metricProfit}`}>
               <span>Ganancias</span>
               <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).profitTotal)}</strong>
+              {(selectedWeekDay?.totals || totals).hasRefunds ? (
+                <small className={styles.metricRefund}>
+                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundProfitTotal)}
+                </small>
+              ) : null}
             </article>
+            {(selectedWeekDay?.totals || totals).hasRefunds ? (
+              <article className={`${styles.metric} ${styles.metricNet} ${styles.wide}`}>
+                <span>Total del dia</span>
+                <strong>
+                  {currencyFormatter.format((selectedWeekDay?.totals || totals).netSalesTotal)} /{" "}
+                  {currencyFormatter.format((selectedWeekDay?.totals || totals).netProfitTotal)} ganancias
+                </strong>
+              </article>
+            ) : null}
           </div>
         </section>
         ) : null}
