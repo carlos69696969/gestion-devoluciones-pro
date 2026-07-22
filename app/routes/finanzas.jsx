@@ -985,40 +985,40 @@ export default function FinanzasPortal() {
             </div>
             <article className={styles.weekFullSummaryCard}>
               <h3>Total de toda la semana</h3>
-              <div>
-                <span>
-                  Ventas
+              <div className={styles.metrics}>
+                <article className={`${styles.metric} ${styles.metricSales}`}>
+                  <span>Ventas</span>
                   <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netSalesTotal : totals.salesTotal)}</strong>
-                </span>
-                <span>
-                  Ticket promedio
+                </article>
+                <article className={`${styles.metric} ${styles.metricTicket}`}>
+                  <span>Ticket promedio</span>
                   <strong>{currencyFormatter.format(totals.averageTicket)}</strong>
-                </span>
-                <span>
-                  Costo operativo
+                </article>
+                <article className={`${styles.metric} ${styles.metricOperatingCost}`}>
+                  <span>Costo operativo</span>
                   <strong>
                     {currencyFormatter.format(totals.hasRefunds ? totals.netOperatingCostTotal : totals.operatingCostTotal)}
                   </strong>
                   {totals.refundOperatingCostTotal > 0 ? (
                     <small className={styles.refundAmount}>{formatRefundAmount(totals.refundOperatingCostTotal)}</small>
                   ) : null}
-                </span>
-                <span>
-                  Paqueteria
+                </article>
+                <article className={`${styles.metric} ${styles.metricShipping}`}>
+                  <span>Paqueteria</span>
                   <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netShippingTotal : totals.shippingTotal)}</strong>
                   {totals.refundShippingTotal > 0 ? (
                     <small className={styles.refundAmount}>{formatRefundAmount(totals.refundShippingTotal)}</small>
                   ) : null}
-                </span>
-                <span>
-                  Impuestos
+                </article>
+                <article className={`${styles.metric} ${styles.metricTaxes}`}>
+                  <span>Impuestos</span>
                   <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netTaxesTotal : totals.taxesTotal)}</strong>
                   {totals.refundTaxesTotal > 0 ? (
                     <small className={styles.refundAmount}>{formatRefundAmount(totals.refundTaxesTotal)}</small>
                   ) : null}
-                </span>
-                <span>
-                  Costo recuperado
+                </article>
+                <article className={`${styles.metric} ${styles.metricRecovered}`}>
+                  <span>Costo recuperado</span>
                   <strong>
                     {wholeCurrencyFormatter.format(totals.hasRefunds ? totals.netRecoveredCostTotal : totals.recoveredCostTotal)}
                   </strong>
@@ -1027,11 +1027,11 @@ export default function FinanzasPortal() {
                       {formatRefundAmount(totals.refundRecoveredCostTotal, wholeCurrencyFormatter)}
                     </small>
                   ) : null}
-                </span>
-                <span>
-                  Ganancias
+                </article>
+                <article className={`${styles.metric} ${styles.metricProfit}`}>
+                  <span>Ganancias</span>
                   <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netProfitTotal : totals.profitTotal)}</strong>
-                </span>
+                </article>
               </div>
             </article>
           </section>
@@ -1181,7 +1181,34 @@ export default function FinanzasPortal() {
         ) : null}
 
         {period !== "week" ? (
-          <section aria-label="Detalle financiero">
+          <section className={styles.financeDetailSection} aria-label="Detalle financiero">
+          {totals.hasRefunds ? (
+            <article className={styles.weekSummaryCard}>
+              <span>
+                <strong>Resumen del dia</strong>
+                <small>Reembolsos</small>
+              </span>
+              <span>
+                Ventas
+                <strong>{currencyFormatter.format(totals.salesTotal)}</strong>
+                <small className={styles.refundAmount}>{formatRefundAmount(totals.refundSalesTotal)}</small>
+              </span>
+              <span>
+                Ganancias
+                <strong>{currencyFormatter.format(totals.profitTotal)}</strong>
+                <small className={styles.refundAmount}>{formatRefundAmount(totals.refundProfitTotal)}</small>
+              </span>
+              <span className={styles.weekNetCell}>
+                <strong>Total del dia</strong>
+              </span>
+              <span className={styles.weekNetCell}>
+                <strong>{currencyFormatter.format(totals.netSalesTotal)}</strong>
+              </span>
+              <span className={styles.weekNetCell}>
+                <strong>{currencyFormatter.format(totals.netProfitTotal)}</strong>
+              </span>
+            </article>
+          ) : null}
           {period === "week" && selectedWeekDay ? (
             <div className={styles.weekDetailHeader}>
               <h2>{selectedWeekDay.dayName}</h2>

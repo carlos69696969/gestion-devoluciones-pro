@@ -451,6 +451,10 @@
   gap: 8px;
 }
 
+.weekFullSummaryCard > .metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .weekFullSummaryCard span {
   min-height: 68px;
   border: 1px solid #eef1f5;
@@ -539,6 +543,11 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.financeDetailSection {
+  display: grid;
+  gap: 12px;
 }
 
 .metric {
@@ -678,6 +687,10 @@
   }
 
   .weekFullSummaryCard > div {
+    grid-template-columns: 1fr;
+  }
+
+  .weekFullSummaryCard > .metrics {
     grid-template-columns: 1fr;
   }
 
