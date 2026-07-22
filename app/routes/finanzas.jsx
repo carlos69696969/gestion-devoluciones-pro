@@ -157,6 +157,14 @@ function buildWeekBreakdown(start, end, salesOrders, refundEvents) {
   };
 }
 
+function buildChartBreakdown(start, end, salesOrders, refundEvents) {
+  const dayCount = Math.max(0, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
+  return {
+    label: formatMonthLabel(start),
+    days: buildFinanceDayEntries(start, dayCount, salesOrders, refundEvents),
+  };
+}
+
 function buildMonthBreakdown(start, end, salesOrders, refundEvents) {
   const dayCount = Math.max(0, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
   const ordersByDay = groupOrdersByLocalDay(salesOrders);
@@ -282,12 +290,13 @@ function getMonthRangeInMexico() {
 function normalizeFinancePeriod(value) {
   if (value === "week") return "week";
   if (value === "history") return "history";
+  if (value === "chart") return "chart";
   return "day";
 }
 
 function getFinanceRangeInMexico(period) {
   if (period === "week") return getWeekRangeInMexico();
-  if (period === "history") return getMonthRangeInMexico();
+  if (period === "history" || period === "chart") return getMonthRangeInMexico();
   return getTodayRangeInMexico();
 }
 
@@ -370,6 +379,8 @@ function formatFinanceLoadError(error, period) {
       ? "No se pudieron cargar las ventas del historial."
       : period === "week"
         ? "No se pudieron cargar las ventas de la semana."
+        : period === "chart"
+          ? "No se pudieron cargar las graficas."
         : "No se pudieron cargar las ventas del dia.";
   const status = Number(error?.status || 0);
   if (status === 401) return `${base} Shopify rechazo la sesion guardada (401). Abre la app desde Shopify para regenerar la conexion.`;
@@ -617,6 +628,12 @@ function formatRefundAmount(value, formatter = currencyFormatter) {
   return `-${formatter.format(Number(value || 0))}`;
 }
 
+function getChartBarPercent(value, maxValue) {
+  if (Number(value || 0) <= 0) return 0;
+  if (!maxValue) return 0;
+  return Math.max(3, Math.min(100, (Number(value || 0) / maxValue) * 100));
+}
+
 function getProfitMarginRateForOrderTotal(orderTotal) {
   if (orderTotal >= 1000) return VERY_HIGH_ORDER_PROFIT_MARGIN_RATE;
   if (orderTotal >= 750) return HIGH_ORDER_PROFIT_MARGIN_RATE;
@@ -755,6 +772,7 @@ export async function loader({ request }) {
       totals: emptyTotals,
       week: { label: "", days: [] },
       history: { label: "", days: [] },
+      chart: { label: "", days: [] },
       error: "Falta configurar FINANCE_ACCESS_CODE en Render.",
     };
   }
@@ -768,6 +786,7 @@ export async function loader({ request }) {
       totals: emptyTotals,
       week: { label: "", days: [] },
       history: { label: "", days: [] },
+      chart: { label: "", days: [] },
       error: "",
     };
   }
@@ -783,6 +802,7 @@ export async function loader({ request }) {
         totals: emptyTotals,
         week: { label: "", days: [] },
         history: { label: "", days: [] },
+        chart: { label: "", days: [] },
         error: "No se encontro una sesion offline valida para consultar ventas.",
       };
     }
@@ -796,6 +816,7 @@ export async function loader({ request }) {
     }
     const week = period === "week" ? buildWeekBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
     const history = period === "history" ? buildMonthBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
+    const chart = period === "chart" ? buildChartBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
     return {
       isLoggedIn: true,
       needsConfiguration: false,
@@ -803,6 +824,7 @@ export async function loader({ request }) {
       totals: calculateFinanceTotals(orders, refundEvents),
       week,
       history,
+      chart,
       error: "",
     };
   } catch (error) {
@@ -814,6 +836,7 @@ export async function loader({ request }) {
       totals: emptyTotals,
       week: { label: period === "week" ? formatWeekLabel(start, end) : "", days: [] },
       history: { label: period === "history" ? formatMonthLabel(start) : "", days: [] },
+      chart: { label: period === "chart" ? formatMonthLabel(start) : "", days: [] },
       error: formatFinanceLoadError(error, period),
     };
   }
@@ -845,7 +868,7 @@ export async function action({ request }) {
 }
 
 export default function FinanzasPortal() {
-  const { isLoggedIn, needsConfiguration, period, totals, week, history, error } = useLoaderData();
+  const { isLoggedIn, needsConfiguration, period, totals, week, history, chart, error } = useLoaderData();
   const actionData = useActionData();
   const revalidator = useRevalidator();
   const navigation = useNavigation();
@@ -858,6 +881,33 @@ export default function FinanzasPortal() {
   const selectedDetailDay = detailDays.find((day) => day.key === selectedDetailDayKey) || null;
   const selectedWeekDay = selectedDetailDay;
   const setSelectedWeekDayKey = setSelectedDetailDayKey;
+  const chartDays = chart?.days || [];
+  const chartCards = [
+    {
+      title: "Ventas",
+      className: styles.chartSales,
+      formatter: currencyFormatter,
+      values: chartDays.map((day) => ({ ...day, value: day.totals.salesTotal })),
+    },
+    {
+      title: "Reembolsos",
+      className: styles.chartRefunds,
+      formatter: currencyFormatter,
+      values: chartDays.map((day) => ({ ...day, value: day.totals.refundSalesTotal })),
+    },
+    {
+      title: "Ganancias",
+      className: styles.chartProfit,
+      formatter: currencyFormatter,
+      values: chartDays.map((day) => ({ ...day, value: day.totals.netProfitTotal })),
+    },
+    {
+      title: "Ticket promedio",
+      className: styles.chartTicket,
+      formatter: currencyFormatter,
+      values: chartDays.map((day) => ({ ...day, value: day.totals.averageTicket })),
+    },
+  ];
 
   useEffect(() => {
     setSelectedDetailDayKey("");
@@ -953,6 +1003,13 @@ export default function FinanzasPortal() {
             prefetch="intent"
           >
             Historial
+          </Link>
+          <Link
+            className={`${styles.periodButton} ${activePeriod === "chart" ? styles.periodButtonActive : ""}`}
+            to="/finanzas?period=chart"
+            prefetch="intent"
+          >
+            Grafica
           </Link>
         </section>
 
@@ -1131,6 +1188,36 @@ export default function FinanzasPortal() {
                 ))}
               </div>
             ) : null}
+          </section>
+        ) : null}
+
+        {period === "chart" ? (
+          <section className={styles.chartPanel} aria-label="Graficas financieras">
+            <h2>Graficas de {chart?.label || "Mes actual"}</h2>
+            <div className={styles.chartGrid}>
+              {chartCards.map((chartCard) => {
+                const maxValue = Math.max(...chartCard.values.map((day) => Number(day.value || 0)), 0);
+                return (
+                  <article className={styles.chartCard} key={chartCard.title}>
+                    <h3>{chartCard.title}</h3>
+                    <div className={styles.chartBars}>
+                      {chartCard.values.map((day) => (
+                        <div className={styles.chartRow} key={`${chartCard.title}-${day.key}`}>
+                          <span className={styles.chartDay}>{day.dateLabel}</span>
+                          <span className={styles.chartTrack}>
+                            <span
+                              className={`${styles.chartFill} ${chartCard.className}`}
+                              style={{ width: `${getChartBarPercent(day.value, maxValue)}%` }}
+                            />
+                          </span>
+                          <strong>{chartCard.formatter.format(day.value)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </section>
         ) : null}
 

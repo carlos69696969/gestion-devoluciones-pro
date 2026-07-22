@@ -116,7 +116,7 @@
 
 .periodTabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -353,6 +353,99 @@
   line-height: 1.2;
 }
 
+.chartPanel {
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.chartPanel h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.chartGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.chartCard {
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  background: #f9fafb;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.chartCard h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.chartBars {
+  display: grid;
+  gap: 8px;
+}
+
+.chartRow {
+  display: grid;
+  grid-template-columns: minmax(112px, 1.1fr) minmax(70px, 1.6fr) minmax(84px, auto);
+  gap: 8px;
+  align-items: center;
+}
+
+.chartDay {
+  color: #5f6b7a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.chartTrack {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eef1f5;
+}
+
+.chartFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.chartSales {
+  background: #087443;
+}
+
+.chartRefunds {
+  background: #b42318;
+}
+
+.chartProfit {
+  background: #0b5cab;
+}
+
+.chartTicket {
+  background: #b54708;
+}
+
+.chartRow strong {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.2;
+  text-align: right;
+}
+
 .weekFullSummaryCard > div {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -577,6 +670,19 @@
 
   .metrics {
     grid-template-columns: 1fr;
+  }
+
+  .periodTabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chartGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .chartRow {
+    grid-template-columns: minmax(86px, 1fr) minmax(54px, 1fr) minmax(78px, auto);
+    gap: 6px;
   }
 
   .weekCards {
