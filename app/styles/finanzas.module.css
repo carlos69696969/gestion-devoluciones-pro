@@ -380,6 +380,11 @@
   font-weight: 900 !important;
 }
 
+.refundSourceHint {
+  color: #b42318 !important;
+  font-weight: 800 !important;
+}
+
 .weekNetCell {
   border-top: 1px solid #b7d7f8;
   padding-top: 10px;
@@ -593,6 +598,44 @@
 
 .wide {
   grid-column: 1 / -1;
+}
+
+.refundDetails {
+  border: 1px solid #fecdca;
+  border-radius: 8px;
+  background: #fff7f5;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.refundDetails h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.refundDetailItem {
+  border: 1px solid #fecdca;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  color: #344054;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.refundDetailItem strong {
+  color: #111827;
+  font-size: 15px;
+}
+
+.refundDetailItem small {
+  color: #5f6b7a;
+  font-weight: 700;
 }
 
 .actions {

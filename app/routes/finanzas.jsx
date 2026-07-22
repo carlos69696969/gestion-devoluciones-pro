@@ -130,6 +130,7 @@ function buildWeekBreakdown(start, end, salesOrders, refundEvents) {
         key,
         dayName: capitalize(dayNameFormatter.format(dayDate)),
         dateLabel: formatFinanceDate(dayDate),
+        refunds: dayRefunds,
         totals: calculateFinanceTotals(dayOrders, dayRefunds),
       };
     }),
@@ -308,6 +309,7 @@ async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = 
             }
             nodes {
               id
+              name
               createdAt
               cancelledAt
               currentTotalPriceSet {
@@ -576,7 +578,14 @@ function extractRefundEventsFromOrders(orders, start, end) {
           return sum + recoveredUnitCost * quantity;
         }, 0);
         const refundProfitTotal = refundedRecoveredCostTotal * profitMarginRate * (1 - PROFIT_TAX_RATE);
-        return { createdAt: refund.createdAt, refundSalesTotal, refundProfitTotal, refundShippingTotal };
+        return {
+          createdAt: refund.createdAt,
+          orderName: order?.name || "Pedido",
+          orderCreatedAt: order?.createdAt || "",
+          refundSalesTotal,
+          refundProfitTotal,
+          refundShippingTotal,
+        };
       })
       .filter(Boolean);
   });
@@ -913,6 +922,11 @@ export default function FinanzasPortal() {
                   <span>
                     <strong>{day.dayName}</strong>
                     <small>{day.dateLabel}</small>
+                    {day.totals.hasRefunds ? (
+                      <small className={styles.refundSourceHint}>
+                        Origen: {(day.refunds || []).map((refund) => refund.orderName).join(", ")}
+                      </small>
+                    ) : null}
                   </span>
                   <span>
                     Ventas
@@ -1032,6 +1046,28 @@ export default function FinanzasPortal() {
                   </article>
                 ) : null}
               </div>
+              {selectedWeekDay.totals.hasRefunds ? (
+                <section className={styles.refundDetails} aria-label="Origen de reembolsos">
+                  <h3>Origen del reembolso</h3>
+                  {(selectedWeekDay.refunds || []).map((refund, index) => (
+                    <article className={styles.refundDetailItem} key={`${refund.orderName}-${refund.createdAt}-${index}`}>
+                      <strong>{refund.orderName}</strong>
+                      <span>
+                        Reembolso: {formatRefundAmount(refund.refundSalesTotal)}
+                        {" | "}
+                        Ganancia: {formatRefundAmount(refund.refundProfitTotal)}
+                      </span>
+                      {Number(refund.refundShippingTotal || 0) > 0 ? (
+                        <span>Paqueteria: {formatRefundAmount(refund.refundShippingTotal)}</span>
+                      ) : null}
+                      <small>Fecha del reembolso: {formatFinanceDate(new Date(refund.createdAt))}</small>
+                      {refund.orderCreatedAt ? (
+                        <small>Fecha del pedido: {formatFinanceDate(new Date(refund.orderCreatedAt))}</small>
+                      ) : null}
+                    </article>
+                  ))}
+                </section>
+              ) : null}
             </div>
           </section>
         ) : null}
