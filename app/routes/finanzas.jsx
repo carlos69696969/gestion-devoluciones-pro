@@ -354,18 +354,6 @@ async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = 
                     amount
                   }
                 }
-                transactions(first: 20) {
-                  nodes {
-                    kind
-                    status
-                    processedAt
-                    amountSet {
-                      shopMoney {
-                        amount
-                      }
-                    }
-                  }
-                }
                 refundLineItems(first: 250) {
                   nodes {
                     quantity
@@ -556,17 +544,7 @@ function extractRefundEventsFromOrders(orders, start, end) {
     let hasAppliedOrderShippingRefund = false;
     return (order?.refunds || [])
       .map((refund) => {
-        const refundTransactions = refund?.transactions?.nodes || [];
-        const successfulRefundTransactions = refundTransactions.filter(
-          (transaction) =>
-            String(transaction?.kind || "").toUpperCase() === "REFUND" &&
-            String(transaction?.status || "").toUpperCase() === "SUCCESS",
-        );
-        if (refundTransactions.length > 0 && successfulRefundTransactions.length === 0) return null;
-        const financialDateValue =
-          successfulRefundTransactions.find((transaction) => transaction?.processedAt)?.processedAt ||
-          refund?.processedAt ||
-          refund?.createdAt;
+        const financialDateValue = refund?.processedAt || refund?.createdAt;
         const processedAt = financialDateValue ? new Date(financialDateValue) : null;
         if (!processedAt || Number.isNaN(processedAt.getTime())) return null;
         if (processedAt.getTime() < rangeStartMs || processedAt.getTime() >= rangeEndMs) return null;
@@ -578,12 +556,7 @@ function extractRefundEventsFromOrders(orders, start, end) {
           const unitPrice = Number(refundLineItem?.lineItem?.originalUnitPriceSet?.shopMoney?.amount || 0);
           return sum + unitPrice * quantity;
         }, 0);
-        const transactionRefundTotal = successfulRefundTransactions.reduce(
-          (sum, transaction) => sum + Number(transaction?.amountSet?.shopMoney?.amount || 0),
-          0,
-        );
-        const totalRefundedAmount =
-          transactionRefundTotal || Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
+        const totalRefundedAmount = Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
         if (totalRefundedAmount <= 0) return null;
         const refundSalesTotal = refundLineSubtotal || totalRefundedAmount;
         const orderShippingTotal = Number(orderFinance.shippingTotal || 0);
