@@ -43,6 +43,17 @@ const wholeCurrencyFormatter = new Intl.NumberFormat("es-MX", {
   maximumFractionDigits: 0,
 });
 
+const dayNameFormatter = new Intl.DateTimeFormat("es-MX", {
+  timeZone: FINANCE_TIME_ZONE,
+  weekday: "long",
+});
+
+const dateLabelFormatter = new Intl.DateTimeFormat("es-MX", {
+  timeZone: FINANCE_TIME_ZONE,
+  day: "numeric",
+  month: "long",
+});
+
 const emptyTotals = {
   salesTotal: 0,
   averageTicket: 0,
@@ -54,6 +65,52 @@ const emptyTotals = {
   orderCount: 0,
   itemCount: 0,
 };
+
+function capitalize(value) {
+  const text = String(value || "");
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "";
+}
+
+function padDatePart(value) {
+  return String(value).padStart(2, "0");
+}
+
+function getLocalDateKey(date) {
+  const parts = getTimeZoneParts(date, FINANCE_TIME_ZONE);
+  return `${parts.year}-${padDatePart(parts.month)}-${padDatePart(parts.day)}`;
+}
+
+function formatWeekLabel(start, end) {
+  const lastDay = new Date(end.getTime() - 1000);
+  return `Semana del ${dateLabelFormatter.format(start)} al ${dateLabelFormatter.format(lastDay)}`;
+}
+
+function buildWeekBreakdown(start, end, orders) {
+  const ordersByDay = orders.reduce((groups, order) => {
+    const createdAt = order?.createdAt ? new Date(order.createdAt) : null;
+    if (!createdAt || Number.isNaN(createdAt.getTime())) return groups;
+    const key = getLocalDateKey(createdAt);
+    return {
+      ...groups,
+      [key]: [...(groups[key] || []), order],
+    };
+  }, {});
+
+  return {
+    label: formatWeekLabel(start, end),
+    days: Array.from({ length: 7 }, (_, index) => {
+      const dayDate = new Date(start.getTime() + index * 24 * 60 * 60 * 1000);
+      const key = getLocalDateKey(dayDate);
+      const dayOrders = ordersByDay[key] || [];
+      return {
+        key,
+        dayName: capitalize(dayNameFormatter.format(dayDate)),
+        dateLabel: dateLabelFormatter.format(dayDate),
+        totals: calculateDayTotals(dayOrders),
+      };
+    }),
+  };
+}
 
 function cleanShop(value) {
   return String(value || "").trim().toLowerCase();
@@ -227,6 +284,7 @@ async function fetchOrdersForRange({ shop, accessToken, start, end }) {
             }
             nodes {
               id
+              createdAt
               cancelledAt
               currentTotalPriceSet {
                 shopMoney {
@@ -410,13 +468,14 @@ export async function loader({ request }) {
       needsConfiguration: true,
       period,
       totals: emptyTotals,
+      week: { label: "", days: [] },
       error: "Falta configurar FINANCE_ACCESS_CODE en Render.",
     };
   }
 
   const isLoggedIn = await hasFinanceAccess(request);
   if (!isLoggedIn) {
-    return { isLoggedIn: false, needsConfiguration: false, period, totals: emptyTotals, error: "" };
+    return { isLoggedIn: false, needsConfiguration: false, period, totals: emptyTotals, week: { label: "", days: [] }, error: "" };
   }
 
   const { start, end } = getFinanceRangeInMexico(period);
@@ -428,15 +487,18 @@ export async function loader({ request }) {
         needsConfiguration: false,
         period,
         totals: emptyTotals,
+        week: { label: "", days: [] },
         error: "No se encontro una sesion offline valida para consultar ventas.",
       };
     }
     const orders = await fetchOrdersForRangeWithSessions({ sessions, start, end });
+    const week = period === "week" ? buildWeekBreakdown(start, end, orders) : { label: "", days: [] };
     return {
       isLoggedIn: true,
       needsConfiguration: false,
       period,
       totals: calculateDayTotals(orders),
+      week,
       error: "",
     };
   } catch (error) {
@@ -446,6 +508,7 @@ export async function loader({ request }) {
       needsConfiguration: false,
       period,
       totals: emptyTotals,
+      week: { label: period === "week" ? formatWeekLabel(start, end) : "", days: [] },
       error: period === "week" ? "No se pudieron cargar las ventas de la semana." : "No se pudieron cargar las ventas del dia.",
     };
   }
@@ -477,12 +540,28 @@ export async function action({ request }) {
 }
 
 export default function FinanzasPortal() {
-  const { isLoggedIn, needsConfiguration, period, totals, error } = useLoaderData();
+  const { isLoggedIn, needsConfiguration, period, totals, week, error } = useLoaderData();
   const actionData = useActionData();
   const revalidator = useRevalidator();
   const [testOrders, setTestOrders] = useState(INITIAL_TEST_ORDERS);
   const [isTestOpen, setIsTestOpen] = useState(false);
+  const [selectedWeekDayKey, setSelectedWeekDayKey] = useState("");
   const testTotals = useMemo(() => calculateTestTotals(testOrders), [testOrders]);
+  const selectedWeekDay =
+    period === "week"
+      ? (week?.days || []).find((day) => day.key === selectedWeekDayKey) || (week?.days || [])[0] || null
+      : null;
+
+  useEffect(() => {
+    if (period !== "week") {
+      setSelectedWeekDayKey("");
+      return;
+    }
+    if (!week?.days?.length) return;
+    setSelectedWeekDayKey((currentKey) =>
+      week.days.some((day) => day.key === currentKey) ? currentKey : week.days[0].key,
+    );
+  }, [period, week?.days]);
 
   useEffect(() => {
     if (!isLoggedIn) return undefined;
@@ -626,35 +705,72 @@ export default function FinanzasPortal() {
           </div>
         </section>
 
-        <section className={styles.metrics} aria-label="Resumen financiero">
-          <article className={`${styles.metric} ${styles.metricSales}`}>
-            <span>Ventas</span>
-            <strong>{currencyFormatter.format(totals.salesTotal)}</strong>
-          </article>
-          <article className={`${styles.metric} ${styles.metricTicket}`}>
-            <span>Ticket promedio</span>
-            <strong>{currencyFormatter.format(totals.averageTicket)}</strong>
-          </article>
-          <article className={`${styles.metric} ${styles.metricOperatingCost}`}>
-            <span>Costo operativo</span>
-            <strong>{currencyFormatter.format(totals.operatingCostTotal)}</strong>
-          </article>
-          <article className={`${styles.metric} ${styles.metricShipping}`}>
-            <span>Paqueteria</span>
-            <strong>{currencyFormatter.format(totals.shippingTotal)}</strong>
-          </article>
-          <article className={`${styles.metric} ${styles.metricTaxes}`}>
-            <span>Impuestos</span>
-            <strong>{currencyFormatter.format(totals.taxesTotal)}</strong>
-          </article>
-          <article className={`${styles.metric} ${styles.metricRecovered}`}>
-            <span>Costo recuperado</span>
-            <strong>{wholeCurrencyFormatter.format(totals.recoveredCostTotal)}</strong>
-          </article>
-          <article className={`${styles.metric} ${styles.metricProfit}`}>
-            <span>Ganancias</span>
-            <strong>{currencyFormatter.format(totals.profitTotal)}</strong>
-          </article>
+        {period === "week" ? (
+          <section className={styles.weekPanel} aria-label="Resumen semanal">
+            <h2>{week?.label || "Semana actual"}</h2>
+            <div className={styles.weekCards}>
+              {(week?.days || []).map((day) => (
+                <button
+                  className={`${styles.weekCard} ${selectedWeekDay?.key === day.key ? styles.weekCardActive : ""}`}
+                  type="button"
+                  key={day.key}
+                  onClick={() => setSelectedWeekDayKey(day.key)}
+                >
+                  <span>
+                    <strong>{day.dayName}</strong>
+                    <small>{day.dateLabel}</small>
+                  </span>
+                  <span>
+                    Ventas
+                    <strong>{currencyFormatter.format(day.totals.salesTotal)}</strong>
+                  </span>
+                  <span>
+                    Ganancias
+                    <strong>{currencyFormatter.format(day.totals.profitTotal)}</strong>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <section className={period === "week" ? styles.weekDetail : ""} aria-label="Detalle financiero">
+          {period === "week" && selectedWeekDay ? (
+            <div className={styles.weekDetailHeader}>
+              <h2>{selectedWeekDay.dayName}</h2>
+              <span>{selectedWeekDay.dateLabel}</span>
+            </div>
+          ) : null}
+          <div className={styles.metrics}>
+            <article className={`${styles.metric} ${styles.metricSales}`}>
+              <span>Ventas</span>
+              <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).salesTotal)}</strong>
+            </article>
+            <article className={`${styles.metric} ${styles.metricTicket}`}>
+              <span>Ticket promedio</span>
+              <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).averageTicket)}</strong>
+            </article>
+            <article className={`${styles.metric} ${styles.metricOperatingCost}`}>
+              <span>Costo operativo</span>
+              <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).operatingCostTotal)}</strong>
+            </article>
+            <article className={`${styles.metric} ${styles.metricShipping}`}>
+              <span>Paqueteria</span>
+              <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).shippingTotal)}</strong>
+            </article>
+            <article className={`${styles.metric} ${styles.metricTaxes}`}>
+              <span>Impuestos</span>
+              <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).taxesTotal)}</strong>
+            </article>
+            <article className={`${styles.metric} ${styles.metricRecovered}`}>
+              <span>Costo recuperado</span>
+              <strong>{wholeCurrencyFormatter.format((selectedWeekDay?.totals || totals).recoveredCostTotal)}</strong>
+            </article>
+            <article className={`${styles.metric} ${styles.metricProfit}`}>
+              <span>Ganancias</span>
+              <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).profitTotal)}</strong>
+            </article>
+          </div>
         </section>
       </div>
     </main>
