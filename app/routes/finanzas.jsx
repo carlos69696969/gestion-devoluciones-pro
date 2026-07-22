@@ -284,12 +284,31 @@ async function shopifyGraphql({ shop, accessToken, query, variables }) {
   });
   const payload = await response.json();
   if (!response.ok || payload?.errors?.length) {
-    throw new Error(payload?.errors?.[0]?.message || `Error consultando Shopify Admin API (${response.status}).`);
+    const error = new Error(payload?.errors?.[0]?.message || `Error consultando Shopify Admin API (${response.status}).`);
+    error.status = response.status;
+    throw error;
   }
   return payload.data;
 }
 
-async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = "created_at", sortKey = "CREATED_AT" }) {
+function formatFinanceLoadError(error, period) {
+  const base = period === "week" ? "No se pudieron cargar las ventas de la semana." : "No se pudieron cargar las ventas del dia.";
+  const status = Number(error?.status || 0);
+  if (status === 401) return `${base} Shopify rechazo la sesion guardada (401). Abre la app desde Shopify para regenerar la conexion.`;
+  if (status === 403) return `${base} Faltan permisos de Shopify para leer pedidos.`;
+  const message = String(error?.message || "").trim();
+  return message ? `${base} Detalle: ${message}` : base;
+}
+
+async function fetchOrdersForRange({
+  shop,
+  accessToken,
+  start,
+  end,
+  dateField = "created_at",
+  sortKey = "CREATED_AT",
+  includeRefundData = false,
+}) {
   const orders = [];
   let cursor = null;
   let hasNextPage = true;
@@ -327,7 +346,9 @@ async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = 
                   amount
                 }
               }
-              currentShippingPriceSet {
+              ${
+                includeRefundData
+                  ? `currentShippingPriceSet {
                 shopMoney {
                   amount
                 }
@@ -336,6 +357,8 @@ async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = 
                 shopMoney {
                   amount
                 }
+              }`
+                  : ""
               }
               lineItems(first: 250) {
                 nodes {
@@ -347,7 +370,9 @@ async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = 
                   }
                 }
               }
-              refunds {
+              ${
+                includeRefundData
+                  ? `refunds {
                 createdAt
                 totalRefundedSet {
                   shopMoney {
@@ -371,6 +396,8 @@ async function fetchOrdersForRange({ shop, accessToken, start, end, dateField = 
                     }
                   }
                 }
+              }`
+                  : ""
               }
             }
           }
@@ -413,6 +440,7 @@ async function fetchUpdatedOrdersForRangeWithSessions({ sessions, start, end }) 
         end,
         dateField: "updated_at",
         sortKey: "UPDATED_AT",
+        includeRefundData: true,
       });
     } catch (error) {
       lastError = error;
@@ -695,7 +723,7 @@ export async function loader({ request }) {
       period,
       totals: emptyTotals,
       week: { label: period === "week" ? formatWeekLabel(start, end) : "", days: [] },
-      error: period === "week" ? "No se pudieron cargar las ventas de la semana." : "No se pudieron cargar las ventas del dia.",
+      error: formatFinanceLoadError(error, period),
     };
   }
 }
