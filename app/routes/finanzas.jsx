@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createCookie, Form, redirect, useActionData, useLoaderData, useRevalidator } from "react-router";
+import { createCookie, Form, Link, redirect, useActionData, useLoaderData, useRevalidator } from "react-router";
 import prisma from "../db.server";
 import styles from "../styles/finanzas.module.css";
 
@@ -113,6 +113,29 @@ function getTodayRangeInMexico() {
   return { start, end };
 }
 
+function getWeekRangeInMexico() {
+  const today = getTimeZoneParts(new Date(), FINANCE_TIME_ZONE);
+  const calendarDate = new Date(Date.UTC(today.year, today.month - 1, today.day));
+  const mondayOffset = (calendarDate.getUTCDay() + 6) % 7;
+  const start = zonedTimeToUtc(
+    { year: today.year, month: today.month, day: today.day - mondayOffset },
+    FINANCE_TIME_ZONE,
+  );
+  const end = zonedTimeToUtc(
+    { year: today.year, month: today.month, day: today.day - mondayOffset + 7 },
+    FINANCE_TIME_ZONE,
+  );
+  return { start, end };
+}
+
+function normalizeFinancePeriod(value) {
+  return value === "week" ? "week" : "day";
+}
+
+function getFinanceRangeInMexico(period) {
+  return period === "week" ? getWeekRangeInMexico() : getTodayRangeInMexico();
+}
+
 async function hasFinanceAccess(request) {
   const accessCodes = configuredAccessCodes();
   if (!accessCodes.length) return false;
@@ -184,7 +207,7 @@ async function shopifyGraphql({ shop, accessToken, query, variables }) {
   return payload.data;
 }
 
-async function fetchOrdersForToday({ shop, accessToken, start, end }) {
+async function fetchOrdersForRange({ shop, accessToken, start, end }) {
   const orders = [];
   let cursor = null;
   let hasNextPage = true;
@@ -238,11 +261,11 @@ async function fetchOrdersForToday({ shop, accessToken, start, end }) {
   return orders.filter((order) => !order.cancelledAt);
 }
 
-async function fetchOrdersForTodayWithSessions({ sessions, start, end }) {
+async function fetchOrdersForRangeWithSessions({ sessions, start, end }) {
   let lastError = null;
   for (const session of sessions) {
     try {
-      return await fetchOrdersForToday({ shop: session.shop, accessToken: session.accessToken, start, end });
+      return await fetchOrdersForRange({ shop: session.shop, accessToken: session.accessToken, start, end });
     } catch (error) {
       lastError = error;
       console.error("Finance portal failed with Shopify session", {
@@ -378,11 +401,14 @@ export const headers = () => ({
 });
 
 export async function loader({ request }) {
+  const url = new URL(request.url);
+  const period = normalizeFinancePeriod(url.searchParams.get("period"));
   const accessCodes = configuredAccessCodes();
   if (!accessCodes.length) {
     return {
       isLoggedIn: false,
       needsConfiguration: true,
+      period,
       totals: emptyTotals,
       error: "Falta configurar FINANCE_ACCESS_CODE en Render.",
     };
@@ -390,24 +416,26 @@ export async function loader({ request }) {
 
   const isLoggedIn = await hasFinanceAccess(request);
   if (!isLoggedIn) {
-    return { isLoggedIn: false, needsConfiguration: false, totals: emptyTotals, error: "" };
+    return { isLoggedIn: false, needsConfiguration: false, period, totals: emptyTotals, error: "" };
   }
 
-  const { start, end } = getTodayRangeInMexico();
+  const { start, end } = getFinanceRangeInMexico(period);
   try {
     const { shop, sessions } = await resolveFinanceSession(request);
     if (!shop || !sessions?.length) {
       return {
         isLoggedIn: true,
         needsConfiguration: false,
+        period,
         totals: emptyTotals,
         error: "No se encontro una sesion offline valida para consultar ventas.",
       };
     }
-    const orders = await fetchOrdersForTodayWithSessions({ sessions, start, end });
+    const orders = await fetchOrdersForRangeWithSessions({ sessions, start, end });
     return {
       isLoggedIn: true,
       needsConfiguration: false,
+      period,
       totals: calculateDayTotals(orders),
       error: "",
     };
@@ -416,8 +444,9 @@ export async function loader({ request }) {
     return {
       isLoggedIn: true,
       needsConfiguration: false,
+      period,
       totals: emptyTotals,
-      error: "No se pudieron cargar las ventas del dia.",
+      error: period === "week" ? "No se pudieron cargar las ventas de la semana." : "No se pudieron cargar las ventas del dia.",
     };
   }
 }
@@ -448,10 +477,11 @@ export async function action({ request }) {
 }
 
 export default function FinanzasPortal() {
-  const { isLoggedIn, needsConfiguration, totals, error } = useLoaderData();
+  const { isLoggedIn, needsConfiguration, period, totals, error } = useLoaderData();
   const actionData = useActionData();
   const revalidator = useRevalidator();
   const [testOrders, setTestOrders] = useState(INITIAL_TEST_ORDERS);
+  const [isTestOpen, setIsTestOpen] = useState(false);
   const testTotals = useMemo(() => calculateTestTotals(testOrders), [testOrders]);
 
   useEffect(() => {
@@ -537,13 +567,13 @@ export default function FinanzasPortal() {
         </section>
 
         <section className={styles.periodTabs} aria-label="Periodo financiero">
-          <button className={`${styles.periodButton} ${styles.periodButtonActive}`} type="button">
+          <Link className={`${styles.periodButton} ${period === "day" ? styles.periodButtonActive : ""}`} to="/finanzas?period=day">
             Dia
-          </button>
-          <button className={styles.periodButton} type="button">
+          </Link>
+          <Link className={`${styles.periodButton} ${period === "week" ? styles.periodButtonActive : ""}`} to="/finanzas?period=week">
             Semana
-          </button>
-          <button className={styles.periodButton} type="button">
+          </Link>
+          <button className={styles.periodButton} type="button" disabled>
             Historial
           </button>
         </section>
@@ -552,40 +582,47 @@ export default function FinanzasPortal() {
 
         <section className={styles.testPanel} aria-label="Prueba temporal de calculos">
           <div className={styles.testHeader}>
-            <h2>Prueba temporal</h2>
-            <span>No afecta las ventas reales</span>
+            <div>
+              <h2>Prueba temporal</h2>
+              <span>No afecta las ventas reales</span>
+            </div>
+            <button className={styles.testToggle} type="button" onClick={() => setIsTestOpen((open) => !open)}>
+              {isTestOpen ? "Cerrar prueba" : "Abrir prueba"}
+            </button>
           </div>
-          <div className={styles.testOrders}>
-            {testOrders.map((order, orderIndex) => (
-              <article className={styles.testOrder} key={order.name}>
-                <h3>{order.name}</h3>
-                <div className={styles.testGrid}>
-                  {order.products.map((price, productIndex) => (
-                    <label className={styles.label} key={`${order.name}-${productIndex}`}>
-                      Producto {productIndex + 1}
-                      <input
-                        className={styles.input}
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        inputMode="decimal"
-                        value={price}
-                        onChange={(event) => updateTestProduct(orderIndex, productIndex, event.target.value)}
-                      />
-                    </label>
-                  ))}
-                </div>
-              </article>
-            ))}
-          </div>
-          <div className={styles.testTotals}>
-            <span>Ventas: <strong>{currencyFormatter.format(testTotals.salesTotal)}</strong></span>
-            <span>Ticket: <strong>{currencyFormatter.format(testTotals.averageTicket)}</strong></span>
-            <span>Costo operativo: <strong>{currencyFormatter.format(testTotals.operatingCostTotal)}</strong></span>
-            <span>Paqueteria: <strong>{currencyFormatter.format(testTotals.shippingTotal)}</strong></span>
-            <span>Impuestos: <strong>{currencyFormatter.format(testTotals.taxesTotal)}</strong></span>
-            <span>Costo recuperado: <strong>{wholeCurrencyFormatter.format(testTotals.recoveredCostTotal)}</strong></span>
-            <span>Ganancias: <strong>{currencyFormatter.format(testTotals.profitTotal)}</strong></span>
+          <div className={`${styles.testContent} ${isTestOpen ? styles.testContentOpen : ""}`}>
+            <div className={styles.testOrders}>
+              {testOrders.map((order, orderIndex) => (
+                <article className={styles.testOrder} key={order.name}>
+                  <h3>{order.name}</h3>
+                  <div className={styles.testGrid}>
+                    {order.products.map((price, productIndex) => (
+                      <label className={styles.label} key={`${order.name}-${productIndex}`}>
+                        Producto {productIndex + 1}
+                        <input
+                          className={styles.input}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={price}
+                          onChange={(event) => updateTestProduct(orderIndex, productIndex, event.target.value)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className={styles.testTotals}>
+              <span>Ventas: <strong>{currencyFormatter.format(testTotals.salesTotal)}</strong></span>
+              <span>Ticket: <strong>{currencyFormatter.format(testTotals.averageTicket)}</strong></span>
+              <span>Costo operativo: <strong>{currencyFormatter.format(testTotals.operatingCostTotal)}</strong></span>
+              <span>Paqueteria: <strong>{currencyFormatter.format(testTotals.shippingTotal)}</strong></span>
+              <span>Impuestos: <strong>{currencyFormatter.format(testTotals.taxesTotal)}</strong></span>
+              <span>Costo recuperado: <strong>{wholeCurrencyFormatter.format(testTotals.recoveredCostTotal)}</strong></span>
+              <span>Ganancias: <strong>{currencyFormatter.format(testTotals.profitTotal)}</strong></span>
+            </div>
           </div>
         </section>
 
