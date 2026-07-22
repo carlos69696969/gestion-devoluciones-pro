@@ -333,7 +333,7 @@ function calculateOrderFinanceTotals(order) {
     const unitPrice = Number(item?.originalUnitPriceSet?.shopMoney?.amount || 0);
     return sum + unitPrice * quantity;
   }, 0);
-  const originalOrderTotal = Number(order?.subtotalPriceSet?.shopMoney?.amount || 0) || lineItemsOriginalTotal;
+  const originalOrderTotal = lineItemsOriginalTotal || Number(order?.subtotalPriceSet?.shopMoney?.amount || 0);
   const profitMarginRate = getProfitMarginRateForOrderTotal(originalOrderTotal);
   const discountRate = getDiscountRateForOrderTotal(originalOrderTotal);
   const totals = lineItems.reduce(
