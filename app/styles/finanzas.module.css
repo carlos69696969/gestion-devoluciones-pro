@@ -326,6 +326,11 @@
   box-shadow: inset 0 0 0 1px #0b5cab;
 }
 
+.cutCard {
+  border-color: #b7d7f8;
+  background: #eef6ff;
+}
+
 .weekFullSummaryCard {
   border: 1px solid #d9dee7;
   border-radius: 8px;

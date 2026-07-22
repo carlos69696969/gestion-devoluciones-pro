@@ -128,23 +128,26 @@ function groupRefundsByLocalDay(refundEvents) {
   }, {});
 }
 
+function buildFinanceDayEntry(dayDate, ordersByDay, refundsByDay) {
+  const key = getLocalDateKey(dayDate);
+  const dayOrders = ordersByDay[key] || [];
+  const dayRefunds = refundsByDay[key] || [];
+  return {
+    key,
+    dayName: capitalize(dayNameFormatter.format(dayDate)),
+    dateLabel: formatFinanceDate(dayDate),
+    refunds: dayRefunds,
+    totals: calculateFinanceTotals(dayOrders, dayRefunds),
+  };
+}
+
 function buildFinanceDayEntries(start, dayCount, salesOrders, refundEvents) {
   const ordersByDay = groupOrdersByLocalDay(salesOrders);
   const refundsByDay = groupRefundsByLocalDay(refundEvents);
 
-  return Array.from({ length: dayCount }, (_, index) => {
-    const dayDate = new Date(start.getTime() + index * 24 * 60 * 60 * 1000);
-    const key = getLocalDateKey(dayDate);
-    const dayOrders = ordersByDay[key] || [];
-    const dayRefunds = refundsByDay[key] || [];
-    return {
-      key,
-      dayName: capitalize(dayNameFormatter.format(dayDate)),
-      dateLabel: formatFinanceDate(dayDate),
-      refunds: dayRefunds,
-      totals: calculateFinanceTotals(dayOrders, dayRefunds),
-    };
-  });
+  return Array.from({ length: dayCount }, (_, index) =>
+    buildFinanceDayEntry(new Date(start.getTime() + index * 24 * 60 * 60 * 1000), ordersByDay, refundsByDay),
+  );
 }
 
 function buildWeekBreakdown(start, end, salesOrders, refundEvents) {
@@ -156,9 +159,41 @@ function buildWeekBreakdown(start, end, salesOrders, refundEvents) {
 
 function buildMonthBreakdown(start, end, salesOrders, refundEvents) {
   const dayCount = Math.max(0, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
+  const ordersByDay = groupOrdersByLocalDay(salesOrders);
+  const refundsByDay = groupRefundsByLocalDay(refundEvents);
+  const entries = [];
+  let weekStartDate = null;
+  let weekOrders = [];
+  let weekRefunds = [];
+
+  for (let index = 0; index < dayCount; index += 1) {
+    const dayDate = new Date(start.getTime() + index * 24 * 60 * 60 * 1000);
+    const key = getLocalDateKey(dayDate);
+    const dayEntry = buildFinanceDayEntry(dayDate, ordersByDay, refundsByDay);
+    if (!weekStartDate) weekStartDate = dayDate;
+
+    entries.push(dayEntry);
+    weekOrders = [...weekOrders, ...(ordersByDay[key] || [])];
+    weekRefunds = [...weekRefunds, ...(refundsByDay[key] || [])];
+
+    if (dayNameFormatter.format(dayDate).toLowerCase() === "domingo") {
+      entries.push({
+        key: `${key}-cut`,
+        dayName: "Corte",
+        dateLabel: `Semana del ${formatFinanceDate(weekStartDate, { includeYear: false })} al ${formatFinanceDate(dayDate)}`,
+        refunds: weekRefunds,
+        totals: calculateFinanceTotals(weekOrders, weekRefunds),
+        isCut: true,
+      });
+      weekStartDate = null;
+      weekOrders = [];
+      weekRefunds = [];
+    }
+  }
+
   return {
     label: formatMonthLabel(start),
-    days: buildFinanceDayEntries(start, dayCount, salesOrders, refundEvents),
+    days: entries,
   };
 }
 
@@ -1038,7 +1073,9 @@ export default function FinanzasPortal() {
             <div className={`${styles.weekCards} ${styles.monthCards}`}>
               {(history?.days || []).map((day) => (
                 <button
-                  className={`${styles.weekCard} ${selectedDetailDay?.key === day.key ? styles.weekCardActive : ""}`}
+                  className={`${styles.weekCard} ${day.isCut ? styles.cutCard : ""} ${
+                    selectedDetailDay?.key === day.key ? styles.weekCardActive : ""
+                  }`}
                   type="button"
                   key={day.key}
                   onClick={() => setSelectedDetailDayKey(day.key)}
