@@ -549,18 +549,11 @@ export default function FinanzasPortal() {
   const testTotals = useMemo(() => calculateTestTotals(testOrders), [testOrders]);
   const selectedWeekDay =
     period === "week"
-      ? (week?.days || []).find((day) => day.key === selectedWeekDayKey) || (week?.days || [])[0] || null
+      ? (week?.days || []).find((day) => day.key === selectedWeekDayKey) || null
       : null;
 
   useEffect(() => {
-    if (period !== "week") {
-      setSelectedWeekDayKey("");
-      return;
-    }
-    if (!week?.days?.length) return;
-    setSelectedWeekDayKey((currentKey) =>
-      week.days.some((day) => day.key === currentKey) ? currentKey : week.days[0].key,
-    );
+    if (period !== "week") setSelectedWeekDayKey("");
   }, [period, week?.days]);
 
   useEffect(() => {
@@ -734,7 +727,54 @@ export default function FinanzasPortal() {
           </section>
         ) : null}
 
-        <section className={period === "week" ? styles.weekDetail : ""} aria-label="Detalle financiero">
+        {period === "week" && selectedWeekDay ? (
+          <section className={styles.dayDetailOverlay} aria-label="Detalle financiero del dia">
+            <div className={styles.dayDetailCard}>
+              <div className={styles.weekDetailHeader}>
+                <div>
+                  <h2>{selectedWeekDay.dayName}</h2>
+                  <span>{selectedWeekDay.dateLabel}</span>
+                </div>
+                <button className={styles.closeDetailButton} type="button" onClick={() => setSelectedWeekDayKey("")}>
+                  Cerrar
+                </button>
+              </div>
+              <div className={styles.metrics}>
+                <article className={`${styles.metric} ${styles.metricSales}`}>
+                  <span>Ventas</span>
+                  <strong>{currencyFormatter.format(selectedWeekDay.totals.salesTotal)}</strong>
+                </article>
+                <article className={`${styles.metric} ${styles.metricTicket}`}>
+                  <span>Ticket promedio</span>
+                  <strong>{currencyFormatter.format(selectedWeekDay.totals.averageTicket)}</strong>
+                </article>
+                <article className={`${styles.metric} ${styles.metricOperatingCost}`}>
+                  <span>Costo operativo</span>
+                  <strong>{currencyFormatter.format(selectedWeekDay.totals.operatingCostTotal)}</strong>
+                </article>
+                <article className={`${styles.metric} ${styles.metricShipping}`}>
+                  <span>Paqueteria</span>
+                  <strong>{currencyFormatter.format(selectedWeekDay.totals.shippingTotal)}</strong>
+                </article>
+                <article className={`${styles.metric} ${styles.metricTaxes}`}>
+                  <span>Impuestos</span>
+                  <strong>{currencyFormatter.format(selectedWeekDay.totals.taxesTotal)}</strong>
+                </article>
+                <article className={`${styles.metric} ${styles.metricRecovered}`}>
+                  <span>Costo recuperado</span>
+                  <strong>{wholeCurrencyFormatter.format(selectedWeekDay.totals.recoveredCostTotal)}</strong>
+                </article>
+                <article className={`${styles.metric} ${styles.metricProfit}`}>
+                  <span>Ganancias</span>
+                  <strong>{currencyFormatter.format(selectedWeekDay.totals.profitTotal)}</strong>
+                </article>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {period !== "week" ? (
+          <section aria-label="Detalle financiero">
           {period === "week" && selectedWeekDay ? (
             <div className={styles.weekDetailHeader}>
               <h2>{selectedWeekDay.dayName}</h2>
@@ -772,6 +812,7 @@ export default function FinanzasPortal() {
             </article>
           </div>
         </section>
+        ) : null}
       </div>
     </main>
   );

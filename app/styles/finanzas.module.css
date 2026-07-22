@@ -384,9 +384,46 @@
 }
 
 .weekDetailHeader span {
+  display: block;
+  margin-top: 4px;
   color: #5f6b7a;
   font-size: 13px;
   font-weight: 800;
+}
+
+.dayDetailOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(17, 24, 39, 0.38);
+  padding: 18px;
+  display: grid;
+  place-items: center;
+}
+
+.dayDetailCard {
+  width: min(100%, 860px);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  box-shadow: 0 18px 44px rgba(17, 24, 39, 0.22);
+}
+
+.closeDetailButton {
+  min-height: 38px;
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  background: #fff;
+  color: #344054;
+  padding: 0 14px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .metrics {
@@ -486,6 +523,20 @@
   .weekDetailHeader {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .dayDetailOverlay {
+    padding: 10px;
+    place-items: end center;
+  }
+
+  .dayDetailCard {
+    max-height: calc(100vh - 20px);
+    padding: 12px;
+  }
+
+  .closeDetailButton {
+    width: 100%;
   }
 
   .testHeader {
