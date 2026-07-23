@@ -1305,14 +1305,20 @@ export default function FinanzasPortal() {
                 Ventas
                 <strong>{currencyFormatter.format(totals.salesTotal)}</strong>
                 {totals.hasRefunds ? (
-                  <small className={styles.refundAmount}>{formatRefundAmount(totals.refundSalesTotal)}</small>
+                  <>
+                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundSalesTotal)}</small>
+                    <small className={styles.netAmount}>{formatNetAmount(totals.netSalesTotal)}</small>
+                  </>
                 ) : null}
               </span>
               <span>
                 Ganancias
                 <strong>{currencyFormatter.format(totals.profitTotal)}</strong>
                 {totals.hasRefunds ? (
-                  <small className={styles.refundAmount}>{formatRefundAmount(totals.refundProfitTotal)}</small>
+                  <>
+                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundProfitTotal)}</small>
+                    <small className={styles.netAmount}>{formatNetAmount(totals.netProfitTotal)}</small>
+                  </>
                 ) : null}
               </span>
             </button>
