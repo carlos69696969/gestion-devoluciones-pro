@@ -1083,7 +1083,7 @@ export default function FinanzasPortal() {
 
   if (!isLoggedIn) {
     return (
-      <main className={styles.publicShell}>
+      <main className={`${styles.publicShell} ${styles.accessShell}`}>
         <div className={styles.publicHeader}>
           <div className={styles.brand}>
             <span className={styles.brandMark}>CAR</span>
@@ -1104,7 +1104,7 @@ export default function FinanzasPortal() {
               <input type="hidden" name="intent" value="login" />
               <label className={styles.label}>
                 Codigo de acceso
-                <input className={styles.input} name="code" type="password" inputMode="numeric" autoComplete="one-time-code" />
+                <input className={styles.input} name="code" type="password" inputMode="text" autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
               </label>
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={needsConfiguration}>
                 Entrar

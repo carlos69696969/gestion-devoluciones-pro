@@ -56,18 +56,31 @@
   cursor: pointer;
 }
 
+.accessShell {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(3, 12, 28, 0.12), rgba(3, 12, 28, 0.5)),
+    url("/finance-login-bg.png") center / cover no-repeat;
+}
+
+.accessShell .brand strong,
+.accessShell .brand small {
+  color: #fff;
+}
+
 .accessWrap {
   min-height: calc(100vh - 96px);
   display: grid;
   place-items: center;
-  padding: 20px 0;
+  padding: 18px 0 28px;
 }
 
 .accessPanel {
-  width: min(100%, 420px);
-  border: 1px solid #d9dee7;
+  width: min(92vw, 380px);
+  border: 1px solid rgba(255, 255, 255, 0.34);
   border-radius: 8px;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.26);
   padding: 18px;
   display: grid;
   gap: 14px;
