@@ -25,6 +25,9 @@ const PROFIT_TAX_RATE = 0.1;
 const TRANSACTION_RATE = 0.03;
 const HIGH_ORDER_DISCOUNT_RATE = 0.1;
 const VERY_HIGH_ORDER_DISCOUNT_RATE = 0.15;
+const FINANCE_RANGE_CACHE_TTL_MS = 45 * 1000;
+const financeRangeCache = new Map();
+
 function financeAccessCookie() {
   return createCookie("finance_portal_access_v1", {
     httpOnly: true,
@@ -626,6 +629,49 @@ async function fetchUpdatedOrdersForRangeWithSessions({ sessions, start, end }) 
   throw lastError || new Error("No se encontro una sesion valida para consultar reembolsos.");
 }
 
+function getFinanceRangeCacheKey({ shop, start, end }) {
+  return [cleanShop(shop), start.toISOString(), end.toISOString()].join("|");
+}
+
+function getCachedFinanceRangeData(cacheKey) {
+  const cached = financeRangeCache.get(cacheKey);
+  if (!cached) return null;
+  if (Date.now() - cached.createdAt > FINANCE_RANGE_CACHE_TTL_MS) {
+    financeRangeCache.delete(cacheKey);
+    return null;
+  }
+  return cached.data;
+}
+
+function setCachedFinanceRangeData(cacheKey, data) {
+  financeRangeCache.set(cacheKey, { createdAt: Date.now(), data });
+  if (financeRangeCache.size > 12) {
+    const oldestKey = financeRangeCache.keys().next().value;
+    if (oldestKey) financeRangeCache.delete(oldestKey);
+  }
+}
+
+async function fetchFinanceRangeDataWithCache({ shop, sessions, start, end }) {
+  const cacheKey = getFinanceRangeCacheKey({ shop, start, end });
+  const cached = getCachedFinanceRangeData(cacheKey);
+  if (cached) return cached;
+
+  const orders = await fetchOrdersForRangeWithSessions({ sessions, start, end });
+  let refundEvents = [];
+  let loadedRefunds = true;
+  try {
+    const refundOrders = await fetchUpdatedOrdersForRangeWithSessions({ sessions, start, end });
+    refundEvents = extractRefundEventsFromOrders(refundOrders, start, end);
+  } catch (refundError) {
+    loadedRefunds = false;
+    console.error("Finance portal loaded sales but failed to load refunds", refundError);
+  }
+
+  const data = { orders, refundEvents };
+  if (loadedRefunds) setCachedFinanceRangeData(cacheKey, data);
+  return data;
+}
+
 function calculateFinanceTotals(orders, refundEvents = []) {
   const orderCount = orders.length;
   const itemCount = orders.reduce(
@@ -890,14 +936,7 @@ export async function loader({ request }) {
         error: "No se encontro una sesion offline valida para consultar ventas.",
       };
     }
-    const orders = await fetchOrdersForRangeWithSessions({ sessions, start, end });
-    let refundEvents = [];
-    try {
-      const refundOrders = await fetchUpdatedOrdersForRangeWithSessions({ sessions, start, end });
-      refundEvents = extractRefundEventsFromOrders(refundOrders, start, end);
-    } catch (refundError) {
-      console.error("Finance portal loaded sales but failed to load refunds", refundError);
-    }
+    const { orders, refundEvents } = await fetchFinanceRangeDataWithCache({ shop, sessions, start, end });
     const week = period === "week" ? buildWeekBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
     const history = period === "history" ? buildMonthBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
     const chart = period === "chart" ? buildChartBreakdown(start, end, orders, refundEvents, monthKey) : emptyChartData(chartMonthKey);
@@ -960,9 +999,11 @@ export default function FinanzasPortal() {
   const [selectedDetailDayKey, setSelectedDetailDayKey] = useState("");
   const [isHistoryMonthOpen, setIsHistoryMonthOpen] = useState(false);
   const [isChartDetailOpen, setIsChartDetailOpen] = useState(false);
-  const activePeriod = navigation.location
+  const [optimisticPeriod, setOptimisticPeriod] = useState(period);
+  const navigationPeriod = navigation.location
     ? normalizeFinancePeriod(new URLSearchParams(navigation.location.search).get("period"))
-    : period;
+    : "";
+  const activePeriod = navigationPeriod || optimisticPeriod || period;
   const detailDays = period === "history" ? history?.days || [] : period === "week" ? week?.days || [] : [];
   const selectedDetailDay = detailDays.find((day) => day.key === selectedDetailDayKey) || null;
   const selectedWeekDay = selectedDetailDay;
@@ -1000,6 +1041,7 @@ export default function FinanzasPortal() {
   ];
 
   useEffect(() => {
+    setOptimisticPeriod(period);
     setSelectedDetailDayKey("");
     setIsHistoryMonthOpen(false);
     setIsChartDetailOpen(false);
@@ -1082,6 +1124,7 @@ export default function FinanzasPortal() {
             className={`${styles.periodButton} ${activePeriod === "day" ? styles.periodButtonActive : ""}`}
             to="/finanzas?period=day"
             prefetch="intent"
+            onClick={() => setOptimisticPeriod("day")}
           >
             Dia
           </Link>
@@ -1089,6 +1132,7 @@ export default function FinanzasPortal() {
             className={`${styles.periodButton} ${activePeriod === "week" ? styles.periodButtonActive : ""}`}
             to="/finanzas?period=week"
             prefetch="intent"
+            onClick={() => setOptimisticPeriod("week")}
           >
             Semana
           </Link>
@@ -1096,6 +1140,7 @@ export default function FinanzasPortal() {
             className={`${styles.periodButton} ${activePeriod === "history" ? styles.periodButtonActive : ""}`}
             to="/finanzas?period=history"
             prefetch="intent"
+            onClick={() => setOptimisticPeriod("history")}
           >
             Historial
           </Link>
@@ -1103,6 +1148,7 @@ export default function FinanzasPortal() {
             className={`${styles.periodButton} ${activePeriod === "chart" ? styles.periodButtonActive : ""}`}
             to="/finanzas?period=chart"
             prefetch="intent"
+            onClick={() => setOptimisticPeriod("chart")}
           >
             Grafica
           </Link>
