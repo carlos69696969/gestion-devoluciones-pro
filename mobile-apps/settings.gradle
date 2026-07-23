@@ -17,3 +17,5 @@ dependencyResolutionManagement {
 rootProject.name = "CarianaPortales"
 include ":portal-repartidor"
 include ":portal-preparador"
+include ":portal-finanzas"
+
