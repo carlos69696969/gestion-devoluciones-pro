@@ -674,6 +674,7 @@ async function fetchFinanceRangeDataWithCache({ shop, sessions, start, end }) {
 
 function calculateFinanceTotals(orders, refundEvents = []) {
   const orderCount = orders.length;
+  const orderIdentitySet = new Set(orders.flatMap((order) => [order?.id, order?.name].filter(Boolean)));
   const itemCount = orders.reduce(
     (sum, order) =>
       sum +
@@ -697,6 +698,11 @@ function calculateFinanceTotals(orders, refundEvents = []) {
   const refundTotals = refundEvents.reduce(
     (totals, refundEvent) => ({
       refundSalesTotal: totals.refundSalesTotal + Number(refundEvent?.refundSalesTotal || 0),
+      refundSalesTotalForNet:
+        totals.refundSalesTotalForNet +
+        (orderIdentitySet.has(refundEvent?.orderId) || orderIdentitySet.has(refundEvent?.orderName)
+          ? 0
+          : Number(refundEvent?.refundSalesTotal || 0)),
       refundProfitTotal: totals.refundProfitTotal + Number(refundEvent?.refundProfitTotal || 0),
       refundShippingTotal: totals.refundShippingTotal + Number(refundEvent?.refundShippingTotal || 0),
       refundOperatingCostTotal: totals.refundOperatingCostTotal + Number(refundEvent?.refundOperatingCostTotal || 0),
@@ -705,6 +711,7 @@ function calculateFinanceTotals(orders, refundEvents = []) {
     }),
     {
       refundSalesTotal: 0,
+      refundSalesTotalForNet: 0,
       refundProfitTotal: 0,
       refundShippingTotal: 0,
       refundOperatingCostTotal: 0,
@@ -737,7 +744,7 @@ function calculateFinanceTotals(orders, refundEvents = []) {
     refundOperatingCostTotal: refundTotals.refundOperatingCostTotal,
     refundTaxesTotal: refundTotals.refundTaxesTotal,
     refundRecoveredCostTotal: refundTotals.refundRecoveredCostTotal,
-    netSalesTotal: financeTotals.salesTotal - refundTotals.refundSalesTotal,
+    netSalesTotal: financeTotals.salesTotal - refundTotals.refundSalesTotalForNet,
     netProfitTotal: financeTotals.profitTotal - refundTotals.refundProfitTotal,
     netShippingTotal: Math.max(0, shippingTotal - refundTotals.refundShippingTotal),
     netOperatingCostTotal: Math.max(0, operatingCostTotal - refundTotals.refundOperatingCostTotal),
@@ -831,7 +838,7 @@ function extractRefundEventsFromOrders(orders, start, end) {
           return sum + unitPrice * quantity;
         }, 0);
         const totalRefundedAmount = Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
-        if (totalRefundedAmount <= 0) return null;
+        if (totalRefundedAmount <= 0 && refundLineSubtotal <= 0) return null;
         const refundSalesTotal = refundLineSubtotal || totalRefundedAmount;
         const orderShippingTotal = Number(orderFinance.shippingTotal || 0);
         const orderRefundedShippingTotal = Number(order?.totalRefundedShippingSet?.shopMoney?.amount || 0);
@@ -862,6 +869,7 @@ function extractRefundEventsFromOrders(orders, start, end) {
         const refundProfitTotal = refundMarginTotal - refundTaxesTotal;
         return {
           createdAt: refund.createdAt,
+          orderId: order?.id || "",
           orderName: order?.name || "Pedido",
           orderCreatedAt: order?.createdAt || "",
           refundSalesTotal,
