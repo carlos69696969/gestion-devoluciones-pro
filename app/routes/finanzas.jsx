@@ -1708,22 +1708,14 @@ export default function FinanzasPortal() {
             </article>
             <article className={`${styles.metric} ${styles.metricProfit}`}>
               <span>Ganancias</span>
-              <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).profitTotal)}</strong>
-              {(selectedWeekDay?.totals || totals).hasRefunds ? (
-                <small className={styles.metricRefund}>
-                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundProfitTotal)}
-                </small>
-              ) : null}
+              <strong>
+                {currencyFormatter.format(
+                  (selectedWeekDay?.totals || totals).hasRefunds
+                    ? (selectedWeekDay?.totals || totals).netProfitTotal
+                    : (selectedWeekDay?.totals || totals).profitTotal,
+                )}
+              </strong>
             </article>
-            {(selectedWeekDay?.totals || totals).hasRefunds ? (
-              <article className={`${styles.metric} ${styles.metricNet} ${styles.wide}`}>
-                <span>Total del dia</span>
-                <strong>
-                  {currencyFormatter.format((selectedWeekDay?.totals || totals).netSalesTotal)} /{" "}
-                  {currencyFormatter.format((selectedWeekDay?.totals || totals).netProfitTotal)} ganancias
-                </strong>
-              </article>
-            ) : null}
           </div>
         </section>
         ) : null}
