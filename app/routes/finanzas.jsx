@@ -1636,11 +1636,6 @@ export default function FinanzasPortal() {
             <article className={`${styles.metric} ${styles.metricSales}`}>
               <span>Ventas</span>
               <strong>{currencyFormatter.format((selectedWeekDay?.totals || totals).salesTotal)}</strong>
-              {(selectedWeekDay?.totals || totals).hasRefunds ? (
-                <small className={styles.metricRefund}>
-                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundSalesTotal)}
-                </small>
-              ) : null}
             </article>
             <article className={`${styles.metric} ${styles.metricTicket}`}>
               <span>Ticket promedio</span>
@@ -1655,11 +1650,6 @@ export default function FinanzasPortal() {
                     : (selectedWeekDay?.totals || totals).operatingCostTotal,
                 )}
               </strong>
-              {(selectedWeekDay?.totals || totals).refundOperatingCostTotal > 0 ? (
-                <small className={styles.metricRefund}>
-                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundOperatingCostTotal)}
-                </small>
-              ) : null}
             </article>
             <article className={`${styles.metric} ${styles.metricShipping}`}>
               <span>Paqueteria</span>
@@ -1670,11 +1660,6 @@ export default function FinanzasPortal() {
                     : (selectedWeekDay?.totals || totals).shippingTotal,
                 )}
               </strong>
-              {(selectedWeekDay?.totals || totals).refundShippingTotal > 0 ? (
-                <small className={styles.metricRefund}>
-                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundShippingTotal)}
-                </small>
-              ) : null}
             </article>
             <article className={`${styles.metric} ${styles.metricTaxes}`}>
               <span>Impuestos</span>
@@ -1685,11 +1670,6 @@ export default function FinanzasPortal() {
                     : (selectedWeekDay?.totals || totals).taxesTotal,
                 )}
               </strong>
-              {(selectedWeekDay?.totals || totals).refundTaxesTotal > 0 ? (
-                <small className={styles.metricRefund}>
-                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundTaxesTotal)}
-                </small>
-              ) : null}
             </article>
             <article className={`${styles.metric} ${styles.metricRecovered}`}>
               <span>Costo recuperado</span>
@@ -1700,11 +1680,6 @@ export default function FinanzasPortal() {
                     : (selectedWeekDay?.totals || totals).recoveredCostTotal,
                 )}
               </strong>
-              {(selectedWeekDay?.totals || totals).refundRecoveredCostTotal > 0 ? (
-                <small className={styles.metricRefund}>
-                  {formatRefundAmount((selectedWeekDay?.totals || totals).refundRecoveredCostTotal, wholeCurrencyFormatter)}
-                </small>
-              ) : null}
             </article>
             <article className={`${styles.metric} ${styles.metricProfit}`}>
               <span>Ganancias</span>
