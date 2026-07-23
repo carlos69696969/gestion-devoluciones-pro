@@ -58,6 +58,8 @@
 
 .accessShell {
   min-height: 100vh;
+  overflow-x: hidden;
+  box-sizing: border-box;
   background:
     linear-gradient(180deg, rgba(3, 12, 28, 0.12), rgba(3, 12, 28, 0.5)),
     url("/finance-login-bg.png") center / cover no-repeat;
@@ -69,14 +71,18 @@
 }
 
 .accessWrap {
+  width: 100%;
   min-height: calc(100vh - 96px);
   display: grid;
   place-items: center;
   padding: 18px 0 28px;
+  box-sizing: border-box;
 }
 
 .accessPanel {
-  width: min(92vw, 380px);
+  width: 100%;
+  max-width: 380px;
+  box-sizing: border-box;
   border: 1px solid rgba(255, 255, 255, 0.34);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.94);
@@ -99,6 +105,7 @@
 }
 
 .accessForm {
+  width: 100%;
   display: grid;
   gap: 12px;
 }
@@ -181,6 +188,7 @@
 
 .input {
   width: 100%;
+  box-sizing: border-box;
   min-height: 42px;
   border: 1px solid #d9dee7;
   border-radius: 8px;
@@ -194,6 +202,11 @@
 .input:focus {
   border-color: rgba(0, 91, 211, 0.5);
   box-shadow: 0 0 0 3px rgba(0, 91, 211, 0.12);
+}
+
+.accessPanel .btn {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .btn {
@@ -953,3 +966,4 @@
     font-size: 24px;
   }
 }
+
