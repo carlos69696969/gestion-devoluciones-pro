@@ -1249,9 +1249,6 @@ export default function FinanzasPortal() {
                 <article className={`${styles.metric} ${styles.metricShipping}`}>
                   <span>Paqueteria</span>
                   <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netShippingTotal : totals.shippingTotal)}</strong>
-                  {totals.refundShippingTotal > 0 ? (
-                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundShippingTotal)}</small>
-                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricTaxes}`}>
                   <span>Impuestos</span>
@@ -1469,9 +1466,6 @@ export default function FinanzasPortal() {
                         : selectedWeekDay.totals.salesTotal,
                     )}
                   </strong>
-                  {selectedWeekDay.totals.hasRefunds && !selectedDetailUsesNetTotals ? (
-                    <small className={styles.metricRefund}>{formatRefundAmount(selectedWeekDay.totals.refundSalesTotal)}</small>
-                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricTicket}`}>
                   <span>Ticket promedio</span>
@@ -1486,11 +1480,6 @@ export default function FinanzasPortal() {
                         : selectedWeekDay.totals.operatingCostTotal,
                     )}
                   </strong>
-                  {selectedWeekDay.totals.refundOperatingCostTotal > 0 ? (
-                    <small className={styles.metricRefund}>
-                      {formatRefundAmount(selectedWeekDay.totals.refundOperatingCostTotal)}
-                    </small>
-                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricShipping}`}>
                   <span>Paqueteria</span>
@@ -1501,11 +1490,6 @@ export default function FinanzasPortal() {
                         : selectedWeekDay.totals.shippingTotal,
                     )}
                   </strong>
-                  {selectedWeekDay.totals.refundShippingTotal > 0 ? (
-                    <small className={styles.metricRefund}>
-                      {formatRefundAmount(selectedWeekDay.totals.refundShippingTotal)}
-                    </small>
-                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricTaxes}`}>
                   <span>Impuestos</span>
@@ -1516,11 +1500,6 @@ export default function FinanzasPortal() {
                         : selectedWeekDay.totals.taxesTotal,
                     )}
                   </strong>
-                  {selectedWeekDay.totals.refundTaxesTotal > 0 ? (
-                    <small className={styles.metricRefund}>
-                      {formatRefundAmount(selectedWeekDay.totals.refundTaxesTotal)}
-                    </small>
-                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricRecovered}`}>
                   <span>Costo recuperado</span>
@@ -1531,68 +1510,18 @@ export default function FinanzasPortal() {
                         : selectedWeekDay.totals.recoveredCostTotal,
                     )}
                   </strong>
-                  {selectedWeekDay.totals.refundRecoveredCostTotal > 0 ? (
-                    <small className={styles.metricRefund}>
-                      {formatRefundAmount(selectedWeekDay.totals.refundRecoveredCostTotal, wholeCurrencyFormatter)}
-                    </small>
-                  ) : null}
                 </article>
                 <article className={`${styles.metric} ${styles.metricProfit}`}>
                   <span>Ganancias</span>
                   <strong>
                     {currencyFormatter.format(
-                      selectedDetailUsesNetTotals
+                      selectedWeekDay.totals.hasRefunds
                         ? selectedWeekDay.totals.netProfitTotal
                         : selectedWeekDay.totals.profitTotal,
                     )}
                   </strong>
-                  {selectedWeekDay.totals.hasRefunds && !selectedDetailUsesNetTotals ? (
-                    <small className={styles.metricRefund}>{formatRefundAmount(selectedWeekDay.totals.refundProfitTotal)}</small>
-                  ) : null}
                 </article>
-                {selectedWeekDay.totals.hasRefunds && !selectedDetailUsesNetTotals ? (
-                  <article className={`${styles.metric} ${styles.metricNet} ${styles.wide}`}>
-                    <span>Total del dia</span>
-                    <strong>
-                      {currencyFormatter.format(selectedWeekDay.totals.netSalesTotal)} /{" "}
-                      {currencyFormatter.format(selectedWeekDay.totals.netProfitTotal)} ganancias
-                    </strong>
-                  </article>
-                ) : null}
               </div>
-              {selectedWeekDay.totals.hasRefunds && period !== "history" ? (
-                <section className={styles.refundDetails} aria-label="Origen de reembolsos">
-                  <h3>Origen del reembolso</h3>
-                  {(selectedWeekDay.refunds || []).map((refund, index) => (
-                    <article className={styles.refundDetailItem} key={`${refund.orderName}-${refund.createdAt}-${index}`}>
-                      <strong>{refund.orderName}</strong>
-                      <span>
-                        Reembolso: {formatRefundAmount(refund.refundSalesTotal)}
-                        {" | "}
-                        Ganancia: {formatRefundAmount(refund.refundProfitTotal)}
-                      </span>
-                      {Number(refund.refundShippingTotal || 0) > 0 ? (
-                        <span>Paqueteria: {formatRefundAmount(refund.refundShippingTotal)}</span>
-                      ) : null}
-                      {Number(refund.refundOperatingCostTotal || 0) > 0 ? (
-                        <span>Costo operativo: {formatRefundAmount(refund.refundOperatingCostTotal)}</span>
-                      ) : null}
-                      {Number(refund.refundTaxesTotal || 0) > 0 ? (
-                        <span>Impuestos: {formatRefundAmount(refund.refundTaxesTotal)}</span>
-                      ) : null}
-                      {Number(refund.refundRecoveredCostTotal || 0) > 0 ? (
-                        <span>
-                          Costo recuperado: {formatRefundAmount(refund.refundRecoveredCostTotal, wholeCurrencyFormatter)}
-                        </span>
-                      ) : null}
-                      <small>Fecha del reembolso: {formatFinanceDate(new Date(refund.createdAt))}</small>
-                      {refund.orderCreatedAt ? (
-                        <small>Fecha del pedido: {formatFinanceDate(new Date(refund.orderCreatedAt))}</small>
-                      ) : null}
-                    </article>
-                  ))}
-                </section>
-              ) : null}
             </div>
           </section>
         ) : null}
