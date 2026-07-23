@@ -689,6 +689,16 @@
   gap: 12px;
 }
 
+.dayDateCard {
+  border: 1px solid #d9dee7;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  padding: 12px 14px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
 .metric {
   min-height: 74px;
   border: 1px solid #d9dee7;

@@ -930,6 +930,7 @@ export async function loader({ request }) {
   }
 
   const { start, end, monthKey } = getFinanceRangeInMexico(period, { chartMonthKey });
+  const dayLabel = period === "day" ? formatFinanceDate(start) : "";
   try {
     const { shop, sessions } = await resolveFinanceSession(request);
     if (!shop || !sessions?.length) {
@@ -952,6 +953,7 @@ export async function loader({ request }) {
       isLoggedIn: true,
       needsConfiguration: false,
       period,
+      dayLabel,
       totals: calculateFinanceTotals(orders, refundEvents),
       week,
       history,
@@ -964,6 +966,7 @@ export async function loader({ request }) {
       isLoggedIn: true,
       needsConfiguration: false,
       period,
+      dayLabel,
       totals: emptyTotals,
       week: { label: period === "week" ? formatWeekLabel(start, end) : "", days: [] },
       history: { label: period === "history" ? formatMonthLabel(start) : "", days: [] },
@@ -999,7 +1002,7 @@ export async function action({ request }) {
 }
 
 export default function FinanzasPortal() {
-  const { isLoggedIn, needsConfiguration, period, totals, week, history, chart, error } = useLoaderData();
+  const { isLoggedIn, needsConfiguration, period, dayLabel, totals, week, history, chart, error } = useLoaderData();
   const actionData = useActionData();
   const revalidator = useRevalidator();
   const navigation = useNavigation();
@@ -1528,6 +1531,11 @@ export default function FinanzasPortal() {
 
         {period === "day" ? (
           <section className={styles.financeDetailSection} aria-label="Detalle financiero">
+          {dayLabel ? (
+            <div className={styles.dayDateCard} aria-label="Fecha del dia">
+              {dayLabel}
+            </div>
+          ) : null}
           {totals.hasRefunds ? (
             <article className={styles.weekSummaryCard}>
               <span>
