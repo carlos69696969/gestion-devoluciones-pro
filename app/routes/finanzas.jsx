@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import { createCookie, Form, Link, redirect, useActionData, useLoaderData, useNavigation, useRevalidator } from "react-router";
+import {
+  createCookie,
+  Form,
+  Link,
+  redirect,
+  useActionData,
+  useLoaderData,
+  useNavigation,
+  useRevalidator,
+  useSubmit,
+} from "react-router";
 import prisma from "../db.server";
 import styles from "../styles/finanzas.module.css";
 
@@ -157,11 +167,12 @@ function buildWeekBreakdown(start, end, salesOrders, refundEvents) {
   };
 }
 
-function buildChartBreakdown(start, end, salesOrders, refundEvents) {
+function buildChartBreakdown(start, end, salesOrders, refundEvents, monthKey) {
   const dayCount = Math.max(0, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
   return {
     label: formatMonthLabel(start),
     days: buildFinanceDayEntries(start, dayCount, salesOrders, refundEvents),
+    ...buildChartNavigation(monthKey),
   };
 }
 
@@ -278,13 +289,84 @@ function getWeekRangeInMexico() {
   return { start, end };
 }
 
-function getMonthRangeInMexico() {
+function getCurrentMonthKeyInMexico() {
   const today = getTimeZoneParts(new Date(), FINANCE_TIME_ZONE);
-  const nextMonth = today.month === 12 ? 1 : today.month + 1;
-  const nextMonthYear = today.month === 12 ? today.year + 1 : today.year;
-  const start = zonedTimeToUtc({ year: today.year, month: today.month, day: 1 }, FINANCE_TIME_ZONE);
+  return `${today.year}-${padDatePart(today.month)}`;
+}
+
+function parseMonthKey(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!year || month < 1 || month > 12) return null;
+  return { year, month, key: `${year}-${padDatePart(month)}` };
+}
+
+function compareMonthKeys(firstKey, secondKey) {
+  const first = parseMonthKey(firstKey);
+  const second = parseMonthKey(secondKey);
+  if (!first || !second) return 0;
+  return first.year === second.year ? first.month - second.month : first.year - second.year;
+}
+
+function addMonthsToMonthKey(monthKey, monthOffset) {
+  const parsed = parseMonthKey(monthKey) || parseMonthKey(getCurrentMonthKeyInMexico());
+  const date = new Date(Date.UTC(parsed.year, parsed.month - 1 + monthOffset, 1));
+  return `${date.getUTCFullYear()}-${padDatePart(date.getUTCMonth() + 1)}`;
+}
+
+function clampChartMonthKey(value) {
+  const currentMonthKey = getCurrentMonthKeyInMexico();
+  const parsed = parseMonthKey(value);
+  if (!parsed) return currentMonthKey;
+  return compareMonthKeys(parsed.key, currentMonthKey) > 0 ? currentMonthKey : parsed.key;
+}
+
+function buildChartMonthOptions(selectedMonthKey) {
+  const currentMonthKey = getCurrentMonthKeyInMexico();
+  const monthKeys = new Set([selectedMonthKey]);
+  for (let index = 0; index < 12; index += 1) {
+    monthKeys.add(addMonthsToMonthKey(currentMonthKey, -index));
+  }
+  return Array.from(monthKeys)
+    .filter((monthKey) => compareMonthKeys(monthKey, currentMonthKey) <= 0)
+    .sort((first, second) => compareMonthKeys(second, first))
+    .map((monthKey) => {
+      const parsed = parseMonthKey(monthKey);
+      const monthStart = zonedTimeToUtc({ year: parsed.year, month: parsed.month, day: 1 }, FINANCE_TIME_ZONE);
+      return { value: monthKey, label: formatMonthLabel(monthStart) };
+    });
+}
+
+function buildChartNavigation(monthKey) {
+  const selectedMonthKey = clampChartMonthKey(monthKey);
+  const currentMonthKey = getCurrentMonthKeyInMexico();
+  const nextMonthKey = addMonthsToMonthKey(selectedMonthKey, 1);
+  return {
+    monthKey: selectedMonthKey,
+    previousMonthKey: addMonthsToMonthKey(selectedMonthKey, -1),
+    nextMonthKey,
+    canGoNext: compareMonthKeys(nextMonthKey, currentMonthKey) <= 0,
+    monthOptions: buildChartMonthOptions(selectedMonthKey),
+  };
+}
+
+function emptyChartData(monthKey = getCurrentMonthKeyInMexico()) {
+  return {
+    label: "",
+    days: [],
+    ...buildChartNavigation(monthKey),
+  };
+}
+
+function getMonthRangeInMexico(monthKey = getCurrentMonthKeyInMexico()) {
+  const selectedMonth = parseMonthKey(clampChartMonthKey(monthKey)) || parseMonthKey(getCurrentMonthKeyInMexico());
+  const nextMonth = selectedMonth.month === 12 ? 1 : selectedMonth.month + 1;
+  const nextMonthYear = selectedMonth.month === 12 ? selectedMonth.year + 1 : selectedMonth.year;
+  const start = zonedTimeToUtc({ year: selectedMonth.year, month: selectedMonth.month, day: 1 }, FINANCE_TIME_ZONE);
   const end = zonedTimeToUtc({ year: nextMonthYear, month: nextMonth, day: 1 }, FINANCE_TIME_ZONE);
-  return { start, end };
+  return { start, end, monthKey: selectedMonth.key };
 }
 
 function normalizeFinancePeriod(value) {
@@ -294,9 +376,10 @@ function normalizeFinancePeriod(value) {
   return "day";
 }
 
-function getFinanceRangeInMexico(period) {
+function getFinanceRangeInMexico(period, { chartMonthKey } = {}) {
   if (period === "week") return getWeekRangeInMexico();
-  if (period === "history" || period === "chart") return getMonthRangeInMexico();
+  if (period === "chart") return getMonthRangeInMexico(chartMonthKey);
+  if (period === "history") return getMonthRangeInMexico();
   return getTodayRangeInMexico();
 }
 
@@ -763,6 +846,7 @@ export const headers = () => ({
 export async function loader({ request }) {
   const url = new URL(request.url);
   const period = normalizeFinancePeriod(url.searchParams.get("period"));
+  const chartMonthKey = clampChartMonthKey(url.searchParams.get("month"));
   const accessCodes = configuredAccessCodes();
   if (!accessCodes.length) {
     return {
@@ -772,7 +856,7 @@ export async function loader({ request }) {
       totals: emptyTotals,
       week: { label: "", days: [] },
       history: { label: "", days: [] },
-      chart: { label: "", days: [] },
+      chart: emptyChartData(chartMonthKey),
       error: "Falta configurar FINANCE_ACCESS_CODE en Render.",
     };
   }
@@ -786,12 +870,12 @@ export async function loader({ request }) {
       totals: emptyTotals,
       week: { label: "", days: [] },
       history: { label: "", days: [] },
-      chart: { label: "", days: [] },
+      chart: emptyChartData(chartMonthKey),
       error: "",
     };
   }
 
-  const { start, end } = getFinanceRangeInMexico(period);
+  const { start, end, monthKey } = getFinanceRangeInMexico(period, { chartMonthKey });
   try {
     const { shop, sessions } = await resolveFinanceSession(request);
     if (!shop || !sessions?.length) {
@@ -802,7 +886,7 @@ export async function loader({ request }) {
         totals: emptyTotals,
         week: { label: "", days: [] },
         history: { label: "", days: [] },
-        chart: { label: "", days: [] },
+        chart: emptyChartData(monthKey || chartMonthKey),
         error: "No se encontro una sesion offline valida para consultar ventas.",
       };
     }
@@ -816,7 +900,7 @@ export async function loader({ request }) {
     }
     const week = period === "week" ? buildWeekBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
     const history = period === "history" ? buildMonthBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
-    const chart = period === "chart" ? buildChartBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
+    const chart = period === "chart" ? buildChartBreakdown(start, end, orders, refundEvents, monthKey) : emptyChartData(chartMonthKey);
     return {
       isLoggedIn: true,
       needsConfiguration: false,
@@ -836,7 +920,7 @@ export async function loader({ request }) {
       totals: emptyTotals,
       week: { label: period === "week" ? formatWeekLabel(start, end) : "", days: [] },
       history: { label: period === "history" ? formatMonthLabel(start) : "", days: [] },
-      chart: { label: period === "chart" ? formatMonthLabel(start) : "", days: [] },
+      chart: { ...emptyChartData(monthKey || chartMonthKey), label: period === "chart" ? formatMonthLabel(start) : "" },
       error: formatFinanceLoadError(error, period),
     };
   }
@@ -872,6 +956,7 @@ export default function FinanzasPortal() {
   const actionData = useActionData();
   const revalidator = useRevalidator();
   const navigation = useNavigation();
+  const submit = useSubmit();
   const [selectedDetailDayKey, setSelectedDetailDayKey] = useState("");
   const [isHistoryMonthOpen, setIsHistoryMonthOpen] = useState(false);
   const activePeriod = navigation.location
@@ -882,6 +967,7 @@ export default function FinanzasPortal() {
   const selectedWeekDay = selectedDetailDay;
   const setSelectedWeekDayKey = setSelectedDetailDayKey;
   const chartDays = chart?.days || [];
+  const chartMonthOptions = chart?.monthOptions || [];
   const chartCards = [
     {
       title: "Ventas",
@@ -1194,6 +1280,44 @@ export default function FinanzasPortal() {
         {period === "chart" ? (
           <section className={styles.chartPanel} aria-label="Graficas financieras">
             <h2>Graficas de {chart?.label || "Mes actual"}</h2>
+            <div className={styles.chartControls}>
+              <Link
+                className={styles.chartNavButton}
+                to={`/finanzas?period=chart&month=${chart?.previousMonthKey || ""}`}
+                prefetch="intent"
+              >
+                Anterior
+              </Link>
+              <Form method="get" className={styles.chartMonthForm}>
+                <input type="hidden" name="period" value="chart" />
+                <label className={styles.chartMonthLabel}>
+                  Mes
+                  <select
+                    className={styles.chartMonthSelect}
+                    name="month"
+                    value={chart?.monthKey || ""}
+                    onChange={(event) => submit(event.currentTarget.form)}
+                  >
+                    {chartMonthOptions.map((monthOption) => (
+                      <option value={monthOption.value} key={monthOption.value}>
+                        {monthOption.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </Form>
+              {chart?.canGoNext ? (
+                <Link
+                  className={styles.chartNavButton}
+                  to={`/finanzas?period=chart&month=${chart.nextMonthKey}`}
+                  prefetch="intent"
+                >
+                  Siguiente
+                </Link>
+              ) : (
+                <span className={`${styles.chartNavButton} ${styles.chartNavButtonDisabled}`}>Siguiente</span>
+              )}
+            </div>
             <div className={styles.chartGrid}>
               {chartCards.map((chartCard) => {
                 const maxValue = Math.max(...chartCard.values.map((day) => Number(day.value || 0)), 0);
