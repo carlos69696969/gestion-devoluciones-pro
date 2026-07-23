@@ -1319,12 +1319,7 @@ export default function FinanzasPortal() {
               </>
             ) : (
               <>
-                <div className={styles.chartDetailHeader}>
-                  <h2>Graficas de {chart?.label || "Mes actual"}</h2>
-                  <button className={styles.chartSummaryButton} type="button" onClick={() => setIsChartDetailOpen(false)}>
-                    Resumen
-                  </button>
-                </div>
+                <h2>Graficas de {chart?.label || "Mes actual"}</h2>
                 <div className={styles.chartControls}>
                   <Form method="get" className={styles.chartMonthForm}>
                     <input type="hidden" name="period" value="chart" />
@@ -1362,6 +1357,9 @@ export default function FinanzasPortal() {
                   >
                     Anterior
                   </Link>
+                  <button className={styles.chartSummaryButton} type="button" onClick={() => setIsChartDetailOpen(false)}>
+                    Resumen
+                  </button>
                 </div>
                 <div className={styles.chartGrid}>
                   {chartCards.map((chartCard) => {
