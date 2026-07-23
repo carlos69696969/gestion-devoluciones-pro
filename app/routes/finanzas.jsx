@@ -1281,13 +1281,6 @@ export default function FinanzasPortal() {
           <section className={styles.chartPanel} aria-label="Graficas financieras">
             <h2>Graficas de {chart?.label || "Mes actual"}</h2>
             <div className={styles.chartControls}>
-              <Link
-                className={styles.chartNavButton}
-                to={`/finanzas?period=chart&month=${chart?.previousMonthKey || ""}`}
-                prefetch="intent"
-              >
-                Anterior
-              </Link>
               <Form method="get" className={styles.chartMonthForm}>
                 <input type="hidden" name="period" value="chart" />
                 <label className={styles.chartMonthLabel}>
@@ -1317,6 +1310,13 @@ export default function FinanzasPortal() {
               ) : (
                 <span className={`${styles.chartNavButton} ${styles.chartNavButtonDisabled}`}>Siguiente</span>
               )}
+              <Link
+                className={styles.chartNavButton}
+                to={`/finanzas?period=chart&month=${chart?.previousMonthKey || ""}`}
+                prefetch="intent"
+              >
+                Anterior
+              </Link>
             </div>
             <div className={styles.chartGrid}>
               {chartCards.map((chartCard) => {

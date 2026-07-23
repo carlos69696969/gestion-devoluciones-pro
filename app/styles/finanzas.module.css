@@ -117,19 +117,20 @@
 .periodTabs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 .periodButton {
   display: grid;
   place-items: center;
-  min-height: 42px;
+  min-height: 40px;
   border: 1px solid #d9dee7;
   border-radius: 8px;
   background: #fff;
   color: #344054;
-  padding: 0 12px;
+  padding: 0 8px;
   font: inherit;
+  font-size: 15px;
   font-weight: 800;
   cursor: pointer;
   text-align: center;
@@ -371,7 +372,7 @@
 
 .chartControls {
   display: grid;
-  grid-template-columns: minmax(110px, 0.8fr) minmax(180px, 1.4fr) minmax(110px, 0.8fr);
+  grid-template-columns: minmax(120px, 1.4fr) minmax(96px, 0.8fr) minmax(96px, 0.8fr);
   gap: 8px;
   align-items: end;
 }
@@ -384,8 +385,9 @@
   border-radius: 8px;
   background: #fff;
   color: #344054;
-  padding: 0 12px;
+  padding: 0 8px;
   font: inherit;
+  font-size: 15px;
   font-weight: 800;
   text-align: center;
   text-decoration: none;
@@ -402,9 +404,9 @@
 
 .chartMonthLabel {
   display: grid;
-  gap: 5px;
+  gap: 4px;
   color: #344054;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
 }
 
@@ -417,6 +419,7 @@
   color: #111827;
   padding: 8px 12px;
   font: inherit;
+  font-size: 15px;
   font-weight: 800;
   outline: none;
 }
@@ -730,7 +733,14 @@
   }
 
   .periodTabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .periodButton {
+    min-height: 38px;
+    padding: 0 4px;
+    font-size: 13px;
   }
 
   .chartGrid {
@@ -738,7 +748,20 @@
   }
 
   .chartControls {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(108px, 1.4fr) minmax(82px, 0.8fr) minmax(82px, 0.8fr);
+    gap: 5px;
+  }
+
+  .chartNavButton {
+    min-height: 40px;
+    padding: 0 4px;
+    font-size: 13px;
+  }
+
+  .chartMonthSelect {
+    min-height: 40px;
+    padding: 7px 8px;
+    font-size: 13px;
   }
 
   .chartRow {
