@@ -849,7 +849,6 @@ function extractRefundEventsFromOrders(orders, start, end) {
         }, 0);
         const totalRefundedAmount = Number(refund?.totalRefundedSet?.shopMoney?.amount || 0);
         if (totalRefundedAmount <= 0 && refundLineSubtotal <= 0) return null;
-        const refundSalesTotal = refundLineSubtotal || totalRefundedAmount;
         const orderShippingTotal = Number(orderFinance.shippingTotal || 0);
         const orderRefundedShippingTotal = Number(order?.totalRefundedShippingSet?.shopMoney?.amount || 0);
         const currentShippingTotal = Number(order?.currentShippingPriceSet?.shopMoney?.amount || 0);
@@ -863,6 +862,8 @@ function extractRefundEventsFromOrders(orders, start, end) {
           ? refundShippingFromAmount
           : Math.max(refundShippingFromAmount, Math.min(orderShippingTotal, explicitRefundedShippingTotal));
         if (refundShippingTotal > 0) hasAppliedOrderShippingRefund = true;
+        const refundProductSalesTotal = refundLineSubtotal || Math.max(0, totalRefundedAmount - refundShippingTotal);
+        const refundSalesTotal = refundProductSalesTotal + refundShippingTotal;
         const refundedRecoveredCostTotal = refundLineItems.reduce((sum, refundLineItem) => {
           const quantity = Math.max(0, Number(refundLineItem?.quantity || 0));
           const unitPrice = Number(refundLineItem?.lineItem?.originalUnitPriceSet?.shopMoney?.amount || 0);
