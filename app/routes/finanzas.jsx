@@ -744,7 +744,7 @@ function calculateFinanceTotals(orders, refundEvents = []) {
     refundOperatingCostTotal: refundTotals.refundOperatingCostTotal,
     refundTaxesTotal: refundTotals.refundTaxesTotal,
     refundRecoveredCostTotal: refundTotals.refundRecoveredCostTotal,
-    netSalesTotal: financeTotals.salesTotal - refundTotals.refundSalesTotalForNet,
+    netSalesTotal: financeTotals.salesTotal - refundTotals.refundSalesTotal,
     netProfitTotal: financeTotals.profitTotal - refundTotals.refundProfitTotal,
     netShippingTotal: Math.max(0, shippingTotal - refundTotals.refundShippingTotal),
     netOperatingCostTotal: Math.max(0, operatingCostTotal - refundTotals.refundOperatingCostTotal),
