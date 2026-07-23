@@ -1607,12 +1607,12 @@ export default function FinanzasPortal() {
               </span>
               <span>
                 Ventas
-                <strong>{currencyFormatter.format(totals.salesTotal)}</strong>
+                <strong>{currencyFormatter.format(totals.netSalesTotal + totals.refundSalesTotal)}</strong>
                 <small className={styles.refundAmount}>{formatRefundAmount(totals.refundSalesTotal)}</small>
               </span>
               <span>
                 Ganancias
-                <strong>{currencyFormatter.format(totals.profitTotal)}</strong>
+                <strong>{currencyFormatter.format(totals.netProfitTotal + totals.refundProfitTotal)}</strong>
                 <small className={styles.refundAmount}>{formatRefundAmount(totals.refundProfitTotal)}</small>
               </span>
               <span className={styles.weekNetCell}>
