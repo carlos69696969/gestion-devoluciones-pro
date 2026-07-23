@@ -284,6 +284,13 @@
   font-weight: 900 !important;
 }
 
+.netAmount {
+  color: #111827 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  line-height: 1;
+}
+
 .refundSourceHint {
   color: #b42318 !important;
   font-weight: 800 !important;

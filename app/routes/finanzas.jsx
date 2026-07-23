@@ -769,6 +769,10 @@ function formatRefundAmount(value, formatter = currencyFormatter) {
   return `-${formatter.format(Number(value || 0))}`;
 }
 
+function formatNetAmount(value, formatter = currencyFormatter) {
+  return formatter.format(Number(value || 0));
+}
+
 function getChartBarPercent(value, maxValue) {
   if (Number(value || 0) <= 0) return 0;
   if (!maxValue) return 0;
@@ -1225,14 +1229,20 @@ export default function FinanzasPortal() {
                     Ventas
                     <strong>{currencyFormatter.format(day.totals.salesTotal)}</strong>
                     {day.totals.hasRefunds ? (
-                      <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
+                      <>
+                        <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
+                        <small className={styles.netAmount}>{formatNetAmount(day.totals.netSalesTotal)}</small>
+                      </>
                     ) : null}
                   </span>
                   <span>
                     Ganancias
                     <strong>{currencyFormatter.format(day.totals.profitTotal)}</strong>
                     {day.totals.hasRefunds ? (
-                      <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
+                      <>
+                        <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
+                        <small className={styles.netAmount}>{formatNetAmount(day.totals.netProfitTotal)}</small>
+                      </>
                     ) : null}
                   </span>
                 </button>
@@ -1324,14 +1334,20 @@ export default function FinanzasPortal() {
                       Ventas
                       <strong>{currencyFormatter.format(day.totals.salesTotal)}</strong>
                       {day.totals.hasRefunds ? (
-                        <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
+                        <>
+                          <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
+                          <small className={styles.netAmount}>{formatNetAmount(day.totals.netSalesTotal)}</small>
+                        </>
                       ) : null}
                     </span>
                     <span>
                       Ganancias
                       <strong>{currencyFormatter.format(day.totals.profitTotal)}</strong>
                       {day.totals.hasRefunds ? (
-                        <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
+                        <>
+                          <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
+                          <small className={styles.netAmount}>{formatNetAmount(day.totals.netProfitTotal)}</small>
+                        </>
                       ) : null}
                     </span>
                   </button>
