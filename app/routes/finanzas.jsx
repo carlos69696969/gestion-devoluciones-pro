@@ -1259,11 +1259,6 @@ export default function FinanzasPortal() {
                     <span>
                       <strong>{day.dayName}</strong>
                       <small>{day.dateLabel}</small>
-                      {day.totals.hasRefunds ? (
-                        <small className={styles.refundSourceHint}>
-                          Origen: {(day.refunds || []).map((refund) => refund.orderName).join(", ")}
-                        </small>
-                      ) : null}
                     </span>
                     <span>
                       Ventas
@@ -1511,7 +1506,7 @@ export default function FinanzasPortal() {
                   </article>
                 ) : null}
               </div>
-              {selectedWeekDay.totals.hasRefunds ? (
+              {selectedWeekDay.totals.hasRefunds && period !== "history" ? (
                 <section className={styles.refundDetails} aria-label="Origen de reembolsos">
                   <h3>Origen del reembolso</h3>
                   {(selectedWeekDay.refunds || []).map((refund, index) => (
