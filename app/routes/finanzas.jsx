@@ -959,6 +959,7 @@ export default function FinanzasPortal() {
   const submit = useSubmit();
   const [selectedDetailDayKey, setSelectedDetailDayKey] = useState("");
   const [isHistoryMonthOpen, setIsHistoryMonthOpen] = useState(false);
+  const [isChartDetailOpen, setIsChartDetailOpen] = useState(false);
   const activePeriod = navigation.location
     ? normalizeFinancePeriod(new URLSearchParams(navigation.location.search).get("period"))
     : period;
@@ -998,7 +999,12 @@ export default function FinanzasPortal() {
   useEffect(() => {
     setSelectedDetailDayKey("");
     setIsHistoryMonthOpen(false);
+    setIsChartDetailOpen(false);
   }, [period]);
+
+  useEffect(() => {
+    setIsChartDetailOpen(false);
+  }, [chart?.monthKey]);
 
   useEffect(() => {
     if (!isLoggedIn) return undefined;
@@ -1279,69 +1285,110 @@ export default function FinanzasPortal() {
 
         {period === "chart" ? (
           <section className={styles.chartPanel} aria-label="Graficas financieras">
-            <h2>Graficas de {chart?.label || "Mes actual"}</h2>
-            <div className={styles.chartControls}>
-              <Form method="get" className={styles.chartMonthForm}>
-                <input type="hidden" name="period" value="chart" />
-                <label className={styles.chartMonthLabel}>
-                  Mes
-                  <select
-                    className={styles.chartMonthSelect}
-                    name="month"
-                    value={chart?.monthKey || ""}
-                    onChange={(event) => submit(event.currentTarget.form)}
-                  >
-                    {chartMonthOptions.map((monthOption) => (
-                      <option value={monthOption.value} key={monthOption.value}>
-                        {monthOption.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </Form>
-              {chart?.canGoNext ? (
-                <Link
-                  className={styles.chartNavButton}
-                  to={`/finanzas?period=chart&month=${chart.nextMonthKey}`}
-                  prefetch="intent"
-                >
-                  Siguiente
-                </Link>
-              ) : (
-                <span className={`${styles.chartNavButton} ${styles.chartNavButtonDisabled}`}>Siguiente</span>
-              )}
-              <Link
-                className={styles.chartNavButton}
-                to={`/finanzas?period=chart&month=${chart?.previousMonthKey || ""}`}
-                prefetch="intent"
-              >
-                Anterior
-              </Link>
-            </div>
-            <div className={styles.chartGrid}>
-              {chartCards.map((chartCard) => {
-                const maxValue = Math.max(...chartCard.values.map((day) => Number(day.value || 0)), 0);
-                return (
-                  <article className={styles.chartCard} key={chartCard.title}>
-                    <h3>{chartCard.title}</h3>
-                    <div className={styles.chartBars}>
-                      {chartCard.values.map((day) => (
-                        <div className={styles.chartRow} key={`${chartCard.title}-${day.key}`}>
-                          <span className={styles.chartDay}>{day.dateLabel}</span>
-                          <span className={styles.chartTrack}>
+            {!isChartDetailOpen ? (
+              <>
+                <h2>Graficas de {chart?.label || "Mes actual"}</h2>
+                <div className={styles.chartOverviewGrid}>
+                  {chartCards.map((chartCard) => {
+                    const maxValue = Math.max(...chartCard.values.map((day) => Number(day.value || 0)), 0);
+                    return (
+                      <button
+                        className={styles.chartOverviewCard}
+                        type="button"
+                        key={chartCard.title}
+                        onClick={() => setIsChartDetailOpen(true)}
+                      >
+                        <span>{chartCard.title}</span>
+                        <span className={styles.chartMiniBars} aria-hidden="true">
+                          {chartCard.values.map((day) => (
                             <span
-                              className={`${styles.chartFill} ${chartCard.className}`}
-                              style={{ width: `${getChartBarPercent(day.value, maxValue)}%` }}
-                            />
-                          </span>
-                          <strong>{chartCard.formatter.format(day.value)}</strong>
+                              className={styles.chartMiniTrack}
+                              key={`${chartCard.title}-mini-${day.key}`}
+                            >
+                              <span
+                                className={`${styles.chartMiniFill} ${chartCard.className}`}
+                                style={{ height: `${getChartBarPercent(day.value, maxValue)}%` }}
+                              />
+                            </span>
+                          ))}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={styles.chartDetailHeader}>
+                  <h2>Graficas de {chart?.label || "Mes actual"}</h2>
+                  <button className={styles.chartSummaryButton} type="button" onClick={() => setIsChartDetailOpen(false)}>
+                    Resumen
+                  </button>
+                </div>
+                <div className={styles.chartControls}>
+                  <Form method="get" className={styles.chartMonthForm}>
+                    <input type="hidden" name="period" value="chart" />
+                    <label className={styles.chartMonthLabel}>
+                      Mes
+                      <select
+                        className={styles.chartMonthSelect}
+                        name="month"
+                        value={chart?.monthKey || ""}
+                        onChange={(event) => submit(event.currentTarget.form)}
+                      >
+                        {chartMonthOptions.map((monthOption) => (
+                          <option value={monthOption.value} key={monthOption.value}>
+                            {monthOption.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </Form>
+                  {chart?.canGoNext ? (
+                    <Link
+                      className={styles.chartNavButton}
+                      to={`/finanzas?period=chart&month=${chart.nextMonthKey}`}
+                      prefetch="intent"
+                    >
+                      Siguiente
+                    </Link>
+                  ) : (
+                    <span className={`${styles.chartNavButton} ${styles.chartNavButtonDisabled}`}>Siguiente</span>
+                  )}
+                  <Link
+                    className={styles.chartNavButton}
+                    to={`/finanzas?period=chart&month=${chart?.previousMonthKey || ""}`}
+                    prefetch="intent"
+                  >
+                    Anterior
+                  </Link>
+                </div>
+                <div className={styles.chartGrid}>
+                  {chartCards.map((chartCard) => {
+                    const maxValue = Math.max(...chartCard.values.map((day) => Number(day.value || 0)), 0);
+                    return (
+                      <article className={styles.chartCard} key={chartCard.title}>
+                        <h3>{chartCard.title}</h3>
+                        <div className={styles.chartBars}>
+                          {chartCard.values.map((day) => (
+                            <div className={styles.chartRow} key={`${chartCard.title}-${day.key}`}>
+                              <span className={styles.chartDay}>{day.dateLabel}</span>
+                              <span className={styles.chartTrack}>
+                                <span
+                                  className={`${styles.chartFill} ${chartCard.className}`}
+                                  style={{ width: `${getChartBarPercent(day.value, maxValue)}%` }}
+                                />
+                              </span>
+                              <strong>{chartCard.formatter.format(day.value)}</strong>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </section>
         ) : null}
 
