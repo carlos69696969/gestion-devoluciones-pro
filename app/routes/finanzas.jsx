@@ -967,6 +967,9 @@ export default function FinanzasPortal() {
   const selectedDetailDay = detailDays.find((day) => day.key === selectedDetailDayKey) || null;
   const selectedWeekDay = selectedDetailDay;
   const setSelectedWeekDayKey = setSelectedDetailDayKey;
+  const selectedDetailUsesNetTotals = Boolean(
+    selectedWeekDay?.totals?.hasRefunds && (period === "history" || selectedWeekDay?.isCut),
+  );
   const chartDays = chart?.days || [];
   const chartMonthOptions = chart?.monthOptions || [];
   const chartCards = [
@@ -1412,12 +1415,12 @@ export default function FinanzasPortal() {
                   <span>Ventas</span>
                   <strong>
                     {currencyFormatter.format(
-                      selectedWeekDay.isCut && selectedWeekDay.totals.hasRefunds
+                      selectedDetailUsesNetTotals
                         ? selectedWeekDay.totals.netSalesTotal
                         : selectedWeekDay.totals.salesTotal,
                     )}
                   </strong>
-                  {selectedWeekDay.totals.hasRefunds && !selectedWeekDay.isCut ? (
+                  {selectedWeekDay.totals.hasRefunds && !selectedDetailUsesNetTotals ? (
                     <small className={styles.metricRefund}>{formatRefundAmount(selectedWeekDay.totals.refundSalesTotal)}</small>
                   ) : null}
                 </article>
@@ -1489,16 +1492,16 @@ export default function FinanzasPortal() {
                   <span>Ganancias</span>
                   <strong>
                     {currencyFormatter.format(
-                      selectedWeekDay.isCut && selectedWeekDay.totals.hasRefunds
+                      selectedDetailUsesNetTotals
                         ? selectedWeekDay.totals.netProfitTotal
                         : selectedWeekDay.totals.profitTotal,
                     )}
                   </strong>
-                  {selectedWeekDay.totals.hasRefunds && !selectedWeekDay.isCut ? (
+                  {selectedWeekDay.totals.hasRefunds && !selectedDetailUsesNetTotals ? (
                     <small className={styles.metricRefund}>{formatRefundAmount(selectedWeekDay.totals.refundProfitTotal)}</small>
                   ) : null}
                 </article>
-                {selectedWeekDay.totals.hasRefunds && !selectedWeekDay.isCut ? (
+                {selectedWeekDay.totals.hasRefunds && !selectedDetailUsesNetTotals ? (
                   <article className={`${styles.metric} ${styles.metricNet} ${styles.wide}`}>
                     <span>Total del dia</span>
                     <strong>
