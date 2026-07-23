@@ -511,6 +511,11 @@ async function fetchOrdersForRange({
                   amount
                 }
               }
+              totalReceivedSet {
+                shopMoney {
+                  amount
+                }
+              }
               subtotalPriceSet {
                 shopMoney {
                   amount
@@ -744,7 +749,7 @@ function calculateFinanceTotals(orders, refundEvents = []) {
     refundOperatingCostTotal: refundTotals.refundOperatingCostTotal,
     refundTaxesTotal: refundTotals.refundTaxesTotal,
     refundRecoveredCostTotal: refundTotals.refundRecoveredCostTotal,
-    netSalesTotal: financeTotals.salesTotal - refundTotals.refundSalesTotalForNet,
+    netSalesTotal: financeTotals.salesTotal - refundTotals.refundSalesTotal,
     netProfitTotal: financeTotals.profitTotal - refundTotals.refundProfitTotal,
     netShippingTotal: Math.max(0, shippingTotal - refundTotals.refundShippingTotal),
     netOperatingCostTotal: Math.max(0, operatingCostTotal - refundTotals.refundOperatingCostTotal),
@@ -808,10 +813,11 @@ function calculateOrderFinanceTotals(order) {
   const marginTotal = recoveredCostTotal * profitMarginRate;
   const taxesTotal = marginTotal * PROFIT_TAX_RATE;
   const profitTotal = marginTotal - taxesTotal;
-  const actualSalesTotal = Number(order?.currentTotalPriceSet?.shopMoney?.amount || 0);
-  const salesTotal = actualSalesTotal;
   const actualShippingTotal = Number(order?.totalShippingPriceSet?.shopMoney?.amount || 0);
   const shippingTotal = actualShippingTotal;
+  const receivedSalesTotal = Number(order?.totalReceivedSet?.shopMoney?.amount || 0);
+  const fallbackSalesTotal = totals.salesTotal + shippingTotal;
+  const salesTotal = receivedSalesTotal || fallbackSalesTotal;
 
   return { salesTotal, originalSubtotalTotal: originalOrderTotal, shippingTotal, recoveredCostTotal, taxesTotal, profitTotal };
 }
