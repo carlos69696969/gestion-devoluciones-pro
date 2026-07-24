@@ -280,6 +280,14 @@ function buildMonthBreakdown(start, end, salesOrders, refundEvents) {
   };
 }
 
+function emptyHistoryData(monthKey = getCurrentMonthKeyInMexico()) {
+  return {
+    label: "",
+    days: [],
+    ...buildChartNavigation(monthKey),
+  };
+}
+
 function cleanShop(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -443,7 +451,7 @@ function normalizeFinancePeriod(value) {
 function getFinanceRangeInMexico(period, { chartMonthKey } = {}) {
   if (period === "week") return getWeekRangeInMexico();
   if (period === "chart") return getMonthRangeInMexico(chartMonthKey);
-  if (period === "history") return getMonthRangeInMexico();
+  if (period === "history") return getMonthRangeInMexico(chartMonthKey);
   return getTodayRangeInMexico();
 }
 
@@ -841,6 +849,182 @@ function getChartBarPercent(value, maxValue) {
   return Math.max(3, Math.min(100, (Number(value || 0) / maxValue) * 100));
 }
 
+function normalizePdfText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapePdfText(value) {
+  return normalizePdfText(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function formatPdfMoney(value, formatter = currencyFormatter) {
+  return normalizePdfText(formatter.format(Number(value || 0)));
+}
+
+function formatPdfSignedMoney(value) {
+  return `-${formatPdfMoney(value)}`;
+}
+
+function getVisibleTotal(totalsValue, grossKey, netKey) {
+  return totalsValue?.hasRefunds ? Number(totalsValue?.[netKey] || 0) : Number(totalsValue?.[grossKey] || 0);
+}
+
+function buildFinanceReportRows({ period, dayLabel, totals, week, history, chart }) {
+  if (period === "week") return week?.days || [];
+  if (period === "history") return history?.days || [];
+  if (period === "chart") return chart?.days || [];
+  return [
+    {
+      key: "day",
+      dayName: "Dia",
+      dateLabel: dayLabel || "Hoy",
+      totals,
+    },
+  ];
+}
+
+function getFinanceReportLabel({ period, dayLabel, week, history, chart }) {
+  if (period === "week") return week?.label || "Semana actual";
+  if (period === "history") return history?.label || "Mes actual";
+  if (period === "chart") return chart?.label || "Mes seleccionado";
+  return dayLabel || "Dia actual";
+}
+
+function getFinanceReportTitle(period) {
+  if (period === "week") return "Reporte financiero semanal";
+  if (period === "history") return "Reporte financiero mensual";
+  if (period === "chart") return "Reporte financiero por mes";
+  return "Reporte financiero diario";
+}
+
+function buildFinancePdfFileName(period, label) {
+  const cleanLabel = normalizePdfText(label)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `finanzas-${period}-${cleanLabel || "reporte"}.pdf`;
+}
+
+function createFinancePdfBlob({ title, subtitle, totals, rows }) {
+  const pageWidth = 612;
+  const pageHeight = 792;
+  const marginX = 42;
+  const marginTop = 42;
+  const marginBottom = 42;
+  const usableWidth = pageWidth - marginX * 2;
+  const lineGap = 14;
+  const pages = [[]];
+  let y = pageHeight - marginTop;
+
+  const addPage = () => {
+    pages.push([]);
+    y = pageHeight - marginTop;
+  };
+
+  const addText = (text, { size = 10, bold = false, indent = 0, gap = lineGap } = {}) => {
+    const maxChars = Math.max(18, Math.floor((usableWidth - indent) / (size * 0.53)));
+    const words = normalizePdfText(text).split(" ").filter(Boolean);
+    const lines = [];
+    let line = "";
+
+    words.forEach((word) => {
+      const candidate = line ? `${line} ${word}` : word;
+      if (candidate.length > maxChars && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = candidate;
+      }
+    });
+    if (line) lines.push(line);
+    if (!lines.length) lines.push("");
+
+    lines.forEach((lineText) => {
+      if (y < marginBottom + gap) addPage();
+      pages[pages.length - 1].push({ text: lineText, size, bold, x: marginX + indent, y });
+      y -= gap;
+    });
+  };
+
+  const addSpacer = (height = 8) => {
+    y -= height;
+    if (y < marginBottom) addPage();
+  };
+
+  const summaryTotals = totals || emptyTotals;
+  addText("CARIANA", { size: 11, bold: true });
+  addText(title, { size: 20, bold: true, gap: 22 });
+  addText(subtitle, { size: 12, bold: true });
+  addText(`Generado: ${new Date().toLocaleString("es-MX", { timeZone: FINANCE_TIME_ZONE })}`, { size: 9 });
+  addSpacer(10);
+  addText("Resumen", { size: 14, bold: true, gap: 18 });
+  addText(`Ventas: ${formatPdfMoney(summaryTotals.salesTotal)}`);
+  if (summaryTotals.hasRefunds) addText(`Reembolsos: ${formatPdfSignedMoney(summaryTotals.refundSalesTotal)}`);
+  addText(`Ventas netas: ${formatPdfMoney(getVisibleTotal(summaryTotals, "salesTotal", "netSalesTotal"))}`);
+  addText(`Ticket promedio: ${formatPdfMoney(summaryTotals.averageTicket)}`);
+  addText(`Costo operativo: ${formatPdfMoney(getVisibleTotal(summaryTotals, "operatingCostTotal", "netOperatingCostTotal"))}`);
+  addText(`Paqueteria: ${formatPdfMoney(getVisibleTotal(summaryTotals, "shippingTotal", "netShippingTotal"))}`);
+  addText(`Impuestos: ${formatPdfMoney(getVisibleTotal(summaryTotals, "taxesTotal", "netTaxesTotal"))}`);
+  addText(`Costo recuperado: ${formatPdfMoney(getVisibleTotal(summaryTotals, "recoveredCostTotal", "netRecoveredCostTotal"), wholeCurrencyFormatter)}`);
+  addText(`Ganancias: ${formatPdfMoney(getVisibleTotal(summaryTotals, "profitTotal", "netProfitTotal"))}`);
+  addText(`Pedidos: ${summaryTotals.orderCount || 0} | Articulos: ${summaryTotals.itemCount || 0}`);
+  addSpacer(12);
+  addText("Detalle", { size: 14, bold: true, gap: 18 });
+  addText("Fecha | Ventas | Reembolsos | Ventas netas | Ganancias netas | Pedidos", { size: 9, bold: true });
+
+  rows.forEach((row) => {
+    const rowTotals = row?.totals || emptyTotals;
+    const label = row?.isCut ? `Corte - ${row.dateLabel}` : `${row.dayName || "Dia"} - ${row.dateLabel || ""}`;
+    addText(
+      `${label} | ${formatPdfMoney(rowTotals.salesTotal)} | ${formatPdfSignedMoney(rowTotals.refundSalesTotal)} | ${formatPdfMoney(getVisibleTotal(rowTotals, "salesTotal", "netSalesTotal"))} | ${formatPdfMoney(getVisibleTotal(rowTotals, "profitTotal", "netProfitTotal"))} | ${rowTotals.orderCount || 0}`,
+      { size: 9 },
+    );
+  });
+
+  const pageObjects = [];
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+  ];
+
+  pages.forEach((pageLines) => {
+    const pageObjectNumber = objects.length + 1;
+    const contentObjectNumber = objects.length + 2;
+    pageObjects.push(pageObjectNumber);
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObjectNumber} 0 R >>`,
+    );
+    const stream = pageLines
+      .map((line) => `BT /${line.bold ? "F2" : "F1"} ${line.size} Tf ${line.x} ${line.y} Td (${escapePdfText(line.text)}) Tj ET`)
+      .join("\n");
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  });
+
+  objects[1] = `<< /Type /Pages /Kids [${pageObjects.map((objectNumber) => `${objectNumber} 0 R`).join(" ")}] /Count ${pageObjects.length} >>`;
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return new Blob([pdf], { type: "application/pdf" });
+}
+
 function getProfitMarginRateForOrderTotal(orderTotal) {
   if (orderTotal >= 1000) return VERY_HIGH_ORDER_PROFIT_MARGIN_RATE;
   if (orderTotal >= 750) return HIGH_ORDER_PROFIT_MARGIN_RATE;
@@ -982,7 +1166,7 @@ export async function loader({ request }) {
       period,
       totals: emptyTotals,
       week: { label: "", days: [] },
-      history: { label: "", days: [] },
+      history: emptyHistoryData(chartMonthKey),
       chart: emptyChartData(chartMonthKey),
       error: "Falta configurar FINANCE_ACCESS_CODE en Render.",
     };
@@ -996,7 +1180,7 @@ export async function loader({ request }) {
       period,
       totals: emptyTotals,
       week: { label: "", days: [] },
-      history: { label: "", days: [] },
+      history: emptyHistoryData(chartMonthKey),
       chart: emptyChartData(chartMonthKey),
       error: "",
     };
@@ -1013,14 +1197,17 @@ export async function loader({ request }) {
         period,
         totals: emptyTotals,
         week: { label: "", days: [] },
-        history: { label: "", days: [] },
+        history: emptyHistoryData(monthKey || chartMonthKey),
         chart: emptyChartData(monthKey || chartMonthKey),
         error: "No se encontro una sesion offline valida para consultar ventas.",
       };
     }
     const { orders, refundEvents } = await fetchFinanceRangeDataWithCache({ shop, sessions, start, end });
     const week = period === "week" ? buildWeekBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
-    const history = period === "history" ? buildMonthBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
+    const history =
+      period === "history"
+        ? { ...buildMonthBreakdown(start, end, orders, refundEvents), ...buildChartNavigation(monthKey) }
+        : emptyHistoryData(chartMonthKey);
     const chart = period === "chart" ? buildChartBreakdown(start, end, orders, refundEvents, monthKey) : emptyChartData(chartMonthKey);
     return {
       isLoggedIn: true,
@@ -1042,7 +1229,7 @@ export async function loader({ request }) {
       dayLabel,
       totals: emptyTotals,
       week: { label: period === "week" ? formatWeekLabel(start, end) : "", days: [] },
-      history: { label: period === "history" ? formatMonthLabel(start) : "", days: [] },
+      history: { ...emptyHistoryData(monthKey || chartMonthKey), label: period === "history" ? formatMonthLabel(start) : "" },
       chart: { ...emptyChartData(monthKey || chartMonthKey), label: period === "chart" ? formatMonthLabel(start) : "" },
       error: formatFinanceLoadError(error, period),
     };
@@ -1102,6 +1289,7 @@ export default function FinanzasPortal() {
   );
   const chartDays = chart?.days || [];
   const chartMonthOptions = chart?.monthOptions || [];
+  const historyMonthOptions = history?.monthOptions || [];
   const chartCards = [
     {
       title: "Ventas",
@@ -1128,6 +1316,24 @@ export default function FinanzasPortal() {
       values: chartDays.map((day) => ({ ...day, value: day.totals.averageTicket })),
     },
   ];
+  const downloadFinancePdf = () => {
+    const subtitle = getFinanceReportLabel({ period, dayLabel, week, history, chart });
+    const rows = buildFinanceReportRows({ period, dayLabel, totals, week, history, chart });
+    const pdfBlob = createFinancePdfBlob({
+      title: getFinanceReportTitle(period),
+      subtitle,
+      totals,
+      rows,
+    });
+    const downloadUrl = window.URL.createObjectURL(pdfBlob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = buildFinancePdfFileName(period, subtitle);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  };
 
   useEffect(() => {
     setOptimisticPeriod(period);
@@ -1206,6 +1412,13 @@ export default function FinanzasPortal() {
           <div>
             <h1>Control financiero</h1>
           </div>
+          <button
+            className={`${styles.btn} ${styles.btnPrimary} ${styles.pdfButton}`}
+            type="button"
+            onClick={downloadFinancePdf}
+          >
+            Descargar PDF
+          </button>
         </section>
 
         <section className={styles.periodTabs} aria-label="Periodo financiero">
@@ -1359,6 +1572,26 @@ export default function FinanzasPortal() {
         {period === "history" ? (
           <section className={styles.weekPanel} aria-label="Historial mensual">
             <h2>Historial</h2>
+            <div className={styles.historyControls}>
+              <Form method="get" className={styles.chartMonthForm}>
+                <input type="hidden" name="period" value="history" />
+                <label className={styles.chartMonthLabel}>
+                  Mes
+                  <select
+                    className={styles.chartMonthSelect}
+                    name="month"
+                    value={history?.monthKey || ""}
+                    onChange={(event) => submit(event.currentTarget.form)}
+                  >
+                    {historyMonthOptions.map((monthOption) => (
+                      <option value={monthOption.value} key={monthOption.value}>
+                        {monthOption.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </Form>
+            </div>
             <button
               className={`${styles.weekCard} ${styles.monthOverviewCard}`}
               type="button"

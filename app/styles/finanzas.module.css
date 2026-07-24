@@ -227,6 +227,11 @@
   color: #fff;
 }
 
+.pdfButton {
+  min-width: 150px;
+  white-space: nowrap;
+}
+
 .btnDanger {
   border-color: #fecdca;
   background: #fff0ed;
@@ -265,6 +270,12 @@
   cursor: pointer;
   grid-template-columns: 1.4fr 1fr 1fr;
   align-items: center;
+}
+
+.historyControls {
+  display: grid;
+  grid-template-columns: minmax(180px, 280px);
+  justify-content: end;
 }
 
 .weekSummaryCard {
@@ -872,6 +883,10 @@
     gap: 8px;
   }
 
+  .pdfButton {
+    width: 100%;
+  }
+
   .hero h1 {
     font-size: 24px;
     line-height: 1.08;
@@ -954,6 +969,10 @@
   .weekPanel {
     padding: 10px;
     gap: 10px;
+  }
+
+  .historyControls {
+    grid-template-columns: 1fr;
   }
 
   .weekPanel h2 {
