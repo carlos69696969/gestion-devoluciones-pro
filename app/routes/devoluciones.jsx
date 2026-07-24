@@ -2158,15 +2158,7 @@ function CompletedReturnSummary({ requestItem }) {
   const displayStatusLabel = isCurrentReprogrammed ? "reprogramada" : requestItem.statusLabel;
   return (
     <article className={styles.completedCard}>
-      <button
-        type="button"
-        className={styles.completedBackTitle}
-        onClick={() => window.history.back()}
-        aria-label={`Regresar al pedido #${requestItem.orderNumber}`}
-      >
-        <span className={styles.completedBackIcon} aria-hidden="true">←</span>
-        <span>Pedido #{requestItem.orderNumber}</span>
-      </button>
+      <h3 className={styles.completedTitle}>Pedido #{requestItem.orderNumber}</h3>
       <p className={styles.completedStatus}>
         Estado de devolucion:{" "}
         <strong
