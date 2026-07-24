@@ -920,10 +920,48 @@ function createFinancePdfBlob({ title, subtitle, totals, rows }) {
   const lineGap = 14;
   const pages = [[]];
   let y = pageHeight - marginTop;
+  const tableColumns = [
+    { label: "Fecha", x: marginX, width: 210, align: "left" },
+    { label: "Ventas", x: 264, width: 58, align: "right" },
+    { label: "Reemb.", x: 330, width: 58, align: "right" },
+    { label: "Neto", x: 396, width: 58, align: "right" },
+    { label: "Ganancia", x: 462, width: 62, align: "right" },
+    { label: "Ped.", x: 532, width: 38, align: "right" },
+  ];
+
+  const estimateTextWidth = (text, size) => normalizePdfText(text).length * size * 0.48;
+  const truncateText = (text, maxChars) => {
+    const cleanText = normalizePdfText(text);
+    if (cleanText.length <= maxChars) return cleanText;
+    return `${cleanText.slice(0, Math.max(0, maxChars - 3)).trim()}...`;
+  };
 
   const addPage = () => {
     pages.push([]);
     y = pageHeight - marginTop;
+  };
+
+  const ensureSpace = (height) => {
+    if (y < marginBottom + height) addPage();
+  };
+
+  const addRule = (offsetY = 0) => {
+    const ruleY = y + offsetY;
+    pages[pages.length - 1].push({ type: "rule", x1: marginX, y1: ruleY, x2: pageWidth - marginX, y2: ruleY });
+  };
+
+  const addCell = (text, { x, width, size = 9, bold = false, align = "left", maxChars } = {}) => {
+    const cleanText = truncateText(text, maxChars || Math.max(8, Math.floor(width / (size * 0.46))));
+    const textWidth = estimateTextWidth(cleanText, size);
+    const adjustedX = align === "right" ? x + width - textWidth : x;
+    pages[pages.length - 1].push({
+      type: "text",
+      text: cleanText,
+      size,
+      bold,
+      x: Math.max(x, adjustedX),
+      y,
+    });
   };
 
   const addText = (text, { size = 10, bold = false, indent = 0, gap = lineGap } = {}) => {
@@ -945,8 +983,8 @@ function createFinancePdfBlob({ title, subtitle, totals, rows }) {
     if (!lines.length) lines.push("");
 
     lines.forEach((lineText) => {
-      if (y < marginBottom + gap) addPage();
-      pages[pages.length - 1].push({ text: lineText, size, bold, x: marginX + indent, y });
+      ensureSpace(gap);
+      pages[pages.length - 1].push({ type: "text", text: lineText, size, bold, x: marginX + indent, y });
       y -= gap;
     });
   };
@@ -956,35 +994,83 @@ function createFinancePdfBlob({ title, subtitle, totals, rows }) {
     if (y < marginBottom) addPage();
   };
 
+  const addSummaryPair = (label, value, columnIndex, rowIndex) => {
+    const columnX = columnIndex === 0 ? marginX : marginX + 274;
+    const rowY = y - rowIndex * 20;
+    pages[pages.length - 1].push({ type: "text", text: normalizePdfText(label), size: 9, bold: false, x: columnX, y: rowY });
+    pages[pages.length - 1].push({
+      type: "text",
+      text: normalizePdfText(value),
+      size: 11,
+      bold: true,
+      x: columnX + 118,
+      y: rowY,
+    });
+  };
+
+  const addTableHeader = () => {
+    ensureSpace(34);
+    addRule(10);
+    y -= 8;
+    tableColumns.forEach((column) => {
+      addCell(column.label, { ...column, size: 8, bold: true });
+    });
+    y -= 14;
+    addRule(4);
+  };
+
+  const addTableRow = (row) => {
+    ensureSpace(22);
+    const rowTotals = row?.totals || emptyTotals;
+    const label = row?.isCut ? `Corte - ${row.dateLabel}` : `${row.dayName || "Dia"} - ${row.dateLabel || ""}`;
+    const values = [
+      label,
+      formatPdfMoney(rowTotals.salesTotal),
+      formatPdfSignedMoney(rowTotals.refundSalesTotal),
+      formatPdfMoney(getVisibleTotal(rowTotals, "salesTotal", "netSalesTotal")),
+      formatPdfMoney(getVisibleTotal(rowTotals, "profitTotal", "netProfitTotal")),
+      String(rowTotals.orderCount || 0),
+    ];
+    if (row?.isCut) addRule(7);
+    tableColumns.forEach((column, index) => {
+      addCell(values[index], { ...column, size: row?.isCut ? 8.5 : 8, bold: Boolean(row?.isCut) });
+    });
+    y -= 17;
+  };
+
   const summaryTotals = totals || emptyTotals;
   addText("CARIANA", { size: 11, bold: true });
   addText(title, { size: 20, bold: true, gap: 22 });
   addText(subtitle, { size: 12, bold: true });
   addText(`Generado: ${new Date().toLocaleString("es-MX", { timeZone: FINANCE_TIME_ZONE })}`, { size: 9 });
-  addSpacer(10);
+  addSpacer(6);
+  addRule();
+  addSpacer(14);
   addText("Resumen", { size: 14, bold: true, gap: 18 });
-  addText(`Ventas: ${formatPdfMoney(summaryTotals.salesTotal)}`);
-  if (summaryTotals.hasRefunds) addText(`Reembolsos: ${formatPdfSignedMoney(summaryTotals.refundSalesTotal)}`);
-  addText(`Ventas netas: ${formatPdfMoney(getVisibleTotal(summaryTotals, "salesTotal", "netSalesTotal"))}`);
-  addText(`Ticket promedio: ${formatPdfMoney(summaryTotals.averageTicket)}`);
-  addText(`Costo operativo: ${formatPdfMoney(getVisibleTotal(summaryTotals, "operatingCostTotal", "netOperatingCostTotal"))}`);
-  addText(`Paqueteria: ${formatPdfMoney(getVisibleTotal(summaryTotals, "shippingTotal", "netShippingTotal"))}`);
-  addText(`Impuestos: ${formatPdfMoney(getVisibleTotal(summaryTotals, "taxesTotal", "netTaxesTotal"))}`);
-  addText(`Costo recuperado: ${formatPdfMoney(getVisibleTotal(summaryTotals, "recoveredCostTotal", "netRecoveredCostTotal"), wholeCurrencyFormatter)}`);
-  addText(`Ganancias: ${formatPdfMoney(getVisibleTotal(summaryTotals, "profitTotal", "netProfitTotal"))}`);
-  addText(`Pedidos: ${summaryTotals.orderCount || 0} | Articulos: ${summaryTotals.itemCount || 0}`);
-  addSpacer(12);
-  addText("Detalle", { size: 14, bold: true, gap: 18 });
-  addText("Fecha | Ventas | Reembolsos | Ventas netas | Ganancias netas | Pedidos", { size: 9, bold: true });
-
-  rows.forEach((row) => {
-    const rowTotals = row?.totals || emptyTotals;
-    const label = row?.isCut ? `Corte - ${row.dateLabel}` : `${row.dayName || "Dia"} - ${row.dateLabel || ""}`;
-    addText(
-      `${label} | ${formatPdfMoney(rowTotals.salesTotal)} | ${formatPdfSignedMoney(rowTotals.refundSalesTotal)} | ${formatPdfMoney(getVisibleTotal(rowTotals, "salesTotal", "netSalesTotal"))} | ${formatPdfMoney(getVisibleTotal(rowTotals, "profitTotal", "netProfitTotal"))} | ${rowTotals.orderCount || 0}`,
-      { size: 9 },
-    );
+  ensureSpace(120);
+  [
+    ["Ventas", formatPdfMoney(summaryTotals.salesTotal)],
+    ["Reembolsos", formatPdfSignedMoney(summaryTotals.refundSalesTotal)],
+    ["Ventas netas", formatPdfMoney(getVisibleTotal(summaryTotals, "salesTotal", "netSalesTotal"))],
+    ["Ticket promedio", formatPdfMoney(summaryTotals.averageTicket)],
+    ["Costo operativo", formatPdfMoney(getVisibleTotal(summaryTotals, "operatingCostTotal", "netOperatingCostTotal"))],
+    ["Paqueteria", formatPdfMoney(getVisibleTotal(summaryTotals, "shippingTotal", "netShippingTotal"))],
+    ["Impuestos", formatPdfMoney(getVisibleTotal(summaryTotals, "taxesTotal", "netTaxesTotal"))],
+    [
+      "Costo recuperado",
+      formatPdfMoney(getVisibleTotal(summaryTotals, "recoveredCostTotal", "netRecoveredCostTotal"), wholeCurrencyFormatter),
+    ],
+    ["Ganancias", formatPdfMoney(getVisibleTotal(summaryTotals, "profitTotal", "netProfitTotal"))],
+    ["Pedidos / articulos", `${summaryTotals.orderCount || 0} / ${summaryTotals.itemCount || 0}`],
+  ].forEach(([label, value], index) => {
+    addSummaryPair(label, value, index >= 5 ? 1 : 0, index % 5);
   });
+  y -= 108;
+  addRule(8);
+  addSpacer(24);
+  addText("Detalle", { size: 14, bold: true, gap: 18 });
+  addTableHeader();
+  rows.forEach((row) => addTableRow(row));
 
   const pageObjects = [];
   const objects = [
@@ -1002,7 +1088,10 @@ function createFinancePdfBlob({ title, subtitle, totals, rows }) {
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObjectNumber} 0 R >>`,
     );
     const stream = pageLines
-      .map((line) => `BT /${line.bold ? "F2" : "F1"} ${line.size} Tf ${line.x} ${line.y} Td (${escapePdfText(line.text)}) Tj ET`)
+      .map((line) => {
+        if (line.type === "rule") return `q 0.82 0.86 0.91 RG 0.7 w ${line.x1} ${line.y1} m ${line.x2} ${line.y2} l S Q`;
+        return `BT /${line.bold ? "F2" : "F1"} ${line.size} Tf ${line.x} ${line.y} Td (${escapePdfText(line.text)}) Tj ET`;
+      })
       .join("\n");
     objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
   });
@@ -1399,12 +1488,17 @@ export default function FinanzasPortal() {
             <small>Finanzas</small>
           </div>
         </div>
-        <Form method="post">
-          <input type="hidden" name="intent" value="logout" />
-          <button className={styles.logoutButton} type="submit">
-            Salir
+        <div className={styles.headerActions}>
+          <button className={`${styles.logoutButton} ${styles.pdfButton}`} type="button" onClick={downloadFinancePdf}>
+            PDF
           </button>
-        </Form>
+          <Form method="post">
+            <input type="hidden" name="intent" value="logout" />
+            <button className={styles.logoutButton} type="submit">
+              Salir
+            </button>
+          </Form>
+        </div>
       </div>
 
       <div className={styles.wrap}>
@@ -1412,13 +1506,6 @@ export default function FinanzasPortal() {
           <div>
             <h1>Control financiero</h1>
           </div>
-          <button
-            className={`${styles.btn} ${styles.btnPrimary} ${styles.pdfButton}`}
-            type="button"
-            onClick={downloadFinancePdf}
-          >
-            Descargar PDF
-          </button>
         </section>
 
         <section className={styles.periodTabs} aria-label="Periodo financiero">

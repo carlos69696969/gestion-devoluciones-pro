@@ -44,6 +44,12 @@
   font-weight: 700;
 }
 
+.headerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .logoutButton {
   min-height: 38px;
   border: 1px solid #d9dee7;
@@ -228,7 +234,7 @@
 }
 
 .pdfButton {
-  min-width: 150px;
+  min-width: 54px;
   white-space: nowrap;
 }
 
@@ -881,10 +887,6 @@
   .hero {
     padding: 4px 0 0;
     gap: 8px;
-  }
-
-  .pdfButton {
-    width: 100%;
   }
 
   .hero h1 {
