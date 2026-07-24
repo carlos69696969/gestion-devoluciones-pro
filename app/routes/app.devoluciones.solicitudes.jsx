@@ -187,6 +187,14 @@ function buildReturnedToCustomerMessage(requestRow) {
   return `📦 Pedido #${orderNumber}. ${RETURNED_TO_CUSTOMER_MESSAGE}`;
 }
 
+function buildExpiredReturnNotificationCopy(requestRow) {
+  const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  return {
+    title: "Devolucion vencida",
+    message: `Pedido #${orderNumber}. Estimado cliente, la fecha limite para entregar tu devolucion ha expirado. Lamentablemente, ya no podremos aceptar el producto.`,
+  };
+}
+
 async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, note = "", title = "", message = "" }) {
   if (!shopDomain || !NOTIFICATIONS_API_BASE_URL) {
     return;
@@ -194,45 +202,64 @@ async function emitReturnNotificationEvent({ shopDomain, requestRow, intent, not
   const eventPayload = buildReturnEventPayload({ requestRow, intent, note, title, message });
   if (!eventPayload) return;
 
-  const endpoints = [
-    NOTIFICATIONS_API_KEY
-      ? `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`
-      : `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`,
-  ];
+  const endpoints = NOTIFICATIONS_API_KEY
+    ? [
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/api/returns/events`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+            "x-api-key": NOTIFICATIONS_API_KEY,
+          },
+        },
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+          },
+        },
+      ]
+    : [
+        {
+          url: `${NOTIFICATIONS_API_BASE_URL}/proxy/returns/events`,
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+          },
+        },
+      ];
 
   let lastFailure = null;
   for (const endpoint of endpoints) {
-    const headers = {
-      "Content-Type": "application/json",
-      "x-shop-domain": shopDomain,
-    };
-    if (NOTIFICATIONS_API_KEY) {
-      headers["x-api-key"] = NOTIFICATIONS_API_KEY;
-    }
-
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch(endpoint.url, {
         method: "POST",
-        headers,
+        headers: endpoint.headers,
         body: JSON.stringify({
           shopDomain,
           event: eventPayload,
         }),
       });
+      const responsePayload = await response.json().catch(() => null);
 
-      if (response.ok) {
+      if (response.ok && !responsePayload?.result?.skipped) {
         return;
       }
 
-      const detail = await response.text().catch(() => "");
       lastFailure = {
-        endpoint,
+        endpoint: endpoint.url,
         status: response.status,
-        detail: String(detail || "").slice(0, 300),
+        detail: String(
+          responsePayload?.result?.reason ||
+            responsePayload?.error ||
+            responsePayload?.detail ||
+            "El centro de notificaciones omitio el evento.",
+        ).slice(0, 300),
       };
     } catch (error) {
       lastFailure = {
-        endpoint,
+        endpoint: endpoint.url,
         error: String(error?.message || error || "unknown"),
       };
     }
@@ -3198,11 +3225,14 @@ async function markBranchDeliveryNeverArrived({ shopDomain, requestRow, force = 
     where: { id: requestRow.id },
     include: { items: true },
   });
+  const expiredCopy = buildExpiredReturnNotificationCopy(updatedRequest || requestRow);
   await emitReturnNotificationEvent({
     shopDomain,
-    requestRow: updatedRequest,
+    requestRow: updatedRequest || requestRow,
     intent: "mark_never_arrived",
     note: NEVER_ARRIVED_BRANCH_REASON,
+    title: expiredCopy.title,
+    message: expiredCopy.message,
   });
   return { ok: true, requestId: requestRow.id };
 }
