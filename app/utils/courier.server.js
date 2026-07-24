@@ -837,7 +837,7 @@ export async function emitCourierReturnRouteNotification({ shopDomain, requestRo
 
   const title = "\u{1F69A} \u00a1Vamos en camino!";
   const estimatedArrivalLabel = formatCourierEstimatedArrivalRangeLabel();
-  const message = `\u{1F4E6} Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya se dirige a tu domicilio para recoger tu devoluci\u00f3n. Llegar\u00e1 aproximadamente entre ${estimatedArrivalLabel}. Ten tu paquete listo y correctamente sellado. \u{1F4DD} No olvides colocar tu n\u00famero de pedido y nombre del comprador en el exterior del paquete.`;
+  const message = `\u{1F4E6} Tu pedido #${requestRow.orderNumber}. Nuestro repartidor ya se dirige a tu domicilio para recoger tu devoluci\u00f3n. Llegar\u00e1 aproximadamente entre ${estimatedArrivalLabel}. Ten tu paquete listo y correctamente sellado.`;
   const eventPayload = {
     status: "order_in_transit",
     event: "order_in_transit",
