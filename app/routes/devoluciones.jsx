@@ -367,7 +367,7 @@ function normalizeOrder(orderNode) {
       variantSummary: formatVariantSummary(node.variant),
       title: node.title,
       quantity: Number(node.refundableQuantity ?? node.quantity ?? 0),
-      unitPrice: lineItemRefundUnitPrice(node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
+      unitPrice: orderDiscountedRefundUnitPrice(orderNode, node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
     })),
   };
 }
@@ -461,9 +461,6 @@ function shopMoneyAmount(moneySet) {
 
 function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
   const quantity = Math.max(1, toFiniteNumber(node?.quantity, 1));
-  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
-  if (discountedTotal > 0) return roundMoneyValue(discountedTotal / quantity);
-
   const originalTotal = shopMoneyAmount(node?.originalTotalSet) || toFiniteNumber(fallbackUnitPrice, 0) * quantity;
   const allocatedDiscount = (node?.discountAllocations || []).reduce(
     (sum, allocation) => sum + shopMoneyAmount(allocation?.allocatedAmountSet),
@@ -473,7 +470,35 @@ function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
     return roundMoneyValue(Math.max(0, originalTotal - allocatedDiscount) / quantity);
   }
 
+  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
+  if (discountedTotal > 0 && (!originalTotal || discountedTotal < originalTotal)) {
+    return roundMoneyValue(discountedTotal / quantity);
+  }
+
   return roundMoneyValue(fallbackUnitPrice);
+}
+
+function orderSubtotalDiscountRate(orderNode) {
+  const currentSubtotal = shopMoneyAmount(orderNode?.currentSubtotalPriceSet);
+  const originalCurrentSubtotal = (orderNode?.lineItems?.edges || []).reduce((sum, edge) => {
+    const node = edge?.node || {};
+    const unitPrice = shopMoneyAmount(node.originalUnitPriceSet);
+    const quantity = Math.max(0, toFiniteNumber(node.currentQuantity ?? node.quantity, 0));
+    return sum + unitPrice * quantity;
+  }, 0);
+  if (currentSubtotal > 0 && originalCurrentSubtotal > 0 && currentSubtotal < originalCurrentSubtotal) {
+    return currentSubtotal / originalCurrentSubtotal;
+  }
+  return 1;
+}
+
+function orderDiscountedRefundUnitPrice(orderNode, node, fallbackUnitPrice = 0) {
+  const directUnitPrice = lineItemRefundUnitPrice(node, fallbackUnitPrice);
+  const originalUnitPrice = roundMoneyValue(fallbackUnitPrice);
+  if (directUnitPrice > 0 && directUnitPrice < originalUnitPrice) return directUnitPrice;
+  const discountRate = orderSubtotalDiscountRate(orderNode);
+  if (discountRate > 0 && discountRate < 1) return roundMoneyValue(originalUnitPrice * discountRate);
+  return directUnitPrice;
 }
 
 function refundProcessedPortalMessage(requestItem) {
@@ -1170,12 +1195,14 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                   country
                 }
                 billingAddress { name phone }
+                currentSubtotalPriceSet { shopMoney { amount } }
                 lineItems(first: 50) {
                   edges {
                     node {
                       id
                       title
                       quantity
+                      currentQuantity
                       refundableQuantity
                       product { id featuredImage { url altText } }
                       variant {

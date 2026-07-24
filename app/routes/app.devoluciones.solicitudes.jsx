@@ -828,9 +828,6 @@ function shopMoneyAmount(moneySet) {
 
 function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
   const quantity = Math.max(1, toFiniteNumber(node?.quantity, 1));
-  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
-  if (discountedTotal > 0) return roundMoneyValue(discountedTotal / quantity);
-
   const originalTotal = shopMoneyAmount(node?.originalTotalSet) || toFiniteNumber(fallbackUnitPrice, 0) * quantity;
   const allocatedDiscount = (node?.discountAllocations || []).reduce(
     (sum, allocation) => sum + shopMoneyAmount(allocation?.allocatedAmountSet),
@@ -840,7 +837,35 @@ function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
     return roundMoneyValue(Math.max(0, originalTotal - allocatedDiscount) / quantity);
   }
 
+  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
+  if (discountedTotal > 0 && (!originalTotal || discountedTotal < originalTotal)) {
+    return roundMoneyValue(discountedTotal / quantity);
+  }
+
   return roundMoneyValue(fallbackUnitPrice);
+}
+
+function orderSubtotalDiscountRate(orderNode) {
+  const currentSubtotal = shopMoneyAmount(orderNode?.currentSubtotalPriceSet);
+  const originalCurrentSubtotal = (orderNode?.lineItems?.edges || []).reduce((sum, edge) => {
+    const node = edge?.node || {};
+    const unitPrice = shopMoneyAmount(node.originalUnitPriceSet);
+    const quantity = Math.max(0, toFiniteNumber(node.currentQuantity ?? node.quantity, 0));
+    return sum + unitPrice * quantity;
+  }, 0);
+  if (currentSubtotal > 0 && originalCurrentSubtotal > 0 && currentSubtotal < originalCurrentSubtotal) {
+    return currentSubtotal / originalCurrentSubtotal;
+  }
+  return 1;
+}
+
+function orderDiscountedRefundUnitPrice(orderNode, node, fallbackUnitPrice = 0) {
+  const directUnitPrice = lineItemRefundUnitPrice(node, fallbackUnitPrice);
+  const originalUnitPrice = roundMoneyValue(fallbackUnitPrice);
+  if (directUnitPrice > 0 && directUnitPrice < originalUnitPrice) return directUnitPrice;
+  const discountRate = orderSubtotalDiscountRate(orderNode);
+  if (discountRate > 0 && discountRate < 1) return roundMoneyValue(originalUnitPrice * discountRate);
+  return directUnitPrice;
 }
 
 function refundUnitPriceFromItem(item) {
@@ -2575,6 +2600,7 @@ async function fetchOrderSnapshot(admin, orderId) {
               id
               title
               quantity
+              currentQuantity
               refundableQuantity
               variant {
                 id
@@ -2632,7 +2658,7 @@ async function fetchOrderSnapshot(admin, orderId) {
       productId: node.product?.id || "",
       variantSummary: formatVariantSummary(node.variant),
       unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
-      refundUnitPrice: lineItemRefundUnitPrice(node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
+      refundUnitPrice: orderDiscountedRefundUnitPrice(order, node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
     })),
     transactions: (order.transactions || []).map((transaction) => ({
       id: transaction.id,
@@ -5381,6 +5407,9 @@ async function fetchCourierOrderNodes(admin, queryString) {
             currentTotalPriceSet {
               shopMoney { amount currencyCode }
             }
+            currentSubtotalPriceSet {
+              shopMoney { amount currencyCode }
+            }
             shippingAddress {
               name
               phone
@@ -5412,6 +5441,7 @@ async function fetchCourierOrderNodes(admin, queryString) {
                   id
                   title
                   quantity
+                  currentQuantity
                   originalUnitPriceSet {
                     shopMoney { amount currencyCode }
                   }
@@ -5498,7 +5528,7 @@ async function fetchCourierOrders(admin) {
         title: String(node.title || "").trim(),
         quantity: Math.max(1, Number(node.quantity || 1)),
         unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
-      refundUnitPrice: lineItemRefundUnitPrice(node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
+        refundUnitPrice: orderDiscountedRefundUnitPrice(orderNode, node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
         currencyCode: String(node.originalUnitPriceSet?.shopMoney?.currencyCode || orderNode.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
         variantId: node.variant?.id || "",
         productId: node.product?.id || "",
@@ -5579,6 +5609,7 @@ async function fetchBranchPickupCourierOrders(admin) {
                   id
                   title
                   quantity
+                  currentQuantity
                   originalUnitPriceSet {
                     shopMoney { amount currencyCode }
                   }
@@ -5646,7 +5677,7 @@ async function fetchBranchPickupCourierOrders(admin) {
         title: String(node.title || "").trim(),
         quantity: Math.max(1, Number(node.quantity || 1)),
         unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
-      refundUnitPrice: lineItemRefundUnitPrice(node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
+        refundUnitPrice: orderDiscountedRefundUnitPrice(orderNode, node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
         currencyCode: String(node.originalUnitPriceSet?.shopMoney?.currencyCode || "MXN"),
         variantId: node.variant?.id || "",
         productId: node.product?.id || "",
@@ -5693,6 +5724,12 @@ async function fetchCourierHistoryOrders(admin) {
             updatedAt
             displayFulfillmentStatus
             tags
+            currentTotalPriceSet {
+              shopMoney { amount currencyCode }
+            }
+            currentSubtotalPriceSet {
+              shopMoney { amount currencyCode }
+            }
             shippingAddress {
               name
               phone
@@ -5724,6 +5761,7 @@ async function fetchCourierHistoryOrders(admin) {
                   id
                   title
                   quantity
+                  currentQuantity
                   originalUnitPriceSet {
                     shopMoney { amount currencyCode }
                   }
@@ -5788,7 +5826,7 @@ async function fetchCourierHistoryOrders(admin) {
         title: String(node.title || "").trim(),
         quantity: Math.max(1, Number(node.quantity || 1)),
         unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
-      refundUnitPrice: lineItemRefundUnitPrice(node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
+        refundUnitPrice: orderDiscountedRefundUnitPrice(orderNode, node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
         currencyCode: String(node.originalUnitPriceSet?.shopMoney?.currencyCode || "MXN"),
         variantId: node.variant?.id || "",
         productId: node.product?.id || "",
