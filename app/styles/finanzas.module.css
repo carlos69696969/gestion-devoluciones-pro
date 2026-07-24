@@ -856,6 +856,16 @@
     flex-direction: column;
   }
 
+  .hero {
+    padding: 4px 0 0;
+    gap: 8px;
+  }
+
+  .hero h1 {
+    font-size: 24px;
+    line-height: 1.08;
+  }
+
   .metrics {
     grid-template-columns: 1fr;
   }
@@ -866,9 +876,10 @@
   }
 
   .periodButton {
-    min-height: 38px;
+    min-height: 28px;
     padding: 0 4px;
-    font-size: 13px;
+    font-size: 12px;
+    border-radius: 7px;
   }
 
   .chartGrid {
@@ -942,7 +953,7 @@
 
   .weekCard {
     min-height: 76px;
-    grid-template-columns: minmax(94px, 0.95fr) minmax(72px, 1fr) minmax(72px, 1fr);
+    grid-template-columns: minmax(82px, 0.86fr) minmax(78px, 1fr) minmax(78px, 1fr);
     align-items: center;
     gap: 6px;
     padding: 9px 10px;
@@ -950,7 +961,7 @@
 
   .weekSummaryCard {
     min-height: 82px;
-    grid-template-columns: minmax(92px, 0.95fr) minmax(76px, 1fr) minmax(76px, 1fr);
+    grid-template-columns: minmax(82px, 0.86fr) minmax(78px, 1fr) minmax(78px, 1fr);
     gap: 6px;
     padding: 10px;
   }
@@ -972,12 +983,19 @@
   .weekNetCell:first-child strong {
     font-size: 13px;
     line-height: 1.05;
+    max-width: 72px;
   }
 
   .weekSummaryCard small,
   .weekCard small {
     font-size: 10px;
     line-height: 1.05;
+  }
+
+  .weekCard > span:first-child small {
+    display: block;
+    max-width: 78px;
+    white-space: normal;
   }
 
   .weekSummaryCard > span:not(:first-child) strong,
