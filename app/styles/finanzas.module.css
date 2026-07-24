@@ -984,8 +984,12 @@
     display: block;
     font-size: 13px;
     line-height: 1.05;
-    max-width: 58px;
-    white-space: normal;
+    max-width: 72px;
+    white-space: normal !important;
+  }
+
+  .weekSummaryCard > span.weekNetLabel strong {
+    white-space: normal !important;
   }
 
   .weekSummaryCard small,
