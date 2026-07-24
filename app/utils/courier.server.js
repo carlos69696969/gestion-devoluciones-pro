@@ -61,6 +61,36 @@ function formatVariantSummary(variantNode) {
     .join(" / ");
 }
 
+function toFiniteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function roundMoneyValue(value) {
+  return Math.round((toFiniteNumber(value) + Number.EPSILON) * 100) / 100;
+}
+
+function shopMoneyAmount(moneySet) {
+  return toFiniteNumber(moneySet?.shopMoney?.amount, 0);
+}
+
+function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
+  const quantity = Math.max(1, toFiniteNumber(node?.quantity, 1));
+  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
+  if (discountedTotal > 0) return roundMoneyValue(discountedTotal / quantity);
+
+  const originalTotal = shopMoneyAmount(node?.originalTotalSet) || toFiniteNumber(fallbackUnitPrice, 0) * quantity;
+  const allocatedDiscount = (node?.discountAllocations || []).reduce(
+    (sum, allocation) => sum + shopMoneyAmount(allocation?.allocatedAmountSet),
+    0,
+  );
+  if (allocatedDiscount > 0 && originalTotal > 0) {
+    return roundMoneyValue(Math.max(0, originalTotal - allocatedDiscount) / quantity);
+  }
+
+  return roundMoneyValue(fallbackUnitPrice);
+}
+
 function addDays(dateValue, days) {
   const date = new Date(dateValue);
   if (!Number.isFinite(date.getTime())) return null;
@@ -2347,6 +2377,17 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
                       originalUnitPriceSet {
                         shopMoney { amount currencyCode }
                       }
+                      originalTotalSet {
+                        shopMoney { amount currencyCode }
+                      }
+                      discountedTotalSet(withCodeDiscounts: true) {
+                        shopMoney { amount currencyCode }
+                      }
+                      discountAllocations {
+                        allocatedAmountSet {
+                          shopMoney { amount currencyCode }
+                        }
+                      }
                       variant {
                         id
                         title
@@ -2448,6 +2489,17 @@ async function fetchCourierOrdersByIds({ shop, accessToken, orderIds }) {
                     originalUnitPriceSet {
                       shopMoney { amount currencyCode }
                     }
+                    originalTotalSet {
+                      shopMoney { amount currencyCode }
+                    }
+                    discountedTotalSet(withCodeDiscounts: true) {
+                      shopMoney { amount currencyCode }
+                    }
+                    discountAllocations {
+                      allocatedAmountSet {
+                        shopMoney { amount currencyCode }
+                      }
+                    }
                     variant {
                       id
                       title
@@ -2518,6 +2570,7 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
     title: String(node.title || "").trim(),
     quantity: Math.max(1, Number(node.quantity || 1)),
     unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+    refundUnitPrice: lineItemRefundUnitPrice(node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
     currencyCode: String(
       node.originalUnitPriceSet?.shopMoney?.currencyCode ||
         orderNode.currentTotalPriceSet?.shopMoney?.currencyCode ||
