@@ -461,6 +461,9 @@ function shopMoneyAmount(moneySet) {
 
 function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
   const quantity = Math.max(1, toFiniteNumber(node?.quantity, 1));
+  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
+  if (discountedTotal > 0) return roundMoneyValue(discountedTotal / quantity);
+
   const originalTotal = shopMoneyAmount(node?.originalTotalSet) || toFiniteNumber(fallbackUnitPrice, 0) * quantity;
   const allocatedDiscount = (node?.discountAllocations || []).reduce(
     (sum, allocation) => sum + shopMoneyAmount(allocation?.allocatedAmountSet),
@@ -469,9 +472,6 @@ function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
   if (allocatedDiscount > 0 && originalTotal > 0) {
     return roundMoneyValue(Math.max(0, originalTotal - allocatedDiscount) / quantity);
   }
-
-  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
-  if (discountedTotal > 0) return roundMoneyValue(discountedTotal / quantity);
 
   return roundMoneyValue(fallbackUnitPrice);
 }
@@ -1186,7 +1186,7 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                       }
                       originalUnitPriceSet { shopMoney { amount } }
                       originalTotalSet { shopMoney { amount } }
-                      discountedTotalSet { shopMoney { amount } }
+                      discountedTotalSet(withCodeDiscounts: true) { shopMoney { amount } }
                       discountAllocations {
                         allocatedAmountSet { shopMoney { amount } }
                       }
