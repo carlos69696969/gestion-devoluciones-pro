@@ -3454,6 +3454,10 @@ async function safeLoaderValue(label, fallback, callback) {
   }
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
@@ -3646,6 +3650,54 @@ export const loader = async ({ request }) => {
             ).values(),
           ]
       : [];
+  if (
+    (viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS) &&
+    !courierOrdersRaw.some((requestRow) => requestRow?.courierLabel === "Entrega")
+  ) {
+    await wait(600);
+    const retryDeliveryOrders = [
+      ...new Map(
+        [
+          ...(await safeLoaderArray("No se pudieron recargar las ordenes de rutas activas para repartidor/preparador", async () => {
+            const activeRequestIds = await activeCourierRouteAssignmentRequestIds(session.shop);
+            return fetchCourierOrdersByIdsForShop({
+              shop: session.shop,
+              sessionCandidates: [session],
+              orderIds: activeRequestIds,
+            });
+          })).map((requestRow) => ({
+            ...requestRow,
+            courierLabel: "Entrega",
+          })),
+          ...(await safeLoaderArray("No se pudieron recargar las ordenes de entrega para repartidor/preparador", () =>
+            fetchCourierOrders(admin),
+          )).map((requestRow) => ({
+            ...requestRow,
+            courierLabel: "Entrega",
+          })),
+          ...(await safeLoaderArray("No se pudieron recargar las ordenes de entrega compartidas para repartidor/preparador", () =>
+            fetchCourierOrdersForShop({
+              shop: session.shop,
+              sessionCandidates: [session],
+            }),
+          )).map((requestRow) => ({
+            ...requestRow,
+            courierLabel: "Entrega",
+          })),
+        ].map((requestRow) => [String(requestRow.id || ""), requestRow]),
+      ).values(),
+    ];
+    if (retryDeliveryOrders.length) {
+      courierOrdersRaw = [
+        ...new Map(
+          [
+            ...courierOrdersRaw,
+            ...retryDeliveryOrders,
+          ].map((requestRow) => [String(requestRow.id || ""), requestRow]),
+        ).values(),
+      ];
+    }
+  }
   if (purgedCourierHistoryRequestIds.size) {
     courierOrdersRaw = courierOrdersRaw.filter(
       (requestRow) => !purgedCourierHistoryRequestIds.has(String(requestRow.id || "").trim()),
