@@ -966,6 +966,29 @@
     padding: 10px;
   }
 
+  .weekSummaryCard:has(.weekNetCell) {
+    align-items: stretch;
+    row-gap: 6px;
+  }
+
+  .weekSummaryCard:has(.weekNetCell) > span:not(.weekNetCell) {
+    min-height: 43px;
+    align-content: start;
+  }
+
+  .weekSummaryCard:has(.weekNetCell) > span:first-child {
+    grid-template-rows: minmax(29px, auto) 11px;
+  }
+
+  .weekSummaryCard:has(.weekNetCell) > span:not(:first-child):not(.weekNetCell) {
+    grid-template-rows: 10px 16px 11px;
+  }
+
+  .weekSummaryCard:has(.weekNetCell) > span:first-child small,
+  .weekSummaryCard:has(.weekNetCell) .refundAmount {
+    align-self: end;
+  }
+
   .weekSummaryCard span,
   .weekCard span {
     gap: 2px;
