@@ -26,7 +26,10 @@ const TRANSACTION_RATE = 0.03;
 const HIGH_ORDER_DISCOUNT_RATE = 0.1;
 const VERY_HIGH_ORDER_DISCOUNT_RATE = 0.15;
 const FINANCE_RANGE_CACHE_TTL_MS = 45 * 1000;
+const FINANCE_EXCLUSIVE_SESSION_TTL_MS = Number(process.env.FINANCE_SESSION_TTL_MINUTES || 480) * 60 * 1000;
 const financeRangeCache = new Map();
+const financeExclusiveSessionState = globalThis.__financeExclusiveSessionState || { active: null };
+globalThis.__financeExclusiveSessionState = financeExclusiveSessionState;
 
 function financeAccessCookie() {
   return createCookie("finance_portal_access_v1", {
@@ -37,6 +40,64 @@ function financeAccessCookie() {
     maxAge: 60 * 60 * 26,
     secrets: [process.env.SHOPIFY_API_SECRET || "finance-access"],
   });
+}
+
+async function readFinanceAccessCookie(request) {
+  const cookie = financeAccessCookie();
+  return (await cookie.parse(request.headers.get("Cookie"))) || null;
+}
+
+function pruneFinanceExclusiveSession() {
+  const activeSession = financeExclusiveSessionState.active;
+  if (activeSession && activeSession.expiresAt <= Date.now()) {
+    financeExclusiveSessionState.active = null;
+    return null;
+  }
+  return financeExclusiveSessionState.active;
+}
+
+function createFinanceSessionToken() {
+  return globalThis.crypto?.randomUUID
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function refreshFinanceExclusiveSession(token) {
+  const activeSession = pruneFinanceExclusiveSession();
+  if (!token || activeSession?.token !== token) return false;
+  activeSession.lastSeenAt = Date.now();
+  activeSession.expiresAt = Date.now() + FINANCE_EXCLUSIVE_SESSION_TTL_MS;
+  return true;
+}
+
+function startFinanceExclusiveSession(currentToken) {
+  const activeSession = pruneFinanceExclusiveSession();
+  if (currentToken && activeSession?.token === currentToken) {
+    refreshFinanceExclusiveSession(currentToken);
+    return { ok: true, token: currentToken };
+  }
+
+  if (activeSession) {
+    return {
+      ok: false,
+      error: "Ya hay un dispositivo con una sesion abierta. Cierra sesion en ese dispositivo para poder entrar aqui.",
+    };
+  }
+
+  const token = createFinanceSessionToken();
+  financeExclusiveSessionState.active = {
+    token,
+    createdAt: Date.now(),
+    lastSeenAt: Date.now(),
+    expiresAt: Date.now() + FINANCE_EXCLUSIVE_SESSION_TTL_MS,
+  };
+  return { ok: true, token };
+}
+
+function releaseFinanceExclusiveSession(token) {
+  const activeSession = pruneFinanceExclusiveSession();
+  if (!activeSession) return;
+  if (!token || activeSession.token === token) financeExclusiveSessionState.active = null;
 }
 
 const currencyFormatter = new Intl.NumberFormat("es-MX", {
@@ -389,9 +450,10 @@ function getFinanceRangeInMexico(period, { chartMonthKey } = {}) {
 async function hasFinanceAccess(request) {
   const accessCodes = configuredAccessCodes();
   if (!accessCodes.length) return false;
-  const cookie = financeAccessCookie();
-  const access = await cookie.parse(request.headers.get("Cookie"));
-  return access?.ok === true && accessCodes.includes(String(access?.code || "").trim());
+  const access = await readFinanceAccessCookie(request);
+  const codeIsValid = access?.ok === true && accessCodes.includes(String(access?.code || "").trim());
+  if (!codeIsValid) return false;
+  return refreshFinanceExclusiveSession(access?.sessionToken);
 }
 
 async function resolveFinanceSession(request) {
@@ -994,6 +1056,8 @@ export async function action({ request }) {
   const accessCodes = configuredAccessCodes();
 
   if (intent === "logout") {
+    const currentAccess = await readFinanceAccessCookie(request);
+    releaseFinanceExclusiveSession(currentAccess?.sessionToken);
     return redirect("/finanzas", {
       headers: {
         "Set-Cookie": await financeAccessCookie().serialize("", { maxAge: 0 }),
@@ -1004,10 +1068,13 @@ export async function action({ request }) {
   if (!accessCodes.length) return { ok: false, error: "Falta configurar FINANCE_ACCESS_CODE en Render." };
   const code = String(formData.get("code") || "").trim();
   if (!accessCodes.includes(code)) return { ok: false, error: "Codigo incorrecto." };
+  const currentAccess = await readFinanceAccessCookie(request);
+  const exclusiveSession = startFinanceExclusiveSession(currentAccess?.sessionToken);
+  if (!exclusiveSession.ok) return { ok: false, error: exclusiveSession.error };
 
   return redirect(`/finanzas${url.search}`, {
     headers: {
-      "Set-Cookie": await financeAccessCookie().serialize({ ok: true, code }),
+      "Set-Cookie": await financeAccessCookie().serialize({ ok: true, code, sessionToken: exclusiveSession.token }),
     },
   });
 }
