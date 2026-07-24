@@ -5,6 +5,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
   fetchBranchPickupCourierOrdersForShop,
+  fetchCourierOrdersByIdsForShop,
   fetchCourierOrdersForShop,
 } from "../utils/courier.server";
 import { getCourierRouteStatusFromTags } from "../utils/courier.shared";
@@ -36,6 +37,14 @@ const MENU_COUNT_STATUSES = [
 ];
 const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
 const COURIER_ROUTE_ASSIGNED_ACTION = "courier_route_order_assigned";
+const HIDDEN_COURIER_DELIVERY_STATUSES = new Set([
+  "entregado",
+  "recibido",
+  "recibida",
+  "reembolsada",
+  "completada",
+  "recoger_en_sucursal",
+]);
 
 function itemKeyFromRecord(item) {
   const lineItemId = String(item?.lineItemId || "").trim();
@@ -62,6 +71,11 @@ function isCourierLocalDeliveryOrder(orderNode) {
     const category = String(line?.deliveryCategory || "").toLowerCase();
     return title.includes("local") || code.includes("local") || category.includes("local");
   });
+}
+
+function shouldCountActiveCourierDeliveryOrder(order) {
+  const status = String(order?.status || order?.currentStatus || "").trim().toLowerCase();
+  return !HIDDEN_COURIER_DELIVERY_STATUSES.has(status);
 }
 
 async function fetchCourierDeliveryCountFromAdmin(admin, queryString) {
@@ -122,7 +136,7 @@ async function fetchCourierDeliveryCount(admin) {
   return orderIds.size;
 }
 
-async function activePlannedCourierDeliveryCount(shop) {
+async function activePlannedCourierDeliveryCount(shop, sessionCandidates = []) {
   const routePlans = await prisma.courierActivity.findMany({
     where: {
       shop,
@@ -157,11 +171,19 @@ async function activePlannedCourierDeliveryCount(shop) {
     },
     select: { requestId: true },
   });
-  return new Set(
+  const assignedDeliveryRequestIds = Array.from(new Set(
     assignments
       .map((assignment) => String(assignment.requestId || "").trim())
       .filter((requestId) => requestId && !requestId.startsWith("pickup-")),
-  ).size;
+  ));
+  if (!assignedDeliveryRequestIds.length) return 0;
+
+  const assignedOrders = await fetchCourierOrdersByIdsForShop({
+    shop,
+    sessionCandidates,
+    orderIds: assignedDeliveryRequestIds,
+  });
+  return assignedOrders.filter(shouldCountActiveCourierDeliveryOrder).length;
 }
 
 export const loader = async ({ request }) => {
@@ -245,7 +267,7 @@ export const loader = async ({ request }) => {
       });
   const plannedDeliveryCount = deliveryCourierOrders.length || adminDeliveryCount
     ? 0
-    : await activePlannedCourierDeliveryCount(session.shop).catch((error) => {
+    : await activePlannedCourierDeliveryCount(session.shop, [session]).catch((error) => {
         console.error("No se pudieron contar las rutas activas del repartidor", error);
         return 0;
       });
