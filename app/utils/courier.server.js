@@ -1315,8 +1315,16 @@ async function emitCourierDeliveryManualStatusNotification({
       const responsePayload = await response.json().catch(() => null);
       const totalRecipients = Number(responsePayload?.result?.total || 0) || 0;
       const sentRecipients = Number(responsePayload?.result?.sent || 0) || 0;
+      const storedRecipients = Number(responsePayload?.result?.stored || 0) || 0;
+      const wasDeduplicated = Boolean(responsePayload?.result?.deduplicated);
 
-      if (response.ok && !responsePayload?.result?.skipped) {
+      if (
+        response.ok &&
+        !responsePayload?.result?.skipped &&
+        !wasDeduplicated &&
+        totalRecipients > 0 &&
+        sentRecipients > 0
+      ) {
         return { ok: true };
       }
 
@@ -1324,10 +1332,13 @@ async function emitCourierDeliveryManualStatusNotification({
         endpoint: endpoint.url,
         status: response.status,
         detail: String(
-          responsePayload?.error ||
+          responsePayload?.result?.reason ||
+            responsePayload?.error ||
             responsePayload?.detail ||
+            (response.ok && wasDeduplicated ? "La notificacion fue omitida como duplicada." : "") ||
             (response.ok && totalRecipients <= 0 ? "No hay dispositivos activos para recibir la notificacion." : "") ||
             (response.ok && sentRecipients <= 0 ? "La notificacion no fue entregada a ningun dispositivo." : "") ||
+            (response.ok && storedRecipients > 0 ? "Solo se guardo en el centro de notificaciones, no se envio push." : "") ||
             "No se pudo enviar la notificacion.",
         ).slice(0, 300),
       };
@@ -1453,6 +1464,14 @@ export async function markCourierOrderAsEnRoute({
     attemptCount: nextStep,
   });
   if (alreadyProcessed) {
+    const notificationResult = await emitCourierDeliveryRouteNotification({
+      shopDomain,
+      requestRow,
+      routeStep: nextStep,
+    });
+    if (!notificationResult?.ok) {
+      return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
+    }
     return { ok: true, requestRow, routeStep: nextStep, nextStatus, attemptCount: requestRow.attemptCount };
   }
 
