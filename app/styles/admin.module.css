@@ -1079,6 +1079,32 @@
   transform: translateX(18px);
 }
 
+.branchPickupTestCheckbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 6px 0 8px;
+  padding: 7px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+}
+
+.branchPickupTestCheckbox input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: #005bd3;
+}
+
 .branchPickupDeliverButton {
   padding: 7px 14px;
   font-size: 13px;
