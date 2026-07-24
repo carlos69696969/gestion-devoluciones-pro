@@ -1022,7 +1022,8 @@
   }
 
   .weekNetCell {
-    padding-top: 8px;
+    margin-top: 2px;
+    padding-top: 6px;
   }
 
   .weekFullSummaryCard > div {
