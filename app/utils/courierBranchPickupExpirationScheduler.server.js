@@ -41,6 +41,61 @@ function toMoney(value) {
   return Number(value || 0).toFixed(2);
 }
 
+function toFiniteNumber(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function roundMoneyValue(value) {
+  return Math.round(toFiniteNumber(value, 0) * 100) / 100;
+}
+
+function shopMoneyAmount(moneySet) {
+  return toFiniteNumber(moneySet?.shopMoney?.amount, 0);
+}
+
+function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
+  const quantity = Math.max(1, toFiniteNumber(node?.quantity, 1));
+  const originalTotal = shopMoneyAmount(node?.originalTotalSet) || toFiniteNumber(fallbackUnitPrice, 0) * quantity;
+  const allocatedDiscount = (node?.discountAllocations || []).reduce(
+    (sum, allocation) => sum + shopMoneyAmount(allocation?.allocatedAmountSet),
+    0,
+  );
+  if (allocatedDiscount > 0 && originalTotal > 0) {
+    return roundMoneyValue(Math.max(0, originalTotal - allocatedDiscount) / quantity);
+  }
+
+  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
+  if (discountedTotal > 0 && (!originalTotal || discountedTotal < originalTotal)) {
+    return roundMoneyValue(discountedTotal / quantity);
+  }
+
+  return roundMoneyValue(fallbackUnitPrice);
+}
+
+function orderSubtotalDiscountRate(orderNode) {
+  const currentSubtotal = shopMoneyAmount(orderNode?.currentSubtotalPriceSet);
+  const originalCurrentSubtotal = (orderNode?.lineItems?.edges || []).reduce((sum, edge) => {
+    const node = edge?.node || {};
+    const unitPrice = shopMoneyAmount(node.originalUnitPriceSet);
+    const quantity = Math.max(0, toFiniteNumber(node.currentQuantity ?? node.quantity, 0));
+    return sum + unitPrice * quantity;
+  }, 0);
+  if (currentSubtotal > 0 && originalCurrentSubtotal > 0 && currentSubtotal < originalCurrentSubtotal) {
+    return currentSubtotal / originalCurrentSubtotal;
+  }
+  return 1;
+}
+
+function orderDiscountedRefundUnitPrice(orderNode, node, fallbackUnitPrice = 0) {
+  const directUnitPrice = lineItemRefundUnitPrice(node, fallbackUnitPrice);
+  const originalUnitPrice = roundMoneyValue(fallbackUnitPrice);
+  if (directUnitPrice > 0 && directUnitPrice < originalUnitPrice) return directUnitPrice;
+  const discountRate = orderSubtotalDiscountRate(orderNode);
+  if (discountRate > 0 && discountRate < 1) return roundMoneyValue(originalUnitPrice * discountRate);
+  return directUnitPrice;
+}
+
 function parseCourierDate(value) {
   const raw = normalize(value);
   if (!raw) return null;
@@ -223,10 +278,16 @@ async function fetchOrderSnapshot({ shop, session, orderId }) {
                 id
                 title
                 quantity
+                currentQuantity
                 refundableQuantity
                 variant { id title selectedOptions { name value } }
                 product { id }
                 originalUnitPriceSet { shopMoney { amount currencyCode } }
+                originalTotalSet { shopMoney { amount currencyCode } }
+                discountedTotalSet(withCodeDiscounts: true) { shopMoney { amount currencyCode } }
+                discountAllocations {
+                  allocatedAmountSet { shopMoney { amount currencyCode } }
+                }
               }
             }
           }
@@ -249,7 +310,7 @@ async function fetchOrderSnapshot({ shop, session, orderId }) {
       variantId: node.variant?.id || "",
       productId: node.product?.id || "",
       variantSummary: formatVariantSummary(node.variant),
-      unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+      unitPrice: orderDiscountedRefundUnitPrice(order, node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
     })),
     transactions: (order.transactions || []).map((transaction) => ({
       id: transaction.id,
