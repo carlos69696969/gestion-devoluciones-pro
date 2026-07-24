@@ -886,6 +886,13 @@
   line-height: 1;
 }
 
+.courierPortalOrderNumber {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .noteBadgeButton {
   appearance: none;
   display: inline-flex;

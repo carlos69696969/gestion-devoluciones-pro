@@ -2937,15 +2937,6 @@ export default function RepartidorPublicPortal() {
                       >
                         {request.courierLabel}
                       </span>
-                      {String(request?.customerNote || "").trim() ? (
-                        <button
-                          type="button"
-                          className={styles.noteBadgeButton}
-                          onClick={() => setCustomerNoteRequest(request)}
-                        >
-                          Nota
-                        </button>
-                      ) : null}
                     </div>
                     <div className={styles.statusGroup}>
                       {!isReturnOrder(request) && getDeliveryAttemptLabel(request, activeTab) ? (
@@ -3022,7 +3013,16 @@ export default function RepartidorPublicPortal() {
                     </div>
                   </div>
                   <h3 className={`${adminStyles.courierOrderNumber} ${styles.courierPortalOrderNumber}`}>
-                    #{request.orderNumber}
+                    <span>#{request.orderNumber}</span>
+                    {String(request?.customerNote || "").trim() ? (
+                      <button
+                        type="button"
+                        className={styles.noteBadgeButton}
+                        onClick={() => setCustomerNoteRequest(request)}
+                      >
+                        Nota
+                      </button>
+                    ) : null}
                   </h3>
                   <p className={adminStyles.courierCustomerName}>{request.customerName}</p>
                   <p className={adminStyles.courierField}>
