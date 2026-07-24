@@ -367,7 +367,7 @@ function normalizeOrder(orderNode) {
       variantSummary: formatVariantSummary(node.variant),
       title: node.title,
       quantity: Number(node.refundableQuantity ?? node.quantity ?? 0),
-      unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+      unitPrice: lineItemRefundUnitPrice(node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
     })),
   };
 }
@@ -444,6 +444,36 @@ function formatReturnMessageDate(value) {
 
 function toMXN(value) {
   return Number(value || 0).toFixed(2);
+}
+
+function toFiniteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function roundMoneyValue(value) {
+  return Math.round((toFiniteNumber(value) + Number.EPSILON) * 100) / 100;
+}
+
+function shopMoneyAmount(moneySet) {
+  return toFiniteNumber(moneySet?.shopMoney?.amount, 0);
+}
+
+function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
+  const quantity = Math.max(1, toFiniteNumber(node?.quantity, 1));
+  const originalTotal = shopMoneyAmount(node?.originalTotalSet) || toFiniteNumber(fallbackUnitPrice, 0) * quantity;
+  const allocatedDiscount = (node?.discountAllocations || []).reduce(
+    (sum, allocation) => sum + shopMoneyAmount(allocation?.allocatedAmountSet),
+    0,
+  );
+  if (allocatedDiscount > 0 && originalTotal > 0) {
+    return roundMoneyValue(Math.max(0, originalTotal - allocatedDiscount) / quantity);
+  }
+
+  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
+  if (discountedTotal > 0) return roundMoneyValue(discountedTotal / quantity);
+
+  return roundMoneyValue(fallbackUnitPrice);
 }
 
 function refundProcessedPortalMessage(requestItem) {
@@ -1155,6 +1185,11 @@ async function fetchOrderCandidatesByToken({ shop, accessToken, orderNumber }) {
                         image { url altText }
                       }
                       originalUnitPriceSet { shopMoney { amount } }
+                      originalTotalSet { shopMoney { amount } }
+                      discountedTotalSet { shopMoney { amount } }
+                      discountAllocations {
+                        allocatedAmountSet { shopMoney { amount } }
+                      }
                     }
                   }
                 }

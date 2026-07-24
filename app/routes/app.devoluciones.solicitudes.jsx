@@ -828,9 +828,6 @@ function shopMoneyAmount(moneySet) {
 
 function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
   const quantity = Math.max(1, toFiniteNumber(node?.quantity, 1));
-  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
-  if (discountedTotal > 0) return roundMoneyValue(discountedTotal / quantity);
-
   const originalTotal = shopMoneyAmount(node?.originalTotalSet) || toFiniteNumber(fallbackUnitPrice, 0) * quantity;
   const allocatedDiscount = (node?.discountAllocations || []).reduce(
     (sum, allocation) => sum + shopMoneyAmount(allocation?.allocatedAmountSet),
@@ -839,6 +836,9 @@ function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
   if (allocatedDiscount > 0 && originalTotal > 0) {
     return roundMoneyValue(Math.max(0, originalTotal - allocatedDiscount) / quantity);
   }
+
+  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
+  if (discountedTotal > 0) return roundMoneyValue(discountedTotal / quantity);
 
   return roundMoneyValue(fallbackUnitPrice);
 }
@@ -2939,7 +2939,7 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
   for (const [lineId, quantity] of requestedQtyByLineId.entries()) {
     const line = byLine.get(lineId);
     if (!line) continue;
-    subtotal += Number(line.unitPrice || 0) * Number(quantity || 0);
+    subtotal += refundUnitPriceFromItem(line) * Number(quantity || 0);
     refundableLines.push({
       lineItemId: lineId,
       quantity: Number(quantity || 0),
