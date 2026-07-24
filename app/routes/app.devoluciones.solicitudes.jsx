@@ -5026,7 +5026,7 @@ export const action = async ({ request }) => {
         error: "Solo puedes marcar como recibida una solicitud aprobada o con intento fallido.",
       };
     }
-    await prisma.returnRequest.update({
+    const updatedRequest = await prisma.returnRequest.update({
       where: { id },
       data: {
         status: "recibida",
@@ -5043,7 +5043,12 @@ export const action = async ({ request }) => {
       intent,
       note: receivedReturnPortalMessage(requestRow),
     });
-    return { ok: true, message: "Solicitud marcada como recibida." };
+    return {
+      ok: true,
+      message: "Solicitud marcada como recibida exitosamente.",
+      receivedActionRequestId: String(id),
+      receivedActionRequest: updatedRequest,
+    };
   }
 
   if (intent === "mark_never_arrived") {
@@ -6298,9 +6303,11 @@ export default function ReturnsRequests() {
   const [visibleRefundCardSuccess, setVisibleRefundCardSuccess] = useState(null);
   const [visibleReviewCardMessage, setVisibleReviewCardMessage] = useState(null);
   const [pendingReviewActionRequest, setPendingReviewActionRequest] = useState(null);
+  const [pendingReceivedActionRequest, setPendingReceivedActionRequest] = useState(null);
   const [visibleCourierCardSuccessMessages, setVisibleCourierCardSuccessMessages] = useState({});
   const refundSuccessTimeoutRef = useRef(null);
   const reviewCardMessageTimeoutRef = useRef(null);
+  const receivedCardMessageTimeoutRef = useRef(null);
   const courierCardSuccessTimeoutRef = useRef(null);
   const automaticBranchPickupRefundAttemptRef = useRef(new Set());
   const reviewActionParams = new URLSearchParams(location.search);
@@ -6324,7 +6331,12 @@ export default function ReturnsRequests() {
     if (refundSuccessTimeoutRef.current) {
       window.clearTimeout(refundSuccessTimeoutRef.current);
     }
+    if (receivedCardMessageTimeoutRef.current) {
+      window.clearTimeout(receivedCardMessageTimeoutRef.current);
+      receivedCardMessageTimeoutRef.current = null;
+    }
     setVisiblePageSuccessMessage("");
+    setPendingReceivedActionRequest(null);
     setVisibleRefundCardSuccess({
       requestId: String(requestId || ""),
       message: String(message || "").trim(),
@@ -6362,6 +6374,9 @@ export default function ReturnsRequests() {
       }
       if (reviewCardMessageTimeoutRef.current) {
         window.clearTimeout(reviewCardMessageTimeoutRef.current);
+      }
+      if (receivedCardMessageTimeoutRef.current) {
+        window.clearTimeout(receivedCardMessageTimeoutRef.current);
       }
       if (courierCardSuccessTimeoutRef.current) {
         window.clearTimeout(courierCardSuccessTimeoutRef.current);
@@ -6480,6 +6495,26 @@ export default function ReturnsRequests() {
       );
       return;
     }
+    if (actionData?.ok && actionData?.receivedActionRequestId) {
+      if (refundSuccessTimeoutRef.current) {
+        window.clearTimeout(refundSuccessTimeoutRef.current);
+      }
+      if (receivedCardMessageTimeoutRef.current) {
+        window.clearTimeout(receivedCardMessageTimeoutRef.current);
+      }
+      setVisiblePageSuccessMessage("");
+      setPendingReceivedActionRequest(actionData.receivedActionRequest || null);
+      setVisibleRefundCardSuccess({
+        requestId: String(actionData.receivedActionRequestId),
+        message: pageSuccessMessage,
+      });
+      receivedCardMessageTimeoutRef.current = window.setTimeout(() => {
+        setVisibleRefundCardSuccess(null);
+        setPendingReceivedActionRequest(null);
+        receivedCardMessageTimeoutRef.current = null;
+      }, 4000);
+      return;
+    }
     if (
       courierRouteActionData?.ok &&
       courierRouteActionData?.courierBulkAction &&
@@ -6586,7 +6621,16 @@ export default function ReturnsRequests() {
       return (Number.isFinite(bMs) ? bMs : 0) - (Number.isFinite(aMs) ? aMs : 0);
     });
   const pickupRequests = activeRequests.filter((request) => request.returnMethod === "pickup");
-  const branchRequests = activeRequests.filter((request) => request.returnMethod !== "pickup");
+  const branchRequestsFromLoader = activeRequests.filter((request) => request.returnMethod !== "pickup");
+  const receivedActionRequestId = String(visibleRefundCardSuccess?.requestId || "").trim();
+  const shouldShowPendingReceivedCard =
+    pendingReceivedActionRequest &&
+    receivedActionRequestId &&
+    String(pendingReceivedActionRequest.id) === receivedActionRequestId &&
+    !branchRequestsFromLoader.some((request) => String(request.id) === receivedActionRequestId);
+  const branchRequests = shouldShowPendingReceivedCard
+    ? [pendingReceivedActionRequest, ...branchRequestsFromLoader]
+    : branchRequestsFromLoader;
   const historyRequests = requests
     .filter((requestRow) => HISTORY_STATUSES.has(String(requestRow.status || "").toLowerCase()))
     .sort((a, b) => historyTimestampMs(b) - historyTimestampMs(a));
@@ -6720,6 +6764,11 @@ export default function ReturnsRequests() {
                   isSubmitting={isSubmitting}
                   enableLazyMedia
                   useRefundQueueDateFormat
+                  cardSuccessMessage={
+                    visibleRefundCardSuccess?.requestId === String(request.id)
+                      ? visibleRefundCardSuccess.message
+                      : ""
+                  }
                 />
               ))}
             </div>
