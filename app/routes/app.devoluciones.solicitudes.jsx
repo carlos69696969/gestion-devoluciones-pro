@@ -1,4 +1,4 @@
-/* eslint-disable react/prop-types */
+﻿/* eslint-disable react/prop-types */
 import { useEffect, useRef, useState } from "react";
 import { Form, Link, redirect, useActionData, useFetcher, useLoaderData, useLocation, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -811,6 +811,40 @@ function viewModeFromPathname(pathname) {
 
 function toMoney(value) {
   return Number(value || 0).toFixed(2);
+}
+
+function toFiniteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function roundMoneyValue(value) {
+  return Math.round((toFiniteNumber(value) + Number.EPSILON) * 100) / 100;
+}
+
+function shopMoneyAmount(moneySet) {
+  return toFiniteNumber(moneySet?.shopMoney?.amount, 0);
+}
+
+function lineItemRefundUnitPrice(node, fallbackUnitPrice = 0) {
+  const quantity = Math.max(1, toFiniteNumber(node?.quantity, 1));
+  const discountedTotal = shopMoneyAmount(node?.discountedTotalSet);
+  if (discountedTotal > 0) return roundMoneyValue(discountedTotal / quantity);
+
+  const originalTotal = shopMoneyAmount(node?.originalTotalSet) || toFiniteNumber(fallbackUnitPrice, 0) * quantity;
+  const allocatedDiscount = (node?.discountAllocations || []).reduce(
+    (sum, allocation) => sum + shopMoneyAmount(allocation?.allocatedAmountSet),
+    0,
+  );
+  if (allocatedDiscount > 0 && originalTotal > 0) {
+    return roundMoneyValue(Math.max(0, originalTotal - allocatedDiscount) / quantity);
+  }
+
+  return roundMoneyValue(fallbackUnitPrice);
+}
+
+function refundUnitPriceFromItem(item) {
+  return roundMoneyValue(item?.refundUnitPrice ?? item?.discountedUnitPrice ?? item?.unitPrice ?? 0);
 }
 
 function nextIsoDate(value) {
@@ -2554,6 +2588,17 @@ async function fetchOrderSnapshot(admin, orderId) {
               originalUnitPriceSet {
                 shopMoney { amount currencyCode }
               }
+              originalTotalSet {
+                shopMoney { amount currencyCode }
+              }
+              discountedTotalSet {
+                shopMoney { amount currencyCode }
+              }
+              discountAllocations {
+                allocatedAmountSet {
+                  shopMoney { amount currencyCode }
+                }
+              }
             }
           }
         }
@@ -2587,6 +2632,7 @@ async function fetchOrderSnapshot(admin, orderId) {
       productId: node.product?.id || "",
       variantSummary: formatVariantSummary(node.variant),
       unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+      refundUnitPrice: lineItemRefundUnitPrice(node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
     })),
     transactions: (order.transactions || []).map((transaction) => ({
       id: transaction.id,
@@ -2944,7 +2990,8 @@ function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemUnit
       : quantity;
     if (selectedQuantity <= 0) continue;
     selectedRefundQuantity += selectedQuantity;
-    subtotal += Number(line.unitPrice || 0) * selectedQuantity;
+    const unitPrice = refundUnitPriceFromItem(line);
+    subtotal += unitPrice * selectedQuantity;
     refundLineItems.push({
       lineItemId: line.id,
       quantity: selectedQuantity,
@@ -2955,8 +3002,8 @@ function mapOrderItemsToFullRefundLineItems(orderLineItems, selectedLineItemUnit
       title: line.title || "Producto",
       variantSummary: String(line.variantSummary || "").trim(),
       quantity: selectedQuantity,
-      unitPrice: Number(line.unitPrice || 0),
-      total: Number(line.unitPrice || 0) * selectedQuantity,
+      unitPrice,
+      total: unitPrice * selectedQuantity,
       unitKeys: (selectedUnitKeysByLineId.get(String(line.id)) || []).slice(0, selectedQuantity),
     });
   }
@@ -5368,6 +5415,17 @@ async function fetchCourierOrderNodes(admin, queryString) {
                   originalUnitPriceSet {
                     shopMoney { amount currencyCode }
                   }
+                  originalTotalSet {
+                    shopMoney { amount currencyCode }
+                  }
+                  discountedTotalSet {
+                    shopMoney { amount currencyCode }
+                  }
+                  discountAllocations {
+                    allocatedAmountSet {
+                      shopMoney { amount currencyCode }
+                    }
+                  }
                   variant {
                     id
                     title
@@ -5440,6 +5498,7 @@ async function fetchCourierOrders(admin) {
         title: String(node.title || "").trim(),
         quantity: Math.max(1, Number(node.quantity || 1)),
         unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+      refundUnitPrice: lineItemRefundUnitPrice(node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
         currencyCode: String(node.originalUnitPriceSet?.shopMoney?.currencyCode || orderNode.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
         variantId: node.variant?.id || "",
         productId: node.product?.id || "",
@@ -5523,6 +5582,17 @@ async function fetchBranchPickupCourierOrders(admin) {
                   originalUnitPriceSet {
                     shopMoney { amount currencyCode }
                   }
+                  originalTotalSet {
+                    shopMoney { amount currencyCode }
+                  }
+                  discountedTotalSet {
+                    shopMoney { amount currencyCode }
+                  }
+                  discountAllocations {
+                    allocatedAmountSet {
+                      shopMoney { amount currencyCode }
+                    }
+                  }
                   variant {
                     id
                     title
@@ -5576,6 +5646,7 @@ async function fetchBranchPickupCourierOrders(admin) {
         title: String(node.title || "").trim(),
         quantity: Math.max(1, Number(node.quantity || 1)),
         unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+      refundUnitPrice: lineItemRefundUnitPrice(node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
         currencyCode: String(node.originalUnitPriceSet?.shopMoney?.currencyCode || "MXN"),
         variantId: node.variant?.id || "",
         productId: node.product?.id || "",
@@ -5656,6 +5727,17 @@ async function fetchCourierHistoryOrders(admin) {
                   originalUnitPriceSet {
                     shopMoney { amount currencyCode }
                   }
+                  originalTotalSet {
+                    shopMoney { amount currencyCode }
+                  }
+                  discountedTotalSet {
+                    shopMoney { amount currencyCode }
+                  }
+                  discountAllocations {
+                    allocatedAmountSet {
+                      shopMoney { amount currencyCode }
+                    }
+                  }
                   variant {
                     id
                     title
@@ -5706,6 +5788,7 @@ async function fetchCourierHistoryOrders(admin) {
         title: String(node.title || "").trim(),
         quantity: Math.max(1, Number(node.quantity || 1)),
         unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
+      refundUnitPrice: lineItemRefundUnitPrice(node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),
         currencyCode: String(node.originalUnitPriceSet?.shopMoney?.currencyCode || "MXN"),
         variantId: node.variant?.id || "",
         productId: node.product?.id || "",
@@ -6044,7 +6127,7 @@ export default function ReturnsRequests() {
     selectedCourierRefundUnitKeySet.has(String(item.unitKey || "")),
   );
   const selectedCourierRefundSubtotal = selectedCourierRefundItems.reduce(
-    (sum, item) => sum + Number(item.unitPrice || 0),
+    (sum, item) => sum + refundUnitPriceFromItem(item),
     0,
   );
   const completedCourierRefundUnitKeySet = new Set([
@@ -7028,7 +7111,7 @@ export default function ReturnsRequests() {
                 const unitKey = String(item.unitKey || "");
                 const checked = selectedCourierRefundUnitKeySet.has(unitKey);
                 const alreadyRefunded = alreadyRefundedCourierUnitKeySet.has(unitKey);
-                const itemTotal = Number(item.unitPrice || 0);
+                const itemTotal = refundUnitPriceFromItem(item);
                 return (
                   <label
                     key={unitKey || `${item.title}-${item.unitIndex}`}
