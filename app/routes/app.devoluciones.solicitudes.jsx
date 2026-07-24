@@ -3698,6 +3698,33 @@ export const loader = async ({ request }) => {
       ];
     }
   }
+  if (viewMode === VIEW_MODE.BRANCH_PICKUP && courierOrdersRaw.length === 0) {
+    await wait(600);
+    const retryBranchPickupOrders = [
+      ...new Map(
+        [
+          ...(await safeLoaderArray("No se pudieron recargar las ordenes para recoger en sucursal desde el contador", () =>
+            fetchBranchPickupCourierOrdersForShop({
+              shop: session.shop,
+              sessionCandidates: [session],
+            }),
+          )).map((requestRow) => ({
+            ...requestRow,
+            courierLabel: "Entrega",
+          })),
+          ...(await safeLoaderArray("No se pudieron recargar las ordenes para recoger en sucursal", () =>
+            fetchBranchPickupCourierOrders(admin),
+          )).map((requestRow) => ({
+            ...requestRow,
+            courierLabel: "Entrega",
+          })),
+        ].map((requestRow) => [String(requestRow.id || ""), requestRow]),
+      ).values(),
+    ];
+    if (retryBranchPickupOrders.length) {
+      courierOrdersRaw = retryBranchPickupOrders;
+    }
+  }
   if (purgedCourierHistoryRequestIds.size) {
     courierOrdersRaw = courierOrdersRaw.filter(
       (requestRow) => !purgedCourierHistoryRequestIds.has(String(requestRow.id || "").trim()),
