@@ -1202,7 +1202,7 @@ export default function FinanzasPortal() {
               </span>
               {totals.hasRefunds ? (
                 <>
-                  <span className={styles.weekNetCell}>
+                  <span className={`${styles.weekNetCell} ${styles.weekNetLabel}`}>
                     <strong>Total de la semana</strong>
                   </span>
                   <span className={styles.weekNetCell}>

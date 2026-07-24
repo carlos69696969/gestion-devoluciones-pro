@@ -980,7 +980,7 @@
   }
 
   .weekSummaryCard > span:first-child strong,
-  .weekNetCell:first-child strong {
+  .weekNetLabel strong {
     display: block;
     font-size: 13px;
     line-height: 1.05;
