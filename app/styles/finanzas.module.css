@@ -981,9 +981,11 @@
 
   .weekSummaryCard > span:first-child strong,
   .weekNetCell:first-child strong {
+    display: block;
     font-size: 13px;
     line-height: 1.05;
-    max-width: 72px;
+    max-width: 58px;
+    white-space: normal;
   }
 
   .weekSummaryCard small,
