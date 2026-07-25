@@ -1448,13 +1448,15 @@ export default function FinanzasPortal() {
     return (
       <article className={`${styles.metric} ${styles.metricProducts}`}>
         <span>Productos</span>
-        <strong>{countFormatter.format(soldItemCount)}</strong>
-        {refundedItemCount > 0 ? (
-          <>
-            <small className={styles.countRefund}>-{countFormatter.format(refundedItemCount)}</small>
-            <small className={styles.countNet}>{countFormatter.format(netItemCount)}</small>
-          </>
-        ) : null}
+        <span className={styles.productCountValues}>
+          <strong>{countFormatter.format(soldItemCount)}</strong>
+          {refundedItemCount > 0 ? (
+            <>
+              <small className={styles.countRefund}>-{countFormatter.format(refundedItemCount)}</small>
+              <small className={styles.countNet}>{countFormatter.format(netItemCount)}</small>
+            </>
+          ) : null}
+        </span>
       </article>
     );
   };
