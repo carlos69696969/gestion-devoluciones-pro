@@ -373,6 +373,7 @@
   text-align: left;
   font: inherit;
   cursor: pointer;
+  position: relative;
 }
 
 .weekCard span {
@@ -407,15 +408,20 @@
 }
 
 .monthCards .cutCard {
-  grid-template-columns: minmax(140px, 0.95fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(190px, 1.15fr);
+  grid-template-columns: minmax(82px, 0.86fr) minmax(78px, 1fr) minmax(78px, 1fr);
   align-items: center;
 }
 
 .cutCard .cutCountSummary {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  width: min(170px, 28%);
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: center;
-  gap: 8px;
+  grid-template-columns: 1fr;
+  align-items: start;
+  gap: 5px;
 }
 
 .cutCountSummary > span {
@@ -1088,11 +1094,13 @@
   }
 
   .weekCard.cutCard {
-    grid-template-columns: minmax(78px, 0.8fr) minmax(74px, 0.9fr) minmax(74px, 0.9fr) minmax(118px, 1.35fr);
+    grid-template-columns: minmax(82px, 0.86fr) minmax(78px, 1fr) minmax(78px, 1fr);
   }
 
   .cutCard .cutCountSummary {
-    gap: 6px;
+    right: 10px;
+    width: min(126px, 31%);
+    gap: 4px;
   }
 
   .cutCard .productCountValues {

@@ -2011,15 +2011,11 @@ export default function FinanzasPortal() {
                     )}
                   </strong>
                 </article>
-                {period !== "history" ? (
-                  <>
-                    <article className={`${styles.metric} ${styles.metricOrders}`}>
-                      <span>Pedidos</span>
-                      <strong>{countFormatter.format(selectedWeekDay.totals.orderCount || 0)}</strong>
-                    </article>
-                    {renderProductCountMetric(selectedWeekDay.totals)}
-                  </>
-                ) : null}
+                <article className={`${styles.metric} ${styles.metricOrders}`}>
+                  <span>Pedidos</span>
+                  <strong>{countFormatter.format(selectedWeekDay.totals.orderCount || 0)}</strong>
+                </article>
+                {renderProductCountMetric(selectedWeekDay.totals)}
               </div>
             </div>
           </section>
