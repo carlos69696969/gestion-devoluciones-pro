@@ -406,6 +406,33 @@
   background: #eef6ff;
 }
 
+.monthCards .cutCard {
+  grid-template-columns: minmax(140px, 0.95fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(190px, 1.15fr);
+  align-items: center;
+}
+
+.cutCard .cutCountSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 8px;
+}
+
+.cutCountSummary > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cutCard .productCountValues {
+  gap: 8px !important;
+}
+
+.cutCard .productCountValues strong,
+.cutCard .productCountValues small {
+  font-size: 15px !important;
+}
+
 .weekFullSummaryCard {
   border: 1px solid #d9dee7;
   border-radius: 8px;
@@ -1058,6 +1085,23 @@
     align-items: center;
     gap: 6px;
     padding: 9px 10px;
+  }
+
+  .weekCard.cutCard {
+    grid-template-columns: minmax(78px, 0.8fr) minmax(74px, 0.9fr) minmax(74px, 0.9fr) minmax(118px, 1.35fr);
+  }
+
+  .cutCard .cutCountSummary {
+    gap: 6px;
+  }
+
+  .cutCard .productCountValues {
+    gap: 5px !important;
+  }
+
+  .cutCard .productCountValues strong,
+  .cutCard .productCountValues small {
+    font-size: clamp(11px, 3vw, 13px) !important;
   }
 
   .weekSummaryCard {

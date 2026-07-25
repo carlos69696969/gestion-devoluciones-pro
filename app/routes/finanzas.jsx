@@ -1802,6 +1802,18 @@ export default function FinanzasPortal() {
                           </>
                         ) : null}
                       </span>
+                      {day.isCut ? (
+                        <span className={styles.cutCountSummary}>
+                          <span>
+                            Pedidos
+                            <strong>{countFormatter.format(day.totals.orderCount || 0)}</strong>
+                          </span>
+                          <span>
+                            Productos
+                            {renderProductCountValues(day.totals)}
+                          </span>
+                        </span>
+                      ) : null}
                     </button>
                   ))}
                 </div>
