@@ -278,6 +278,12 @@
   align-items: center;
 }
 
+.historyMonthList,
+.historyMonthBlock {
+  display: grid;
+  gap: 10px;
+}
+
 .historyControls {
   display: grid;
   grid-template-columns: minmax(180px, 280px);

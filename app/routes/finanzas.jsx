@@ -290,6 +290,7 @@ function emptyHistoryData(monthKey = getCurrentMonthKeyInMexico()) {
   return {
     label: "",
     days: [],
+    months: [],
     ...buildChartNavigation(monthKey),
   };
 }
@@ -447,6 +448,46 @@ function getMonthRangeInMexico(monthKey = getCurrentMonthKeyInMexico()) {
   return { start, end, monthKey: selectedMonth.key };
 }
 
+function getHistoryRangeInMexico(monthKey = getCurrentMonthKeyInMexico()) {
+  const selectedMonthKey = clampChartMonthKey(monthKey);
+  const monthOptions = buildChartMonthOptions(selectedMonthKey);
+  const oldestMonthKey = monthOptions[monthOptions.length - 1]?.value || selectedMonthKey;
+  const currentMonthKey = getCurrentMonthKeyInMexico();
+  const { start } = getMonthRangeInMexico(oldestMonthKey);
+  const { end } = getMonthRangeInMexico(currentMonthKey);
+  return { start, end, monthKey: selectedMonthKey };
+}
+
+function isRecordInDateRange(value, start, end) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return false;
+  return date.getTime() >= start.getTime() && date.getTime() < end.getTime();
+}
+
+function buildHistoryMonthBreakdowns(selectedMonthKey, salesOrders, refundEvents) {
+  const cleanSelectedMonthKey = clampChartMonthKey(selectedMonthKey);
+  return buildChartMonthOptions(cleanSelectedMonthKey)
+    .map((monthOption) => {
+      const { start, end, monthKey } = getMonthRangeInMexico(monthOption.value);
+      const monthOrders = salesOrders.filter((order) => isRecordInDateRange(order?.createdAt, start, end));
+      const monthRefunds = refundEvents.filter((refundEvent) => isRecordInDateRange(refundEvent?.createdAt, start, end));
+      const totals = calculateFinanceTotals(monthOrders, monthRefunds);
+      return {
+        ...buildMonthBreakdown(start, end, monthOrders, monthRefunds),
+        ...buildChartNavigation(monthKey),
+        totals,
+      };
+    })
+    .filter(
+      (month) =>
+        month.monthKey === cleanSelectedMonthKey ||
+        Number(month?.totals?.orderCount || 0) > 0 ||
+        Number(month?.totals?.refundSalesTotal || 0) > 0 ||
+        Number(month?.totals?.refundItemCount || 0) > 0,
+    )
+    .sort((first, second) => compareMonthKeys(first.monthKey, second.monthKey));
+}
+
 function normalizeFinancePeriod(value) {
   if (value === "week") return "week";
   if (value === "history") return "history";
@@ -457,7 +498,7 @@ function normalizeFinancePeriod(value) {
 function getFinanceRangeInMexico(period, { chartMonthKey } = {}) {
   if (period === "week") return getWeekRangeInMexico();
   if (period === "chart") return getMonthRangeInMexico(chartMonthKey);
-  if (period === "history") return getMonthRangeInMexico(chartMonthKey);
+  if (period === "history") return getHistoryRangeInMexico(chartMonthKey);
   return getTodayRangeInMexico();
 }
 
@@ -1310,17 +1351,30 @@ export async function loader({ request }) {
     }
     const { orders, refundEvents } = await fetchFinanceRangeDataWithCache({ shop, sessions, start, end });
     const week = period === "week" ? buildWeekBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
+    const historyMonths = period === "history" ? buildHistoryMonthBreakdowns(monthKey, orders, refundEvents) : [];
+    const selectedHistoryMonth = historyMonths.find((month) => month.monthKey === monthKey) || null;
+    const selectedMonthRange = getMonthRangeInMexico(monthKey || chartMonthKey);
+    const fallbackHistoryMonth = {
+      ...buildMonthBreakdown(selectedMonthRange.start, selectedMonthRange.end, [], []),
+      ...buildChartNavigation(selectedMonthRange.monthKey),
+      totals: emptyTotals,
+    };
     const history =
       period === "history"
-        ? { ...buildMonthBreakdown(start, end, orders, refundEvents), ...buildChartNavigation(monthKey) }
+        ? {
+            ...(selectedHistoryMonth || fallbackHistoryMonth),
+            months: historyMonths.length ? historyMonths : [selectedHistoryMonth || fallbackHistoryMonth],
+            ...buildChartNavigation(monthKey),
+          }
         : emptyHistoryData(chartMonthKey);
     const chart = period === "chart" ? buildChartBreakdown(start, end, orders, refundEvents, monthKey) : emptyChartData(chartMonthKey);
+    const financeTotals = period === "history" ? (selectedHistoryMonth || fallbackHistoryMonth).totals : calculateFinanceTotals(orders, refundEvents);
     return {
       isLoggedIn: true,
       needsConfiguration: false,
       period,
       dayLabel,
-      totals: calculateFinanceTotals(orders, refundEvents),
+      totals: financeTotals,
       week,
       history,
       chart,
@@ -1379,14 +1433,16 @@ export default function FinanzasPortal() {
   const navigation = useNavigation();
   const submit = useSubmit();
   const [selectedDetailDayKey, setSelectedDetailDayKey] = useState("");
-  const [isHistoryMonthOpen, setIsHistoryMonthOpen] = useState(false);
+  const [openHistoryMonthKeys, setOpenHistoryMonthKeys] = useState({});
   const [isChartDetailOpen, setIsChartDetailOpen] = useState(false);
   const [optimisticPeriod, setOptimisticPeriod] = useState(period);
   const navigationPeriod = navigation.location
     ? normalizeFinancePeriod(new URLSearchParams(navigation.location.search).get("period"))
     : "";
   const activePeriod = navigationPeriod || optimisticPeriod || period;
-  const detailDays = period === "history" ? history?.days || [] : period === "week" ? week?.days || [] : [];
+  const historyMonths =
+    period === "history" ? (history?.months?.length ? history.months : history?.label ? [history] : []) : [];
+  const detailDays = period === "history" ? historyMonths.flatMap((month) => month?.days || []) : period === "week" ? week?.days || [] : [];
   const selectedDetailDay = detailDays.find((day) => day.key === selectedDetailDayKey) || null;
   const selectedWeekDay = selectedDetailDay;
   const setSelectedWeekDayKey = setSelectedDetailDayKey;
@@ -1478,10 +1534,17 @@ export default function FinanzasPortal() {
     );
   };
 
+  const toggleHistoryMonth = (monthKey) => {
+    setOpenHistoryMonthKeys((current) => ({
+      ...current,
+      [monthKey]: !current?.[monthKey],
+    }));
+  };
+
   useEffect(() => {
     setOptimisticPeriod(period);
     setSelectedDetailDayKey("");
-    setIsHistoryMonthOpen(false);
+    setOpenHistoryMonthKeys({});
     setIsChartDetailOpen(false);
   }, [period]);
 
@@ -1738,99 +1801,110 @@ export default function FinanzasPortal() {
                 </label>
               </Form>
             </div>
-            <button
-              className={`${styles.weekCard} ${styles.monthOverviewCard}`}
-              type="button"
-              onClick={() => setIsHistoryMonthOpen((isOpen) => !isOpen)}
-              aria-expanded={isHistoryMonthOpen}
-            >
-              <span>
-                <strong>{history?.label || "Mes actual"}</strong>
-              </span>
-              <span>
-                Ventas
-                <strong>{currencyFormatter.format(totals.salesTotal)}</strong>
-                {totals.hasRefunds ? (
-                  <>
-                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundSalesTotal)}</small>
-                    <small className={styles.netAmount}>{formatNetAmount(totals.netSalesTotal)}</small>
-                  </>
-                ) : null}
-              </span>
-              <span>
-                Ganancias
-                <strong>{currencyFormatter.format(totals.profitTotal)}</strong>
-                {totals.hasRefunds ? (
-                  <>
-                    <small className={styles.refundAmount}>{formatRefundAmount(totals.refundProfitTotal)}</small>
-                    <small className={styles.netAmount}>{formatNetAmount(totals.netProfitTotal)}</small>
-                  </>
-                ) : null}
-              </span>
-            </button>
-            {isHistoryMonthOpen ? (
-              <>
-                <article className={styles.historyCountCard}>
-                  <span>
-                    Pedidos
-                    <strong>{countFormatter.format(totals.orderCount || 0)}</strong>
-                  </span>
-                  <span>
-                    Productos
-                    {renderProductCountValues(totals)}
-                  </span>
-                </article>
-                <div className={`${styles.weekCards} ${styles.monthCards}`}>
-                  {(history?.days || []).map((day) => (
+            <div className={styles.historyMonthList}>
+              {historyMonths.map((month) => {
+                const monthKey = month?.monthKey || month?.label || "month";
+                const monthTotals = month?.totals || emptyTotals;
+                const isMonthOpen = Boolean(openHistoryMonthKeys[monthKey]);
+                return (
+                  <div className={styles.historyMonthBlock} key={monthKey}>
                     <button
-                      className={`${styles.weekCard} ${day.isCut ? styles.cutCard : ""} ${
-                        selectedDetailDay?.key === day.key ? styles.weekCardActive : ""
-                      }`}
+                      className={`${styles.weekCard} ${styles.monthOverviewCard}`}
                       type="button"
-                      key={day.key}
-                      onClick={() => setSelectedDetailDayKey(day.key)}
+                      onClick={() => toggleHistoryMonth(monthKey)}
+                      aria-expanded={isMonthOpen}
                     >
                       <span>
-                        <strong>{day.dayName}</strong>
-                        <small>{day.dateLabel}</small>
+                        <strong>{month?.label || "Mes actual"}</strong>
                       </span>
                       <span>
                         Ventas
-                        <strong>{currencyFormatter.format(day.totals.salesTotal)}</strong>
-                        {day.totals.hasRefunds ? (
+                        <strong>{currencyFormatter.format(monthTotals.salesTotal)}</strong>
+                        {monthTotals.hasRefunds ? (
                           <>
-                            <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
-                            <small className={styles.netAmount}>{formatNetAmount(day.totals.netSalesTotal)}</small>
+                            <small className={styles.refundAmount}>{formatRefundAmount(monthTotals.refundSalesTotal)}</small>
+                            <small className={styles.netAmount}>{formatNetAmount(monthTotals.netSalesTotal)}</small>
                           </>
                         ) : null}
                       </span>
                       <span>
                         Ganancias
-                        <strong>{currencyFormatter.format(day.totals.profitTotal)}</strong>
-                        {day.totals.hasRefunds ? (
+                        <strong>{currencyFormatter.format(monthTotals.profitTotal)}</strong>
+                        {monthTotals.hasRefunds ? (
                           <>
-                            <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
-                            <small className={styles.netAmount}>{formatNetAmount(day.totals.netProfitTotal)}</small>
+                            <small className={styles.refundAmount}>{formatRefundAmount(monthTotals.refundProfitTotal)}</small>
+                            <small className={styles.netAmount}>{formatNetAmount(monthTotals.netProfitTotal)}</small>
                           </>
                         ) : null}
                       </span>
-                      {day.isCut ? (
-                        <span className={styles.cutCountSummary}>
+                    </button>
+                    {isMonthOpen ? (
+                      <>
+                        <article className={styles.historyCountCard}>
                           <span>
                             Pedidos
-                            <strong>{countFormatter.format(day.totals.orderCount || 0)}</strong>
+                            <strong>{countFormatter.format(monthTotals.orderCount || 0)}</strong>
                           </span>
                           <span>
                             Productos
-                            {renderProductCountValues(day.totals)}
+                            {renderProductCountValues(monthTotals)}
                           </span>
-                        </span>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : null}
+                        </article>
+                        <div className={`${styles.weekCards} ${styles.monthCards}`}>
+                          {(month?.days || []).map((day) => (
+                            <button
+                              className={`${styles.weekCard} ${day.isCut ? styles.cutCard : ""} ${
+                                selectedDetailDay?.key === day.key ? styles.weekCardActive : ""
+                              }`}
+                              type="button"
+                              key={day.key}
+                              onClick={() => setSelectedDetailDayKey(day.key)}
+                            >
+                              <span>
+                                <strong>{day.dayName}</strong>
+                                <small>{day.dateLabel}</small>
+                              </span>
+                              <span>
+                                Ventas
+                                <strong>{currencyFormatter.format(day.totals.salesTotal)}</strong>
+                                {day.totals.hasRefunds ? (
+                                  <>
+                                    <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
+                                    <small className={styles.netAmount}>{formatNetAmount(day.totals.netSalesTotal)}</small>
+                                  </>
+                                ) : null}
+                              </span>
+                              <span>
+                                Ganancias
+                                <strong>{currencyFormatter.format(day.totals.profitTotal)}</strong>
+                                {day.totals.hasRefunds ? (
+                                  <>
+                                    <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
+                                    <small className={styles.netAmount}>{formatNetAmount(day.totals.netProfitTotal)}</small>
+                                  </>
+                                ) : null}
+                              </span>
+                              {day.isCut ? (
+                                <span className={styles.cutCountSummary}>
+                                  <span>
+                                    Pedidos
+                                    <strong>{countFormatter.format(day.totals.orderCount || 0)}</strong>
+                                  </span>
+                                  <span>
+                                    Productos
+                                    {renderProductCountValues(day.totals)}
+                                  </span>
+                                </span>
+                              ) : null}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           </section>
         ) : null}
 
