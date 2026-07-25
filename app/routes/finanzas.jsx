@@ -1837,19 +1837,19 @@ export default function FinanzasPortal() {
                           </>
                         ) : null}
                       </span>
+                      <span className={styles.monthCountSummary}>
+                        <span>
+                          Pedidos
+                          <strong>{countFormatter.format(monthTotals.orderCount || 0)}</strong>
+                        </span>
+                        <span>
+                          Productos
+                          {renderProductCountValues(monthTotals)}
+                        </span>
+                      </span>
                     </button>
                     {isMonthOpen ? (
                       <>
-                        <article className={styles.historyCountCard}>
-                          <span>
-                            Pedidos
-                            <strong>{countFormatter.format(monthTotals.orderCount || 0)}</strong>
-                          </span>
-                          <span>
-                            Productos
-                            {renderProductCountValues(monthTotals)}
-                          </span>
-                        </article>
                         <div className={`${styles.weekCards} ${styles.monthCards}`}>
                           {(month?.days || []).map((day) => (
                             <button

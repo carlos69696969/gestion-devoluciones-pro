@@ -274,14 +274,42 @@
 
 .monthOverviewCard {
   cursor: pointer;
-  grid-template-columns: 1.4fr 1fr 1fr;
+  grid-template-columns: minmax(120px, 0.86fr) minmax(110px, 1fr) minmax(110px, 1fr);
   align-items: center;
+  padding-right: calc(min(170px, 28%) + 28px);
 }
 
 .historyMonthList,
 .historyMonthBlock {
   display: grid;
   gap: 10px;
+}
+
+.monthOverviewCard .monthCountSummary {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  width: min(170px, 28%);
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: start;
+  gap: 5px;
+}
+
+.monthCountSummary > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.monthOverviewCard .productCountValues {
+  gap: 8px !important;
+}
+
+.monthOverviewCard .productCountValues strong,
+.monthOverviewCard .productCountValues small {
+  font-size: 15px !important;
 }
 
 .historyControls {
@@ -1115,6 +1143,26 @@
 
   .weekCard.cutCard {
     grid-template-columns: minmax(82px, 0.86fr) minmax(78px, 1fr) minmax(78px, 1fr);
+  }
+
+  .monthOverviewCard {
+    grid-template-columns: minmax(82px, 0.86fr) minmax(78px, 1fr) minmax(78px, 1fr);
+    padding-right: calc(min(126px, 31%) + 18px);
+  }
+
+  .monthOverviewCard .monthCountSummary {
+    right: 10px;
+    width: min(126px, 31%);
+    gap: 4px;
+  }
+
+  .monthOverviewCard .productCountValues {
+    gap: 5px !important;
+  }
+
+  .monthOverviewCard .productCountValues strong,
+  .monthOverviewCard .productCountValues small {
+    font-size: clamp(11px, 3vw, 13px) !important;
   }
 
   .cutCard .cutCountSummary {
