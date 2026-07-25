@@ -349,6 +349,13 @@
   font-size: 14px;
 }
 
+.preparerProductSku {
+  color: #005bd3;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
 .preparerActions {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

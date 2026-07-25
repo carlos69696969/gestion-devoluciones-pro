@@ -2420,6 +2420,7 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
                     node {
                       id
                       title
+                      sku
                       quantity
                       currentQuantity
                       originalUnitPriceSet {
@@ -2438,6 +2439,7 @@ async function fetchCourierOrdersByQuery({ shop, accessToken, queryString }) {
                       }
                       variant {
                         id
+                        sku
                         title
                         selectedOptions {
                           name
@@ -2536,6 +2538,7 @@ async function fetchCourierOrdersByIds({ shop, accessToken, orderIds }) {
                   node {
                     id
                     title
+                    sku
                     quantity
                     currentQuantity
                     originalUnitPriceSet {
@@ -2554,6 +2557,7 @@ async function fetchCourierOrdersByIds({ shop, accessToken, orderIds }) {
                     }
                     variant {
                       id
+                      sku
                       title
                       selectedOptions {
                         name
@@ -2620,6 +2624,7 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
     id: node.id,
     lineItemId: node.id,
     title: String(node.title || "").trim(),
+    sku: String(node.sku || node.variant?.sku || "").trim(),
     quantity: Math.max(1, Number(node.quantity || 1)),
     unitPrice: Number(node.originalUnitPriceSet?.shopMoney?.amount || 0),
     refundUnitPrice: orderDiscountedRefundUnitPrice(orderNode, node, Number(node.originalUnitPriceSet?.shopMoney?.amount || 0)),

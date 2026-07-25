@@ -291,6 +291,47 @@ function expandItemsIntoPreparerUnits(items = []) {
   );
 }
 
+function preparerItemLookupKeys(item = {}) {
+  return [
+    item.lineItemId,
+    item.id,
+    item.variantId ? `variant:${item.variantId}` : "",
+    item.productId ? `product:${item.productId}` : "",
+    item.title ? `title:${String(item.title).trim().toLowerCase()}` : "",
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+}
+
+function mergeLivePreparerItems(storedItems = [], liveItems = []) {
+  const cleanStoredItems = Array.isArray(storedItems) ? storedItems : [];
+  const cleanLiveItems = Array.isArray(liveItems) ? liveItems : [];
+  if (!cleanStoredItems.length) return cleanLiveItems;
+  if (!cleanLiveItems.length) return cleanStoredItems;
+
+  const liveItemByKey = new Map();
+  for (const liveItem of cleanLiveItems) {
+    for (const key of preparerItemLookupKeys(liveItem)) {
+      if (!liveItemByKey.has(key)) liveItemByKey.set(key, liveItem);
+    }
+  }
+
+  return cleanStoredItems.map((storedItem) => {
+    const liveItem = preparerItemLookupKeys(storedItem)
+      .map((key) => liveItemByKey.get(key))
+      .find(Boolean);
+    if (!liveItem) return storedItem;
+    return {
+      ...liveItem,
+      ...storedItem,
+      sku: String(storedItem.sku || liveItem.sku || "").trim(),
+      imageUrl: storedItem.imageUrl || liveItem.imageUrl || "",
+      imageAlt: storedItem.imageAlt || liveItem.imageAlt || "",
+      variantSummary: storedItem.variantSummary || liveItem.variantSummary || "",
+    };
+  });
+}
+
 function normalizeOrderItemsWithPreparerStatus(orderData, readyUnitKeys = [], missingUnitKeys = []) {
   const readySet = new Set(readyUnitKeys.map((value) => String(value || "").trim()).filter(Boolean));
   const missingSet = new Set(missingUnitKeys.map((value) => String(value || "").trim()).filter(Boolean));
@@ -823,7 +864,7 @@ export async function loader({ request }) {
           liveSequenceNumber ||
           liveCourierOrder?.sequenceNumber ||
           assignment.sequence,
-        items: storedItems.length ? storedItems : liveItems,
+        items: mergeLivePreparerItems(storedItems, liveItems),
         status: nextStatus || storedOrderData.status,
         courierActivityStatus: activityStatus || storedOrderData.courierActivityStatus || "",
       },
@@ -1491,6 +1532,7 @@ export default function PreparerPortal() {
                                     <span className={styles.preparerProductImagePlaceholder} />
                                   )}
                                   <div className={styles.preparerProductCopy}>
+                                    {item.sku ? <span className={styles.preparerProductSku}>Articulo {item.sku}</span> : null}
                                     <strong>{item.title || "Producto"}</strong>
                                     {item.variantSummary ? <span>Variante: {item.variantSummary}</span> : null}
                                     <span>Cantidad: 1</span>
