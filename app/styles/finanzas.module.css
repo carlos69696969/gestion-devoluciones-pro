@@ -857,15 +857,27 @@
   padding: 12px 14px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  align-items: center;
+  gap: 18px;
 }
 
 .historyCountCard > span {
   display: grid;
-  align-content: start;
-  gap: 8px;
+  align-content: center;
+  justify-items: center;
+  gap: 7px;
   color: #5f6b7a;
   min-width: 0;
+  text-align: center;
+}
+
+.historyCountCard > span + span {
+  border-left: 1px solid #eef1f5;
+  padding-left: 18px;
+}
+
+.historyCountCard .productCountValues {
+  justify-content: center;
 }
 
 .historyCountCard strong {
@@ -1152,9 +1164,17 @@
 
   .historyCountCard {
     min-height: 76px;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: 10px 14px;
-    gap: 12px;
+    gap: 10px;
+  }
+
+  .historyCountCard > span + span {
+    padding-left: 10px;
+  }
+
+  .historyCountCard .productCountValues {
+    gap: 9px !important;
   }
 
   .metric strong {
