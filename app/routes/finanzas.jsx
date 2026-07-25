@@ -1421,6 +1421,18 @@ export default function FinanzasPortal() {
       formatter: currencyFormatter,
       values: chartDays.map((day) => ({ ...day, value: day.totals.averageTicket })),
     },
+    {
+      title: "Pedidos",
+      className: styles.chartOrders,
+      formatter: countFormatter,
+      values: chartDays.map((day) => ({ ...day, value: day.totals.orderCount })),
+    },
+    {
+      title: "Productos",
+      className: styles.chartProducts,
+      formatter: countFormatter,
+      values: chartDays.map((day) => ({ ...day, value: day.totals.netItemCount ?? day.totals.itemCount })),
+    },
   ];
   const downloadFinancePdf = () => {
     const subtitle = getFinanceReportLabel({ period, dayLabel, week, history, chart });
