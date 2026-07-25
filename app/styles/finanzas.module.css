@@ -882,23 +882,23 @@
 }
 
 .historyCountCard {
-  min-height: 86px;
+  min-height: 76px;
   border: 1px solid #d9dee7;
   border-left: 4px solid #3538cd;
   border-radius: 8px;
   background: #fff;
-  padding: 12px 14px;
+  padding: 10px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
-  gap: 18px;
+  gap: 12px;
 }
 
 .historyCountCard > span {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 7px;
+  gap: 4px;
   color: #5f6b7a;
   min-width: 0;
   text-align: center;
@@ -906,7 +906,7 @@
 
 .historyCountCard > span + span {
   border-left: 1px solid #eef1f5;
-  padding-left: 18px;
+  padding-left: 12px;
 }
 
 .historyCountCard .productCountValues {
@@ -915,8 +915,13 @@
 
 .historyCountCard strong {
   color: #111827;
-  font-size: 24px;
+  font-size: 21px;
   line-height: 1.1;
+}
+
+.historyCountCard .productCountValues strong,
+.historyCountCard .productCountValues small {
+  font-size: 21px !important;
 }
 
 .metricNet {
@@ -1217,8 +1222,8 @@
   .historyCountCard {
     min-height: 76px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding: 10px 14px;
-    gap: 10px;
+    padding: 9px 10px;
+    gap: 8px;
   }
 
   .historyCountCard > span + span {
@@ -1226,7 +1231,13 @@
   }
 
   .historyCountCard .productCountValues {
-    gap: 9px !important;
+    gap: 7px !important;
+  }
+
+  .historyCountCard strong,
+  .historyCountCard .productCountValues strong,
+  .historyCountCard .productCountValues small {
+    font-size: clamp(17px, 4.5vw, 21px) !important;
   }
 
   .metric strong {
