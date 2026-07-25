@@ -1451,8 +1451,8 @@ export default function FinanzasPortal() {
         <strong>{countFormatter.format(soldItemCount)}</strong>
         {refundedItemCount > 0 ? (
           <>
-            <small className={styles.countRefund}>-{countFormatter.format(refundedItemCount)} reembolsados</small>
-            <small className={styles.countNet}>Total vendido: {countFormatter.format(netItemCount)}</small>
+            <small className={styles.countRefund}>-{countFormatter.format(refundedItemCount)}</small>
+            <small className={styles.countNet}>{countFormatter.format(netItemCount)}</small>
           </>
         ) : null}
       </article>
