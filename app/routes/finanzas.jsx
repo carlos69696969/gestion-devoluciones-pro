@@ -141,12 +141,14 @@ const emptyTotals = {
   refundOperatingCostTotal: 0,
   refundTaxesTotal: 0,
   refundRecoveredCostTotal: 0,
+  refundItemCount: 0,
   netSalesTotal: 0,
   netProfitTotal: 0,
   netShippingTotal: 0,
   netOperatingCostTotal: 0,
   netTaxesTotal: 0,
   netRecoveredCostTotal: 0,
+  netItemCount: 0,
   hasRefunds: false,
   orderCount: 0,
   itemCount: 0,
@@ -787,6 +789,7 @@ function calculateFinanceTotals(orders, refundEvents = []) {
       refundOperatingCostTotal: totals.refundOperatingCostTotal + Number(refundEvent?.refundOperatingCostTotal || 0),
       refundTaxesTotal: totals.refundTaxesTotal + Number(refundEvent?.refundTaxesTotal || 0),
       refundRecoveredCostTotal: totals.refundRecoveredCostTotal + Number(refundEvent?.refundRecoveredCostTotal || 0),
+      refundItemCount: totals.refundItemCount + Number(refundEvent?.refundItemCount || 0),
     }),
     {
       refundSalesTotal: 0,
@@ -796,6 +799,7 @@ function calculateFinanceTotals(orders, refundEvents = []) {
       refundOperatingCostTotal: 0,
       refundTaxesTotal: 0,
       refundRecoveredCostTotal: 0,
+      refundItemCount: 0,
     },
   );
   const shippingTotal = financeTotals.shippingTotal;
@@ -806,7 +810,8 @@ function calculateFinanceTotals(orders, refundEvents = []) {
     refundTotals.refundShippingTotal > 0 ||
     refundTotals.refundOperatingCostTotal > 0 ||
     refundTotals.refundTaxesTotal > 0 ||
-    refundTotals.refundRecoveredCostTotal > 0;
+    refundTotals.refundRecoveredCostTotal > 0 ||
+    refundTotals.refundItemCount > 0;
 
   return {
     ...emptyTotals,
@@ -823,12 +828,14 @@ function calculateFinanceTotals(orders, refundEvents = []) {
     refundOperatingCostTotal: refundTotals.refundOperatingCostTotal,
     refundTaxesTotal: refundTotals.refundTaxesTotal,
     refundRecoveredCostTotal: refundTotals.refundRecoveredCostTotal,
+    refundItemCount: refundTotals.refundItemCount,
     netSalesTotal: financeTotals.salesTotal - refundTotals.refundSalesTotal,
     netProfitTotal: financeTotals.profitTotal - refundTotals.refundProfitTotal,
     netShippingTotal: Math.max(0, shippingTotal - refundTotals.refundShippingTotal),
     netOperatingCostTotal: Math.max(0, operatingCostTotal - refundTotals.refundOperatingCostTotal),
     netTaxesTotal: Math.max(0, financeTotals.taxesTotal - refundTotals.refundTaxesTotal),
     netRecoveredCostTotal: Math.max(0, financeTotals.recoveredCostTotal - refundTotals.refundRecoveredCostTotal),
+    netItemCount: Math.max(0, itemCount - refundTotals.refundItemCount),
     hasRefunds,
     orderCount,
     itemCount,
@@ -1065,7 +1072,12 @@ function createFinancePdfBlob({ title, subtitle, totals, rows }) {
       formatPdfMoney(getVisibleTotal(summaryTotals, "recoveredCostTotal", "netRecoveredCostTotal"), wholeCurrencyFormatter),
     ],
     ["Ganancias", formatPdfMoney(getVisibleTotal(summaryTotals, "profitTotal", "netProfitTotal"))],
-    ["Pedidos / articulos", `${summaryTotals.orderCount || 0} / ${summaryTotals.itemCount || 0}`],
+    [
+      "Pedidos / productos",
+      summaryTotals.refundItemCount > 0
+        ? `${summaryTotals.orderCount || 0} / ${summaryTotals.itemCount || 0} - ${summaryTotals.refundItemCount || 0} = ${summaryTotals.netItemCount || 0}`
+        : `${summaryTotals.orderCount || 0} / ${summaryTotals.itemCount || 0}`,
+    ],
   ].forEach(([label, value], index) => {
     addSummaryPair(label, value, index >= 5 ? 1 : 0, index % 5);
   });
@@ -1228,6 +1240,7 @@ function extractRefundEventsFromOrders(orders, start, end) {
           refundOperatingCostTotal,
           refundTaxesTotal,
           refundRecoveredCostTotal: refundedRecoveredCostTotal,
+          refundItemCount: refundedItemCount,
         };
       })
       .filter(Boolean);
@@ -1426,6 +1439,24 @@ export default function FinanzasPortal() {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(downloadUrl);
+  };
+  const renderProductCountMetric = (totalsValue) => {
+    const soldItemCount = Number(totalsValue?.itemCount || 0);
+    const refundedItemCount = Number(totalsValue?.refundItemCount || 0);
+    const netItemCount = Number(totalsValue?.netItemCount ?? Math.max(0, soldItemCount - refundedItemCount));
+
+    return (
+      <article className={`${styles.metric} ${styles.metricProducts}`}>
+        <span>Productos</span>
+        <strong>{countFormatter.format(soldItemCount)}</strong>
+        {refundedItemCount > 0 ? (
+          <>
+            <small className={styles.countRefund}>-{countFormatter.format(refundedItemCount)} reembolsados</small>
+            <small className={styles.countNet}>Total vendido: {countFormatter.format(netItemCount)}</small>
+          </>
+        ) : null}
+      </article>
+    );
   };
 
   useEffect(() => {
@@ -1659,10 +1690,7 @@ export default function FinanzasPortal() {
                   <span>Pedidos</span>
                   <strong>{countFormatter.format(totals.orderCount || 0)}</strong>
                 </article>
-                <article className={`${styles.metric} ${styles.metricProducts}`}>
-                  <span>Productos</span>
-                  <strong>{countFormatter.format(totals.itemCount || 0)}</strong>
-                </article>
+                {renderProductCountMetric(totals)}
               </div>
             </article>
           </section>
@@ -1726,10 +1754,7 @@ export default function FinanzasPortal() {
                 <span>Pedidos</span>
                 <strong>{countFormatter.format(totals.orderCount || 0)}</strong>
               </article>
-              <article className={`${styles.metric} ${styles.metricProducts}`}>
-                <span>Productos</span>
-                <strong>{countFormatter.format(totals.itemCount || 0)}</strong>
-              </article>
+              {renderProductCountMetric(totals)}
             </div>
             {isHistoryMonthOpen ? (
               <div className={`${styles.weekCards} ${styles.monthCards}`}>
@@ -1966,10 +1991,7 @@ export default function FinanzasPortal() {
                   <span>Pedidos</span>
                   <strong>{countFormatter.format(selectedWeekDay.totals.orderCount || 0)}</strong>
                 </article>
-                <article className={`${styles.metric} ${styles.metricProducts}`}>
-                  <span>Productos</span>
-                  <strong>{countFormatter.format(selectedWeekDay.totals.itemCount || 0)}</strong>
-                </article>
+                {renderProductCountMetric(selectedWeekDay.totals)}
               </div>
             </div>
           </section>
@@ -2078,10 +2100,7 @@ export default function FinanzasPortal() {
               <span>Pedidos</span>
               <strong>{countFormatter.format((selectedWeekDay?.totals || totals).orderCount || 0)}</strong>
             </article>
-            <article className={`${styles.metric} ${styles.metricProducts}`}>
-              <span>Productos</span>
-              <strong>{countFormatter.format((selectedWeekDay?.totals || totals).itemCount || 0)}</strong>
-            </article>
+            {renderProductCountMetric(selectedWeekDay?.totals || totals)}
           </div>
         </section>
         ) : null}

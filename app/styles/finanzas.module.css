@@ -793,6 +793,20 @@
   line-height: 1.1;
 }
 
+.countRefund {
+  color: #b42318 !important;
+  font-size: 14px !important;
+  font-weight: 900 !important;
+  line-height: 1.1;
+}
+
+.countNet {
+  color: #111827 !important;
+  font-size: 14px !important;
+  font-weight: 900 !important;
+  line-height: 1.1;
+}
+
 .metricSales {
   border-left: 4px solid #087443;
 }
