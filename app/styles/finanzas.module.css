@@ -752,10 +752,6 @@
   gap: 8px;
 }
 
-.countMetrics {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .financeDetailSection {
   display: grid;
   gap: 12px;
@@ -852,6 +848,32 @@
   border-left: 4px solid #c4320a;
 }
 
+.historyCountCard {
+  min-height: 86px;
+  border: 1px solid #d9dee7;
+  border-left: 4px solid #3538cd;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.historyCountCard > span {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  color: #5f6b7a;
+  min-width: 0;
+}
+
+.historyCountCard strong {
+  color: #111827;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
 .metricNet {
   border-left: 4px solid #111827;
   background: #f9fafb;
@@ -930,10 +952,6 @@
   }
 
   .metrics {
-    grid-template-columns: 1fr;
-  }
-
-  .countMetrics {
     grid-template-columns: 1fr;
   }
 
@@ -1130,6 +1148,13 @@
     min-height: 68px;
     padding: 10px 14px;
     gap: 6px;
+  }
+
+  .historyCountCard {
+    min-height: 76px;
+    grid-template-columns: 1fr;
+    padding: 10px 14px;
+    gap: 12px;
   }
 
   .metric strong {

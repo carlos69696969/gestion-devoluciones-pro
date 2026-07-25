@@ -1440,23 +1440,28 @@ export default function FinanzasPortal() {
     link.remove();
     window.URL.revokeObjectURL(downloadUrl);
   };
-  const renderProductCountMetric = (totalsValue) => {
+  const renderProductCountValues = (totalsValue) => {
     const soldItemCount = Number(totalsValue?.itemCount || 0);
     const refundedItemCount = Number(totalsValue?.refundItemCount || 0);
     const netItemCount = Number(totalsValue?.netItemCount ?? Math.max(0, soldItemCount - refundedItemCount));
 
     return (
+      <span className={styles.productCountValues}>
+        <strong>{countFormatter.format(soldItemCount)}</strong>
+        {refundedItemCount > 0 ? (
+          <>
+            <small className={styles.countRefund}>-{countFormatter.format(refundedItemCount)}</small>
+            <small className={styles.countNet}>{countFormatter.format(netItemCount)}</small>
+          </>
+        ) : null}
+      </span>
+    );
+  };
+  const renderProductCountMetric = (totalsValue) => {
+    return (
       <article className={`${styles.metric} ${styles.metricProducts}`}>
         <span>Productos</span>
-        <span className={styles.productCountValues}>
-          <strong>{countFormatter.format(soldItemCount)}</strong>
-          {refundedItemCount > 0 ? (
-            <>
-              <small className={styles.countRefund}>-{countFormatter.format(refundedItemCount)}</small>
-              <small className={styles.countNet}>{countFormatter.format(netItemCount)}</small>
-            </>
-          ) : null}
-        </span>
+        {renderProductCountValues(totalsValue)}
       </article>
     );
   };
@@ -1751,51 +1756,56 @@ export default function FinanzasPortal() {
                 ) : null}
               </span>
             </button>
-            <div className={`${styles.metrics} ${styles.countMetrics}`}>
-              <article className={`${styles.metric} ${styles.metricOrders}`}>
-                <span>Pedidos</span>
-                <strong>{countFormatter.format(totals.orderCount || 0)}</strong>
-              </article>
-              {renderProductCountMetric(totals)}
-            </div>
             {isHistoryMonthOpen ? (
-              <div className={`${styles.weekCards} ${styles.monthCards}`}>
-                {(history?.days || []).map((day) => (
-                  <button
-                    className={`${styles.weekCard} ${day.isCut ? styles.cutCard : ""} ${
-                      selectedDetailDay?.key === day.key ? styles.weekCardActive : ""
-                    }`}
-                    type="button"
-                    key={day.key}
-                    onClick={() => setSelectedDetailDayKey(day.key)}
-                  >
-                    <span>
-                      <strong>{day.dayName}</strong>
-                      <small>{day.dateLabel}</small>
-                    </span>
-                    <span>
-                      Ventas
-                      <strong>{currencyFormatter.format(day.totals.salesTotal)}</strong>
-                      {day.totals.hasRefunds ? (
-                        <>
-                          <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
-                          <small className={styles.netAmount}>{formatNetAmount(day.totals.netSalesTotal)}</small>
-                        </>
-                      ) : null}
-                    </span>
-                    <span>
-                      Ganancias
-                      <strong>{currencyFormatter.format(day.totals.profitTotal)}</strong>
-                      {day.totals.hasRefunds ? (
-                        <>
-                          <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
-                          <small className={styles.netAmount}>{formatNetAmount(day.totals.netProfitTotal)}</small>
-                        </>
-                      ) : null}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <>
+                <article className={styles.historyCountCard}>
+                  <span>
+                    Pedidos
+                    <strong>{countFormatter.format(totals.orderCount || 0)}</strong>
+                  </span>
+                  <span>
+                    Productos
+                    {renderProductCountValues(totals)}
+                  </span>
+                </article>
+                <div className={`${styles.weekCards} ${styles.monthCards}`}>
+                  {(history?.days || []).map((day) => (
+                    <button
+                      className={`${styles.weekCard} ${day.isCut ? styles.cutCard : ""} ${
+                        selectedDetailDay?.key === day.key ? styles.weekCardActive : ""
+                      }`}
+                      type="button"
+                      key={day.key}
+                      onClick={() => setSelectedDetailDayKey(day.key)}
+                    >
+                      <span>
+                        <strong>{day.dayName}</strong>
+                        <small>{day.dateLabel}</small>
+                      </span>
+                      <span>
+                        Ventas
+                        <strong>{currencyFormatter.format(day.totals.salesTotal)}</strong>
+                        {day.totals.hasRefunds ? (
+                          <>
+                            <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundSalesTotal)}</small>
+                            <small className={styles.netAmount}>{formatNetAmount(day.totals.netSalesTotal)}</small>
+                          </>
+                        ) : null}
+                      </span>
+                      <span>
+                        Ganancias
+                        <strong>{currencyFormatter.format(day.totals.profitTotal)}</strong>
+                        {day.totals.hasRefunds ? (
+                          <>
+                            <small className={styles.refundAmount}>{formatRefundAmount(day.totals.refundProfitTotal)}</small>
+                            <small className={styles.netAmount}>{formatNetAmount(day.totals.netProfitTotal)}</small>
+                          </>
+                        ) : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
             ) : null}
           </section>
         ) : null}
@@ -1989,11 +1999,15 @@ export default function FinanzasPortal() {
                     )}
                   </strong>
                 </article>
-                <article className={`${styles.metric} ${styles.metricOrders}`}>
-                  <span>Pedidos</span>
-                  <strong>{countFormatter.format(selectedWeekDay.totals.orderCount || 0)}</strong>
-                </article>
-                {renderProductCountMetric(selectedWeekDay.totals)}
+                {period !== "history" ? (
+                  <>
+                    <article className={`${styles.metric} ${styles.metricOrders}`}>
+                      <span>Pedidos</span>
+                      <strong>{countFormatter.format(selectedWeekDay.totals.orderCount || 0)}</strong>
+                    </article>
+                    {renderProductCountMetric(selectedWeekDay.totals)}
+                  </>
+                ) : null}
               </div>
             </div>
           </section>
