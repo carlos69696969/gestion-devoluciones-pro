@@ -812,6 +812,20 @@
   font-weight: 900 !important;
 }
 
+.refundSourceList {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 6px 10px !important;
+  color: #b42318 !important;
+}
+
+.refundSourceList small {
+  color: #b42318 !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  line-height: 1.15;
+}
+
 .metricSales {
   border-left: 4px solid #087443;
 }
