@@ -111,6 +111,10 @@ const wholeCurrencyFormatter = new Intl.NumberFormat("es-MX", {
   maximumFractionDigits: 0,
 });
 
+const countFormatter = new Intl.NumberFormat("es-MX", {
+  maximumFractionDigits: 0,
+});
+
 const dayNameFormatter = new Intl.DateTimeFormat("es-MX", {
   timeZone: FINANCE_TIME_ZONE,
   weekday: "long",
@@ -1651,6 +1655,14 @@ export default function FinanzasPortal() {
                   <span>Ganancias</span>
                   <strong>{currencyFormatter.format(totals.hasRefunds ? totals.netProfitTotal : totals.profitTotal)}</strong>
                 </article>
+                <article className={`${styles.metric} ${styles.metricOrders}`}>
+                  <span>Pedidos</span>
+                  <strong>{countFormatter.format(totals.orderCount || 0)}</strong>
+                </article>
+                <article className={`${styles.metric} ${styles.metricProducts}`}>
+                  <span>Productos</span>
+                  <strong>{countFormatter.format(totals.itemCount || 0)}</strong>
+                </article>
               </div>
             </article>
           </section>
@@ -1709,6 +1721,16 @@ export default function FinanzasPortal() {
                 ) : null}
               </span>
             </button>
+            <div className={`${styles.metrics} ${styles.countMetrics}`}>
+              <article className={`${styles.metric} ${styles.metricOrders}`}>
+                <span>Pedidos</span>
+                <strong>{countFormatter.format(totals.orderCount || 0)}</strong>
+              </article>
+              <article className={`${styles.metric} ${styles.metricProducts}`}>
+                <span>Productos</span>
+                <strong>{countFormatter.format(totals.itemCount || 0)}</strong>
+              </article>
+            </div>
             {isHistoryMonthOpen ? (
               <div className={`${styles.weekCards} ${styles.monthCards}`}>
                 {(history?.days || []).map((day) => (
@@ -1940,6 +1962,14 @@ export default function FinanzasPortal() {
                     )}
                   </strong>
                 </article>
+                <article className={`${styles.metric} ${styles.metricOrders}`}>
+                  <span>Pedidos</span>
+                  <strong>{countFormatter.format(selectedWeekDay.totals.orderCount || 0)}</strong>
+                </article>
+                <article className={`${styles.metric} ${styles.metricProducts}`}>
+                  <span>Productos</span>
+                  <strong>{countFormatter.format(selectedWeekDay.totals.itemCount || 0)}</strong>
+                </article>
               </div>
             </div>
           </section>
@@ -2043,6 +2073,14 @@ export default function FinanzasPortal() {
                     : (selectedWeekDay?.totals || totals).profitTotal,
                 )}
               </strong>
+            </article>
+            <article className={`${styles.metric} ${styles.metricOrders}`}>
+              <span>Pedidos</span>
+              <strong>{countFormatter.format((selectedWeekDay?.totals || totals).orderCount || 0)}</strong>
+            </article>
+            <article className={`${styles.metric} ${styles.metricProducts}`}>
+              <span>Productos</span>
+              <strong>{countFormatter.format((selectedWeekDay?.totals || totals).itemCount || 0)}</strong>
             </article>
           </div>
         </section>

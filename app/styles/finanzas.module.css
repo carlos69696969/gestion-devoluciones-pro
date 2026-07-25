@@ -752,6 +752,10 @@
   gap: 8px;
 }
 
+.countMetrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .financeDetailSection {
   display: grid;
   gap: 12px;
@@ -815,6 +819,14 @@
 
 .metricRecovered {
   border-left: 4px solid #0e9384;
+}
+
+.metricOrders {
+  border-left: 4px solid #3538cd;
+}
+
+.metricProducts {
+  border-left: 4px solid #c4320a;
 }
 
 .metricNet {
@@ -895,6 +907,10 @@
   }
 
   .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .countMetrics {
     grid-template-columns: 1fr;
   }
 
