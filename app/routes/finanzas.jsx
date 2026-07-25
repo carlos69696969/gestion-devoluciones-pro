@@ -142,7 +142,6 @@ const emptyTotals = {
   refundTaxesTotal: 0,
   refundRecoveredCostTotal: 0,
   refundItemCount: 0,
-  refundProductSources: [],
   netSalesTotal: 0,
   netProfitTotal: 0,
   netShippingTotal: 0,
@@ -805,18 +804,6 @@ function calculateFinanceTotals(orders, refundEvents = []) {
   );
   const shippingTotal = financeTotals.shippingTotal;
   const operatingCostTotal = itemCount * OPERATING_COST_PER_ITEM;
-  const refundProductSources = Array.from(
-    refundEvents
-      .filter((refundEvent) => Number(refundEvent?.refundItemCount || 0) > 0)
-      .reduce((sources, refundEvent) => {
-        const orderName = String(refundEvent?.orderName || "Pedido").replace(/^#?/, "#");
-        const currentSource = sources.get(orderName) || { orderName, quantity: 0 };
-        currentSource.quantity += Number(refundEvent?.refundItemCount || 0);
-        sources.set(orderName, currentSource);
-        return sources;
-      }, new Map())
-      .values(),
-  );
   const hasRefunds =
     refundTotals.refundSalesTotal > 0 ||
     refundTotals.refundProfitTotal > 0 ||
@@ -842,7 +829,6 @@ function calculateFinanceTotals(orders, refundEvents = []) {
     refundTaxesTotal: refundTotals.refundTaxesTotal,
     refundRecoveredCostTotal: refundTotals.refundRecoveredCostTotal,
     refundItemCount: refundTotals.refundItemCount,
-    refundProductSources,
     netSalesTotal: financeTotals.salesTotal - refundTotals.refundSalesTotal,
     netProfitTotal: financeTotals.profitTotal - refundTotals.refundProfitTotal,
     netShippingTotal: Math.max(0, shippingTotal - refundTotals.refundShippingTotal),
@@ -1472,23 +1458,10 @@ export default function FinanzasPortal() {
     );
   };
   const renderProductCountMetric = (totalsValue) => {
-    const refundProductSources = Array.isArray(totalsValue?.refundProductSources)
-      ? totalsValue.refundProductSources.filter((source) => Number(source?.quantity || 0) > 0)
-      : [];
-
     return (
       <article className={`${styles.metric} ${styles.metricProducts}`}>
         <span>Productos</span>
         {renderProductCountValues(totalsValue)}
-        {refundProductSources.length ? (
-          <span className={styles.refundSourceList}>
-            {refundProductSources.map((source) => (
-              <small key={source.orderName}>
-                {source.orderName}: -{countFormatter.format(source.quantity)}
-              </small>
-            ))}
-          </span>
-        ) : null}
       </article>
     );
   };
@@ -1793,15 +1766,6 @@ export default function FinanzasPortal() {
                   <span>
                     Productos
                     {renderProductCountValues(totals)}
-                    {Array.isArray(totals.refundProductSources) && totals.refundProductSources.length ? (
-                      <span className={styles.refundSourceList}>
-                        {totals.refundProductSources.map((source) => (
-                          <small key={source.orderName}>
-                            {source.orderName}: -{countFormatter.format(source.quantity)}
-                          </small>
-                        ))}
-                      </span>
-                    ) : null}
                   </span>
                 </article>
                 <div className={`${styles.weekCards} ${styles.monthCards}`}>
