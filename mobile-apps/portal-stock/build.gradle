@@ -1,0 +1,16 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.cariana.portalstock"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.cariana.portalstock"
+        minSdk 23
+        targetSdk 36
+        versionCode 1
+        versionName "1.0"
+    }
+}

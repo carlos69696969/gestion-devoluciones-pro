@@ -268,3 +268,22 @@ model CourierHistoryPurge {
   @@index([shop, purgedAt])
   @@index([shop, cutoffAt])
 }
+
+model StockProductDraft {
+  id          Int      @id @default(autoincrement())
+  shop        String
+  productName String
+  color       String?
+  size        String?
+  quantity    Int      @default(1)
+  sku         String?
+  price       Float    @default(0)
+  notes       String?
+  photos      Json     @default("[]")
+  status      String   @default("pendiente")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([shop, status, createdAt])
+  @@index([shop, sku])
+}
