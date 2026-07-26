@@ -260,6 +260,35 @@ await prisma.$executeRawUnsafe(`
 `);
 
 await prisma.$executeRawUnsafe(`
+  CREATE TABLE IF NOT EXISTS "StockProductDraft" (
+    "id" SERIAL NOT NULL,
+    "shop" TEXT NOT NULL,
+    "productName" TEXT NOT NULL,
+    "color" TEXT,
+    "size" TEXT,
+    "quantity" INTEGER NOT NULL DEFAULT 1,
+    "sku" TEXT,
+    "price" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "notes" TEXT,
+    "photos" JSONB NOT NULL DEFAULT '[]',
+    "status" TEXT NOT NULL DEFAULT 'pendiente',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "StockProductDraft_pkey" PRIMARY KEY ("id")
+  )
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "StockProductDraft_shop_status_createdAt_idx"
+  ON "StockProductDraft"("shop", "status", "createdAt")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "StockProductDraft_shop_sku_idx"
+  ON "StockProductDraft"("shop", "sku")
+`);
+
+await prisma.$executeRawUnsafe(`
   ALTER TABLE "ReturnSettings"
   ADD COLUMN IF NOT EXISTS "maintenanceEvidenceDays" INTEGER NOT NULL DEFAULT 120
 `);

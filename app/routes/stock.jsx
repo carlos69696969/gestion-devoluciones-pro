@@ -50,15 +50,23 @@ export const headers = () => ({
 
 export async function loader({ request }) {
   const shop = portalShopFromRequest(request);
-  const drafts = await prisma.stockProductDraft.findMany({
-    where: { shop },
-    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    take: 80,
-  });
+  let drafts = [];
+  let error = "";
+  try {
+    drafts = await prisma.stockProductDraft.findMany({
+      where: { shop },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      take: 80,
+    });
+  } catch (loadError) {
+    console.error("No se pudo cargar portal stock", loadError);
+    error = "El almacenamiento de stock se esta preparando. Actualiza la pagina en un momento.";
+  }
 
   return {
     shop,
     drafts: drafts.map(serializeDraft),
+    error,
   };
 }
 
@@ -137,7 +145,7 @@ async function compressImageFile(file) {
 }
 
 export default function StockPortal() {
-  const { shop, drafts } = useLoaderData();
+  const { shop, drafts, error } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const [searchParams] = useSearchParams();
@@ -202,6 +210,7 @@ export default function StockPortal() {
         </button>
       </section>
 
+      {error ? <p className={styles.error}>{error}</p> : null}
       {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
 
       {activeTab === "capturar" ? (
