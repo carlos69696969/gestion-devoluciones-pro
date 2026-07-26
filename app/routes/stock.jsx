@@ -5,6 +5,18 @@ import styles from "../styles/stock.module.css";
 
 const MAX_STOCK_PHOTOS = 8;
 const MAX_STOCK_PHOTO_CHARS = 1_250_000;
+const STOCK_AUDIENCES = [
+  { value: "hombre", label: "Hombre", code: "H" },
+  { value: "mujer", label: "Mujer", code: "M" },
+];
+const STOCK_GARMENTS = [
+  { value: "playera", label: "Playera", code: "PL" },
+  { value: "camisa", label: "Camisa", code: "CA" },
+  { value: "pantalon", label: "Pantalon", code: "PA" },
+  { value: "vestido", label: "Vestido", code: "VE" },
+  { value: "chamarra", label: "Chamarra", code: "CH" },
+  { value: "blusa", label: "Blusa", code: "BL" },
+];
 
 function cleanShop(value) {
   return String(value || "").trim().toLowerCase();
@@ -17,6 +29,60 @@ function portalShopFromRequest(request) {
 
 function sanitizeText(value, maxLength = 180) {
   return String(value || "").trim().slice(0, maxLength);
+}
+
+function normalizeAudience(value) {
+  const cleanValue = String(value || "").trim().toLowerCase();
+  return STOCK_AUDIENCES.some((audience) => audience.value === cleanValue) ? cleanValue : STOCK_AUDIENCES[0].value;
+}
+
+function normalizeGarment(value) {
+  const cleanValue = String(value || "").trim().toLowerCase();
+  return STOCK_GARMENTS.some((garment) => garment.value === cleanValue) ? cleanValue : STOCK_GARMENTS[0].value;
+}
+
+function audienceConfig(value) {
+  return STOCK_AUDIENCES.find((audience) => audience.value === normalizeAudience(value)) || STOCK_AUDIENCES[0];
+}
+
+function garmentConfig(value) {
+  return STOCK_GARMENTS.find((garment) => garment.value === normalizeGarment(value)) || STOCK_GARMENTS[0];
+}
+
+function stockSkuPrefix(audience, garment) {
+  return `${audienceConfig(audience).code}-${garmentConfig(garment).code}`;
+}
+
+function nextStockSkuForPrefix(prefix, existingSkus = []) {
+  const matcher = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)$`, "i");
+  const highestNumber = existingSkus.reduce((highest, sku) => {
+    const match = String(sku || "").trim().match(matcher);
+    return match ? Math.max(highest, Number(match[1] || 0)) : highest;
+  }, 0);
+  return `${prefix}-${String(highestNumber + 1).padStart(3, "0")}`;
+}
+
+function defaultStockLocation(audience) {
+  return `${audienceConfig(audience).code}-A`;
+}
+
+function nextStockLocation(currentLocation, audience) {
+  const audienceCode = audienceConfig(audience).code;
+  const match = String(currentLocation || "").trim().toUpperCase().match(/^([HM])-([A-Z])(\d+)?$/);
+  const currentLetter = match?.[1] === audienceCode ? match[2] : "A";
+  const currentRound = match?.[1] === audienceCode ? Math.max(1, Number(match[3] || 1)) : 1;
+  if (currentLetter === "Z") {
+    return `${audienceCode}-A${currentRound + 1}`;
+  }
+  const nextLetter = String.fromCharCode(currentLetter.charCodeAt(0) + 1);
+  return `${audienceCode}-${nextLetter}${currentRound > 1 ? currentRound : ""}`;
+}
+
+function stockLabels() {
+  return {
+    audiences: Object.fromEntries(STOCK_AUDIENCES.map((audience) => [audience.value, audience.label])),
+    garments: Object.fromEntries(STOCK_GARMENTS.map((garment) => [garment.value, garment.label])),
+  };
 }
 
 function sanitizePhotoDataUrl(value) {
@@ -34,6 +100,11 @@ function serializeDraft(draft) {
     size: draft.size || "",
     quantity: draft.quantity,
     sku: draft.sku || "",
+    audience: draft.audience || "",
+    audienceLabel: stockLabels().audiences[draft.audience] || "",
+    garmentType: draft.garmentType || "",
+    garmentLabel: stockLabels().garments[draft.garmentType] || "",
+    locationCode: draft.locationCode || "",
     price: draft.price,
     notes: draft.notes || "",
     photos: Array.isArray(draft.photos) ? draft.photos : [],
@@ -51,21 +122,51 @@ export const headers = () => ({
 export async function loader({ request }) {
   const shop = portalShopFromRequest(request);
   let drafts = [];
+  let skuRows = [];
+  let locationRows = [];
   let error = "";
   try {
-    drafts = await prisma.stockProductDraft.findMany({
-      where: { shop },
-      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-      take: 80,
-    });
+    [drafts, skuRows, locationRows] = await Promise.all([
+      prisma.stockProductDraft.findMany({
+        where: { shop },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        take: 80,
+      }),
+      prisma.stockProductDraft.findMany({
+        where: { shop },
+        select: { sku: true },
+      }),
+      prisma.stockLocationState.findMany({
+        where: { shop },
+      }),
+    ]);
   } catch (loadError) {
     console.error("No se pudo cargar portal stock", loadError);
     error = "El almacenamiento de stock se esta preparando. Actualiza la pagina en un momento.";
   }
+  const existingSkus = skuRows.map((row) => row.sku).filter(Boolean);
+  const nextSkuByCategory = Object.fromEntries(
+    STOCK_AUDIENCES.flatMap((audience) =>
+      STOCK_GARMENTS.map((garment) => {
+        const prefix = stockSkuPrefix(audience.value, garment.value);
+        return [`${audience.value}:${garment.value}`, nextStockSkuForPrefix(prefix, existingSkus)];
+      }),
+    ),
+  );
+  const locationByAudience = Object.fromEntries(
+    STOCK_AUDIENCES.map((audience) => {
+      const location = locationRows.find((row) => row.audience === audience.value)?.currentLocation;
+      return [audience.value, location || defaultStockLocation(audience.value)];
+    }),
+  );
 
   return {
     shop,
     drafts: drafts.map(serializeDraft),
+    audiences: STOCK_AUDIENCES,
+    garments: STOCK_GARMENTS,
+    nextSkuByCategory,
+    locationByAudience,
     error,
   };
 }
@@ -75,6 +176,19 @@ export async function action({ request }) {
   const intent = String(formData.get("intent") || "").trim();
   const shop = cleanShop(formData.get("shop")) || portalShopFromRequest(request);
 
+  if (intent === "advance_stock_location") {
+    const audience = normalizeAudience(formData.get("audience"));
+    const currentLocation =
+      sanitizeText(formData.get("currentLocation"), 24) || defaultStockLocation(audience);
+    const nextLocation = nextStockLocation(currentLocation, audience);
+    await prisma.stockLocationState.upsert({
+      where: { shop_audience: { shop, audience } },
+      create: { shop, audience, currentLocation: nextLocation },
+      update: { currentLocation: nextLocation },
+    });
+    return redirect(`/stock?shop=${encodeURIComponent(shop)}`);
+  }
+
   if (intent !== "create_stock_draft") {
     return { ok: false, error: "Accion no reconocida." };
   }
@@ -82,6 +196,8 @@ export async function action({ request }) {
   const productName = sanitizeText(formData.get("productName"));
   if (!productName) return { ok: false, error: "Escribe el nombre del producto." };
 
+  const audience = normalizeAudience(formData.get("audience"));
+  const garmentType = normalizeGarment(formData.get("garmentType"));
   const quantity = Math.max(1, Math.min(9999, Number(formData.get("quantity") || 1) || 1));
   const price = Math.max(0, Number(formData.get("price") || 0) || 0);
   const photos = formData
@@ -89,15 +205,31 @@ export async function action({ request }) {
     .map(sanitizePhotoDataUrl)
     .filter(Boolean)
     .slice(0, MAX_STOCK_PHOTOS);
+  const existingSkus = (
+    await prisma.stockProductDraft.findMany({
+      where: { shop },
+      select: { sku: true },
+    })
+  )
+    .map((row) => row.sku)
+    .filter(Boolean);
+  const sku = nextStockSkuForPrefix(stockSkuPrefix(audience, garmentType), existingSkus);
+  const locationState = await prisma.stockLocationState.findUnique({
+    where: { shop_audience: { shop, audience } },
+  });
+  const locationCode = locationState?.currentLocation || defaultStockLocation(audience);
 
   await prisma.stockProductDraft.create({
     data: {
       shop,
       productName,
+      audience,
+      garmentType,
+      locationCode,
       color: sanitizeText(formData.get("color"), 80) || null,
       size: sanitizeText(formData.get("size"), 80) || null,
       quantity,
-      sku: sanitizeText(formData.get("sku"), 80) || null,
+      sku,
       price,
       notes: sanitizeText(formData.get("notes"), 600) || null,
       photos,
@@ -145,14 +277,20 @@ async function compressImageFile(file) {
 }
 
 export default function StockPortal() {
-  const { shop, drafts, error } = useLoaderData();
+  const { shop, drafts, error, audiences, garments, nextSkuByCategory, locationByAudience } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(searchParams.get("guardado") ? "pendientes" : "capturar");
   const [photos, setPhotos] = useState([]);
   const [selectedDraftId, setSelectedDraftId] = useState(drafts[0]?.id || 0);
+  const [selectedAudience, setSelectedAudience] = useState(audiences?.[0]?.value || "hombre");
+  const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
   const isSubmitting = navigation.state !== "idle";
+  const suggestedSku =
+    nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
+    nextStockSkuForPrefix(stockSkuPrefix(selectedAudience, selectedGarment), []);
+  const suggestedLocation = locationByAudience?.[selectedAudience] || defaultStockLocation(selectedAudience);
   const selectedDraft = useMemo(
     () => drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) || drafts[0] || null,
     [drafts, selectedDraftId],
@@ -215,12 +353,68 @@ export default function StockPortal() {
 
       {activeTab === "capturar" ? (
         <section className={styles.card}>
+          <Form method="post" className={styles.locationForm}>
+            <input type="hidden" name="intent" value="advance_stock_location" />
+            <input type="hidden" name="shop" value={shop} />
+            <input type="hidden" name="audience" value={selectedAudience} />
+            <input type="hidden" name="currentLocation" value={suggestedLocation} />
+            <div>
+              <span>Ubicacion sugerida</span>
+              <strong>{suggestedLocation}</strong>
+            </div>
+            <button className={styles.secondaryButton} type="submit" disabled={isSubmitting}>
+              Marcar llena y usar siguiente
+            </button>
+          </Form>
+
           <Form method="post" className={styles.form}>
             <input type="hidden" name="intent" value="create_stock_draft" />
             <input type="hidden" name="shop" value={shop} />
             {photos.map((photo) => (
               <input key={photo.id} type="hidden" name="photos" value={photo.dataUrl} />
             ))}
+
+            <div className={styles.twoColumns}>
+              <label>
+                Persona
+                <select
+                  name="audience"
+                  value={selectedAudience}
+                  onChange={(event) => setSelectedAudience(event.currentTarget.value)}
+                >
+                  {(audiences || STOCK_AUDIENCES).map((audience) => (
+                    <option key={audience.value} value={audience.value}>
+                      {audience.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Prenda
+                <select
+                  name="garmentType"
+                  value={selectedGarment}
+                  onChange={(event) => setSelectedGarment(event.currentTarget.value)}
+                >
+                  {(garments || STOCK_GARMENTS).map((garment) => (
+                    <option key={garment.value} value={garment.value}>
+                      {garment.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className={styles.generatedPanel}>
+              <span>
+                SKU automatico
+                <strong>{suggestedSku}</strong>
+              </span>
+              <span>
+                Ubicacion
+                <strong>{suggestedLocation}</strong>
+              </span>
+            </div>
 
             <label className={styles.photoPicker}>
               <span>Tomar o agregar fotos</span>
@@ -263,10 +457,6 @@ export default function StockPortal() {
                 Cantidad
                 <input min="1" name="quantity" inputMode="numeric" type="number" defaultValue="1" />
               </label>
-              <label>
-                SKU
-                <input name="sku" placeholder="0001" />
-              </label>
             </div>
             <label>
               Precio
@@ -297,7 +487,10 @@ export default function StockPortal() {
                   >
                     {draft.photos?.[0] ? <img src={draft.photos[0]} alt={draft.productName} /> : <span />}
                     <strong>{draft.productName}</strong>
-                    <small>{draft.sku ? `SKU ${draft.sku}` : "Sin SKU"}</small>
+                    <small>
+                      {draft.sku ? `SKU ${draft.sku}` : "Sin SKU"}
+                      {draft.locationCode ? ` | ${draft.locationCode}` : ""}
+                    </small>
                   </button>
                 ))}
               </div>
@@ -325,6 +518,18 @@ export default function StockPortal() {
                 <div>
                   <dt>SKU</dt>
                   <dd>{selectedDraft.sku || "-"}</dd>
+                </div>
+                <div>
+                  <dt>Ubicacion</dt>
+                  <dd>{selectedDraft.locationCode || "-"}</dd>
+                </div>
+                <div>
+                  <dt>Persona</dt>
+                  <dd>{selectedDraft.audienceLabel || "-"}</dd>
+                </div>
+                <div>
+                  <dt>Prenda</dt>
+                  <dd>{selectedDraft.garmentLabel || "-"}</dd>
                 </div>
                 <div>
                   <dt>Precio</dt>

@@ -37,7 +37,8 @@
 }
 
 .tabButton,
-.primaryButton {
+.primaryButton,
+.secondaryButton {
   min-height: 46px;
   border: 1px solid #ccd3dd;
   border-radius: 999px;
@@ -71,6 +72,44 @@
   gap: 12px;
 }
 
+.locationForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  border: 1px solid #b7d7f8;
+  border-radius: 14px;
+  background: #eef6ff;
+  padding: 12px;
+}
+
+.locationForm div {
+  display: grid;
+  gap: 2px;
+}
+
+.locationForm span,
+.generatedPanel span {
+  color: #5f6b7a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.locationForm strong {
+  color: #005bd3;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.secondaryButton {
+  min-height: 40px;
+  padding: 0 14px;
+  background: #fff;
+  color: #005bd3;
+  font-size: 13px;
+}
+
 .form label {
   display: grid;
   gap: 6px;
@@ -80,6 +119,7 @@
 }
 
 .form input,
+.form select,
 .form textarea {
   width: 100%;
   min-height: 44px;
@@ -89,6 +129,27 @@
   color: #111827;
   font: inherit;
   padding: 10px 12px;
+}
+
+.generatedPanel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.generatedPanel span {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #d9dee7;
+  border-radius: 12px;
+  background: #f9fafb;
+  padding: 12px;
+}
+
+.generatedPanel strong {
+  color: #111827;
+  font-size: 24px;
+  line-height: 1;
 }
 
 .form textarea {
@@ -288,8 +349,14 @@
   }
 
   .pendingLayout,
-  .twoColumns {
+  .twoColumns,
+  .generatedPanel,
+  .locationForm {
     grid-template-columns: 1fr;
+  }
+
+  .secondaryButton {
+    width: 100%;
   }
 
   .detailGrid {

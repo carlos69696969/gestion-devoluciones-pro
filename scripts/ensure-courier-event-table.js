@@ -289,6 +289,53 @@ await prisma.$executeRawUnsafe(`
 `);
 
 await prisma.$executeRawUnsafe(`
+  ALTER TABLE "StockProductDraft"
+  ADD COLUMN IF NOT EXISTS "audience" TEXT
+`);
+
+await prisma.$executeRawUnsafe(`
+  ALTER TABLE "StockProductDraft"
+  ADD COLUMN IF NOT EXISTS "garmentType" TEXT
+`);
+
+await prisma.$executeRawUnsafe(`
+  ALTER TABLE "StockProductDraft"
+  ADD COLUMN IF NOT EXISTS "locationCode" TEXT
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "StockProductDraft_shop_audience_garmentType_idx"
+  ON "StockProductDraft"("shop", "audience", "garmentType")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "StockProductDraft_shop_locationCode_idx"
+  ON "StockProductDraft"("shop", "locationCode")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE TABLE IF NOT EXISTS "StockLocationState" (
+    "id" SERIAL NOT NULL,
+    "shop" TEXT NOT NULL,
+    "audience" TEXT NOT NULL,
+    "currentLocation" TEXT NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "StockLocationState_pkey" PRIMARY KEY ("id")
+  )
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE UNIQUE INDEX IF NOT EXISTS "StockLocationState_shop_audience_key"
+  ON "StockLocationState"("shop", "audience")
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "StockLocationState_shop_currentLocation_idx"
+  ON "StockLocationState"("shop", "currentLocation")
+`);
+
+await prisma.$executeRawUnsafe(`
   ALTER TABLE "ReturnSettings"
   ADD COLUMN IF NOT EXISTS "maintenanceEvidenceDays" INTEGER NOT NULL DEFAULT 120
 `);

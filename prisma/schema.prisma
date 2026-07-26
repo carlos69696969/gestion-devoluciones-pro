@@ -273,6 +273,9 @@ model StockProductDraft {
   id          Int      @id @default(autoincrement())
   shop        String
   productName String
+  audience    String?
+  garmentType String?
+  locationCode String?
   color       String?
   size        String?
   quantity    Int      @default(1)
@@ -286,4 +289,18 @@ model StockProductDraft {
 
   @@index([shop, status, createdAt])
   @@index([shop, sku])
+  @@index([shop, audience, garmentType])
+  @@index([shop, locationCode])
+}
+
+model StockLocationState {
+  id              Int      @id @default(autoincrement())
+  shop            String
+  audience        String
+  currentLocation String
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  @@unique([shop, audience])
+  @@index([shop, currentLocation])
 }
