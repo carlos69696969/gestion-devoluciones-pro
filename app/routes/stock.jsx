@@ -5,6 +5,7 @@ import styles from "../styles/stock.module.css";
 
 const MAX_STOCK_PHOTOS = 8;
 const MAX_STOCK_PHOTO_CHARS = 1_250_000;
+const STOCK_CAPTURE_DRAFT_VERSION = 1;
 const STOCK_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 const STOCK_AUDIENCES = [
   { value: "hombre", label: "Hombre", code: "H" },
@@ -324,6 +325,47 @@ function blankStockVariant(id = "variant-1") {
   };
 }
 
+function stockCaptureDraftKey(shop) {
+  return `cariana-stock-capture-draft:${cleanShop(shop) || "portal-stock"}`;
+}
+
+function normalizeStockVariantDraft(variant, index = 0) {
+  const base = blankStockVariant(`variant-${index + 1}`);
+  const sizes = (Array.isArray(variant?.sizes) ? variant.sizes : [])
+    .map((sizeRow) => ({
+      size: STOCK_SIZES.includes(String(sizeRow?.size || "").trim().toUpperCase())
+        ? String(sizeRow.size).trim().toUpperCase()
+        : "",
+      quantity: Math.max(1, Math.min(9999, Number(sizeRow?.quantity || 0) || 0)),
+    }))
+    .filter((sizeRow) => sizeRow.size && sizeRow.quantity);
+  return {
+    ...base,
+    id: String(variant?.id || base.id),
+    color: String(variant?.color || "").slice(0, 80),
+    price: String(variant?.price ?? ""),
+    sizes,
+    sizeMenuOpen: Boolean(variant?.sizeMenuOpen),
+    selectedSize: STOCK_SIZES.includes(String(variant?.selectedSize || "").trim().toUpperCase())
+      ? String(variant.selectedSize).trim().toUpperCase()
+      : "",
+    quantityDraft: String(variant?.quantityDraft || ""),
+    pendingDeleteSize: STOCK_SIZES.includes(String(variant?.pendingDeleteSize || "").trim().toUpperCase())
+      ? String(variant.pendingDeleteSize).trim().toUpperCase()
+      : "",
+  };
+}
+
+function normalizeStockPhotoDraft(photo, index = 0) {
+  const dataUrl = sanitizePhotoDataUrl(photo?.dataUrl);
+  if (!dataUrl) return null;
+  return {
+    id: String(photo?.id || `restored-photo-${index}`),
+    name: String(photo?.name || `foto-producto-${index + 1}.jpg`).slice(0, 120),
+    dataUrl,
+  };
+}
+
 function formatStockSizes(sizes = []) {
   return sizes.map((sizeRow) => `${sizeRow.size} = ${sizeRow.quantity}`).join(", ");
 }
@@ -362,6 +404,7 @@ export default function StockPortal() {
   const actionData = useActionData();
   const navigation = useNavigation();
   const [searchParams] = useSearchParams();
+  const savedFlag = searchParams.get("guardado");
   const [activeTab, setActiveTab] = useState(searchParams.get("guardado") ? "pendientes" : "capturar");
   const [photos, setPhotos] = useState([]);
   const [selectedDraftId, setSelectedDraftId] = useState(drafts[0]?.id || 0);
@@ -369,7 +412,9 @@ export default function StockPortal() {
   const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
   const [captureStep, setCaptureStep] = useState("audience");
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
+  const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
   const isSubmitting = navigation.state !== "idle";
+  const captureDraftKey = useMemo(() => stockCaptureDraftKey(shop), [shop]);
   const suggestedSku =
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
     nextStockSkuForPrefix(stockSkuPrefix(selectedAudience, selectedGarment), []);
@@ -393,12 +438,86 @@ export default function StockPortal() {
     );
 
   useEffect(() => {
-    if (searchParams.get("guardado")) {
+    if (savedFlag) {
+      try {
+        window.localStorage.removeItem(captureDraftKey);
+      } catch (_error) {
+        // localStorage puede estar bloqueado; el guardado real ya se hizo en servidor.
+      }
       setActiveTab("pendientes");
       setPhotos([]);
       resetStockVariants();
+      setCaptureDraftLoaded(true);
+      return;
     }
-  }, [searchParams]);
+
+    try {
+      const rawDraft = window.localStorage.getItem(captureDraftKey);
+      if (!rawDraft) {
+        setCaptureDraftLoaded(true);
+        return;
+      }
+      const draft = JSON.parse(rawDraft);
+      if (draft?.version !== STOCK_CAPTURE_DRAFT_VERSION) {
+        window.localStorage.removeItem(captureDraftKey);
+        setCaptureDraftLoaded(true);
+        return;
+      }
+      const restoredAudience = normalizeAudience(draft.selectedAudience);
+      const restoredGarment = normalizeGarment(draft.selectedGarment);
+      const restoredVariants = (Array.isArray(draft.variantGroups) ? draft.variantGroups : [])
+        .map(normalizeStockVariantDraft)
+        .filter(Boolean);
+      const restoredPhotos = (Array.isArray(draft.photos) ? draft.photos : [])
+        .map(normalizeStockPhotoDraft)
+        .filter(Boolean)
+        .slice(0, MAX_STOCK_PHOTOS);
+
+      setActiveTab(draft.activeTab === "pendientes" ? "pendientes" : "capturar");
+      setCaptureStep(["audience", "product", "details"].includes(draft.captureStep) ? draft.captureStep : "audience");
+      setSelectedAudience(restoredAudience);
+      setSelectedGarment(restoredGarment);
+      setVariantGroups(restoredVariants.length ? restoredVariants : [blankStockVariant()]);
+      setPhotos(restoredPhotos);
+    } catch (restoreError) {
+      console.error("No se pudo restaurar el borrador de stock", restoreError);
+    } finally {
+      setCaptureDraftLoaded(true);
+    }
+  }, [captureDraftKey, savedFlag]);
+
+  useEffect(() => {
+    if (!captureDraftLoaded || savedFlag) return;
+    const draft = {
+      version: STOCK_CAPTURE_DRAFT_VERSION,
+      activeTab,
+      captureStep,
+      selectedAudience,
+      selectedGarment,
+      variantGroups,
+      photos,
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      window.localStorage.setItem(captureDraftKey, JSON.stringify(draft));
+    } catch (saveError) {
+      try {
+        window.localStorage.setItem(captureDraftKey, JSON.stringify({ ...draft, photos: [] }));
+      } catch (_retryError) {
+        console.error("No se pudo guardar el borrador de stock", saveError);
+      }
+    }
+  }, [
+    activeTab,
+    captureDraftKey,
+    captureDraftLoaded,
+    captureStep,
+    photos,
+    savedFlag,
+    selectedAudience,
+    selectedGarment,
+    variantGroups,
+  ]);
 
   async function handlePhotoFiles(event) {
     const files = Array.from(event.target.files || []).slice(0, MAX_STOCK_PHOTOS - photos.length);
