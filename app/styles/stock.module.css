@@ -156,10 +156,15 @@
   border-radius: 14px;
   background: #f9fafb;
   padding: 12px;
+  display: block;
 }
 
 .stepSummary div {
   min-width: 0;
+}
+
+.stepSummary .textButton {
+  width: 100%;
 }
 
 .stepSummary strong {

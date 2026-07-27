@@ -435,14 +435,6 @@ export default function StockPortal() {
           {captureStep === "details" ? (
             <>
               <div className={styles.stepSummary}>
-                <div>
-                  <span>Persona</span>
-                  <strong>{audienceConfig(selectedAudience).label}</strong>
-                </div>
-                <div>
-                  <span>Producto</span>
-                  <strong>{garmentConfig(selectedGarment).label}</strong>
-                </div>
                 <button className={styles.textButton} type="button" onClick={() => setCaptureStep("product")}>
                   Cambiar producto
                 </button>
