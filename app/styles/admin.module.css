@@ -1922,6 +1922,44 @@
   align-items: center;
 }
 
+.stockUserGroupBody {
+  gap: 0;
+  padding: 0;
+}
+
+.stockUserRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border-top: 1px solid #e1e3e5;
+}
+
+.stockUserRow:first-child {
+  border-top: 0;
+}
+
+.stockUserRow > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.stockUserRow > div > strong,
+.stockUserRow > div > span {
+  overflow-wrap: anywhere;
+}
+
+.stockUserRow > div > span {
+  color: #3f4448;
+}
+
+.stockUserRow form {
+  justify-self: end;
+  width: fit-content;
+}
+
 .preparerAssignmentSummaryList {
   display: flex;
   flex-wrap: wrap;

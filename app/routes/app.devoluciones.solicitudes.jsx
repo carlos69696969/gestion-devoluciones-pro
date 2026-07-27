@@ -4750,6 +4750,25 @@ export const action = async ({ request }) => {
     }
   }
 
+  if (intent === "delete_stock_user") {
+    try {
+      await ensureStockUserTable(prisma);
+      const stockUserId = Number(formData.get("stockUserId") || 0);
+      if (!stockUserId) return { ok: false, error: "Usuario de stock invalido." };
+      const disabledStockUser = await prisma.stockUser.updateMany({
+        where: { id: stockUserId, shop: session.shop, active: true },
+        data: { active: false },
+      });
+      if (!disabledStockUser.count) {
+        return { ok: false, error: "No se encontro el usuario de stock." };
+      }
+      return { ok: true, intent: "delete_stock_user", message: "Usuario de stock dado de baja correctamente." };
+    } catch (stockUserError) {
+      console.error("No se pudo dar de baja el usuario de stock", stockUserError);
+      return { ok: false, error: "No se pudo dar de baja el usuario de stock. Intenta nuevamente." };
+    }
+  }
+
   if (intent === "transfer_preparer_account") {
     const preparerId = Number(formData.get("preparerId") || 0);
     const newPreparerName = String(formData.get("newPreparerName") || "").trim();
@@ -9121,19 +9140,49 @@ function CouriersSection({ couriers, isSubmitting }) {
 function StockUsersSection({ stockUsers, isSubmitting }) {
   const location = useLocation();
   const createStockUserFetcher = useFetcher();
+  const deleteStockUserFetcher = useFetcher();
   const [showForm, setShowForm] = useState(false);
   const [role, setRole] = useState(STOCK_USER_ROLES.PREPARER);
   const [code, setCode] = useState("");
+  const [showStockSuccessMessage, setShowStockSuccessMessage] = useState(false);
+  const [stockSuccessMessage, setStockSuccessMessage] = useState("");
   const isCreateStockUserSubmitting = createStockUserFetcher.state !== "idle";
+  const isDeleteStockUserSubmitting = deleteStockUserFetcher.state !== "idle";
   const stockAction = `${location.pathname}${location.search || ""}`;
   const roleLabel = stockUserRoleLabel(role);
+  const stockActionError = createStockUserFetcher.data?.error || deleteStockUserFetcher.data?.error || "";
+  const stockUserGroups = [
+    {
+      role: STOCK_USER_ROLES.PUBLISHER,
+      title: "Publicadores de productos",
+      users: stockUsers.filter((stockUser) => stockUser.role === STOCK_USER_ROLES.PUBLISHER),
+    },
+    {
+      role: STOCK_USER_ROLES.PREPARER,
+      title: "Preparadores de stock",
+      users: stockUsers.filter((stockUser) => stockUser.role !== STOCK_USER_ROLES.PUBLISHER),
+    },
+  ].filter((group) => group.users.length);
 
   useEffect(() => {
     if (!createStockUserFetcher.data?.ok || createStockUserFetcher.data?.intent !== "create_stock_user") return;
     setShowForm(false);
     setCode("");
     setRole(STOCK_USER_ROLES.PREPARER);
+    setStockSuccessMessage(createStockUserFetcher.data.message || "");
   }, [createStockUserFetcher.data]);
+
+  useEffect(() => {
+    if (!deleteStockUserFetcher.data?.ok || deleteStockUserFetcher.data?.intent !== "delete_stock_user") return;
+    setStockSuccessMessage(deleteStockUserFetcher.data.message || "");
+  }, [deleteStockUserFetcher.data]);
+
+  useEffect(() => {
+    if (!stockSuccessMessage) return undefined;
+    setShowStockSuccessMessage(true);
+    const timeoutId = window.setTimeout(() => setShowStockSuccessMessage(false), 3500);
+    return () => window.clearTimeout(timeoutId);
+  }, [stockSuccessMessage]);
 
   const generateCode = () => {
     setCode(String(Math.floor(100000 + Math.random() * 900000)));
@@ -9200,25 +9249,51 @@ function StockUsersSection({ stockUsers, isSubmitting }) {
           </createStockUserFetcher.Form>
         ) : null}
 
-        {createStockUserFetcher.data?.error ? (
-          <p className={styles.errorMsg}>{createStockUserFetcher.data.error}</p>
+        {stockActionError ? (
+          <p className={styles.errorMsg}>{stockActionError}</p>
         ) : null}
-        {createStockUserFetcher.data?.message ? (
-          <p className={styles.successMsg}>{createStockUserFetcher.data.message}</p>
+        {showStockSuccessMessage && stockSuccessMessage ? (
+          <p className={styles.successMsg}>{stockSuccessMessage}</p>
         ) : null}
 
         <div className={styles.courierDirectory}>
-          {stockUsers.length ? (
-            stockUsers.map((stockUser) => (
-              <details key={stockUser.id} className={styles.courierDirectoryCard}>
+          {stockUserGroups.length ? (
+            stockUserGroups.map((group) => (
+              <details key={group.role} className={styles.courierDirectoryCard} open>
                 <summary className={styles.courierDirectorySummary}>
-                  <span>{stockUserRoleLabel(stockUser.role)}</span>
-                  <strong>{stockUser.name}</strong>
+                  <span>{group.title}</span>
+                  <strong>{group.users.length}</strong>
                 </summary>
-                <div className={styles.courierDirectoryCode}>
-                  <div>
-                    Codigo unico: <strong>{stockUser.code}</strong>
-                  </div>
+                <div className={`${styles.courierDirectoryCode} ${styles.stockUserGroupBody}`}>
+                  {group.users.map((stockUser) => (
+                    <div key={stockUser.id} className={styles.stockUserRow}>
+                      <div>
+                        <strong>{stockUser.name}</strong>
+                        <span>
+                          Codigo unico: <strong>{stockUser.code}</strong>
+                        </span>
+                      </div>
+                      <deleteStockUserFetcher.Form
+                        method="post"
+                        action={stockAction}
+                        onSubmit={(event) => {
+                          if (!window.confirm(`¿Deseas dar de baja a ${stockUser.name}?`)) {
+                            event.preventDefault();
+                          }
+                        }}
+                      >
+                        <input type="hidden" name="intent" value="delete_stock_user" />
+                        <input type="hidden" name="stockUserId" value={stockUser.id} />
+                        <button
+                          className={`${styles.btn} ${styles.btnDanger}`}
+                          type="submit"
+                          disabled={isSubmitting || isDeleteStockUserSubmitting}
+                        >
+                          Dar de baja
+                        </button>
+                      </deleteStockUserFetcher.Form>
+                    </div>
+                  ))}
                 </div>
               </details>
             ))
