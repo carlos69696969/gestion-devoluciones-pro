@@ -24,6 +24,23 @@ const STOCK_WOMEN_SHOE_SIZES = [
   "27.5",
   "28",
 ];
+const STOCK_MEN_BOTTOM_SIZES = ["26", "28", "30", "32", "34", "36", "38", "40", "42", "44", "46", "48"];
+const STOCK_MEN_SHOE_SIZES = [
+  "24.5",
+  "25",
+  "25.5",
+  "26",
+  "26.5",
+  "27",
+  "27.5",
+  "28",
+  "28.5",
+  "29",
+  "29.5",
+  "30",
+  "30.5",
+  "31",
+];
 const STOCK_AUDIENCES = [
   { value: "hombre", label: "Hombre", code: "H" },
   { value: "mujer", label: "Mujer", code: "M" },
@@ -83,6 +100,12 @@ function stockSizesFor(audience, garment) {
   }
   if (currentAudience === "mujer" && currentGarment.section === "Calzado") {
     return STOCK_WOMEN_SHOE_SIZES;
+  }
+  if (currentAudience === "hombre" && currentGarment.section === "Parte inferior") {
+    return STOCK_MEN_BOTTOM_SIZES;
+  }
+  if (currentAudience === "hombre" && currentGarment.section === "Calzado") {
+    return STOCK_MEN_SHOE_SIZES;
   }
   return STOCK_ALPHA_SIZES;
 }

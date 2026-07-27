@@ -130,9 +130,15 @@
 
 .stepHeader span {
   display: block;
-  color: #5f6b7a;
-  font-size: 12px;
-  font-weight: 800;
+  color: #111827;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.stepHeader h2 {
+  font-size: 17px;
+  line-height: 1.2;
 }
 
 .textButton {
