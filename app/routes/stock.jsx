@@ -6,7 +6,8 @@ import styles from "../styles/stock.module.css";
 const MAX_STOCK_PHOTOS = 8;
 const MAX_STOCK_PHOTO_CHARS = 1_250_000;
 const STOCK_CAPTURE_DRAFT_VERSION = 1;
-const STOCK_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
+const STOCK_ALPHA_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
+const STOCK_WOMEN_BOTTOM_SIZES = ["1", "3", "5", "7", "9", "11", "13", "15", "17", "19", "21", "23"];
 const STOCK_AUDIENCES = [
   { value: "hombre", label: "Hombre", code: "H" },
   { value: "mujer", label: "Mujer", code: "M" },
@@ -22,9 +23,9 @@ const STOCK_GARMENTS = [
   { value: "pantalon", label: "Pantalon", code: "PA", section: "Parte inferior", audiences: ["hombre", "mujer"] },
   { value: "short", label: "Short", code: "SH", section: "Parte inferior", audiences: ["hombre", "mujer"] },
   { value: "falda", label: "Falda", code: "FA", section: "Parte inferior", audiences: ["mujer"] },
-  { value: "tenis", label: "Tenis", code: "TE", section: "Parte inferior", audiences: ["hombre", "mujer"] },
   { value: "vestido", label: "Vestido", code: "VE", section: "Parte superior e inferior", audiences: ["mujer"] },
   { value: "conjunto", label: "Conjunto", code: "CO", section: "Parte superior e inferior", audiences: ["hombre", "mujer"] },
+  { value: "tenis", label: "Tenis", code: "TE", section: "Calzado", audiences: ["hombre", "mujer"] },
 ];
 
 function cleanShop(value) {
@@ -56,6 +57,15 @@ function audienceConfig(value) {
 
 function garmentConfig(value) {
   return STOCK_GARMENTS.find((garment) => garment.value === normalizeGarment(value)) || STOCK_GARMENTS[0];
+}
+
+function stockSizesFor(audience, garment) {
+  const currentAudience = normalizeAudience(audience);
+  const currentGarment = garmentConfig(garment);
+  if (currentAudience === "mujer" && currentGarment.section === "Parte inferior") {
+    return STOCK_WOMEN_BOTTOM_SIZES;
+  }
+  return STOCK_ALPHA_SIZES;
 }
 
 function stockSkuPrefix(audience, garment) {
@@ -111,7 +121,7 @@ function sanitizePhotoDataUrl(value) {
   return photo;
 }
 
-function sanitizeStockVariants(value) {
+function sanitizeStockVariants(value, allowedSizes = STOCK_ALPHA_SIZES) {
   let parsed = [];
   try {
     parsed = JSON.parse(String(value || "[]"));
@@ -125,7 +135,7 @@ function sanitizeStockVariants(value) {
       const price = Math.max(0, Number(variant?.price || 0) || 0);
       const sizes = (Array.isArray(variant?.sizes) ? variant.sizes : [])
         .map((sizeRow) => ({
-          size: STOCK_SIZES.includes(String(sizeRow?.size || "").trim().toUpperCase())
+          size: allowedSizes.includes(String(sizeRow?.size || "").trim().toUpperCase())
             ? String(sizeRow.size).trim().toUpperCase()
             : "",
           quantity: Math.max(1, Math.min(9999, Number(sizeRow?.quantity || 0) || 0)),
@@ -247,7 +257,7 @@ export async function action({ request }) {
   const audience = normalizeAudience(formData.get("audience"));
   const garmentType = normalizeGarment(formData.get("garmentType"));
   const productName = sanitizeText(formData.get("productName")) || garmentConfig(garmentType).label;
-  const variants = sanitizeStockVariants(formData.get("variants"));
+  const variants = sanitizeStockVariants(formData.get("variants"), stockSizesFor(audience, garmentType));
   if (!variants.length) return { ok: false, error: "Agrega color y al menos una talla con cantidad." };
   const quantity = variants.reduce(
     (sum, variant) => sum + variant.sizes.reduce((sizeSum, sizeRow) => sizeSum + sizeRow.quantity, 0),
@@ -329,11 +339,11 @@ function stockCaptureDraftKey(shop) {
   return `cariana-stock-capture-draft:${cleanShop(shop) || "portal-stock"}`;
 }
 
-function normalizeStockVariantDraft(variant, index = 0) {
+function normalizeStockVariantDraft(variant, index = 0, allowedSizes = STOCK_ALPHA_SIZES) {
   const base = blankStockVariant(`variant-${index + 1}`);
   const sizes = (Array.isArray(variant?.sizes) ? variant.sizes : [])
     .map((sizeRow) => ({
-      size: STOCK_SIZES.includes(String(sizeRow?.size || "").trim().toUpperCase())
+      size: allowedSizes.includes(String(sizeRow?.size || "").trim().toUpperCase())
         ? String(sizeRow.size).trim().toUpperCase()
         : "",
       quantity: Math.max(1, Math.min(9999, Number(sizeRow?.quantity || 0) || 0)),
@@ -346,11 +356,11 @@ function normalizeStockVariantDraft(variant, index = 0) {
     price: String(variant?.price ?? ""),
     sizes,
     sizeMenuOpen: Boolean(variant?.sizeMenuOpen),
-    selectedSize: STOCK_SIZES.includes(String(variant?.selectedSize || "").trim().toUpperCase())
+    selectedSize: allowedSizes.includes(String(variant?.selectedSize || "").trim().toUpperCase())
       ? String(variant.selectedSize).trim().toUpperCase()
       : "",
     quantityDraft: String(variant?.quantityDraft || ""),
-    pendingDeleteSize: STOCK_SIZES.includes(String(variant?.pendingDeleteSize || "").trim().toUpperCase())
+    pendingDeleteSize: allowedSizes.includes(String(variant?.pendingDeleteSize || "").trim().toUpperCase())
       ? String(variant.pendingDeleteSize).trim().toUpperCase()
       : "",
   };
@@ -425,6 +435,10 @@ export default function StockPortal() {
     () => drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) || drafts[0] || null,
     [drafts, selectedDraftId],
   );
+  const currentStockSizes = useMemo(
+    () => stockSizesFor(selectedAudience, selectedGarment),
+    [selectedAudience, selectedGarment],
+  );
   const stockSizeMenuOpen = variantGroups.some((variant) => variant.sizeMenuOpen);
   const stockFormComplete =
     variantGroups.length > 0 &&
@@ -465,8 +479,9 @@ export default function StockPortal() {
       }
       const restoredAudience = normalizeAudience(draft.selectedAudience);
       const restoredGarment = normalizeGarment(draft.selectedGarment);
+      const restoredStockSizes = stockSizesFor(restoredAudience, restoredGarment);
       const restoredVariants = (Array.isArray(draft.variantGroups) ? draft.variantGroups : [])
-        .map(normalizeStockVariantDraft)
+        .map((variant, index) => normalizeStockVariantDraft(variant, index, restoredStockSizes))
         .filter(Boolean);
       const restoredPhotos = (Array.isArray(draft.photos) ? draft.photos : [])
         .map(normalizeStockPhotoDraft)
@@ -564,10 +579,10 @@ export default function StockPortal() {
               size: String(sizeRow.size || "").trim().toUpperCase(),
               quantity: Math.max(1, Math.min(9999, Number(sizeRow.quantity || 0) || 0)),
             }))
-            .filter((sizeRow) => sizeRow.size && sizeRow.quantity),
+            .filter((sizeRow) => currentStockSizes.includes(sizeRow.size) && sizeRow.quantity),
         }))
         .filter((variant) => variant.color && variant.sizes.length),
-    [variantGroups],
+    [currentStockSizes, variantGroups],
   );
 
   function updateVariant(variantId, field, value) {
@@ -594,6 +609,7 @@ export default function StockPortal() {
       );
       return;
     }
+    if (!currentStockSizes.includes(value)) return;
     setVariantGroups((currentGroups) =>
       currentGroups.map((variant) => {
         if (variant.id !== variantId) return variant;
@@ -863,7 +879,7 @@ export default function StockPortal() {
 
                         {variant.sizeMenuOpen ? (
                           <div className={styles.sizeDropdownPanel}>
-                            {STOCK_SIZES.map((size) => {
+                            {currentStockSizes.map((size) => {
                               const selectedSizeRow = variant.sizes.find((sizeRow) => sizeRow.size === size);
                               return (
                                 <button
