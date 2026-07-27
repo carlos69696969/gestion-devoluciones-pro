@@ -444,26 +444,11 @@ export default function StockPortal() {
 
           {captureStep === "details" ? (
             <>
-              <div className={styles.stepSummary}>
+              <div className={styles.changeProductRow}>
                 <button className={styles.textButton} type="button" onClick={() => setCaptureStep("product")}>
                   Cambiar producto
                 </button>
               </div>
-
-              <Form method="post" className={styles.locationForm}>
-                <input type="hidden" name="intent" value="advance_stock_location" />
-                <input type="hidden" name="shop" value={shop} />
-                <input type="hidden" name="audience" value={selectedAudience} />
-                <input type="hidden" name="garmentType" value={selectedGarment} />
-                <input type="hidden" name="currentLocation" value={suggestedLocation} />
-                <div>
-                  <span>Ubicacion sugerida</span>
-                  <strong>{suggestedLocation}</strong>
-                </div>
-                <button className={styles.secondaryButton} type="submit" disabled={isSubmitting}>
-                  Marcar llena y usar siguiente
-                </button>
-              </Form>
 
               <Form method="post" className={styles.form}>
                 <input type="hidden" name="intent" value="create_stock_draft" />
