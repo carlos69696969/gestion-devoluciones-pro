@@ -299,6 +299,7 @@ export default function StockPortal() {
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
     nextStockSkuForPrefix(stockSkuPrefix(selectedAudience, selectedGarment), []);
   const suggestedLocation = locationByAudience?.[selectedAudience] || defaultStockLocation(selectedAudience);
+  const showStockTabs = activeTab !== "capturar" || captureStep === "details";
   const selectedDraft = useMemo(
     () => drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) || drafts[0] || null,
     [drafts, selectedDraftId],
@@ -361,22 +362,24 @@ export default function StockPortal() {
         </div>
       </header>
 
-      <section className={styles.tabs} aria-label="Secciones de stock">
-        <button
-          className={`${styles.tabButton} ${activeTab === "capturar" ? styles.tabButtonActive : ""}`}
-          type="button"
-          onClick={() => setActiveTab("capturar")}
-        >
-          Capturar
-        </button>
-        <button
-          className={`${styles.tabButton} ${activeTab === "pendientes" ? styles.tabButtonActive : ""}`}
-          type="button"
-          onClick={() => setActiveTab("pendientes")}
-        >
-          Pendientes {drafts.length}
-        </button>
-      </section>
+      {showStockTabs ? (
+        <section className={styles.tabs} aria-label="Secciones de stock">
+          <button
+            className={`${styles.tabButton} ${activeTab === "capturar" ? styles.tabButtonActive : ""}`}
+            type="button"
+            onClick={() => setActiveTab("capturar")}
+          >
+            Capturar
+          </button>
+          <button
+            className={`${styles.tabButton} ${activeTab === "pendientes" ? styles.tabButtonActive : ""}`}
+            type="button"
+            onClick={() => setActiveTab("pendientes")}
+          >
+            Pendientes {drafts.length}
+          </button>
+        </section>
+      ) : null}
 
       {error ? <p className={styles.error}>{error}</p> : null}
       {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
@@ -411,7 +414,7 @@ export default function StockPortal() {
                   <h2>Qué producto vas a agregar</h2>
                 </div>
                 <button className={styles.textButton} type="button" onClick={() => setCaptureStep("audience")}>
-                  Cambiar
+                  Regresar
                 </button>
               </div>
               {Object.entries(garmentGroups).map(([section, sectionGarments]) => (
