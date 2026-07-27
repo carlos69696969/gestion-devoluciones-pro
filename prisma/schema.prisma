@@ -283,6 +283,7 @@ model StockProductDraft {
   price       Float    @default(0)
   notes       String?
   photos      Json     @default("[]")
+  variants    Json     @default("[]")
   status      String   @default("pendiente")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

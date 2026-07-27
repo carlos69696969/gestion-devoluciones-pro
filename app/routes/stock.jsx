@@ -5,6 +5,7 @@ import styles from "../styles/stock.module.css";
 
 const MAX_STOCK_PHOTOS = 8;
 const MAX_STOCK_PHOTO_CHARS = 1_250_000;
+const STOCK_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 const STOCK_AUDIENCES = [
   { value: "hombre", label: "Hombre", code: "H" },
   { value: "mujer", label: "Mujer", code: "M" },
@@ -109,7 +110,33 @@ function sanitizePhotoDataUrl(value) {
   return photo;
 }
 
+function sanitizeStockVariants(value) {
+  let parsed = [];
+  try {
+    parsed = JSON.parse(String(value || "[]"));
+  } catch (_error) {
+    parsed = [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((variant) => {
+      const color = sanitizeText(variant?.color, 80);
+      const price = Math.max(0, Number(variant?.price || 0) || 0);
+      const sizes = (Array.isArray(variant?.sizes) ? variant.sizes : [])
+        .map((sizeRow) => ({
+          size: STOCK_SIZES.includes(String(sizeRow?.size || "").trim().toUpperCase())
+            ? String(sizeRow.size).trim().toUpperCase()
+            : "",
+          quantity: Math.max(1, Math.min(9999, Number(sizeRow?.quantity || 0) || 0)),
+        }))
+        .filter((sizeRow) => sizeRow.size && sizeRow.quantity);
+      return { color, price, sizes };
+    })
+    .filter((variant) => variant.color && variant.sizes.length);
+}
+
 function serializeDraft(draft) {
+  const variants = Array.isArray(draft.variants) ? draft.variants : [];
   return {
     id: draft.id,
     productName: draft.productName,
@@ -125,6 +152,7 @@ function serializeDraft(draft) {
     price: draft.price,
     notes: draft.notes || "",
     photos: Array.isArray(draft.photos) ? draft.photos : [],
+    variants,
     status: draft.status,
     createdAt: draft.createdAt.toISOString(),
     updatedAt: draft.updatedAt.toISOString(),
@@ -218,8 +246,15 @@ export async function action({ request }) {
   const audience = normalizeAudience(formData.get("audience"));
   const garmentType = normalizeGarment(formData.get("garmentType"));
   const productName = sanitizeText(formData.get("productName")) || garmentConfig(garmentType).label;
-  const quantity = Math.max(1, Math.min(9999, Number(formData.get("quantity") || 1) || 1));
-  const price = Math.max(0, Number(formData.get("price") || 0) || 0);
+  const variants = sanitizeStockVariants(formData.get("variants"));
+  if (!variants.length) return { ok: false, error: "Agrega color y al menos una talla con cantidad." };
+  const quantity = variants.reduce(
+    (sum, variant) => sum + variant.sizes.reduce((sizeSum, sizeRow) => sizeSum + sizeRow.quantity, 0),
+    0,
+  );
+  const firstVariant = variants[0] || {};
+  const firstSize = firstVariant.sizes?.[0] || {};
+  const price = Math.max(0, Number(firstVariant.price || 0) || 0);
   const photos = formData
     .getAll("photos")
     .map(sanitizePhotoDataUrl)
@@ -248,13 +283,14 @@ export async function action({ request }) {
         audience,
         garmentType,
         locationCode,
-        color: sanitizeText(formData.get("color"), 80) || null,
-        size: sanitizeText(formData.get("size"), 80) || null,
+        color: firstVariant.color || null,
+        size: firstSize.size || null,
         quantity,
         sku,
         price,
         notes: sanitizeText(formData.get("notes"), 600) || null,
         photos,
+        variants,
         status: "pendiente",
       },
     }),
@@ -315,6 +351,10 @@ export default function StockPortal() {
   const [selectedAudience, setSelectedAudience] = useState(audiences?.[0]?.value || "hombre");
   const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
   const [captureStep, setCaptureStep] = useState("audience");
+  const [variantGroups, setVariantGroups] = useState([{ id: "variant-1", color: "", price: "", sizes: [] }]);
+  const [activeVariantId, setActiveVariantId] = useState("variant-1");
+  const [selectedSize, setSelectedSize] = useState("");
+  const [selectedSizeQuantity, setSelectedSizeQuantity] = useState("");
   const isSubmitting = navigation.state !== "idle";
   const suggestedSku =
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
@@ -331,6 +371,7 @@ export default function StockPortal() {
     if (searchParams.get("guardado")) {
       setActiveTab("pendientes");
       setPhotos([]);
+      resetStockVariants();
     }
   }, [searchParams]);
 
@@ -361,6 +402,97 @@ export default function StockPortal() {
   function chooseGarment(value) {
     setSelectedGarment(value);
     setCaptureStep("details");
+    resetStockVariants();
+  }
+
+  function resetStockVariants() {
+    setVariantGroups([{ id: "variant-1", color: "", price: "", sizes: [] }]);
+    setActiveVariantId("variant-1");
+    setSelectedSize("");
+    setSelectedSizeQuantity("");
+  }
+
+  const activeVariant = variantGroups.find((variant) => variant.id === activeVariantId) || variantGroups[0];
+
+  const cleanVariantGroups = useMemo(
+    () =>
+      variantGroups
+        .map((variant) => ({
+          color: String(variant.color || "").trim(),
+          price: Math.max(0, Number(variant.price || 0) || 0),
+          sizes: (Array.isArray(variant.sizes) ? variant.sizes : [])
+            .map((sizeRow) => ({
+              size: String(sizeRow.size || "").trim().toUpperCase(),
+              quantity: Math.max(1, Math.min(9999, Number(sizeRow.quantity || 0) || 0)),
+            }))
+            .filter((sizeRow) => sizeRow.size && sizeRow.quantity),
+        }))
+        .filter((variant) => variant.color && variant.sizes.length),
+    [variantGroups],
+  );
+
+  function updateActiveVariant(field, value) {
+    setVariantGroups((currentGroups) =>
+      currentGroups.map((variant) =>
+        variant.id === activeVariantId
+          ? {
+              ...variant,
+              [field]: value,
+            }
+          : variant,
+      ),
+    );
+  }
+
+  function addSizeToActiveVariant() {
+    const cleanSize = String(selectedSize || "").trim().toUpperCase();
+    const quantity = Math.max(1, Math.min(9999, Number(selectedSizeQuantity || 0) || 0));
+    if (!cleanSize || !quantity) return;
+    setVariantGroups((currentGroups) =>
+      currentGroups.map((variant) => {
+        if (variant.id !== activeVariantId) return variant;
+        const nextSizes = [
+          ...variant.sizes.filter((sizeRow) => String(sizeRow.size || "").trim().toUpperCase() !== cleanSize),
+          { size: cleanSize, quantity },
+        ];
+        return { ...variant, sizes: nextSizes };
+      }),
+    );
+    setSelectedSize("");
+    setSelectedSizeQuantity("");
+  }
+
+  function removeSizeFromVariant(variantId, size) {
+    const cleanSize = String(size || "").trim().toUpperCase();
+    setVariantGroups((currentGroups) =>
+      currentGroups.map((variant) =>
+        variant.id === variantId
+          ? {
+              ...variant,
+              sizes: variant.sizes.filter((sizeRow) => String(sizeRow.size || "").trim().toUpperCase() !== cleanSize),
+            }
+          : variant,
+      ),
+    );
+  }
+
+  function addVariantGroup() {
+    const nextId = `variant-${Date.now()}`;
+    setVariantGroups((currentGroups) => [...currentGroups, { id: nextId, color: "", price: "", sizes: [] }]);
+    setActiveVariantId(nextId);
+    setSelectedSize("");
+    setSelectedSizeQuantity("");
+  }
+
+  function removeVariantGroup(variantId) {
+    setVariantGroups((currentGroups) => {
+      const nextGroups = currentGroups.filter((variant) => variant.id !== variantId);
+      const fallbackGroups = nextGroups.length ? nextGroups : [{ id: "variant-1", color: "", price: "", sizes: [] }];
+      if (!fallbackGroups.some((variant) => variant.id === activeVariantId)) {
+        setActiveVariantId(fallbackGroups[0].id);
+      }
+      return fallbackGroups;
+    });
   }
 
   const garmentGroups = useMemo(() => {
@@ -455,6 +587,7 @@ export default function StockPortal() {
                 <input type="hidden" name="shop" value={shop} />
                 <input type="hidden" name="audience" value={selectedAudience} />
                 <input type="hidden" name="garmentType" value={selectedGarment} />
+                <input type="hidden" name="variants" value={JSON.stringify(cleanVariantGroups)} />
                 {photos.map((photo) => (
                   <input key={photo.id} type="hidden" name="photos" value={photo.dataUrl} />
                 ))}
@@ -492,37 +625,134 @@ export default function StockPortal() {
                   </div>
                 ) : null}
 
-                <div className={styles.productFields}>
-                  <label>
-                    Color
-                    <input name="color" />
-                  </label>
-                  <label>
-                    Talla
-                    <select name="size" defaultValue="">
-                      <option value="" disabled />
-                      <option value="XS">XS</option>
-                      <option value="S">S</option>
-                      <option value="M">M</option>
-                      <option value="L">L</option>
-                      <option value="XL">XL</option>
-                      <option value="XXL">XXL</option>
-                      <option value="XXXL">XXXL</option>
-                    </select>
-                  </label>
-                  <label>
-                    Cantidad
-                    <input min="1" name="quantity" inputMode="numeric" type="number" />
-                  </label>
-                  <label>
-                    Precio
-                    <input min="0" name="price" inputMode="decimal" step="0.01" type="number" />
-                  </label>
+                <div className={styles.variantEditor}>
+                  {variantGroups.length > 1 ? (
+                    <div className={styles.variantTabs}>
+                      {variantGroups.map((variant, index) => (
+                        <button
+                          className={`${styles.variantTab} ${
+                            activeVariantId === variant.id ? styles.variantTabActive : ""
+                          }`}
+                          key={variant.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveVariantId(variant.id);
+                            setSelectedSize("");
+                            setSelectedSizeQuantity("");
+                          }}
+                        >
+                          {variant.color || `Color ${index + 1}`}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className={styles.productFields}>
+                    <label>
+                      Color
+                      <input
+                        name="colorDraft"
+                        value={activeVariant?.color || ""}
+                        onChange={(event) => updateActiveVariant("color", event.currentTarget.value)}
+                      />
+                    </label>
+                    <label>
+                      Precio
+                      <input
+                        min="0"
+                        name="priceDraft"
+                        inputMode="decimal"
+                        step="0.01"
+                        type="number"
+                        value={activeVariant?.price ?? ""}
+                        onChange={(event) => updateActiveVariant("price", event.currentTarget.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className={styles.sizePicker}>
+                    <label>
+                      Talla
+                      <select value={selectedSize} onChange={(event) => setSelectedSize(event.currentTarget.value)}>
+                        <option value="" disabled />
+                        {STOCK_SIZES.map((size) => (
+                          <option key={size} value={size}>
+                            {size}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {selectedSize ? (
+                      <label>
+                        Cantidad
+                        <input
+                          min="1"
+                          inputMode="numeric"
+                          type="number"
+                          value={selectedSizeQuantity}
+                          onChange={(event) => setSelectedSizeQuantity(event.currentTarget.value)}
+                        />
+                      </label>
+                    ) : null}
+                    <button
+                      className={styles.secondaryButton}
+                      type="button"
+                      disabled={!selectedSize || !selectedSizeQuantity}
+                      onClick={addSizeToActiveVariant}
+                    >
+                      Agregar talla
+                    </button>
+                  </div>
+
+                  {cleanVariantGroups.length ? (
+                    <div className={styles.variantSummaryList}>
+                      {variantGroups.map((variant, index) =>
+                        variant.color || variant.sizes.length ? (
+                          <div className={styles.variantSummaryItem} key={variant.id}>
+                            <div>
+                              <strong>{variant.color || `Color ${index + 1}`}</strong>
+                              {variant.price ? <span>{money(variant.price)}</span> : null}
+                            </div>
+                            {variant.sizes.length ? (
+                              <div className={styles.sizeChipList}>
+                                {variant.sizes.map((sizeRow) => (
+                                  <button
+                                    className={styles.sizeChip}
+                                    key={`${variant.id}-${sizeRow.size}`}
+                                    type="button"
+                                    onClick={() => removeSizeFromVariant(variant.id, sizeRow.size)}
+                                  >
+                                    {sizeRow.size} x{sizeRow.quantity} Quitar
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className={styles.variantHint}>Sin tallas agregadas</span>
+                            )}
+                            {variantGroups.length > 1 ? (
+                              <button
+                                className={styles.removeVariantButton}
+                                type="button"
+                                onClick={() => removeVariantGroup(variant.id)}
+                              >
+                                Quitar color
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null,
+                      )}
+                    </div>
+                  ) : null}
                 </div>
 
-                <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? "Guardando..." : "Listo"}
-                </button>
+                <div className={styles.formActions}>
+                  <button className={styles.secondaryButton} type="button" onClick={addVariantGroup}>
+                    + Agregar
+                  </button>
+                  <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? "Guardando..." : "Listo"}
+                  </button>
+                </div>
               </Form>
             </>
           ) : null}
@@ -591,6 +821,23 @@ export default function StockPortal() {
                   <dd>{money(selectedDraft.price)}</dd>
                 </div>
               </dl>
+              {selectedDraft.variants?.length ? (
+                <div className={styles.variantDetailList}>
+                  {selectedDraft.variants.map((variant, index) => (
+                    <div className={styles.variantDetailItem} key={`${selectedDraft.id}-variant-${index}`}>
+                      <div>
+                        <strong>{variant.color || `Color ${index + 1}`}</strong>
+                        <span>{money(variant.price)}</span>
+                      </div>
+                      <p>
+                        {(variant.sizes || [])
+                          .map((sizeRow) => `${sizeRow.size} x${sizeRow.quantity}`)
+                          .join(" | ")}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {selectedDraft.notes ? <p className={styles.notes}>{selectedDraft.notes}</p> : null}
               {selectedDraft.photos?.length ? (
                 <div className={styles.downloadGrid}>

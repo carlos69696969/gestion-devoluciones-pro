@@ -271,6 +271,7 @@ await prisma.$executeRawUnsafe(`
     "price" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "notes" TEXT,
     "photos" JSONB NOT NULL DEFAULT '[]',
+    "variants" JSONB NOT NULL DEFAULT '[]',
     "status" TEXT NOT NULL DEFAULT 'pendiente',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -301,6 +302,11 @@ await prisma.$executeRawUnsafe(`
 await prisma.$executeRawUnsafe(`
   ALTER TABLE "StockProductDraft"
   ADD COLUMN IF NOT EXISTS "locationCode" TEXT
+`);
+
+await prisma.$executeRawUnsafe(`
+  ALTER TABLE "StockProductDraft"
+  ADD COLUMN IF NOT EXISTS "variants" JSONB NOT NULL DEFAULT '[]'
 `);
 
 await prisma.$executeRawUnsafe(`

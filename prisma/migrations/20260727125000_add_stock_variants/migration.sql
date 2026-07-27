@@ -1,0 +1,2 @@
+ALTER TABLE "StockProductDraft"
+  ADD COLUMN IF NOT EXISTS "variants" JSONB NOT NULL DEFAULT '[]';

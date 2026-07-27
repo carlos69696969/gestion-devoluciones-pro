@@ -307,6 +307,102 @@
   min-height: 58px;
 }
 
+.variantEditor {
+  display: grid;
+  gap: 14px;
+}
+
+.variantTabs,
+.sizeChipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.variantTab,
+.sizeChip,
+.removeVariantButton {
+  min-height: 34px;
+  border: 1px solid #ccd3dd;
+  border-radius: 999px;
+  background: #fff;
+  color: #1f2937;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 0 12px;
+}
+
+.variantTabActive {
+  border-color: #005bd3;
+  background: #eef6ff;
+  color: #005bd3;
+}
+
+.sizePicker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+}
+
+.sizePicker label {
+  min-width: 0;
+}
+
+.sizePicker select,
+.sizePicker input {
+  height: 58px;
+  min-height: 58px;
+}
+
+.variantSummaryList {
+  display: grid;
+  gap: 10px;
+}
+
+.variantSummaryItem {
+  border: 1px solid #d9dee7;
+  border-radius: 12px;
+  background: #f9fafb;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.variantSummaryItem > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.variantSummaryItem strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.variantSummaryItem span,
+.variantHint {
+  color: #5f6b7a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sizeChip {
+  color: #005bd3;
+}
+
+.removeVariantButton {
+  justify-self: start;
+  color: #b42318;
+}
+
+.formActions {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.35fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
 .pendingLayout {
   max-width: 980px;
   margin: 0 auto;
@@ -401,6 +497,40 @@
   font-weight: 900;
 }
 
+.variantDetailList {
+  margin: 0 0 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.variantDetailItem {
+  border: 1px solid #d9dee7;
+  border-radius: 10px;
+  background: #f9fafb;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.variantDetailItem div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.variantDetailItem strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.variantDetailItem span,
+.variantDetailItem p {
+  margin: 0;
+  color: #5f6b7a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .notes,
 .empty,
 .error {
@@ -429,6 +559,8 @@
   .pendingLayout,
   .twoColumns,
   .productFields,
+  .sizePicker,
+  .formActions,
   .generatedPanel,
   .stepHeader {
     grid-template-columns: 1fr;
