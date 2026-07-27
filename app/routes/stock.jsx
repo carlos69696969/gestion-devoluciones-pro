@@ -377,7 +377,7 @@ function normalizeStockPhotoDraft(photo, index = 0) {
 }
 
 function formatStockSizes(sizes = []) {
-  return sizes.map((sizeRow) => `${sizeRow.size} = ${sizeRow.quantity}`).join(", ");
+  return sizes.map((sizeRow) => `${sizeRow.size} (${sizeRow.quantity})`).join(", ");
 }
 
 function fileToDataUrl(file) {
@@ -890,7 +890,7 @@ export default function StockPortal() {
                                   type="button"
                                   onClick={() => selectVariantSize(variant.id, size)}
                                 >
-                                  {selectedSizeRow ? `${size} = ${selectedSizeRow.quantity}` : size}
+                                  {selectedSizeRow ? `${size} (${selectedSizeRow.quantity})` : size}
                                 </button>
                               );
                             })}
@@ -1068,7 +1068,7 @@ export default function StockPortal() {
                       </div>
                       <p>
                         {(variant.sizes || [])
-                          .map((sizeRow) => `${sizeRow.size} x${sizeRow.quantity}`)
+                          .map((sizeRow) => `${sizeRow.size} (${sizeRow.quantity})`)
                           .join(" | ")}
                       </p>
                     </div>
