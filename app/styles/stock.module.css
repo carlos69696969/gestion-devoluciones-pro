@@ -402,12 +402,6 @@
   background: #eef6ff;
 }
 
-.sizeQuantityRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 132px;
-  gap: 10px;
-}
-
 .sizePromptBox {
   margin: 10px;
   border: 1px solid #d9dee7;
@@ -442,6 +436,44 @@
   color: #fff;
   font: inherit;
   font-weight: 900;
+}
+
+.stockModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(17, 24, 39, 0.38);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.stockModal {
+  width: min(360px, 100%);
+  border: 1px solid #d9dee7;
+  border-radius: 16px;
+  background: #fff;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  box-shadow: 0 22px 55px rgba(17, 24, 39, 0.22);
+}
+
+.stockModal h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+}
+
+.stockModal input {
+  height: 58px;
+  min-height: 58px;
+}
+
+.stockModalActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .removeVariantButton {
@@ -612,7 +644,6 @@
   .twoColumns,
   .productFields,
   .formActions,
-  .sizeQuantityRow,
   .generatedPanel,
   .stepHeader {
     grid-template-columns: 1fr;

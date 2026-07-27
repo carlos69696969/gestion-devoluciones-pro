@@ -491,6 +491,14 @@ export default function StockPortal() {
     );
   }
 
+  function cancelVariantSizeQuantity(variantId) {
+    setVariantGroups((currentGroups) =>
+      currentGroups.map((variant) =>
+        variant.id === variantId ? { ...variant, selectedSize: "", quantityDraft: "" } : variant,
+      ),
+    );
+  }
+
   function removeSizeFromVariant(variantId, size) {
     const cleanSize = String(size || "").trim().toUpperCase();
     setVariantGroups((currentGroups) =>
@@ -741,32 +749,6 @@ export default function StockPortal() {
                               );
                             })}
 
-                            {variant.selectedSize ? (
-                              <div className={styles.sizePromptBox}>
-                                <strong>Cantidad para {variant.selectedSize}</strong>
-                                <div className={styles.sizeQuantityRow}>
-                                  <input
-                                    min="1"
-                                    inputMode="numeric"
-                                    placeholder="Cantidad"
-                                    type="number"
-                                    value={variant.quantityDraft || ""}
-                                    onChange={(event) =>
-                                      updateVariant(variant.id, "quantityDraft", event.currentTarget.value)
-                                    }
-                                  />
-                                  <button
-                                    className={styles.secondaryButton}
-                                    type="button"
-                                    disabled={!variant.quantityDraft}
-                                    onClick={() => confirmVariantSize(variant.id)}
-                                  >
-                                    Listo
-                                  </button>
-                                </div>
-                              </div>
-                            ) : null}
-
                             {variant.pendingDeleteSize ? (
                               <div className={styles.sizePromptBox}>
                                 <strong>¿Eliminar {variant.pendingDeleteSize}?</strong>
@@ -797,6 +779,48 @@ export default function StockPortal() {
                             >
                               Listo
                             </button>
+                          </div>
+                        ) : null}
+
+                        {variant.selectedSize ? (
+                          <div className={styles.stockModalBackdrop} role="presentation">
+                            <div className={styles.stockModal} role="dialog" aria-modal="true">
+                              <h3>Cantidad para {variant.selectedSize}</h3>
+                              <input
+                                autoFocus
+                                min="1"
+                                inputMode="numeric"
+                                placeholder="Cantidad"
+                                type="number"
+                                value={variant.quantityDraft || ""}
+                                onChange={(event) =>
+                                  updateVariant(variant.id, "quantityDraft", event.currentTarget.value)
+                                }
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    confirmVariantSize(variant.id);
+                                  }
+                                }}
+                              />
+                              <div className={styles.stockModalActions}>
+                                <button
+                                  className={styles.secondaryButton}
+                                  type="button"
+                                  onClick={() => cancelVariantSizeQuantity(variant.id)}
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  className={styles.primaryButton}
+                                  type="button"
+                                  disabled={!variant.quantityDraft}
+                                  onClick={() => confirmVariantSize(variant.id)}
+                                >
+                                  Listo
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         ) : null}
                       </div>
