@@ -14,11 +14,15 @@ const STOCK_GARMENTS = [
   { value: "camisa", label: "Camisa", code: "CA", section: "Parte superior" },
   { value: "chamarra", label: "Chamarra", code: "CH", section: "Parte superior" },
   { value: "sudadera", label: "Sudadera", code: "SU", section: "Parte superior" },
+  { value: "chaleco", label: "Chaleco", code: "CL", section: "Parte superior" },
+  { value: "sueter", label: "Sueter", code: "ST", section: "Parte superior" },
   { value: "blusa", label: "Blusa", code: "BL", section: "Parte superior" },
-  { value: "vestido", label: "Vestido", code: "VE", section: "Parte superior" },
   { value: "pantalon", label: "Pantalon", code: "PA", section: "Parte inferior" },
   { value: "short", label: "Short", code: "SH", section: "Parte inferior" },
+  { value: "falda", label: "Falda", code: "FA", section: "Parte inferior" },
   { value: "tenis", label: "Tenis", code: "TE", section: "Parte inferior" },
+  { value: "vestido", label: "Vestido", code: "VE", section: "Parte superior e inferior" },
+  { value: "conjunto", label: "Conjunto", code: "CO", section: "Parte superior e inferior" },
 ];
 
 function cleanShop(value) {
