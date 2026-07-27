@@ -809,40 +809,47 @@ export default function StockPortal() {
   }, [garments, selectedAudience]);
 
   return (
-    <main className={styles.page}>
-      <header className={styles.header}>
-        <div>
-          <p>Cariana</p>
-          <h1>Portal stock</h1>
-        </div>
-      </header>
-
-      {error ? <p className={styles.error}>{error}</p> : null}
-      {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
-
+    <main className={`${styles.page} ${!stockUser ? styles.loginPage : ""}`}>
       {!stockUser ? (
-        <section className={styles.card}>
-          <Form method="post" className={styles.loginForm}>
-            <input type="hidden" name="intent" value="stock_login" />
-            <input type="hidden" name="shop" value={shop} />
-            <label>
-              Codigo unico
+        <div className={styles.loginAccessContainer}>
+          <section className={`${styles.card} ${styles.loginCard}`}>
+            <p className={styles.loginEyebrow}>Portal stock</p>
+            <h1 className={styles.loginTitle}>Ingresa tu codigo</h1>
+            <p className={styles.loginSubtitle}>Tu codigo es necesario para acceder al portal de stock.</p>
+            <Form method="post" className={styles.loginForm}>
+              <input type="hidden" name="intent" value="stock_login" />
+              <input type="hidden" name="shop" value={shop} />
               <input
                 autoFocus
+                aria-label="Codigo unico"
                 inputMode="numeric"
                 maxLength={6}
                 name="code"
                 pattern="[0-9]{6}"
-                placeholder="Escribe tu codigo de 6 digitos"
+                placeholder="000000"
                 required
               />
-            </label>
             <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
               Entrar
             </button>
-          </Form>
-        </section>
+            </Form>
+            {error ? <p className={styles.error}>{error}</p> : null}
+            {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
+          </section>
+        </div>
       ) : null}
+
+      {stockUser ? (
+        <header className={styles.header}>
+          <div>
+            <p>Cariana</p>
+            <h1>Portal stock</h1>
+          </div>
+        </header>
+      ) : null}
+
+      {stockUser && error ? <p className={styles.error}>{error}</p> : null}
+      {stockUser && actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
 
       {isPreparerStock && activeTab === "capturar" ? (
         <section className={styles.card}>
