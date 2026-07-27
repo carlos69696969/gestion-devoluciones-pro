@@ -9188,14 +9188,16 @@ function StockUsersSection({ stockUsers, isSubmitting }) {
     setCode(String(Math.floor(100000 + Math.random() * 900000)));
   };
 
+  const closeStockForm = () => {
+    setShowForm(false);
+    setCode("");
+    setRole(STOCK_USER_ROLES.PREPARER);
+  };
+
   return (
     <s-section heading="Stock">
       <div className={`${styles.wrap} ${styles.couriersLayout}`}>
-        <button
-          className={`${styles.btn} ${styles.btnPrimary}`}
-          type="button"
-          onClick={() => setShowForm((current) => !current)}
-        >
+        <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => setShowForm(true)}>
           Agregar
         </button>
 
@@ -9239,13 +9241,18 @@ function StockUsersSection({ stockUsers, isSubmitting }) {
                 Generar codigo
               </button>
             </div>
-            <button
-              className={`${styles.btn} ${styles.btnPrimary}`}
-              type="submit"
-              disabled={isSubmitting || isCreateStockUserSubmitting || !code}
-            >
-              Guardar
-            </button>
+            <div className={styles.courierDirectoryActions}>
+              <button className={styles.btn} type="button" onClick={closeStockForm}>
+                Cancelar
+              </button>
+              <button
+                className={`${styles.btn} ${styles.btnPrimary}`}
+                type="submit"
+                disabled={isSubmitting || isCreateStockUserSubmitting || !code}
+              >
+                Guardar
+              </button>
+            </div>
           </createStockUserFetcher.Form>
         ) : null}
 
@@ -9266,33 +9273,35 @@ function StockUsersSection({ stockUsers, isSubmitting }) {
                 </summary>
                 <div className={`${styles.courierDirectoryCode} ${styles.stockUserGroupBody}`}>
                   {group.users.map((stockUser) => (
-                    <div key={stockUser.id} className={styles.stockUserRow}>
-                      <div>
+                    <details key={stockUser.id} className={styles.stockUserRow}>
+                      <summary className={styles.stockUserSummary}>
                         <strong>{stockUser.name}</strong>
+                      </summary>
+                      <div className={styles.stockUserDetails}>
                         <span>
                           Codigo unico: <strong>{stockUser.code}</strong>
                         </span>
-                      </div>
-                      <deleteStockUserFetcher.Form
-                        method="post"
-                        action={stockAction}
-                        onSubmit={(event) => {
-                          if (!window.confirm(`¿Deseas dar de baja a ${stockUser.name}?`)) {
-                            event.preventDefault();
-                          }
-                        }}
-                      >
-                        <input type="hidden" name="intent" value="delete_stock_user" />
-                        <input type="hidden" name="stockUserId" value={stockUser.id} />
-                        <button
-                          className={`${styles.btn} ${styles.btnDanger}`}
-                          type="submit"
-                          disabled={isSubmitting || isDeleteStockUserSubmitting}
+                        <deleteStockUserFetcher.Form
+                          method="post"
+                          action={stockAction}
+                          onSubmit={(event) => {
+                            if (!window.confirm(`¿Deseas dar de baja a ${stockUser.name}?`)) {
+                              event.preventDefault();
+                            }
+                          }}
                         >
-                          Dar de baja
-                        </button>
-                      </deleteStockUserFetcher.Form>
-                    </div>
+                          <input type="hidden" name="intent" value="delete_stock_user" />
+                          <input type="hidden" name="stockUserId" value={stockUser.id} />
+                          <button
+                            className={`${styles.btn} ${styles.btnDanger}`}
+                            type="submit"
+                            disabled={isSubmitting || isDeleteStockUserSubmitting}
+                          >
+                            Dar de baja
+                          </button>
+                        </deleteStockUserFetcher.Form>
+                      </div>
+                    </details>
                   ))}
                 </div>
               </details>
