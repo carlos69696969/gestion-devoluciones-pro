@@ -163,7 +163,7 @@
 }
 
 .secondaryButton {
-  min-height: 40px;
+  min-height: 46px;
   padding: 0 14px;
   background: #fff;
   color: #005bd3;
@@ -312,14 +312,33 @@
   gap: 14px;
 }
 
-.variantTabs,
+.variantBlock {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d9dee7;
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+}
+
+.variantBlockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.variantBlockHeader strong {
+  color: #111827;
+  font-size: 14px;
+}
+
 .sizeChipList {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.variantTab,
 .sizeChip,
 .removeVariantButton {
   min-height: 34px;
@@ -333,56 +352,37 @@
   padding: 0 12px;
 }
 
-.variantTabActive {
-  border-color: #005bd3;
-  background: #eef6ff;
-  color: #005bd3;
-}
-
-.sizePicker {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: end;
-}
-
-.sizePicker label {
-  min-width: 0;
-}
-
-.sizePicker select,
-.sizePicker input {
-  height: 58px;
-  min-height: 58px;
-}
-
-.variantSummaryList {
+.sizeFlow {
   display: grid;
   gap: 10px;
 }
 
-.variantSummaryItem {
+.sizeFlow label {
+  min-width: 0;
+}
+
+.sizeFlow select,
+.sizeFlow input {
+  height: 58px;
+  min-height: 58px;
+}
+
+.sizeQuantityRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  gap: 10px;
+}
+
+.sizeSelectionBox {
   border: 1px solid #d9dee7;
-  border-radius: 12px;
+  border-radius: 10px;
   background: #f9fafb;
   padding: 10px;
   display: grid;
   gap: 8px;
 }
 
-.variantSummaryItem > div:first-child {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.variantSummaryItem strong {
-  color: #111827;
-  font-size: 14px;
-}
-
-.variantSummaryItem span,
-.variantHint {
+.sizeSelectionBox span {
   color: #5f6b7a;
   font-size: 12px;
   font-weight: 800;
@@ -399,7 +399,7 @@
 
 .formActions {
   display: grid;
-  grid-template-columns: minmax(140px, 0.35fr) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -559,8 +559,8 @@
   .pendingLayout,
   .twoColumns,
   .productFields,
-  .sizePicker,
   .formActions,
+  .sizeQuantityRow,
   .generatedPanel,
   .stepHeader {
     grid-template-columns: 1fr;
