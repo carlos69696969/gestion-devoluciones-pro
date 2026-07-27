@@ -200,11 +200,9 @@ export async function action({ request }) {
     return { ok: false, error: "Accion no reconocida." };
   }
 
-  const productName = sanitizeText(formData.get("productName"));
-  if (!productName) return { ok: false, error: "Escribe el nombre del producto." };
-
   const audience = normalizeAudience(formData.get("audience"));
   const garmentType = normalizeGarment(formData.get("garmentType"));
+  const productName = sanitizeText(formData.get("productName")) || garmentConfig(garmentType).label;
   const quantity = Math.max(1, Math.min(9999, Number(formData.get("quantity") || 1) || 1));
   const price = Math.max(0, Number(formData.get("price") || 0) || 0);
   const photos = formData
@@ -299,7 +297,6 @@ export default function StockPortal() {
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
     nextStockSkuForPrefix(stockSkuPrefix(selectedAudience, selectedGarment), []);
   const suggestedLocation = locationByAudience?.[selectedAudience] || defaultStockLocation(selectedAudience);
-  const showStockTabs = activeTab !== "capturar" || captureStep === "details";
   const selectedDraft = useMemo(
     () => drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) || drafts[0] || null,
     [drafts, selectedDraftId],
@@ -361,25 +358,6 @@ export default function StockPortal() {
           <h1>Portal stock</h1>
         </div>
       </header>
-
-      {showStockTabs ? (
-        <section className={styles.tabs} aria-label="Secciones de stock">
-          <button
-            className={`${styles.tabButton} ${activeTab === "capturar" ? styles.tabButtonActive : ""}`}
-            type="button"
-            onClick={() => setActiveTab("capturar")}
-          >
-            Capturar
-          </button>
-          <button
-            className={`${styles.tabButton} ${activeTab === "pendientes" ? styles.tabButtonActive : ""}`}
-            type="button"
-            onClick={() => setActiveTab("pendientes")}
-          >
-            Pendientes {drafts.length}
-          </button>
-        </section>
-      ) : null}
 
       {error ? <p className={styles.error}>{error}</p> : null}
       {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
@@ -511,10 +489,6 @@ export default function StockPortal() {
                   </div>
                 ) : null}
 
-                <label>
-                  Nombre del producto
-                  <input name="productName" placeholder="Ej. Playera vaquera" required />
-                </label>
                 <div className={styles.twoColumns}>
                   <label>
                     Color
@@ -534,10 +508,6 @@ export default function StockPortal() {
                 <label>
                   Precio
                   <input min="0" name="price" inputMode="decimal" step="0.01" type="number" placeholder="0.00" />
-                </label>
-                <label>
-                  Notas
-                  <textarea name="notes" rows="3" placeholder="Detalle opcional del producto" />
                 </label>
 
                 <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
