@@ -10,19 +10,19 @@ const STOCK_AUDIENCES = [
   { value: "mujer", label: "Mujer", code: "M" },
 ];
 const STOCK_GARMENTS = [
-  { value: "playera", label: "Playera", code: "PL", section: "Parte superior" },
-  { value: "camisa", label: "Camisa", code: "CA", section: "Parte superior" },
-  { value: "chamarra", label: "Chamarra", code: "CH", section: "Parte superior" },
-  { value: "sudadera", label: "Sudadera", code: "SU", section: "Parte superior" },
-  { value: "chaleco", label: "Chaleco", code: "CL", section: "Parte superior" },
-  { value: "sueter", label: "Sueter", code: "ST", section: "Parte superior" },
-  { value: "blusa", label: "Blusa", code: "BL", section: "Parte superior" },
-  { value: "pantalon", label: "Pantalon", code: "PA", section: "Parte inferior" },
-  { value: "short", label: "Short", code: "SH", section: "Parte inferior" },
-  { value: "falda", label: "Falda", code: "FA", section: "Parte inferior" },
-  { value: "tenis", label: "Tenis", code: "TE", section: "Parte inferior" },
-  { value: "vestido", label: "Vestido", code: "VE", section: "Parte superior e inferior" },
-  { value: "conjunto", label: "Conjunto", code: "CO", section: "Parte superior e inferior" },
+  { value: "playera", label: "Playera", code: "PL", section: "Parte superior", audiences: ["hombre", "mujer"] },
+  { value: "camisa", label: "Camisa", code: "CA", section: "Parte superior", audiences: ["hombre", "mujer"] },
+  { value: "chamarra", label: "Chamarra", code: "CH", section: "Parte superior", audiences: ["hombre", "mujer"] },
+  { value: "sudadera", label: "Sudadera", code: "SU", section: "Parte superior", audiences: ["hombre", "mujer"] },
+  { value: "chaleco", label: "Chaleco", code: "CL", section: "Parte superior", audiences: ["hombre", "mujer"] },
+  { value: "sueter", label: "Sueter", code: "ST", section: "Parte superior", audiences: ["hombre", "mujer"] },
+  { value: "blusa", label: "Blusa", code: "BL", section: "Parte superior", audiences: ["mujer"] },
+  { value: "pantalon", label: "Pantalon", code: "PA", section: "Parte inferior", audiences: ["hombre", "mujer"] },
+  { value: "short", label: "Short", code: "SH", section: "Parte inferior", audiences: ["hombre", "mujer"] },
+  { value: "falda", label: "Falda", code: "FA", section: "Parte inferior", audiences: ["mujer"] },
+  { value: "tenis", label: "Tenis", code: "TE", section: "Parte inferior", audiences: ["hombre", "mujer"] },
+  { value: "vestido", label: "Vestido", code: "VE", section: "Parte superior e inferior", audiences: ["mujer"] },
+  { value: "conjunto", label: "Conjunto", code: "CO", section: "Parte superior e inferior", audiences: ["hombre", "mujer"] },
 ];
 
 function cleanShop(value) {
@@ -341,14 +341,16 @@ export default function StockPortal() {
   }
 
   const garmentGroups = useMemo(() => {
-    return (garments || STOCK_GARMENTS).reduce((groups, garment) => {
-      const section = garment.section || "Productos";
-      return {
-        ...groups,
-        [section]: [...(groups[section] || []), garment],
-      };
-    }, {});
-  }, [garments]);
+    return (garments || STOCK_GARMENTS)
+      .filter((garment) => !garment.audiences || garment.audiences.includes(selectedAudience))
+      .reduce((groups, garment) => {
+        const section = garment.section || "Productos";
+        return {
+          ...groups,
+          [section]: [...(groups[section] || []), garment],
+        };
+      }, {});
+  }, [garments, selectedAudience]);
 
   return (
     <main className={styles.page}>
