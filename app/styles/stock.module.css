@@ -223,6 +223,7 @@
 .form input,
 .form select,
 .form textarea {
+  box-sizing: border-box;
   width: 100%;
   min-height: 44px;
   border: 1px solid #ccd3dd;
@@ -334,13 +335,17 @@
 .productFields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 18px;
-  row-gap: 16px;
-  align-items: end;
+  gap: 18px 22px;
+  align-items: stretch;
+}
+
+.productFields label {
+  min-width: 0;
 }
 
 .productFields input,
 .productFields select {
+  height: 58px;
   min-height: 58px;
 }
 

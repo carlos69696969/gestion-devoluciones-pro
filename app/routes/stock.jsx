@@ -62,11 +62,21 @@ function stockSkuPrefix(audience, garment) {
 
 function nextStockSkuForPrefix(prefix, existingSkus = []) {
   const matcher = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)$`, "i");
+  const usedNumbers = new Set();
   const highestNumber = existingSkus.reduce((highest, sku) => {
     const match = String(sku || "").trim().match(matcher);
-    return match ? Math.max(highest, Number(match[1] || 0)) : highest;
+    const number = match ? Number(match[1] || 0) : 0;
+    if (number >= 1 && number <= 10000) usedNumbers.add(number);
+    return number ? Math.max(highest, number) : highest;
   }, 0);
-  return `${prefix}-${String(highestNumber + 1).padStart(3, "0")}`;
+  const nextNumber = highestNumber < 10000 ? highestNumber + 1 : 1;
+  for (let number = nextNumber; number <= 10000; number += 1) {
+    if (!usedNumbers.has(number)) return `${prefix}-${String(number).padStart(2, "0")}`;
+  }
+  for (let number = 1; number < nextNumber; number += 1) {
+    if (!usedNumbers.has(number)) return `${prefix}-${String(number).padStart(2, "0")}`;
+  }
+  return `${prefix}-10000`;
 }
 
 function defaultStockLocation(audience, garment) {
