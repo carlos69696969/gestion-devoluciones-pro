@@ -489,7 +489,7 @@ export default function StockPortal() {
                   </div>
                 ) : null}
 
-                <div className={styles.twoColumns}>
+                <div className={styles.productFields}>
                   <label>
                     Color
                     <input name="color" />
@@ -507,8 +507,6 @@ export default function StockPortal() {
                       <option value="XXXL">XXXL</option>
                     </select>
                   </label>
-                </div>
-                <div className={styles.twoColumns}>
                   <label>
                     Cantidad
                     <input min="1" name="quantity" inputMode="numeric" type="number" />
