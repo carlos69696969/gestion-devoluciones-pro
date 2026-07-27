@@ -19,6 +19,7 @@ import {
   isCourierRouteStatus,
 } from "../utils/courier.shared";
 import { geocodeAddressWithCache, haversineDistanceMeters } from "../utils/googleMaps.server";
+import { ensureStockUserTable } from "../utils/stockUsers.server";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -4077,12 +4078,13 @@ export const loader = async ({ request }) => {
       : [];
   const stockUsers =
     viewMode === VIEW_MODE.STOCK
-      ? await safeLoaderArray("No se pudieron cargar los usuarios de stock", () =>
-          prisma.stockUser.findMany({
+      ? await safeLoaderArray("No se pudieron cargar los usuarios de stock", async () => {
+          await ensureStockUserTable(prisma);
+          return prisma.stockUser.findMany({
             where: { shop: session.shop, active: true },
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          }),
-        )
+          });
+        })
       : [];
   if (
     (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryActivity) &&
@@ -4722,24 +4724,30 @@ export const action = async ({ request }) => {
   }
 
   if (intent === "create_stock_user") {
-    const role = normalizeStockUserRole(formData.get("role"));
-    const name = String(formData.get("name") || "").trim();
-    const code = String(formData.get("code") || "").trim();
-    if (!name) return { ok: false, error: `Escribe el nombre del ${stockUserRoleLabel(role).toLowerCase()}.` };
-    if (!/^\d{6}$/.test(code)) {
-      return { ok: false, error: "Genera un codigo numerico de 6 digitos." };
+    try {
+      await ensureStockUserTable(prisma);
+      const role = normalizeStockUserRole(formData.get("role"));
+      const name = String(formData.get("name") || "").trim();
+      const code = String(formData.get("code") || "").trim();
+      if (!name) return { ok: false, error: `Escribe el nombre del ${stockUserRoleLabel(role).toLowerCase()}.` };
+      if (!/^\d{6}$/.test(code)) {
+        return { ok: false, error: "Genera un codigo numerico de 6 digitos." };
+      }
+      const existingStockUser = await prisma.stockUser.findFirst({
+        where: { shop: session.shop, code },
+        select: { id: true },
+      });
+      if (existingStockUser) {
+        return { ok: false, error: "Ese codigo ya existe en Stock. Genera uno nuevo." };
+      }
+      await prisma.stockUser.create({
+        data: { shop: session.shop, name, role, code },
+      });
+      return { ok: true, intent: "create_stock_user", message: `${stockUserRoleLabel(role)} guardado correctamente.` };
+    } catch (stockUserError) {
+      console.error("No se pudo guardar el usuario de stock", stockUserError);
+      return { ok: false, error: "No se pudo guardar el usuario de stock. Intenta nuevamente." };
     }
-    const existingStockUser = await prisma.stockUser.findFirst({
-      where: { shop: session.shop, code },
-      select: { id: true },
-    });
-    if (existingStockUser) {
-      return { ok: false, error: "Ese codigo ya existe en Stock. Genera uno nuevo." };
-    }
-    await prisma.stockUser.create({
-      data: { shop: session.shop, name, role, code },
-    });
-    return { ok: true, intent: "create_stock_user", message: `${stockUserRoleLabel(role)} guardado correctamente.` };
   }
 
   if (intent === "transfer_preparer_account") {

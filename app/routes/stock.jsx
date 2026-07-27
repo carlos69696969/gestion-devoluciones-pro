@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Form, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import prisma from "../db.server";
+import { ensureStockUserTable } from "../utils/stockUsers.server";
 import styles from "../styles/stock.module.css";
 
 const MAX_STOCK_PHOTOS = 8;
@@ -241,6 +242,7 @@ export async function loader({ request }) {
   let error = "";
   let stockUser = null;
   try {
+    if (accessCode) await ensureStockUserTable(prisma);
     if (accessCode) {
       stockUser = await prisma.stockUser.findFirst({
         where: { shop, code: accessCode, active: true },
@@ -310,16 +312,23 @@ export async function action({ request }) {
     `/stock?shop=${encodeURIComponent(shop)}${stockCode ? `&codigo=${encodeURIComponent(stockCode)}` : ""}${params}`;
 
   if (intent === "stock_login") {
-    const code = String(formData.get("code") || "").trim();
-    if (!/^\d{6}$/.test(code)) return { ok: false, error: "Escribe tu codigo de 6 digitos." };
-    const stockUser = await prisma.stockUser.findFirst({
-      where: { shop, code, active: true },
-      select: { id: true },
-    });
-    if (!stockUser) return { ok: false, error: "Codigo invalido. Revisa el codigo con el administrador." };
-    return redirect(`/stock?shop=${encodeURIComponent(shop)}&codigo=${encodeURIComponent(code)}`);
+    try {
+      await ensureStockUserTable(prisma);
+      const code = String(formData.get("code") || "").trim();
+      if (!/^\d{6}$/.test(code)) return { ok: false, error: "Escribe tu codigo de 6 digitos." };
+      const stockUser = await prisma.stockUser.findFirst({
+        where: { shop, code, active: true },
+        select: { id: true },
+      });
+      if (!stockUser) return { ok: false, error: "Codigo invalido. Revisa el codigo con el administrador." };
+      return redirect(`/stock?shop=${encodeURIComponent(shop)}&codigo=${encodeURIComponent(code)}`);
+    } catch (stockLoginError) {
+      console.error("No se pudo validar el codigo de stock", stockLoginError);
+      return { ok: false, error: "No se pudo validar el codigo. Intenta nuevamente." };
+    }
   }
 
+  if (stockCode) await ensureStockUserTable(prisma);
   const stockUser = stockCode
     ? await prisma.stockUser.findFirst({
         where: { shop, code: stockCode, active: true },
