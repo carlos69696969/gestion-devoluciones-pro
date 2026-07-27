@@ -9269,7 +9269,6 @@ function StockUsersSection({ stockUsers, isSubmitting }) {
               <details key={group.role} className={styles.courierDirectoryCard} open>
                 <summary className={styles.courierDirectorySummary}>
                   <span>{group.title}</span>
-                  <strong>{group.users.length}</strong>
                 </summary>
                 <div className={`${styles.courierDirectoryCode} ${styles.stockUserGroupBody}`}>
                   {group.users.map((stockUser) => (
