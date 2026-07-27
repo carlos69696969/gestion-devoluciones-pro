@@ -492,23 +492,32 @@ export default function StockPortal() {
                 <div className={styles.twoColumns}>
                   <label>
                     Color
-                    <input name="color" placeholder="Azul" />
+                    <input name="color" />
                   </label>
                   <label>
                     Talla
-                    <input name="size" placeholder="CH / M / G" />
+                    <select name="size" defaultValue="">
+                      <option value="" disabled />
+                      <option value="XS">XS</option>
+                      <option value="S">S</option>
+                      <option value="M">M</option>
+                      <option value="L">L</option>
+                      <option value="XL">XL</option>
+                      <option value="XXL">XXL</option>
+                      <option value="XXXL">XXXL</option>
+                    </select>
                   </label>
                 </div>
                 <div className={styles.twoColumns}>
                   <label>
                     Cantidad
-                    <input min="1" name="quantity" inputMode="numeric" type="number" defaultValue="1" />
+                    <input min="1" name="quantity" inputMode="numeric" type="number" />
+                  </label>
+                  <label>
+                    Precio
+                    <input min="0" name="price" inputMode="decimal" step="0.01" type="number" />
                   </label>
                 </div>
-                <label>
-                  Precio
-                  <input min="0" name="price" inputMode="decimal" step="0.01" type="number" placeholder="0.00" />
-                </label>
 
                 <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
                   {isSubmitting ? "Guardando..." : "Listo"}
