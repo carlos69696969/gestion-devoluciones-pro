@@ -55,6 +55,16 @@
   color: #fff;
 }
 
+.primaryButton:disabled {
+  border-color: rgba(0, 91, 211, 0.32);
+  background: rgba(0, 91, 211, 0.32);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.secondaryButton:disabled {
+  opacity: 0.45;
+}
+
 .card,
 .listCard,
 .detailCard {

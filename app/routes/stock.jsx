@@ -380,6 +380,17 @@ export default function StockPortal() {
     () => drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) || drafts[0] || null,
     [drafts, selectedDraftId],
   );
+  const stockSizeMenuOpen = variantGroups.some((variant) => variant.sizeMenuOpen);
+  const stockFormComplete =
+    variantGroups.length > 0 &&
+    variantGroups.every(
+      (variant) =>
+        String(variant.color || "").trim() &&
+        String(variant.price ?? "").trim() &&
+        Number(variant.price) >= 0 &&
+        Array.isArray(variant.sizes) &&
+        variant.sizes.length > 0,
+    );
 
   useEffect(() => {
     if (searchParams.get("guardado")) {
@@ -828,14 +839,20 @@ export default function StockPortal() {
                   ))}
                 </div>
 
-                <div className={styles.formActions}>
-                  <button className={styles.secondaryButton} type="button" onClick={addVariantGroup}>
-                    + Agregar
-                  </button>
-                  <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
-                    {isSubmitting ? "Guardando..." : "Listo"}
-                  </button>
-                </div>
+                {!stockSizeMenuOpen ? (
+                  <div className={styles.formActions}>
+                    <button className={styles.secondaryButton} type="button" onClick={addVariantGroup}>
+                      + Agregar
+                    </button>
+                    <button
+                      className={styles.primaryButton}
+                      type="submit"
+                      disabled={isSubmitting || !stockFormComplete}
+                    >
+                      {isSubmitting ? "Guardando..." : "Listo"}
+                    </button>
+                  </div>
+                ) : null}
               </Form>
             </>
           ) : null}
