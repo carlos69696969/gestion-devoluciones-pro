@@ -328,18 +328,12 @@
   gap: 10px;
 }
 
-.variantBlockHeader strong {
+.variantBlockHeader span {
   color: #111827;
   font-size: 14px;
+  font-weight: 900;
 }
 
-.sizeChipList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.sizeChip,
 .removeVariantButton {
   min-height: 34px;
   border: 1px solid #ccd3dd;
@@ -355,16 +349,57 @@
 .sizeFlow {
   display: grid;
   gap: 10px;
+  position: relative;
 }
 
 .sizeFlow label {
   min-width: 0;
 }
 
-.sizeFlow select,
 .sizeFlow input {
   height: 58px;
   min-height: 58px;
+}
+
+.sizeDropdownButton {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 58px;
+  border: 1px solid #ccd3dd;
+  border-radius: 10px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  font-weight: 900;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.sizeDropdownPanel {
+  border: 1px solid #ccd3dd;
+  border-radius: 10px;
+  background: #fff;
+  display: grid;
+  overflow: hidden;
+  box-shadow: 0 12px 24px rgba(17, 24, 39, 0.08);
+}
+
+.sizeOptionButton {
+  min-height: 38px;
+  border: 0;
+  border-bottom: 1px solid #eef1f5;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 8px 14px;
+  text-align: left;
+}
+
+.sizeOptionSelected {
+  color: #005bd3;
+  background: #eef6ff;
 }
 
 .sizeQuantityRow {
@@ -373,23 +408,40 @@
   gap: 10px;
 }
 
-.sizeSelectionBox {
+.sizePromptBox {
+  margin: 10px;
   border: 1px solid #d9dee7;
-  border-radius: 10px;
+  border-radius: 12px;
   background: #f9fafb;
   padding: 10px;
   display: grid;
   gap: 8px;
 }
 
-.sizeSelectionBox span {
+.sizePromptBox strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.sizePromptBox span {
   color: #5f6b7a;
   font-size: 12px;
   font-weight: 800;
 }
 
-.sizeChip {
-  color: #005bd3;
+.sizeConfirmActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sizeDoneButton {
+  min-height: 44px;
+  border: 0;
+  background: #005bd3;
+  color: #fff;
+  font: inherit;
+  font-weight: 900;
 }
 
 .removeVariantButton {

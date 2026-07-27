@@ -311,6 +311,23 @@ function money(value) {
   }).format(Number(value || 0));
 }
 
+function blankStockVariant(id = "variant-1") {
+  return {
+    id,
+    color: "",
+    price: "",
+    sizes: [],
+    sizeMenuOpen: false,
+    selectedSize: "",
+    quantityDraft: "",
+    pendingDeleteSize: "",
+  };
+}
+
+function formatStockSizes(sizes = []) {
+  return sizes.map((sizeRow) => `${sizeRow.size} = ${sizeRow.quantity}`).join(", ");
+}
+
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -351,9 +368,7 @@ export default function StockPortal() {
   const [selectedAudience, setSelectedAudience] = useState(audiences?.[0]?.value || "hombre");
   const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
   const [captureStep, setCaptureStep] = useState("audience");
-  const [variantGroups, setVariantGroups] = useState([
-    { id: "variant-1", color: "", price: "", sizes: [], selectedSize: "", quantityDraft: "", sizesDone: false },
-  ]);
+  const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const isSubmitting = navigation.state !== "idle";
   const suggestedSku =
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
@@ -405,9 +420,7 @@ export default function StockPortal() {
   }
 
   function resetStockVariants() {
-    setVariantGroups([
-      { id: "variant-1", color: "", price: "", sizes: [], selectedSize: "", quantityDraft: "", sizesDone: false },
-    ]);
+    setVariantGroups([blankStockVariant()]);
   }
 
   const cleanVariantGroups = useMemo(
@@ -442,13 +455,23 @@ export default function StockPortal() {
 
   function selectVariantSize(variantId, value) {
     if (value === "__done") {
-      updateVariant(variantId, "sizesDone", true);
+      setVariantGroups((currentGroups) =>
+        currentGroups.map((variant) =>
+          variant.id === variantId
+            ? { ...variant, sizeMenuOpen: false, selectedSize: "", quantityDraft: "", pendingDeleteSize: "" }
+            : variant,
+        ),
+      );
       return;
     }
     setVariantGroups((currentGroups) =>
-      currentGroups.map((variant) =>
-        variant.id === variantId ? { ...variant, selectedSize: value, quantityDraft: "" } : variant,
-      ),
+      currentGroups.map((variant) => {
+        if (variant.id !== variantId) return variant;
+        const exists = variant.sizes.some((sizeRow) => String(sizeRow.size || "").trim().toUpperCase() === value);
+        return exists
+          ? { ...variant, selectedSize: "", quantityDraft: "", pendingDeleteSize: value }
+          : { ...variant, selectedSize: value, quantityDraft: "", pendingDeleteSize: "" };
+      }),
     );
   }
 
@@ -463,7 +486,7 @@ export default function StockPortal() {
           ...variant.sizes.filter((sizeRow) => String(sizeRow.size || "").trim().toUpperCase() !== cleanSize),
           { size: cleanSize, quantity },
         ];
-        return { ...variant, sizes: nextSizes, selectedSize: "", quantityDraft: "" };
+        return { ...variant, sizes: nextSizes, selectedSize: "", quantityDraft: "", pendingDeleteSize: "" };
       }),
     );
   }
@@ -479,26 +502,43 @@ export default function StockPortal() {
         return {
           ...variant,
           sizes: nextSizes,
-          sizesDone: nextSizes.length ? variant.sizesDone : false,
+          selectedSize: "",
+          quantityDraft: "",
+          pendingDeleteSize: "",
         };
       }),
     );
   }
 
+  function toggleVariantSizeMenu(variantId) {
+    setVariantGroups((currentGroups) =>
+      currentGroups.map((variant) =>
+        variant.id === variantId
+          ? {
+              ...variant,
+              sizeMenuOpen: !variant.sizeMenuOpen,
+              selectedSize: "",
+              quantityDraft: "",
+              pendingDeleteSize: "",
+            }
+          : variant,
+      ),
+    );
+  }
+
+  function cancelVariantSizeDelete(variantId) {
+    updateVariant(variantId, "pendingDeleteSize", "");
+  }
+
   function addVariantGroup() {
     const nextId = `variant-${Date.now()}`;
-    setVariantGroups((currentGroups) => [
-      ...currentGroups,
-      { id: nextId, color: "", price: "", sizes: [], selectedSize: "", quantityDraft: "", sizesDone: false },
-    ]);
+    setVariantGroups((currentGroups) => [...currentGroups, blankStockVariant(nextId)]);
   }
 
   function removeVariantGroup(variantId) {
     setVariantGroups((currentGroups) => {
       const nextGroups = currentGroups.filter((variant) => variant.id !== variantId);
-      return nextGroups.length
-        ? nextGroups
-        : [{ id: "variant-1", color: "", price: "", sizes: [], selectedSize: "", quantityDraft: "", sizesDone: false }];
+      return nextGroups.length ? nextGroups : [blankStockVariant()];
     });
   }
 
@@ -637,7 +677,7 @@ export default function StockPortal() {
                     <div className={styles.variantBlock} key={variant.id}>
                       {variantGroups.length > 1 ? (
                         <div className={styles.variantBlockHeader}>
-                          <strong>{variant.color || `Color ${index + 1}`}</strong>
+                          <span>{variant.color || "Nuevo color"}</span>
                           <button
                             className={styles.removeVariantButton}
                             type="button"
@@ -672,65 +712,91 @@ export default function StockPortal() {
                       </div>
 
                       <div className={styles.sizeFlow}>
-                        {!variant.sizesDone ? (
-                          variant.selectedSize ? (
-                            <label>
-                              Cantidad
-                              <div className={styles.sizeQuantityRow}>
-                                <input
-                                  min="1"
-                                  inputMode="numeric"
-                                  placeholder={`Cantidad ${variant.selectedSize}`}
-                                  type="number"
-                                  value={variant.quantityDraft || ""}
-                                  onChange={(event) =>
-                                    updateVariant(variant.id, "quantityDraft", event.currentTarget.value)
-                                  }
-                                />
-                                <button
-                                  className={styles.secondaryButton}
-                                  type="button"
-                                  disabled={!variant.quantityDraft}
-                                  onClick={() => confirmVariantSize(variant.id)}
-                                >
-                                  Listo
-                                </button>
-                              </div>
-                            </label>
-                          ) : (
-                            <label>
-                              Talla
-                              <select
-                                value=""
-                                onChange={(event) => selectVariantSize(variant.id, event.currentTarget.value)}
-                              >
-                                <option value="" disabled />
-                                {STOCK_SIZES.map((size) => (
-                                  <option key={size} value={size}>
-                                    {size}
-                                  </option>
-                                ))}
-                                <option value="__done">Listo</option>
-                              </select>
-                            </label>
-                          )
-                        ) : null}
+                        <label>
+                          Talla
+                          <button
+                            className={styles.sizeDropdownButton}
+                            type="button"
+                            onClick={() => toggleVariantSizeMenu(variant.id)}
+                          >
+                            {formatStockSizes(variant.sizes) || "Seleccionar tallas"}
+                          </button>
+                        </label>
 
-                        {variant.sizes.length ? (
-                          <div className={styles.sizeSelectionBox}>
-                            <span>Tallas</span>
-                            <div className={styles.sizeChipList}>
-                              {variant.sizes.map((sizeRow) => (
+                        {variant.sizeMenuOpen ? (
+                          <div className={styles.sizeDropdownPanel}>
+                            {STOCK_SIZES.map((size) => {
+                              const selectedSizeRow = variant.sizes.find((sizeRow) => sizeRow.size === size);
+                              return (
                                 <button
-                                  className={styles.sizeChip}
-                                  key={`${variant.id}-${sizeRow.size}`}
+                                  className={`${styles.sizeOptionButton} ${
+                                    selectedSizeRow ? styles.sizeOptionSelected : ""
+                                  }`}
+                                  key={`${variant.id}-option-${size}`}
                                   type="button"
-                                  onClick={() => removeSizeFromVariant(variant.id, sizeRow.size)}
+                                  onClick={() => selectVariantSize(variant.id, size)}
                                 >
-                                  {sizeRow.size} x{sizeRow.quantity} Quitar
+                                  {selectedSizeRow ? `${size} = ${selectedSizeRow.quantity}` : size}
                                 </button>
-                              ))}
-                            </div>
+                              );
+                            })}
+
+                            {variant.selectedSize ? (
+                              <div className={styles.sizePromptBox}>
+                                <strong>Cantidad para {variant.selectedSize}</strong>
+                                <div className={styles.sizeQuantityRow}>
+                                  <input
+                                    min="1"
+                                    inputMode="numeric"
+                                    placeholder="Cantidad"
+                                    type="number"
+                                    value={variant.quantityDraft || ""}
+                                    onChange={(event) =>
+                                      updateVariant(variant.id, "quantityDraft", event.currentTarget.value)
+                                    }
+                                  />
+                                  <button
+                                    className={styles.secondaryButton}
+                                    type="button"
+                                    disabled={!variant.quantityDraft}
+                                    onClick={() => confirmVariantSize(variant.id)}
+                                  >
+                                    Listo
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {variant.pendingDeleteSize ? (
+                              <div className={styles.sizePromptBox}>
+                                <strong>¿Eliminar {variant.pendingDeleteSize}?</strong>
+                                <span>Se borrara la cantidad de esta talla.</span>
+                                <div className={styles.sizeConfirmActions}>
+                                  <button
+                                    className={styles.secondaryButton}
+                                    type="button"
+                                    onClick={() => cancelVariantSizeDelete(variant.id)}
+                                  >
+                                    No
+                                  </button>
+                                  <button
+                                    className={styles.primaryButton}
+                                    type="button"
+                                    onClick={() => removeSizeFromVariant(variant.id, variant.pendingDeleteSize)}
+                                  >
+                                    Si
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+
+                            <button
+                              className={styles.sizeDoneButton}
+                              type="button"
+                              onClick={() => selectVariantSize(variant.id, "__done")}
+                            >
+                              Listo
+                            </button>
                           </div>
                         ) : null}
                       </div>
