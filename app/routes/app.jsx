@@ -330,6 +330,7 @@ export default function App() {
         </s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/couriers")}>Repartidores</s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/preparers")}>Preparadores</s-link>
+        <s-link href={withEmbedParams("/app/devoluciones/solicitudes/stock")}>Stock</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>

@@ -306,3 +306,18 @@ model StockLocationState {
   @@unique([shop, audience, garmentType])
   @@index([shop, currentLocation])
 }
+
+model StockUser {
+  id        Int      @id @default(autoincrement())
+  shop      String
+  name      String
+  role      String
+  code      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shop, code])
+  @@index([shop, role])
+  @@index([shop, active])
+}

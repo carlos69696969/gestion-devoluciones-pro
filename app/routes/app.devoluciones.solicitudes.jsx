@@ -63,6 +63,11 @@ const VIEW_MODE = {
   BRANCH_PICKUP: "branch_pickup",
   COURIERS: "couriers",
   PREPARERS: "preparers",
+  STOCK: "stock",
+};
+const STOCK_USER_ROLES = {
+  PREPARER: "preparador_stock",
+  PUBLISHER: "publicador_productos",
 };
 const COURIER_HISTORY_SINCE = new Date("2026-06-10T00:00:00-06:00");
 const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
@@ -815,6 +820,7 @@ function normalizeViewMode(rawValue) {
   if (value === VIEW_MODE.BRANCH_PICKUP) return VIEW_MODE.BRANCH_PICKUP;
   if (value === VIEW_MODE.COURIERS) return VIEW_MODE.COURIERS;
   if (value === VIEW_MODE.PREPARERS) return VIEW_MODE.PREPARERS;
+  if (value === VIEW_MODE.STOCK) return VIEW_MODE.STOCK;
   return VIEW_MODE.BRANCH;
 }
 
@@ -833,11 +839,21 @@ function viewModeFromPathname(pathname) {
   if (path.endsWith("/branch_pickup")) return VIEW_MODE.BRANCH_PICKUP;
   if (path.endsWith("/couriers")) return VIEW_MODE.COURIERS;
   if (path.endsWith("/preparers")) return VIEW_MODE.PREPARERS;
+  if (path.endsWith("/stock")) return VIEW_MODE.STOCK;
   return "";
 }
 
 function toMoney(value) {
   return Number(value || 0).toFixed(2);
+}
+
+function stockUserRoleLabel(role) {
+  return role === STOCK_USER_ROLES.PUBLISHER ? "Publicador de productos" : "Preparador de stock";
+}
+
+function normalizeStockUserRole(role) {
+  const value = String(role || "").trim();
+  return value === STOCK_USER_ROLES.PUBLISHER ? STOCK_USER_ROLES.PUBLISHER : STOCK_USER_ROLES.PREPARER;
 }
 
 function toFiniteNumber(value, fallback = 0) {
@@ -3508,7 +3524,8 @@ export const loader = async ({ request }) => {
     viewMode === VIEW_MODE.COURIER_HISTORY ||
     viewMode === VIEW_MODE.BRANCH_PICKUP ||
     viewMode === VIEW_MODE.COURIERS ||
-    viewMode === VIEW_MODE.PREPARERS
+    viewMode === VIEW_MODE.PREPARERS ||
+    viewMode === VIEW_MODE.STOCK
       ? []
       : await prisma.returnRequest.findMany({
           where,
@@ -4058,6 +4075,15 @@ export const loader = async ({ request }) => {
           }),
         )
       : [];
+  const stockUsers =
+    viewMode === VIEW_MODE.STOCK
+      ? await safeLoaderArray("No se pudieron cargar los usuarios de stock", () =>
+          prisma.stockUser.findMany({
+            where: { shop: session.shop, active: true },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          }),
+        )
+      : [];
   if (
     (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryActivity) &&
     couriers.length
@@ -4147,6 +4173,7 @@ export const loader = async ({ request }) => {
     courierOrders: visibleCourierOrders,
     couriers,
     preparers,
+    stockUsers,
     preparerAssignments,
     preparerRouteActivities,
     courierActivities,
@@ -4692,6 +4719,27 @@ export const action = async ({ request }) => {
       return { ok: false, error: "No se encontro el preparador." };
     }
     return { ok: true, message: "Preparador dado de baja correctamente." };
+  }
+
+  if (intent === "create_stock_user") {
+    const role = normalizeStockUserRole(formData.get("role"));
+    const name = String(formData.get("name") || "").trim();
+    const code = String(formData.get("code") || "").trim();
+    if (!name) return { ok: false, error: `Escribe el nombre del ${stockUserRoleLabel(role).toLowerCase()}.` };
+    if (!/^\d{6}$/.test(code)) {
+      return { ok: false, error: "Genera un codigo numerico de 6 digitos." };
+    }
+    const existingStockUser = await prisma.stockUser.findFirst({
+      where: { shop: session.shop, code },
+      select: { id: true },
+    });
+    if (existingStockUser) {
+      return { ok: false, error: "Ese codigo ya existe en Stock. Genera uno nuevo." };
+    }
+    await prisma.stockUser.create({
+      data: { shop: session.shop, name, role, code },
+    });
+    return { ok: true, intent: "create_stock_user", message: `${stockUserRoleLabel(role)} guardado correctamente.` };
   }
 
   if (intent === "transfer_preparer_account") {
@@ -6222,6 +6270,7 @@ export default function ReturnsRequests() {
     courierOrders,
     couriers = [],
     preparers = [],
+    stockUsers = [],
     preparerAssignments = [],
     preparerRouteActivities = [],
     courierActivities = [],
@@ -6770,6 +6819,8 @@ export default function ReturnsRequests() {
           ? "Repartidores"
         : viewMode === VIEW_MODE.PREPARERS
           ? "Preparadores"
+        : viewMode === VIEW_MODE.STOCK
+          ? "Stock"
         : "Entrega en sucursal";
 
   return (
@@ -7634,6 +7685,10 @@ export default function ReturnsRequests() {
           routeOrdersPayload={preparerRouteOrdersPayload}
           isSubmitting={isSubmitting}
         />
+      ) : null}
+
+      {viewMode === VIEW_MODE.STOCK ? (
+        <StockUsersSection stockUsers={stockUsers} isSubmitting={isSubmitting} />
       ) : null}
     </s-page>
   );
@@ -9050,6 +9105,119 @@ function CouriersSection({ couriers, isSubmitting }) {
         {transferFetcher.data?.message ? (
           <p className={styles.successMsg}>{transferFetcher.data.message}</p>
         ) : null}
+      </div>
+    </s-section>
+  );
+}
+
+function StockUsersSection({ stockUsers, isSubmitting }) {
+  const location = useLocation();
+  const createStockUserFetcher = useFetcher();
+  const [showForm, setShowForm] = useState(false);
+  const [role, setRole] = useState(STOCK_USER_ROLES.PREPARER);
+  const [code, setCode] = useState("");
+  const isCreateStockUserSubmitting = createStockUserFetcher.state !== "idle";
+  const stockAction = `${location.pathname}${location.search || ""}`;
+  const roleLabel = stockUserRoleLabel(role);
+
+  useEffect(() => {
+    if (!createStockUserFetcher.data?.ok || createStockUserFetcher.data?.intent !== "create_stock_user") return;
+    setShowForm(false);
+    setCode("");
+    setRole(STOCK_USER_ROLES.PREPARER);
+  }, [createStockUserFetcher.data]);
+
+  const generateCode = () => {
+    setCode(String(Math.floor(100000 + Math.random() * 900000)));
+  };
+
+  return (
+    <s-section heading="Stock">
+      <div className={`${styles.wrap} ${styles.couriersLayout}`}>
+        <button
+          className={`${styles.btn} ${styles.btnPrimary}`}
+          type="button"
+          onClick={() => setShowForm((current) => !current)}
+        >
+          Agregar
+        </button>
+
+        {showForm ? (
+          <createStockUserFetcher.Form method="post" action={stockAction} className={`${styles.card} ${styles.courierCreateForm}`}>
+            <input type="hidden" name="intent" value="create_stock_user" />
+            <input type="hidden" name="role" value={role} />
+            <div className={styles.courierDirectoryActions}>
+              <button
+                className={`${styles.btn} ${role === STOCK_USER_ROLES.PREPARER ? styles.btnPrimary : ""}`}
+                type="button"
+                onClick={() => setRole(STOCK_USER_ROLES.PREPARER)}
+              >
+                Preparador de stock
+              </button>
+              <button
+                className={`${styles.btn} ${role === STOCK_USER_ROLES.PUBLISHER ? styles.btnPrimary : ""}`}
+                type="button"
+                onClick={() => setRole(STOCK_USER_ROLES.PUBLISHER)}
+              >
+                Publicador de productos
+              </button>
+            </div>
+            <label className={styles.label}>
+              Nombre del {roleLabel.toLowerCase()}
+              <input className={styles.input} name="name" required />
+            </label>
+            <div className={styles.courierCodeField}>
+              <label className={styles.label}>
+                Codigo unico
+                <input
+                  className={styles.input}
+                  name="code"
+                  value={code}
+                  readOnly
+                  required
+                  placeholder="Genera un codigo de 6 digitos"
+                />
+              </label>
+              <button className={styles.btn} type="button" onClick={generateCode}>
+                Generar codigo
+              </button>
+            </div>
+            <button
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              type="submit"
+              disabled={isSubmitting || isCreateStockUserSubmitting || !code}
+            >
+              Guardar
+            </button>
+          </createStockUserFetcher.Form>
+        ) : null}
+
+        {createStockUserFetcher.data?.error ? (
+          <p className={styles.errorMsg}>{createStockUserFetcher.data.error}</p>
+        ) : null}
+        {createStockUserFetcher.data?.message ? (
+          <p className={styles.successMsg}>{createStockUserFetcher.data.message}</p>
+        ) : null}
+
+        <div className={styles.courierDirectory}>
+          {stockUsers.length ? (
+            stockUsers.map((stockUser) => (
+              <details key={stockUser.id} className={styles.courierDirectoryCard}>
+                <summary className={styles.courierDirectorySummary}>
+                  <span>{stockUserRoleLabel(stockUser.role)}</span>
+                  <strong>{stockUser.name}</strong>
+                </summary>
+                <div className={styles.courierDirectoryCode}>
+                  <div>
+                    Codigo unico: <strong>{stockUser.code}</strong>
+                  </div>
+                </div>
+              </details>
+            ))
+          ) : (
+            <p>Todavia no hay usuarios de stock.</p>
+          )}
+        </div>
       </div>
     </s-section>
   );

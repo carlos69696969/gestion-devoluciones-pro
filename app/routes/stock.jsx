@@ -6,6 +6,10 @@ import styles from "../styles/stock.module.css";
 const MAX_STOCK_PHOTOS = 8;
 const MAX_STOCK_PHOTO_CHARS = 1_250_000;
 const STOCK_CAPTURE_DRAFT_VERSION = 1;
+const STOCK_USER_ROLES = {
+  PREPARER: "preparador_stock",
+  PUBLISHER: "publicador_productos",
+};
 const STOCK_ALPHA_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 const STOCK_WOMEN_BOTTOM_SIZES = ["1", "3", "5", "7", "9", "11", "13", "15", "17", "19", "21", "23"];
 const STOCK_WOMEN_SHOE_SIZES = [
@@ -212,32 +216,54 @@ function serializeDraft(draft) {
   };
 }
 
+function serializeStockUser(stockUser) {
+  if (!stockUser) return null;
+  return {
+    id: stockUser.id,
+    name: stockUser.name,
+    role: stockUser.role,
+    code: stockUser.code,
+  };
+}
+
 export const headers = () => ({
   "Cache-Control": "no-store, max-age=0",
   "X-Robots-Tag": "noindex, nofollow",
 });
 
 export async function loader({ request }) {
+  const url = new URL(request.url);
   const shop = portalShopFromRequest(request);
+  const accessCode = String(url.searchParams.get("codigo") || url.searchParams.get("code") || "").trim();
   let drafts = [];
   let skuRows = [];
   let locationRows = [];
   let error = "";
+  let stockUser = null;
   try {
-    [drafts, skuRows, locationRows] = await Promise.all([
-      prisma.stockProductDraft.findMany({
-        where: { shop },
-        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-        take: 80,
-      }),
-      prisma.stockProductDraft.findMany({
-        where: { shop },
-        select: { sku: true },
-      }),
-      prisma.stockLocationState.findMany({
-        where: { shop },
-      }),
-    ]);
+    if (accessCode) {
+      stockUser = await prisma.stockUser.findFirst({
+        where: { shop, code: accessCode, active: true },
+      });
+      if (!stockUser) error = "Codigo invalido. Revisa el codigo en la seccion Stock del administrador.";
+    }
+
+    if (stockUser) {
+      [drafts, skuRows, locationRows] = await Promise.all([
+        prisma.stockProductDraft.findMany({
+          where: { shop, status: "pendiente" },
+          orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+          take: 80,
+        }),
+        prisma.stockProductDraft.findMany({
+          where: { shop },
+          select: { sku: true },
+        }),
+        prisma.stockLocationState.findMany({
+          where: { shop },
+        }),
+      ]);
+    }
   } catch (loadError) {
     console.error("No se pudo cargar portal stock", loadError);
     error = "El almacenamiento de stock se esta preparando. Actualiza la pagina en un momento.";
@@ -265,6 +291,8 @@ export async function loader({ request }) {
   return {
     shop,
     drafts: drafts.map(serializeDraft),
+    stockUser: serializeStockUser(stockUser),
+    accessCode: stockUser ? accessCode : "",
     audiences: STOCK_AUDIENCES,
     garments: STOCK_GARMENTS,
     nextSkuByCategory,
@@ -277,8 +305,32 @@ export async function action({ request }) {
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "").trim();
   const shop = cleanShop(formData.get("shop")) || portalShopFromRequest(request);
+  const stockCode = String(formData.get("stockCode") || "").trim();
+  const stockPortalHref = (params = "") =>
+    `/stock?shop=${encodeURIComponent(shop)}${stockCode ? `&codigo=${encodeURIComponent(stockCode)}` : ""}${params}`;
+
+  if (intent === "stock_login") {
+    const code = String(formData.get("code") || "").trim();
+    if (!/^\d{6}$/.test(code)) return { ok: false, error: "Escribe tu codigo de 6 digitos." };
+    const stockUser = await prisma.stockUser.findFirst({
+      where: { shop, code, active: true },
+      select: { id: true },
+    });
+    if (!stockUser) return { ok: false, error: "Codigo invalido. Revisa el codigo con el administrador." };
+    return redirect(`/stock?shop=${encodeURIComponent(shop)}&codigo=${encodeURIComponent(code)}`);
+  }
+
+  const stockUser = stockCode
+    ? await prisma.stockUser.findFirst({
+        where: { shop, code: stockCode, active: true },
+        select: { id: true, role: true },
+      })
+    : null;
 
   if (intent === "advance_stock_location") {
+    if (stockUser?.role !== STOCK_USER_ROLES.PREPARER) {
+      return { ok: false, error: "Solo un preparador de stock puede avanzar ubicaciones." };
+    }
     const audience = normalizeAudience(formData.get("audience"));
     const garmentType = normalizeGarment(formData.get("garmentType"));
     const currentLocation =
@@ -289,11 +341,15 @@ export async function action({ request }) {
       create: { shop, audience, garmentType, currentLocation: nextLocation },
       update: { currentLocation: nextLocation },
     });
-    return redirect(`/stock?shop=${encodeURIComponent(shop)}`);
+    return redirect(stockPortalHref());
   }
 
   if (intent !== "create_stock_draft") {
     return { ok: false, error: "Accion no reconocida." };
+  }
+
+  if (stockUser?.role !== STOCK_USER_ROLES.PREPARER) {
+    return { ok: false, error: "Solo un preparador de stock puede guardar productos." };
   }
 
   const audience = normalizeAudience(formData.get("audience"));
@@ -354,7 +410,7 @@ export async function action({ request }) {
     }),
   ]);
 
-  return redirect(`/stock?shop=${encodeURIComponent(shop)}&guardado=1`);
+  return redirect(stockPortalHref("&guardado=1"));
 }
 
 function money(value) {
@@ -452,12 +508,12 @@ async function compressImageFile(file) {
 }
 
 export default function StockPortal() {
-  const { shop, drafts, error, audiences, garments, nextSkuByCategory, locationByCategory } = useLoaderData();
+  const { shop, drafts, stockUser, accessCode, error, audiences, garments, nextSkuByCategory, locationByCategory } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const [searchParams] = useSearchParams();
   const savedFlag = searchParams.get("guardado");
-  const [activeTab, setActiveTab] = useState(searchParams.get("guardado") ? "pendientes" : "capturar");
+  const [activeTab, setActiveTab] = useState("capturar");
   const [photos, setPhotos] = useState([]);
   const [selectedDraftId, setSelectedDraftId] = useState(drafts[0]?.id || 0);
   const [selectedAudience, setSelectedAudience] = useState(audiences?.[0]?.value || "hombre");
@@ -466,6 +522,8 @@ export default function StockPortal() {
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
   const isSubmitting = navigation.state !== "idle";
+  const isPreparerStock = stockUser?.role === STOCK_USER_ROLES.PREPARER;
+  const isProductPublisher = stockUser?.role === STOCK_USER_ROLES.PUBLISHER;
   const captureDraftKey = useMemo(() => stockCaptureDraftKey(shop), [shop]);
   const suggestedSku =
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
@@ -500,7 +558,7 @@ export default function StockPortal() {
       } catch (_error) {
         // localStorage puede estar bloqueado; el guardado real ya se hizo en servidor.
       }
-      setActiveTab("pendientes");
+      setActiveTab("capturar");
       setPhotos([]);
       resetStockVariants();
       setCaptureDraftLoaded(true);
@@ -530,7 +588,7 @@ export default function StockPortal() {
         .filter(Boolean)
         .slice(0, MAX_STOCK_PHOTOS);
 
-      setActiveTab(draft.activeTab === "pendientes" ? "pendientes" : "capturar");
+      setActiveTab("capturar");
       setCaptureStep(["audience", "product", "details"].includes(draft.captureStep) ? draft.captureStep : "audience");
       setSelectedAudience(restoredAudience);
       setSelectedGarment(restoredGarment);
@@ -762,7 +820,31 @@ export default function StockPortal() {
       {error ? <p className={styles.error}>{error}</p> : null}
       {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
 
-      {activeTab === "capturar" ? (
+      {!stockUser ? (
+        <section className={styles.card}>
+          <Form method="post" className={styles.loginForm}>
+            <input type="hidden" name="intent" value="stock_login" />
+            <input type="hidden" name="shop" value={shop} />
+            <label>
+              Codigo unico
+              <input
+                autoFocus
+                inputMode="numeric"
+                maxLength={6}
+                name="code"
+                pattern="[0-9]{6}"
+                placeholder="Escribe tu codigo de 6 digitos"
+                required
+              />
+            </label>
+            <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
+              Entrar
+            </button>
+          </Form>
+        </section>
+      ) : null}
+
+      {isPreparerStock && activeTab === "capturar" ? (
         <section className={styles.card}>
           {captureStep === "audience" ? (
             <div className={styles.choicePanel}>
@@ -828,6 +910,7 @@ export default function StockPortal() {
               <Form method="post" className={styles.form}>
                 <input type="hidden" name="intent" value="create_stock_draft" />
                 <input type="hidden" name="shop" value={shop} />
+                <input type="hidden" name="stockCode" value={accessCode || ""} />
                 <input type="hidden" name="audience" value={selectedAudience} />
                 <input type="hidden" name="garmentType" value={selectedGarment} />
                 <input type="hidden" name="variants" value={JSON.stringify(cleanVariantGroups)} />
@@ -1036,10 +1119,10 @@ export default function StockPortal() {
             </>
           ) : null}
         </section>
-      ) : (
+      ) : isProductPublisher ? (
         <section className={styles.pendingLayout}>
           <div className={styles.listCard}>
-            <h2>Productos guardados</h2>
+            <h2>Productos listos</h2>
             {drafts.length ? (
               <div className={styles.draftList}>
                 {drafts.map((draft) => (
@@ -1050,22 +1133,22 @@ export default function StockPortal() {
                     onClick={() => setSelectedDraftId(draft.id)}
                   >
                     {draft.photos?.[0] ? <img src={draft.photos[0]} alt={draft.productName} /> : <span />}
-                    <strong>{draft.productName}</strong>
+                    <strong>{draft.locationCode || draft.productName}</strong>
                     <small>
                       {draft.sku ? `SKU ${draft.sku}` : "Sin SKU"}
-                      {draft.locationCode ? ` | ${draft.locationCode}` : ""}
+                      {draft.productName ? ` | ${draft.productName}` : ""}
                     </small>
                   </button>
                 ))}
               </div>
             ) : (
-              <p className={styles.empty}>Todavia no hay productos guardados.</p>
+              <p className={styles.empty}>Todavia no hay productos listos.</p>
             )}
           </div>
 
           {selectedDraft ? (
             <article className={styles.detailCard}>
-              <h2>{selectedDraft.productName}</h2>
+              <h2>{selectedDraft.locationCode || selectedDraft.productName}</h2>
               <dl className={styles.detailGrid}>
                 <div>
                   <dt>Color</dt>
@@ -1135,7 +1218,7 @@ export default function StockPortal() {
             </article>
           ) : null}
         </section>
-      )}
+      ) : null}
     </main>
   );
 }
