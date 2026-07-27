@@ -8,6 +8,22 @@ const MAX_STOCK_PHOTO_CHARS = 1_250_000;
 const STOCK_CAPTURE_DRAFT_VERSION = 1;
 const STOCK_ALPHA_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
 const STOCK_WOMEN_BOTTOM_SIZES = ["1", "3", "5", "7", "9", "11", "13", "15", "17", "19", "21", "23"];
+const STOCK_WOMEN_SHOE_SIZES = [
+  "21.5",
+  "22",
+  "22.5",
+  "23",
+  "23.5",
+  "24",
+  "24.5",
+  "25",
+  "25.5",
+  "26",
+  "26.5",
+  "27",
+  "27.5",
+  "28",
+];
 const STOCK_AUDIENCES = [
   { value: "hombre", label: "Hombre", code: "H" },
   { value: "mujer", label: "Mujer", code: "M" },
@@ -64,6 +80,9 @@ function stockSizesFor(audience, garment) {
   const currentGarment = garmentConfig(garment);
   if (currentAudience === "mujer" && currentGarment.section === "Parte inferior") {
     return STOCK_WOMEN_BOTTOM_SIZES;
+  }
+  if (currentAudience === "mujer" && currentGarment.section === "Calzado") {
+    return STOCK_WOMEN_SHOE_SIZES;
   }
   return STOCK_ALPHA_SIZES;
 }
