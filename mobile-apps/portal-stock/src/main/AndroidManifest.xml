@@ -4,7 +4,8 @@
 
     <application
         android:allowBackup="true"
-        android:label="Cariana stock"
+        android:icon="@drawable/stock_icon"
+        android:label="stock"
         android:theme="@style/AppTheme">
         <activity
             android:name=".MainActivity"

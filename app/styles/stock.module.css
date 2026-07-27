@@ -10,6 +10,9 @@
   display: grid;
   place-items: center;
   padding: 24px 16px;
+  background:
+    linear-gradient(rgba(246, 247, 249, 0.08), rgba(246, 247, 249, 0.08)),
+    url("/stock-login-background.png") center / cover no-repeat;
 }
 
 .header {
