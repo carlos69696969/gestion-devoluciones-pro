@@ -10,12 +10,15 @@ const STOCK_AUDIENCES = [
   { value: "mujer", label: "Mujer", code: "M" },
 ];
 const STOCK_GARMENTS = [
-  { value: "playera", label: "Playera", code: "PL" },
-  { value: "camisa", label: "Camisa", code: "CA" },
-  { value: "pantalon", label: "Pantalon", code: "PA" },
-  { value: "vestido", label: "Vestido", code: "VE" },
-  { value: "chamarra", label: "Chamarra", code: "CH" },
-  { value: "blusa", label: "Blusa", code: "BL" },
+  { value: "playera", label: "Playera", code: "PL", section: "Parte superior" },
+  { value: "camisa", label: "Camisa", code: "CA", section: "Parte superior" },
+  { value: "chamarra", label: "Chamarra", code: "CH", section: "Parte superior" },
+  { value: "sudadera", label: "Sudadera", code: "SU", section: "Parte superior" },
+  { value: "blusa", label: "Blusa", code: "BL", section: "Parte superior" },
+  { value: "vestido", label: "Vestido", code: "VE", section: "Parte superior" },
+  { value: "pantalon", label: "Pantalon", code: "PA", section: "Parte inferior" },
+  { value: "short", label: "Short", code: "SH", section: "Parte inferior" },
+  { value: "tenis", label: "Tenis", code: "TE", section: "Parte inferior" },
 ];
 
 function cleanShop(value) {
@@ -286,6 +289,7 @@ export default function StockPortal() {
   const [selectedDraftId, setSelectedDraftId] = useState(drafts[0]?.id || 0);
   const [selectedAudience, setSelectedAudience] = useState(audiences?.[0]?.value || "hombre");
   const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
+  const [captureStep, setCaptureStep] = useState("audience");
   const isSubmitting = navigation.state !== "idle";
   const suggestedSku =
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
@@ -322,6 +326,26 @@ export default function StockPortal() {
     event.target.value = "";
   }
 
+  function chooseAudience(value) {
+    setSelectedAudience(value);
+    setCaptureStep("product");
+  }
+
+  function chooseGarment(value) {
+    setSelectedGarment(value);
+    setCaptureStep("details");
+  }
+
+  const garmentGroups = useMemo(() => {
+    return (garments || STOCK_GARMENTS).reduce((groups, garment) => {
+      const section = garment.section || "Productos";
+      return {
+        ...groups,
+        [section]: [...(groups[section] || []), garment],
+      };
+    }, {});
+  }, [garments]);
+
   return (
     <main className={styles.page}>
       <header className={styles.header}>
@@ -353,124 +377,166 @@ export default function StockPortal() {
 
       {activeTab === "capturar" ? (
         <section className={styles.card}>
-          <Form method="post" className={styles.locationForm}>
-            <input type="hidden" name="intent" value="advance_stock_location" />
-            <input type="hidden" name="shop" value={shop} />
-            <input type="hidden" name="audience" value={selectedAudience} />
-            <input type="hidden" name="currentLocation" value={suggestedLocation} />
-            <div>
-              <span>Ubicacion sugerida</span>
-              <strong>{suggestedLocation}</strong>
-            </div>
-            <button className={styles.secondaryButton} type="submit" disabled={isSubmitting}>
-              Marcar llena y usar siguiente
-            </button>
-          </Form>
-
-          <Form method="post" className={styles.form}>
-            <input type="hidden" name="intent" value="create_stock_draft" />
-            <input type="hidden" name="shop" value={shop} />
-            {photos.map((photo) => (
-              <input key={photo.id} type="hidden" name="photos" value={photo.dataUrl} />
-            ))}
-
-            <div className={styles.twoColumns}>
-              <label>
-                Persona
-                <select
-                  name="audience"
-                  value={selectedAudience}
-                  onChange={(event) => setSelectedAudience(event.currentTarget.value)}
-                >
-                  {(audiences || STOCK_AUDIENCES).map((audience) => (
-                    <option key={audience.value} value={audience.value}>
-                      {audience.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Prenda
-                <select
-                  name="garmentType"
-                  value={selectedGarment}
-                  onChange={(event) => setSelectedGarment(event.currentTarget.value)}
-                >
-                  {(garments || STOCK_GARMENTS).map((garment) => (
-                    <option key={garment.value} value={garment.value}>
-                      {garment.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className={styles.generatedPanel}>
-              <span>
-                SKU automatico
-                <strong>{suggestedSku}</strong>
-              </span>
-              <span>
-                Ubicacion
-                <strong>{suggestedLocation}</strong>
-              </span>
-            </div>
-
-            <label className={styles.photoPicker}>
-              <span>Tomar o agregar fotos</span>
-              <strong>{photos.length}/{MAX_STOCK_PHOTOS}</strong>
-              <input accept="image/*" capture="environment" multiple type="file" onChange={handlePhotoFiles} />
-            </label>
-
-            {photos.length ? (
-              <div className={styles.photoGrid}>
-                {photos.map((photo) => (
-                  <figure className={styles.photoThumb} key={photo.id}>
-                    <img src={photo.dataUrl} alt={photo.name} />
-                    <button
-                      type="button"
-                      onClick={() => setPhotos((current) => current.filter((item) => item.id !== photo.id))}
-                    >
-                      Quitar
-                    </button>
-                  </figure>
+          {captureStep === "audience" ? (
+            <div className={styles.choicePanel}>
+              <h2>Para quién es este producto</h2>
+              <div className={styles.choiceGrid}>
+                {(audiences || STOCK_AUDIENCES).map((audience) => (
+                  <button
+                    className={`${styles.choiceButton} ${
+                      selectedAudience === audience.value ? styles.choiceButtonActive : ""
+                    }`}
+                    key={audience.value}
+                    type="button"
+                    onClick={() => chooseAudience(audience.value)}
+                  >
+                    {audience.label}
+                  </button>
                 ))}
               </div>
-            ) : null}
-
-            <label>
-              Nombre del producto
-              <input name="productName" placeholder="Ej. Playera vaquera" required />
-            </label>
-            <div className={styles.twoColumns}>
-              <label>
-                Color
-                <input name="color" placeholder="Azul" />
-              </label>
-              <label>
-                Talla
-                <input name="size" placeholder="CH / M / G" />
-              </label>
             </div>
-            <div className={styles.twoColumns}>
-              <label>
-                Cantidad
-                <input min="1" name="quantity" inputMode="numeric" type="number" defaultValue="1" />
-              </label>
-            </div>
-            <label>
-              Precio
-              <input min="0" name="price" inputMode="decimal" step="0.01" type="number" placeholder="0.00" />
-            </label>
-            <label>
-              Notas
-              <textarea name="notes" rows="3" placeholder="Detalle opcional del producto" />
-            </label>
+          ) : null}
 
-            <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Guardando..." : "Listo"}
-            </button>
-          </Form>
+          {captureStep === "product" ? (
+            <div className={styles.choicePanel}>
+              <div className={styles.stepHeader}>
+                <div>
+                  <span>{audienceConfig(selectedAudience).label}</span>
+                  <h2>Qué producto vas a agregar</h2>
+                </div>
+                <button className={styles.textButton} type="button" onClick={() => setCaptureStep("audience")}>
+                  Cambiar
+                </button>
+              </div>
+              {Object.entries(garmentGroups).map(([section, sectionGarments]) => (
+                <div className={styles.productGroup} key={section}>
+                  <h3>{section}</h3>
+                  <div className={styles.productGrid}>
+                    {sectionGarments.map((garment) => (
+                      <button
+                        className={`${styles.choiceButton} ${
+                          selectedGarment === garment.value ? styles.choiceButtonActive : ""
+                        }`}
+                        key={garment.value}
+                        type="button"
+                        onClick={() => chooseGarment(garment.value)}
+                      >
+                        {garment.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {captureStep === "details" ? (
+            <>
+              <div className={styles.stepSummary}>
+                <div>
+                  <span>Persona</span>
+                  <strong>{audienceConfig(selectedAudience).label}</strong>
+                </div>
+                <div>
+                  <span>Producto</span>
+                  <strong>{garmentConfig(selectedGarment).label}</strong>
+                </div>
+                <button className={styles.textButton} type="button" onClick={() => setCaptureStep("product")}>
+                  Cambiar producto
+                </button>
+              </div>
+
+              <Form method="post" className={styles.locationForm}>
+                <input type="hidden" name="intent" value="advance_stock_location" />
+                <input type="hidden" name="shop" value={shop} />
+                <input type="hidden" name="audience" value={selectedAudience} />
+                <input type="hidden" name="currentLocation" value={suggestedLocation} />
+                <div>
+                  <span>Ubicacion sugerida</span>
+                  <strong>{suggestedLocation}</strong>
+                </div>
+                <button className={styles.secondaryButton} type="submit" disabled={isSubmitting}>
+                  Marcar llena y usar siguiente
+                </button>
+              </Form>
+
+              <Form method="post" className={styles.form}>
+                <input type="hidden" name="intent" value="create_stock_draft" />
+                <input type="hidden" name="shop" value={shop} />
+                <input type="hidden" name="audience" value={selectedAudience} />
+                <input type="hidden" name="garmentType" value={selectedGarment} />
+                {photos.map((photo) => (
+                  <input key={photo.id} type="hidden" name="photos" value={photo.dataUrl} />
+                ))}
+
+                <div className={styles.generatedPanel}>
+                  <span>
+                    SKU automatico
+                    <strong>{suggestedSku}</strong>
+                  </span>
+                  <span>
+                    Ubicacion
+                    <strong>{suggestedLocation}</strong>
+                  </span>
+                </div>
+
+                <label className={styles.photoPicker}>
+                  <span>Tomar o agregar fotos</span>
+                  <strong>{photos.length}/{MAX_STOCK_PHOTOS}</strong>
+                  <input accept="image/*" capture="environment" multiple type="file" onChange={handlePhotoFiles} />
+                </label>
+
+                {photos.length ? (
+                  <div className={styles.photoGrid}>
+                    {photos.map((photo) => (
+                      <figure className={styles.photoThumb} key={photo.id}>
+                        <img src={photo.dataUrl} alt={photo.name} />
+                        <button
+                          type="button"
+                          onClick={() => setPhotos((current) => current.filter((item) => item.id !== photo.id))}
+                        >
+                          Quitar
+                        </button>
+                      </figure>
+                    ))}
+                  </div>
+                ) : null}
+
+                <label>
+                  Nombre del producto
+                  <input name="productName" placeholder="Ej. Playera vaquera" required />
+                </label>
+                <div className={styles.twoColumns}>
+                  <label>
+                    Color
+                    <input name="color" placeholder="Azul" />
+                  </label>
+                  <label>
+                    Talla
+                    <input name="size" placeholder="CH / M / G" />
+                  </label>
+                </div>
+                <div className={styles.twoColumns}>
+                  <label>
+                    Cantidad
+                    <input min="1" name="quantity" inputMode="numeric" type="number" defaultValue="1" />
+                  </label>
+                </div>
+                <label>
+                  Precio
+                  <input min="0" name="price" inputMode="decimal" step="0.01" type="number" placeholder="0.00" />
+                </label>
+                <label>
+                  Notas
+                  <textarea name="notes" rows="3" placeholder="Detalle opcional del producto" />
+                </label>
+
+                <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Guardando..." : "Listo"}
+                </button>
+              </Form>
+            </>
+          ) : null}
         </section>
       ) : (
         <section className={styles.pendingLayout}>
