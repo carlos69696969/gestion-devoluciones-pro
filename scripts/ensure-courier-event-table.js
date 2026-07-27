@@ -318,6 +318,7 @@ await prisma.$executeRawUnsafe(`
     "id" SERIAL NOT NULL,
     "shop" TEXT NOT NULL,
     "audience" TEXT NOT NULL,
+    "garmentType" TEXT NOT NULL DEFAULT 'general',
     "currentLocation" TEXT NOT NULL,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -326,8 +327,17 @@ await prisma.$executeRawUnsafe(`
 `);
 
 await prisma.$executeRawUnsafe(`
-  CREATE UNIQUE INDEX IF NOT EXISTS "StockLocationState_shop_audience_key"
-  ON "StockLocationState"("shop", "audience")
+  ALTER TABLE "StockLocationState"
+  ADD COLUMN IF NOT EXISTS "garmentType" TEXT NOT NULL DEFAULT 'general'
+`);
+
+await prisma.$executeRawUnsafe(`
+  DROP INDEX IF EXISTS "StockLocationState_shop_audience_key"
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE UNIQUE INDEX IF NOT EXISTS "StockLocationState_shop_audience_garmentType_key"
+  ON "StockLocationState"("shop", "audience", "garmentType")
 `);
 
 await prisma.$executeRawUnsafe(`

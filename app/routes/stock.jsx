@@ -69,20 +69,20 @@ function nextStockSkuForPrefix(prefix, existingSkus = []) {
   return `${prefix}-${String(highestNumber + 1).padStart(3, "0")}`;
 }
 
-function defaultStockLocation(audience) {
-  return `${audienceConfig(audience).code}-A`;
+function defaultStockLocation(audience, garment) {
+  return `${audienceConfig(audience).label}-${garmentConfig(garment).label}-A1`;
 }
 
-function nextStockLocation(currentLocation, audience) {
-  const audienceCode = audienceConfig(audience).code;
-  const match = String(currentLocation || "").trim().toUpperCase().match(/^([HM])-([A-Z])(\d+)?$/);
-  const currentLetter = match?.[1] === audienceCode ? match[2] : "A";
-  const currentRound = match?.[1] === audienceCode ? Math.max(1, Number(match[3] || 1)) : 1;
+function nextStockLocation(currentLocation, audience, garment) {
+  const defaultLocation = defaultStockLocation(audience, garment);
+  const match = String(currentLocation || "").trim().toUpperCase().match(/-([A-Z])(\d+)$/);
+  const currentLetter = match?.[1] || "A";
+  const currentRound = Math.max(1, Number(match?.[2] || 1));
   if (currentLetter === "Z") {
-    return `${audienceCode}-A${currentRound + 1}`;
+    return `${audienceConfig(audience).label}-${garmentConfig(garment).label}-A${currentRound + 1}`;
   }
   const nextLetter = String.fromCharCode(currentLetter.charCodeAt(0) + 1);
-  return `${audienceCode}-${nextLetter}${currentRound > 1 ? currentRound : ""}`;
+  return defaultLocation.replace(/-[A-Z]\d+$/, `-${nextLetter}${currentRound}`);
 }
 
 function stockLabels() {
@@ -160,11 +160,15 @@ export async function loader({ request }) {
       }),
     ),
   );
-  const locationByAudience = Object.fromEntries(
-    STOCK_AUDIENCES.map((audience) => {
-      const location = locationRows.find((row) => row.audience === audience.value)?.currentLocation;
-      return [audience.value, location || defaultStockLocation(audience.value)];
-    }),
+  const locationByCategory = Object.fromEntries(
+    STOCK_AUDIENCES.flatMap((audience) =>
+      STOCK_GARMENTS.map((garment) => {
+        const location = locationRows.find(
+          (row) => row.audience === audience.value && row.garmentType === garment.value,
+        )?.currentLocation;
+        return [`${audience.value}:${garment.value}`, location || defaultStockLocation(audience.value, garment.value)];
+      }),
+    ),
   );
 
   return {
@@ -173,7 +177,7 @@ export async function loader({ request }) {
     audiences: STOCK_AUDIENCES,
     garments: STOCK_GARMENTS,
     nextSkuByCategory,
-    locationByAudience,
+    locationByCategory,
     error,
   };
 }
@@ -185,12 +189,13 @@ export async function action({ request }) {
 
   if (intent === "advance_stock_location") {
     const audience = normalizeAudience(formData.get("audience"));
+    const garmentType = normalizeGarment(formData.get("garmentType"));
     const currentLocation =
-      sanitizeText(formData.get("currentLocation"), 24) || defaultStockLocation(audience);
-    const nextLocation = nextStockLocation(currentLocation, audience);
+      sanitizeText(formData.get("currentLocation"), 80) || defaultStockLocation(audience, garmentType);
+    const nextLocation = nextStockLocation(currentLocation, audience, garmentType);
     await prisma.stockLocationState.upsert({
-      where: { shop_audience: { shop, audience } },
-      create: { shop, audience, currentLocation: nextLocation },
+      where: { shop_audience_garmentType: { shop, audience, garmentType } },
+      create: { shop, audience, garmentType, currentLocation: nextLocation },
       update: { currentLocation: nextLocation },
     });
     return redirect(`/stock?shop=${encodeURIComponent(shop)}`);
@@ -220,27 +225,35 @@ export async function action({ request }) {
     .filter(Boolean);
   const sku = nextStockSkuForPrefix(stockSkuPrefix(audience, garmentType), existingSkus);
   const locationState = await prisma.stockLocationState.findUnique({
-    where: { shop_audience: { shop, audience } },
+    where: { shop_audience_garmentType: { shop, audience, garmentType } },
   });
-  const locationCode = locationState?.currentLocation || defaultStockLocation(audience);
+  const locationCode = locationState?.currentLocation || defaultStockLocation(audience, garmentType);
+  const nextLocation = nextStockLocation(locationCode, audience, garmentType);
 
-  await prisma.stockProductDraft.create({
-    data: {
-      shop,
-      productName,
-      audience,
-      garmentType,
-      locationCode,
-      color: sanitizeText(formData.get("color"), 80) || null,
-      size: sanitizeText(formData.get("size"), 80) || null,
-      quantity,
-      sku,
-      price,
-      notes: sanitizeText(formData.get("notes"), 600) || null,
-      photos,
-      status: "pendiente",
-    },
-  });
+  await prisma.$transaction([
+    prisma.stockProductDraft.create({
+      data: {
+        shop,
+        productName,
+        audience,
+        garmentType,
+        locationCode,
+        color: sanitizeText(formData.get("color"), 80) || null,
+        size: sanitizeText(formData.get("size"), 80) || null,
+        quantity,
+        sku,
+        price,
+        notes: sanitizeText(formData.get("notes"), 600) || null,
+        photos,
+        status: "pendiente",
+      },
+    }),
+    prisma.stockLocationState.upsert({
+      where: { shop_audience_garmentType: { shop, audience, garmentType } },
+      create: { shop, audience, garmentType, currentLocation: nextLocation },
+      update: { currentLocation: nextLocation },
+    }),
+  ]);
 
   return redirect(`/stock?shop=${encodeURIComponent(shop)}&guardado=1`);
 }
@@ -282,7 +295,7 @@ async function compressImageFile(file) {
 }
 
 export default function StockPortal() {
-  const { shop, drafts, error, audiences, garments, nextSkuByCategory, locationByAudience } = useLoaderData();
+  const { shop, drafts, error, audiences, garments, nextSkuByCategory, locationByCategory } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const [searchParams] = useSearchParams();
@@ -296,7 +309,9 @@ export default function StockPortal() {
   const suggestedSku =
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
     nextStockSkuForPrefix(stockSkuPrefix(selectedAudience, selectedGarment), []);
-  const suggestedLocation = locationByAudience?.[selectedAudience] || defaultStockLocation(selectedAudience);
+  const suggestedLocation =
+    locationByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
+    defaultStockLocation(selectedAudience, selectedGarment);
   const selectedDraft = useMemo(
     () => drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) || drafts[0] || null,
     [drafts, selectedDraftId],
@@ -437,6 +452,7 @@ export default function StockPortal() {
                 <input type="hidden" name="intent" value="advance_stock_location" />
                 <input type="hidden" name="shop" value={shop} />
                 <input type="hidden" name="audience" value={selectedAudience} />
+                <input type="hidden" name="garmentType" value={selectedGarment} />
                 <input type="hidden" name="currentLocation" value={suggestedLocation} />
                 <div>
                   <span>Ubicacion sugerida</span>
