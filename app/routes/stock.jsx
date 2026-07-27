@@ -760,29 +760,6 @@ export default function StockPortal() {
                               );
                             })}
 
-                            {variant.pendingDeleteSize ? (
-                              <div className={styles.sizePromptBox}>
-                                <strong>¿Eliminar {variant.pendingDeleteSize}?</strong>
-                                <span>Se borrara la cantidad de esta talla.</span>
-                                <div className={styles.sizeConfirmActions}>
-                                  <button
-                                    className={styles.secondaryButton}
-                                    type="button"
-                                    onClick={() => cancelVariantSizeDelete(variant.id)}
-                                  >
-                                    No
-                                  </button>
-                                  <button
-                                    className={styles.primaryButton}
-                                    type="button"
-                                    onClick={() => removeSizeFromVariant(variant.id, variant.pendingDeleteSize)}
-                                  >
-                                    Si
-                                  </button>
-                                </div>
-                              </div>
-                            ) : null}
-
                             <button
                               className={styles.sizeDoneButton}
                               type="button"
@@ -829,6 +806,31 @@ export default function StockPortal() {
                                   onClick={() => confirmVariantSize(variant.id)}
                                 >
                                   Listo
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {variant.pendingDeleteSize ? (
+                          <div className={styles.stockModalBackdrop} role="presentation">
+                            <div className={styles.stockModal} role="dialog" aria-modal="true">
+                              <h3>¿Eliminar {variant.pendingDeleteSize}?</h3>
+                              <p>Se borrara la cantidad de esta talla.</p>
+                              <div className={styles.stockModalActions}>
+                                <button
+                                  className={styles.secondaryButton}
+                                  type="button"
+                                  onClick={() => cancelVariantSizeDelete(variant.id)}
+                                >
+                                  No
+                                </button>
+                                <button
+                                  className={styles.primaryButton}
+                                  type="button"
+                                  onClick={() => removeSizeFromVariant(variant.id, variant.pendingDeleteSize)}
+                                >
+                                  Si
                                 </button>
                               </div>
                             </div>

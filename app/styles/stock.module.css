@@ -412,33 +412,6 @@
   background: #eef6ff;
 }
 
-.sizePromptBox {
-  margin: 10px;
-  border: 1px solid #d9dee7;
-  border-radius: 12px;
-  background: #f9fafb;
-  padding: 10px;
-  display: grid;
-  gap: 8px;
-}
-
-.sizePromptBox strong {
-  color: #111827;
-  font-size: 14px;
-}
-
-.sizePromptBox span {
-  color: #5f6b7a;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.sizeConfirmActions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
 .sizeDoneButton {
   min-height: 44px;
   border: 0;
@@ -473,6 +446,13 @@
   margin: 0;
   color: #111827;
   font-size: 18px;
+}
+
+.stockModal p {
+  margin: 0;
+  color: #5f6b7a;
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .stockModal input {
