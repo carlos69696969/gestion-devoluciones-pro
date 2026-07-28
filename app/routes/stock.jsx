@@ -549,7 +549,7 @@ export default function StockPortal() {
   const { shop, drafts, stockUser, accessCode, error, audiences, garments, nextSkuByCategory, locationByCategory } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const savedFlag = searchParams.get("guardado");
   const [activeTab, setActiveTab] = useState("capturar");
   const [photos, setPhotos] = useState([]);
@@ -562,6 +562,8 @@ export default function StockPortal() {
   const [previewPhoto, setPreviewPhoto] = useState(null);
   const [photoZoom, setPhotoZoom] = useState({ scale: 1, x: 0, y: 0 });
   const photoGestureRef = useRef({ distance: 0, scale: 1, startX: 0, startY: 0 });
+  const pendingStockSaveRef = useRef(false);
+  const lastDraftCountRef = useRef(drafts.length);
   const isSubmitting = navigation.state !== "idle";
   const isPreparerStock = stockUser?.role === STOCK_USER_ROLES.PREPARER;
   const isProductPublisher = stockUser?.role === STOCK_USER_ROLES.PUBLISHER;
@@ -593,18 +595,28 @@ export default function StockPortal() {
         variant.sizes.length > 0,
     );
 
+  function resetStockCaptureFlow(clearSavedFlag = false) {
+    try {
+      window.localStorage.removeItem(captureDraftKey);
+    } catch (_error) {
+      // localStorage puede estar bloqueado; el guardado real ya se hizo en servidor.
+    }
+    setActiveTab("capturar");
+    setCaptureStep("audience");
+    setPhotos([]);
+    resetStockVariants();
+    setCaptureDraftLoaded(true);
+    if (clearSavedFlag) {
+      const nextParams = new URLSearchParams(window.location.search);
+      nextParams.delete("guardado");
+      setSearchParams(nextParams, { replace: true });
+    }
+  }
+
   useEffect(() => {
     if (savedFlag) {
-      try {
-        window.localStorage.removeItem(captureDraftKey);
-      } catch (_error) {
-        // localStorage puede estar bloqueado; el guardado real ya se hizo en servidor.
-      }
-      setActiveTab("capturar");
-      setCaptureStep("audience");
-      setPhotos([]);
-      resetStockVariants();
-      setCaptureDraftLoaded(true);
+      pendingStockSaveRef.current = false;
+      resetStockCaptureFlow(true);
       return;
     }
 
@@ -642,7 +654,20 @@ export default function StockPortal() {
     } finally {
       setCaptureDraftLoaded(true);
     }
-  }, [captureDraftKey, savedFlag]);
+  }, [captureDraftKey, savedFlag, setSearchParams]);
+
+  useEffect(() => {
+    if (navigation.state !== "idle") return;
+    if (pendingStockSaveRef.current && drafts.length > lastDraftCountRef.current) {
+      pendingStockSaveRef.current = false;
+      resetStockCaptureFlow();
+    }
+    lastDraftCountRef.current = drafts.length;
+  }, [drafts.length, navigation.state]);
+
+  useEffect(() => {
+    if (actionData?.error) pendingStockSaveRef.current = false;
+  }, [actionData?.error]);
 
   useEffect(() => {
     if (!captureDraftLoaded || savedFlag) return;
@@ -1025,7 +1050,13 @@ export default function StockPortal() {
                 </button>
               </div>
 
-              <Form method="post" className={styles.form}>
+              <Form
+                method="post"
+                className={styles.form}
+                onSubmit={() => {
+                  pendingStockSaveRef.current = true;
+                }}
+              >
                 <input type="hidden" name="intent" value="create_stock_draft" />
                 <input type="hidden" name="shop" value={shop} />
                 <input type="hidden" name="stockCode" value={accessCode || ""} />
