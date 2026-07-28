@@ -792,6 +792,7 @@
   display: grid;
   gap: 7px;
   margin-top: 6px;
+  max-width: 94px;
 }
 
 .detailSizeCheck {
@@ -799,9 +800,9 @@
   color: #111827;
   font-size: 13px;
   font-weight: 900;
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px;
   align-items: center;
-  justify-content: flex-start;
   gap: 10px;
   padding: 0;
 }
