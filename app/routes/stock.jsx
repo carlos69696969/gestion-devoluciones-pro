@@ -1366,7 +1366,6 @@ export default function StockPortal() {
       {stockUser ? (
         <header className={styles.header}>
           <div>
-            <p>Cariana</p>
             <h1>Portal stock</h1>
             <span className={styles.userLine}>
               {stockUserRoleLabel(stockUser.role)}: {stockUser.name}
