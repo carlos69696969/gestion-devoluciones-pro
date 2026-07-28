@@ -553,6 +553,7 @@ export default function StockPortal() {
   );
   const stockSizeMenuOpen = variantGroups.some((variant) => variant.sizeMenuOpen);
   const stockFormComplete =
+    photos.length > 0 &&
     variantGroups.length > 0 &&
     variantGroups.every(
       (variant) =>
