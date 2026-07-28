@@ -307,6 +307,10 @@ function stockLabels() {
   };
 }
 
+function stockUserRoleLabel(role) {
+  return role === STOCK_USER_ROLES.PUBLISHER ? "Publicador de productos" : "Preparador de stock";
+}
+
 function sanitizePhotoDataUrl(value) {
   const photo = String(value || "").trim();
   if (!photo.startsWith("data:image/")) return "";
