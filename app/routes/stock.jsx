@@ -572,6 +572,7 @@ export default function StockPortal() {
         // localStorage puede estar bloqueado; el guardado real ya se hizo en servidor.
       }
       setActiveTab("capturar");
+      setCaptureStep("audience");
       setPhotos([]);
       resetStockVariants();
       setCaptureDraftLoaded(true);
