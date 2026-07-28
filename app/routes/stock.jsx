@@ -4,7 +4,7 @@ import prisma from "../db.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
 import styles from "../styles/stock.module.css";
 
-const MAX_STOCK_PHOTOS = 8;
+const MAX_STOCK_PHOTOS = 10;
 const MAX_STOCK_PHOTO_CHARS = 1_250_000;
 const STOCK_CAPTURE_DRAFT_VERSION = 1;
 const STOCK_USER_ROLES = {
@@ -946,9 +946,9 @@ export default function StockPortal() {
                 </div>
 
                 <label className={styles.photoPicker}>
-                  <span>Tomar o agregar fotos</span>
+                  <span>Agregar fotos</span>
                   <strong>{photos.length}/{MAX_STOCK_PHOTOS}</strong>
-                  <input accept="image/*" capture="environment" multiple type="file" onChange={handlePhotoFiles} />
+                  <input accept="image/*" capture="environment" type="file" onChange={handlePhotoFiles} />
                 </label>
 
                 {photos.length ? (
@@ -957,10 +957,12 @@ export default function StockPortal() {
                       <figure className={styles.photoThumb} key={photo.id}>
                         <img src={photo.dataUrl} alt={photo.name} />
                         <button
+                          aria-label={`Quitar foto ${photo.name || ""}`}
+                          className={styles.removePhotoButton}
                           type="button"
                           onClick={() => setPhotos((current) => current.filter((item) => item.id !== photo.id))}
                         >
-                          Quitar
+                          X
                         </button>
                       </figure>
                     ))}

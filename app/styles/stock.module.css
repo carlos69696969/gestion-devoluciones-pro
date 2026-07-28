@@ -353,6 +353,7 @@
 .photoThumb,
 .downloadPhoto {
   margin: 0;
+  position: relative;
   display: grid;
   gap: 8px;
 }
@@ -369,7 +370,24 @@
   object-fit: cover;
 }
 
-.photoThumb button,
+.removePhotoButton {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 34px;
+  min-height: 34px;
+  border: 1px solid rgba(185, 28, 28, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #b42318;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+  font-size: 14px;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .downloadPhoto a {
   min-height: 36px;
   border: 1px solid #d9dee7;
