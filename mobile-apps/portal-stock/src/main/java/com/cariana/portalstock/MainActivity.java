@@ -3,11 +3,10 @@ package com.cariana.portalstock;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
-import android.content.ClipData;
 import android.content.ContentValues;
 import android.content.Intent;
-import android.content.pm.ResolveInfo;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -25,7 +24,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
-import java.util.List;
+import java.io.OutputStream;
 
 public class MainActivity extends Activity {
     private static final String SHOP_DOMAIN = "qc1u2w-ft.myshopify.com";
@@ -36,7 +35,7 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
-    private Uri pendingCameraUri;
+    private boolean cameraOptionWasOffered = false;
     private float pullStartY = 0f;
     private boolean trackingPullRefresh = false;
 
@@ -122,49 +121,33 @@ public class MainActivity extends Activity {
     }
 
     private Intent buildImageChooserIntent(WebChromeClient.FileChooserParams params) {
-        Intent galleryIntent;
-        if (params != null) {
-            galleryIntent = params.createIntent();
-        } else {
-            galleryIntent = new Intent(Intent.ACTION_GET_CONTENT);
-            galleryIntent.addCategory(Intent.CATEGORY_OPENABLE);
-            galleryIntent.setType("image/*");
-        }
+        Intent galleryIntent = new Intent(Intent.ACTION_GET_CONTENT);
+        galleryIntent.addCategory(Intent.CATEGORY_OPENABLE);
+        galleryIntent.setType("image/*");
 
         Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        pendingCameraUri = createCameraImageUri();
-        if (pendingCameraUri != null) {
-            cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, pendingCameraUri);
-            cameraIntent.setClipData(ClipData.newUri(getContentResolver(), "Foto stock", pendingCameraUri));
-            cameraIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            grantCameraUriPermissions(cameraIntent, pendingCameraUri);
-        }
+        cameraOptionWasOffered = cameraIntent.resolveActivity(getPackageManager()) != null;
 
         Intent chooserIntent = Intent.createChooser(galleryIntent, "Agregar fotos");
-        if (cameraIntent.resolveActivity(getPackageManager()) != null && pendingCameraUri != null) {
+        if (cameraOptionWasOffered) {
             chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[] { cameraIntent });
         }
         return chooserIntent;
     }
 
-    private void grantCameraUriPermissions(Intent cameraIntent, Uri cameraUri) {
-        List<ResolveInfo> cameraActivities = getPackageManager().queryIntentActivities(cameraIntent, 0);
-        for (ResolveInfo activity : cameraActivities) {
-            String packageName = activity.activityInfo.packageName;
-            grantUriPermission(
-                packageName,
-                cameraUri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            );
-        }
-    }
-
-    private Uri createCameraImageUri() {
+    private Uri saveCameraBitmap(Bitmap bitmap) {
+        if (bitmap == null) return null;
         try {
             ContentValues values = new ContentValues();
             values.put(MediaStore.Images.Media.DISPLAY_NAME, "stock_" + System.currentTimeMillis() + ".jpg");
             values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
-            return getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+            Uri imageUri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+            if (imageUri == null) return null;
+            try (OutputStream outputStream = getContentResolver().openOutputStream(imageUri)) {
+                if (outputStream == null) return null;
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, outputStream);
+            }
+            return imageUri;
         } catch (Exception error) {
             return null;
         }
@@ -250,14 +233,25 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != FILE_CHOOSER_REQUEST || filePathCallback == null) return;
         Uri[] results = null;
-        if (resultCode == RESULT_OK && (data == null || data.getData() == null) && pendingCameraUri != null) {
-            results = new Uri[] { pendingCameraUri };
-        } else {
+        if (resultCode == RESULT_OK && cameraOptionWasOffered && data != null && data.getExtras() != null) {
+            Object cameraBitmap = data.getExtras().get("data");
+            if (cameraBitmap instanceof Bitmap) {
+                Uri cameraImageUri = saveCameraBitmap((Bitmap) cameraBitmap);
+                if (cameraImageUri != null) {
+                    results = new Uri[] { cameraImageUri };
+                }
+            }
+        }
+        if (results == null) {
             results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
         }
-        filePathCallback.onReceiveValue(results);
+        if (results == null) {
+            filePathCallback.onReceiveValue(null);
+        } else {
+            filePathCallback.onReceiveValue(results);
+        }
         filePathCallback = null;
-        pendingCameraUri = null;
+        cameraOptionWasOffered = false;
     }
 
     @Override
