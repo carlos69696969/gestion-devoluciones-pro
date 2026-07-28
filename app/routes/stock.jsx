@@ -6,6 +6,7 @@ import styles from "../styles/stock.module.css";
 
 const MAX_STOCK_PHOTOS = 16;
 const MAX_STOCK_PHOTO_CHARS = 1_250_000;
+const ADMIN_API_VERSION = "2025-10";
 const STOCK_CAPTURE_DRAFT_VERSION = 1;
 const STOCK_USER_ROLES = {
   PREPARER: "preparador_stock",
@@ -70,9 +71,126 @@ function cleanShop(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function isMyShopifyDomain(value) {
+  return /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(String(value || "").trim());
+}
+
 function portalShopFromRequest(request) {
   const url = new URL(request.url);
   return cleanShop(url.searchParams.get("shop")) || cleanShop(process.env.SHOPIFY_SHOP_DOMAIN) || "portal-stock";
+}
+
+async function resolveStockShopSessions(shop) {
+  const requestedShop = cleanShop(shop);
+  const configuredShop = cleanShop(process.env.SHOPIFY_SHOP_DOMAIN);
+  const allSessions = await prisma.session.findMany({
+    select: { id: true, shop: true, isOnline: true, accessToken: true, scope: true },
+  });
+  const candidateShops = Array.from(
+    new Set(
+      [requestedShop, configuredShop, ...allSessions.map((session) => cleanShop(session.shop))]
+        .filter(Boolean)
+        .filter(isMyShopifyDomain),
+    ),
+  );
+  const sessions = [];
+  for (const candidateShop of candidateShops) {
+    const canonicalOfflineId = `offline_${candidateShop}`;
+    const matches = allSessions
+      .filter((session) => cleanShop(session.shop) === candidateShop && session.accessToken)
+      .sort((first, second) => {
+        if (first.id === canonicalOfflineId) return -1;
+        if (second.id === canonicalOfflineId) return 1;
+        if (first.isOnline === false && second.isOnline !== false) return -1;
+        if (second.isOnline === false && first.isOnline !== false) return 1;
+        return 0;
+      });
+    for (const session of matches) {
+      sessions.push({ shop: candidateShop, accessToken: String(session.accessToken || "").trim() });
+    }
+  }
+  return sessions.filter((session) => session.shop && session.accessToken);
+}
+
+async function shopifyStockGraphql({ shop, accessToken, query, variables }) {
+  const response = await fetch(`https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": accessToken,
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.errors?.length) {
+    throw new Error(payload?.errors?.[0]?.message || `No se pudo consultar inventario (${response.status}).`);
+  }
+  return payload.data;
+}
+
+async function fetchShopifyInventoryQuantityBySku({ sessions, sku }) {
+  const cleanSku = String(sku || "").trim();
+  if (!cleanSku || !sessions.length) return null;
+  let lastError = null;
+  for (const session of sessions) {
+    try {
+      const data = await shopifyStockGraphql({
+        shop: session.shop,
+        accessToken: session.accessToken,
+        query: `#graphql
+          query StockVariantInventoryBySku($query: String!) {
+            productVariants(first: 20, query: $query) {
+              nodes {
+                sku
+                inventoryQuantity
+              }
+            }
+          }`,
+        variables: { query: `sku:${cleanSku}` },
+      });
+      const variants = data?.productVariants?.nodes || [];
+      const matchingVariants = variants.filter(
+        (variant) => String(variant?.sku || "").trim().toLowerCase() === cleanSku.toLowerCase(),
+      );
+      if (!matchingVariants.length) return null;
+      return matchingVariants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastError) throw lastError;
+  return null;
+}
+
+async function syncReleasedStockLocations(shop) {
+  const cleanShopDomain = cleanShop(shop);
+  if (!cleanShopDomain) return;
+  const publishedDrafts = await prisma.stockProductDraft.findMany({
+    where: {
+      shop: cleanShopDomain,
+      status: "listo",
+      locationReleasedAt: null,
+      sku: { not: null },
+      locationCode: { not: null },
+    },
+    select: { id: true, sku: true },
+    orderBy: [{ publishedAt: "asc" }, { id: "asc" }],
+    take: 60,
+  });
+  if (!publishedDrafts.length) return;
+  const sessions = await resolveStockShopSessions(cleanShopDomain);
+  if (!sessions.length) return;
+  for (const draft of publishedDrafts) {
+    const quantity = await fetchShopifyInventoryQuantityBySku({ sessions, sku: draft.sku }).catch((error) => {
+      console.error("No se pudo consultar inventario de stock", { sku: draft.sku, error });
+      return null;
+    });
+    if (quantity === null || quantity > 0) continue;
+    await prisma.stockProductDraft.updateMany({
+      where: { id: draft.id, shop: cleanShopDomain, locationReleasedAt: null },
+      data: { locationReleasedAt: new Date() },
+    });
+  }
 }
 
 function sanitizeText(value, maxLength = 180) {
@@ -239,6 +357,7 @@ export async function loader({ request }) {
   let drafts = [];
   let skuRows = [];
   let locationRows = [];
+  let releasedLocationRows = [];
   let error = "";
   let stockUser = null;
   try {
@@ -251,7 +370,8 @@ export async function loader({ request }) {
     }
 
     if (stockUser) {
-      [drafts, skuRows, locationRows] = await Promise.all([
+      await syncReleasedStockLocations(shop);
+      [drafts, skuRows, locationRows, releasedLocationRows] = await Promise.all([
         prisma.stockProductDraft.findMany({
           where: { shop, status: "pendiente" },
           orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
@@ -263,6 +383,16 @@ export async function loader({ request }) {
         }),
         prisma.stockLocationState.findMany({
           where: { shop },
+        }),
+        prisma.stockProductDraft.findMany({
+          where: {
+            shop,
+            locationReleasedAt: { not: null },
+            locationReusedAt: null,
+            locationCode: { not: null },
+          },
+          select: { audience: true, garmentType: true, locationCode: true },
+          orderBy: [{ locationReleasedAt: "asc" }, { id: "asc" }],
         }),
       ]);
     }
@@ -282,10 +412,16 @@ export async function loader({ request }) {
   const locationByCategory = Object.fromEntries(
     STOCK_AUDIENCES.flatMap((audience) =>
       STOCK_GARMENTS.map((garment) => {
+        const releasedLocation = releasedLocationRows.find(
+          (row) => row.audience === audience.value && row.garmentType === garment.value,
+        )?.locationCode;
         const location = locationRows.find(
           (row) => row.audience === audience.value && row.garmentType === garment.value,
         )?.currentLocation;
-        return [`${audience.value}:${garment.value}`, location || defaultStockLocation(audience.value, garment.value)];
+        return [
+          `${audience.value}:${garment.value}`,
+          releasedLocation || location || defaultStockLocation(audience.value, garment.value),
+        ];
       }),
     ),
   );
@@ -407,13 +543,27 @@ export async function action({ request }) {
     .map((row) => row.sku)
     .filter(Boolean);
   const sku = nextStockSkuForPrefix(stockSkuPrefix(audience, garmentType), existingSkus);
+  await syncReleasedStockLocations(shop);
+  const releasedLocationDraft = await prisma.stockProductDraft.findFirst({
+    where: {
+      shop,
+      audience,
+      garmentType,
+      locationReleasedAt: { not: null },
+      locationReusedAt: null,
+      locationCode: { not: null },
+    },
+    select: { id: true, locationCode: true },
+    orderBy: [{ locationReleasedAt: "asc" }, { id: "asc" }],
+  });
   const locationState = await prisma.stockLocationState.findUnique({
     where: { shop_audience_garmentType: { shop, audience, garmentType } },
   });
-  const locationCode = locationState?.currentLocation || defaultStockLocation(audience, garmentType);
+  const locationCode =
+    releasedLocationDraft?.locationCode || locationState?.currentLocation || defaultStockLocation(audience, garmentType);
   const nextLocation = nextStockLocation(locationCode, audience, garmentType);
 
-  await prisma.$transaction([
+  const stockWriteOperations = [
     prisma.stockProductDraft.create({
       data: {
         shop,
@@ -433,12 +583,25 @@ export async function action({ request }) {
         preparedByStockUserId: stockUser.id,
       },
     }),
-    prisma.stockLocationState.upsert({
-      where: { shop_audience_garmentType: { shop, audience, garmentType } },
-      create: { shop, audience, garmentType, currentLocation: nextLocation },
-      update: { currentLocation: nextLocation },
-    }),
-  ]);
+  ];
+  if (releasedLocationDraft) {
+    stockWriteOperations.push(
+      prisma.stockProductDraft.update({
+        where: { id: releasedLocationDraft.id },
+        data: { locationReusedAt: new Date() },
+      }),
+    );
+  } else {
+    stockWriteOperations.push(
+      prisma.stockLocationState.upsert({
+        where: { shop_audience_garmentType: { shop, audience, garmentType } },
+        create: { shop, audience, garmentType, currentLocation: nextLocation },
+        update: { currentLocation: nextLocation },
+      }),
+    );
+  }
+
+  await prisma.$transaction(stockWriteOperations);
 
   return redirect(stockPortalHref("&guardado=1"));
 }

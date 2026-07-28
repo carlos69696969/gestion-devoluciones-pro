@@ -858,6 +858,8 @@ function normalizeStockUserRole(role) {
 }
 
 function serializeStockHistoryDraft(draft) {
+  const locationReleasedAt = draft.locationReleasedAt ? draft.locationReleasedAt.toISOString() : "";
+  const locationReusedAt = draft.locationReusedAt ? draft.locationReusedAt.toISOString() : "";
   return {
     id: draft.id,
     sku: draft.sku || "",
@@ -865,7 +867,60 @@ function serializeStockHistoryDraft(draft) {
     preparedByName: draft.preparedByStockUser?.name || "",
     publishedByName: draft.publishedByStockUser?.name || "",
     publishedAt: draft.publishedAt ? draft.publishedAt.toISOString() : "",
+    locationReleasedAt,
+    locationReusedAt,
+    locationStatus: locationReleasedAt ? (locationReusedAt ? "Reutilizada" : "Disponible") : "Ocupada",
   };
+}
+
+async function fetchStockInventoryQuantityBySku(admin, sku) {
+  const cleanSku = String(sku || "").trim();
+  if (!cleanSku) return null;
+  const response = await admin.graphql(
+    `#graphql
+    query StockVariantInventoryBySku($query: String!) {
+      productVariants(first: 20, query: $query) {
+        nodes {
+          sku
+          inventoryQuantity
+        }
+      }
+    }`,
+    { variables: { query: `sku:${cleanSku}` } },
+  );
+  const payload = await response.json();
+  const variants = payload?.data?.productVariants?.nodes || [];
+  const matchingVariants = variants.filter(
+    (variant) => String(variant?.sku || "").trim().toLowerCase() === cleanSku.toLowerCase(),
+  );
+  if (!matchingVariants.length) return null;
+  return matchingVariants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0);
+}
+
+async function syncReleasedStockLocationsFromShopify(admin, shop) {
+  const publishedDrafts = await prisma.stockProductDraft.findMany({
+    where: {
+      shop,
+      status: "listo",
+      locationReleasedAt: null,
+      sku: { not: null },
+      locationCode: { not: null },
+    },
+    select: { id: true, sku: true },
+    orderBy: [{ publishedAt: "asc" }, { id: "asc" }],
+    take: 80,
+  });
+  for (const draft of publishedDrafts) {
+    const quantity = await fetchStockInventoryQuantityBySku(admin, draft.sku).catch((error) => {
+      console.error("No se pudo sincronizar inventario de stock", { sku: draft.sku, error });
+      return null;
+    });
+    if (quantity === null || quantity > 0) continue;
+    await prisma.stockProductDraft.updateMany({
+      where: { id: draft.id, shop, locationReleasedAt: null },
+      data: { locationReleasedAt: new Date() },
+    });
+  }
 }
 
 function toFiniteNumber(value, fallback = 0) {
@@ -4087,6 +4142,13 @@ export const loader = async ({ request }) => {
           }),
         )
       : [];
+  if (viewMode === VIEW_MODE.STOCK) {
+    await safeLoaderArray("No se pudo sincronizar el inventario de stock", async () => {
+      await ensureStockUserTable(prisma);
+      await syncReleasedStockLocationsFromShopify(admin, session.shop);
+      return [];
+    });
+  }
   const stockUsers =
     viewMode === VIEW_MODE.STOCK
       ? await safeLoaderArray("No se pudieron cargar los usuarios de stock", async () => {
@@ -9243,6 +9305,9 @@ function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }
                     <div className={styles.stockHistoryDetails}>
                       <span>
                         Ubicacion: <strong>{draft.locationCode || "-"}</strong>
+                      </span>
+                      <span>
+                        Estado ubicacion: <strong>{draft.locationStatus || "-"}</strong>
                       </span>
                       <span>
                         Preparador de stock: <strong>{draft.preparedByName || "-"}</strong>

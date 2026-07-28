@@ -18,6 +18,8 @@ export async function ensureStockUserTable(prisma) {
   await prisma.$executeRawUnsafe(`ALTER TABLE "StockProductDraft" ADD COLUMN IF NOT EXISTS "preparedByStockUserId" INTEGER`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "StockProductDraft" ADD COLUMN IF NOT EXISTS "publishedByStockUserId" INTEGER`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "StockProductDraft" ADD COLUMN IF NOT EXISTS "publishedAt" TIMESTAMP(3)`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "StockProductDraft" ADD COLUMN IF NOT EXISTS "locationReleasedAt" TIMESTAMP(3)`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "StockProductDraft" ADD COLUMN IF NOT EXISTS "locationReusedAt" TIMESTAMP(3)`);
   await prisma.$executeRawUnsafe(
     `CREATE INDEX IF NOT EXISTS "StockProductDraft_shop_publishedAt_idx" ON "StockProductDraft"("shop", "publishedAt")`,
   );
@@ -26,5 +28,8 @@ export async function ensureStockUserTable(prisma) {
   );
   await prisma.$executeRawUnsafe(
     `CREATE INDEX IF NOT EXISTS "StockProductDraft_publishedByStockUserId_idx" ON "StockProductDraft"("publishedByStockUserId")`,
+  );
+  await prisma.$executeRawUnsafe(
+    `CREATE INDEX IF NOT EXISTS "StockProductDraft_shop_locationReleasedAt_idx" ON "StockProductDraft"("shop", "locationReleasedAt")`,
   );
 }

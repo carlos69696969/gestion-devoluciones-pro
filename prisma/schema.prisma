@@ -288,6 +288,8 @@ model StockProductDraft {
   preparedByStockUserId Int?
   publishedByStockUserId Int?
   publishedAt DateTime?
+  locationReleasedAt DateTime?
+  locationReusedAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   preparedByStockUser StockUser? @relation("StockPreparedProducts", fields: [preparedByStockUserId], references: [id])
@@ -298,6 +300,7 @@ model StockProductDraft {
   @@index([shop, audience, garmentType])
   @@index([shop, locationCode])
   @@index([shop, publishedAt])
+  @@index([shop, locationReleasedAt])
 }
 
 model StockLocationState {
