@@ -1364,6 +1364,9 @@ export default function StockPortal() {
           <div>
             <p>Cariana</p>
             <h1>Portal stock</h1>
+            <span className={styles.userLine}>
+              {stockUserRoleLabel(stockUser.role)}: {stockUser.name}
+            </span>
           </div>
         </header>
       ) : null}
@@ -1669,7 +1672,11 @@ export default function StockPortal() {
           ) : null}
         </section>
       ) : isProductPublisher ? (
-        <section className={`${styles.pendingLayout} ${selectedDraft ? styles.publisherDetailLayout : ""}`}>
+        <section
+          className={`${styles.pendingLayout} ${
+            selectedDraft ? styles.publisherDetailLayout : styles.publisherListLayout
+          }`}
+        >
           {!selectedDraft ? (
           <div className={styles.listCard}>
             <h2>Productos listos</h2>
