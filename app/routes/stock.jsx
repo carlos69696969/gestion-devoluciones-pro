@@ -20,6 +20,7 @@ const STOCK_PUBLICATION_LOCK_MS = 2 * 60 * 1000;
 const STOCK_PUBLICATION_REFRESH_MS = 5000;
 const STOCK_PUBLICATION_HEARTBEAT_MS = 30000;
 const STOCK_CAPTURE_DRAFT_VERSION = 1;
+const STOCK_TIME_ZONE = "America/Mexico_City";
 const STOCK_USER_ROLES = {
   PREPARER: "preparador_stock",
   PUBLISHER: "publicador_productos",
@@ -311,6 +312,29 @@ function stockUserRoleLabel(role) {
   return role === STOCK_USER_ROLES.PUBLISHER ? "Publicador de productos" : "Preparador de stock";
 }
 
+function stockMexicoDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: STOCK_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const partMap = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${partMap.year}-${partMap.month}-${partMap.day}`;
+}
+
+function formatStockHistoryTime(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone: STOCK_TIME_ZONE,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function sanitizePhotoDataUrl(value) {
   const photo = String(value || "").trim();
   if (!photo.startsWith("data:image/")) return "";
@@ -383,6 +407,15 @@ function serializeStockUser(stockUser) {
   };
 }
 
+function serializePreparedStockHistory(draft) {
+  return {
+    id: draft.id,
+    sku: draft.sku || "",
+    createdAt: draft.createdAt.toISOString(),
+    time: formatStockHistoryTime(draft.createdAt),
+  };
+}
+
 export const headers = () => ({
   "Cache-Control": "no-store, max-age=0",
   "X-Robots-Tag": "noindex, nofollow",
@@ -396,6 +429,7 @@ export async function loader({ request }) {
   let skuRows = [];
   let locationRows = [];
   let releasedLocationRows = [];
+  let preparedHistoryRows = [];
   let error = "";
   let stockUser = null;
   try {
@@ -410,7 +444,7 @@ export async function loader({ request }) {
     if (stockUser) {
       await syncReleasedStockLocations(shop);
       await clearExpiredStockPublicationLocks(shop);
-      [drafts, skuRows, locationRows, releasedLocationRows] = await Promise.all([
+      [drafts, skuRows, locationRows, releasedLocationRows, preparedHistoryRows] = await Promise.all([
         prisma.stockProductDraft.findMany({
           where: { shop, status: "pendiente" },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -433,6 +467,18 @@ export async function loader({ request }) {
           select: { audience: true, garmentType: true, locationCode: true },
           orderBy: [{ locationReleasedAt: "asc" }, { id: "asc" }],
         }),
+        stockUser.role === STOCK_USER_ROLES.PREPARER
+          ? prisma.stockProductDraft.findMany({
+              where: {
+                shop,
+                preparedByStockUserId: stockUser.id,
+                createdAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) },
+              },
+              select: { id: true, sku: true, createdAt: true },
+              orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+              take: 120,
+            })
+          : Promise.resolve([]),
       ]);
     }
   } catch (loadError) {
@@ -468,6 +514,9 @@ export async function loader({ request }) {
   return {
     shop,
     drafts: drafts.map((draft) => serializeDraft(draft, stockUser?.id)),
+    preparedHistory: preparedHistoryRows
+      .filter((draft) => stockMexicoDateKey(draft.createdAt) === stockMexicoDateKey(new Date()))
+      .map(serializePreparedStockHistory),
     stockUser: serializeStockUser(stockUser),
     accessCode: stockUser ? accessCode : "",
     audiences: STOCK_AUDIENCES,
@@ -832,7 +881,18 @@ async function compressImageFile(file) {
 }
 
 export default function StockPortal() {
-  const { shop, drafts, stockUser, accessCode, error, audiences, garments, nextSkuByCategory, locationByCategory } = useLoaderData();
+  const {
+    shop,
+    drafts,
+    preparedHistory = [],
+    stockUser,
+    accessCode,
+    error,
+    audiences,
+    garments,
+    nextSkuByCategory,
+    locationByCategory,
+  } = useLoaderData();
   const actionData = useActionData();
   const publishStockFetcher = useFetcher();
   const lockStockFetcher = useFetcher();
@@ -852,6 +912,7 @@ export default function StockPortal() {
   const [selectedAudience, setSelectedAudience] = useState(audiences?.[0]?.value || "hombre");
   const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
   const [captureStep, setCaptureStep] = useState("audience");
+  const [showPreparedHistory, setShowPreparedHistory] = useState(false);
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -936,6 +997,7 @@ export default function StockPortal() {
     }
     setActiveTab("capturar");
     setCaptureStep("audience");
+    setShowPreparedHistory(false);
     setPhotos([]);
     resetStockVariants();
     setCaptureDraftLoaded(true);
@@ -1215,6 +1277,7 @@ export default function StockPortal() {
   }
 
   function chooseAudience(value) {
+    setShowPreparedHistory(false);
     setSelectedAudience(value);
     setCaptureStep("product");
   }
@@ -1485,9 +1548,38 @@ export default function StockPortal() {
 
       {isPreparerStock && activeTab === "capturar" ? (
         <section className={styles.card}>
-          {captureStep === "audience" ? (
+          {captureStep === "audience" && !showPreparedHistory ? (
+            <button className={styles.slimHistoryButton} type="button" onClick={() => setShowPreparedHistory(true)}>
+              Historial
+            </button>
+          ) : null}
+
+          {captureStep === "audience" && showPreparedHistory ? (
+            <div className={styles.preparedHistoryPanel}>
+              <div className={styles.stepHeader}>
+                <h2>Historial del dia</h2>
+                <button className={styles.textButton} type="button" onClick={() => setShowPreparedHistory(false)}>
+                  Regresar
+                </button>
+              </div>
+              {preparedHistory.length ? (
+                <div className={styles.preparedHistoryList}>
+                  {preparedHistory.map((item) => (
+                    <div className={styles.preparedHistoryRow} key={item.id}>
+                      <strong>{item.sku || "-"}</strong>
+                      <span>{item.time || "-"}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className={styles.empty}>Todavia no hay productos guardados hoy.</p>
+              )}
+            </div>
+          ) : null}
+
+          {captureStep === "audience" && !showPreparedHistory ? (
             <div className={styles.choicePanel}>
-              <h2>Para quién es este producto</h2>
+              <h2 className={styles.audienceTitle}>Para quién es este producto</h2>
               <div className={styles.choiceGrid}>
                 {(audiences || STOCK_AUDIENCES).map((audience) => (
                   <button

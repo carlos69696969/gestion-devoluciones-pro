@@ -193,6 +193,60 @@
   line-height: 1.15;
 }
 
+.choicePanel .audienceTitle {
+  font-size: 20px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.slimHistoryButton {
+  width: 100%;
+  min-height: 38px;
+  margin: 0 0 12px;
+  border: 1px solid #ccd3dd;
+  border-radius: 999px;
+  background: #fff;
+  color: #005bd3;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.preparedHistoryPanel {
+  display: grid;
+  gap: 12px;
+}
+
+.preparedHistoryList {
+  display: grid;
+  gap: 8px;
+}
+
+.preparedHistoryRow {
+  min-height: 44px;
+  border: 1px solid #d9dee7;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.preparedHistoryRow strong {
+  color: #111827;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.preparedHistoryRow span {
+  color: #5f6b7a;
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .choiceGrid,
 .productGrid {
   display: grid;
