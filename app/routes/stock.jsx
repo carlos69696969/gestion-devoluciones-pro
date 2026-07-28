@@ -594,6 +594,7 @@ export async function action({ request }) {
       },
       data: {
         status: "listo",
+        photos: [],
         publishedByStockUserId: stockUser.id,
         publishedAt: new Date(),
         publishingLockedByStockUserId: null,
