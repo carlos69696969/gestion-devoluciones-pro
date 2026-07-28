@@ -3,11 +3,13 @@ package com.cariana.portalstock;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -31,6 +33,7 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
+    private Uri pendingCameraUri;
     private float pullStartY = 0f;
     private boolean trackingPullRefresh = false;
 
@@ -104,7 +107,7 @@ public class MainActivity extends Activity {
             }
             filePathCallback = callback;
             try {
-                Intent chooserIntent = params.createIntent();
+                Intent chooserIntent = buildImageChooserIntent(params);
                 startActivityForResult(chooserIntent, FILE_CHOOSER_REQUEST);
             } catch (ActivityNotFoundException error) {
                 filePathCallback = null;
@@ -112,6 +115,41 @@ public class MainActivity extends Activity {
                 return false;
             }
             return true;
+        }
+    }
+
+    private Intent buildImageChooserIntent(WebChromeClient.FileChooserParams params) {
+        Intent galleryIntent;
+        if (params != null) {
+            galleryIntent = params.createIntent();
+        } else {
+            galleryIntent = new Intent(Intent.ACTION_GET_CONTENT);
+            galleryIntent.addCategory(Intent.CATEGORY_OPENABLE);
+            galleryIntent.setType("image/*");
+        }
+
+        Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        pendingCameraUri = createCameraImageUri();
+        if (pendingCameraUri != null) {
+            cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, pendingCameraUri);
+            cameraIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        }
+
+        Intent chooserIntent = Intent.createChooser(galleryIntent, "Agregar fotos");
+        if (cameraIntent.resolveActivity(getPackageManager()) != null && pendingCameraUri != null) {
+            chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[] { cameraIntent });
+        }
+        return chooserIntent;
+    }
+
+    private Uri createCameraImageUri() {
+        try {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Images.Media.DISPLAY_NAME, "stock_" + System.currentTimeMillis() + ".jpg");
+            values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+            return getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+        } catch (Exception error) {
+            return null;
         }
     }
 
@@ -194,9 +232,15 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != FILE_CHOOSER_REQUEST || filePathCallback == null) return;
-        Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+        Uri[] results = null;
+        if (resultCode == RESULT_OK && (data == null || data.getData() == null) && pendingCameraUri != null) {
+            results = new Uri[] { pendingCameraUri };
+        } else {
+            results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+        }
         filePathCallback.onReceiveValue(results);
         filePathCallback = null;
+        pendingCameraUri = null;
     }
 
     @Override
