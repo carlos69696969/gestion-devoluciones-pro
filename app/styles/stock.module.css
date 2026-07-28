@@ -365,6 +365,16 @@
   gap: 8px;
 }
 
+.photoPreviewButton {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+  font: inherit;
+}
+
 .photoThumb img,
 .downloadPhoto img,
 .draftButton img,
@@ -393,6 +403,58 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.photoViewerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.92);
+  display: grid;
+  place-items: stretch;
+}
+
+.photoViewer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.photoViewerClose {
+  justify-self: end;
+  min-height: 42px;
+  margin: 14px;
+  padding: 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #111827;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+}
+
+.photoViewerStage {
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  touch-action: none;
+}
+
+.photoViewerStage img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: center center;
+  transition: transform 0.08s linear;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .downloadPhoto a {

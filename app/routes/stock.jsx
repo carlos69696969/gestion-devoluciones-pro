@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Form, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import prisma from "../db.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
@@ -530,6 +530,9 @@ export default function StockPortal() {
   const [captureStep, setCaptureStep] = useState("audience");
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
+  const [previewPhoto, setPreviewPhoto] = useState(null);
+  const [photoZoom, setPhotoZoom] = useState({ scale: 1, x: 0, y: 0 });
+  const photoGestureRef = useRef({ distance: 0, scale: 1, startX: 0, startY: 0 });
   const isSubmitting = navigation.state !== "idle";
   const isPreparerStock = stockUser?.role === STOCK_USER_ROLES.PREPARER;
   const isProductPublisher = stockUser?.role === STOCK_USER_ROLES.PUBLISHER;
@@ -805,6 +808,74 @@ export default function StockPortal() {
     });
   }
 
+  function openPhotoPreview(photo) {
+    setPreviewPhoto(photo);
+    setPhotoZoom({ scale: 1, x: 0, y: 0 });
+    photoGestureRef.current = { distance: 0, scale: 1, startX: 0, startY: 0 };
+  }
+
+  function closePhotoPreview() {
+    setPreviewPhoto(null);
+    setPhotoZoom({ scale: 1, x: 0, y: 0 });
+  }
+
+  function touchDistance(touches) {
+    if (!touches || touches.length < 2) return 0;
+    const deltaX = touches[0].clientX - touches[1].clientX;
+    const deltaY = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+  }
+
+  function handlePreviewTouchStart(event) {
+    if (event.touches.length === 2) {
+      photoGestureRef.current = {
+        ...photoGestureRef.current,
+        distance: touchDistance(event.touches),
+        scale: photoZoom.scale,
+      };
+      return;
+    }
+    if (event.touches.length === 1 && photoZoom.scale > 1) {
+      photoGestureRef.current = {
+        ...photoGestureRef.current,
+        startX: event.touches[0].clientX - photoZoom.x,
+        startY: event.touches[0].clientY - photoZoom.y,
+      };
+    }
+  }
+
+  function handlePreviewTouchMove(event) {
+    if (event.touches.length === 2) {
+      event.preventDefault();
+      const initialDistance = photoGestureRef.current.distance || touchDistance(event.touches);
+      const nextScale = Math.min(
+        4,
+        Math.max(1, photoGestureRef.current.scale * (touchDistance(event.touches) / initialDistance)),
+      );
+      setPhotoZoom((current) => ({
+        ...current,
+        scale: nextScale,
+        x: nextScale === 1 ? 0 : current.x,
+        y: nextScale === 1 ? 0 : current.y,
+      }));
+      return;
+    }
+    if (event.touches.length === 1 && photoZoom.scale > 1) {
+      event.preventDefault();
+      setPhotoZoom((current) => ({
+        ...current,
+        x: event.touches[0].clientX - photoGestureRef.current.startX,
+        y: event.touches[0].clientY - photoGestureRef.current.startY,
+      }));
+    }
+  }
+
+  function handlePreviewTouchEnd() {
+    if (photoZoom.scale <= 1.02) {
+      setPhotoZoom({ scale: 1, x: 0, y: 0 });
+    }
+  }
+
   const garmentGroups = useMemo(() => {
     return (garments || STOCK_GARMENTS)
       .filter((garment) => !garment.audiences || garment.audiences.includes(selectedAudience))
@@ -963,7 +1034,13 @@ export default function StockPortal() {
                   <div className={styles.photoGrid}>
                     {photos.map((photo) => (
                       <figure className={styles.photoThumb} key={photo.id}>
-                        <img src={photo.dataUrl} alt={photo.name} />
+                        <button
+                          className={styles.photoPreviewButton}
+                          type="button"
+                          onClick={() => openPhotoPreview(photo)}
+                        >
+                          <img src={photo.dataUrl} alt={photo.name} />
+                        </button>
                         <button
                           aria-label={`Quitar foto ${photo.name || ""}`}
                           className={styles.removePhotoButton}
@@ -1231,7 +1308,18 @@ export default function StockPortal() {
                 <div className={styles.downloadGrid}>
                   {selectedDraft.photos.map((photo, index) => (
                     <figure className={styles.downloadPhoto} key={`${selectedDraft.id}-${index}`}>
-                      <img src={photo} alt={`${selectedDraft.productName} ${index + 1}`} />
+                      <button
+                        className={styles.photoPreviewButton}
+                        type="button"
+                        onClick={() =>
+                          openPhotoPreview({
+                            dataUrl: photo,
+                            name: `${selectedDraft.productName || "producto"} ${index + 1}`,
+                          })
+                        }
+                      >
+                        <img src={photo} alt={`${selectedDraft.productName} ${index + 1}`} />
+                      </button>
                       <a href={photo} download={`${selectedDraft.sku || selectedDraft.productName}-foto-${index + 1}.jpg`}>
                         Descargar foto
                       </a>
@@ -1244,6 +1332,32 @@ export default function StockPortal() {
             </article>
           ) : null}
         </section>
+      ) : null}
+      {previewPhoto ? (
+        <div className={styles.photoViewerBackdrop} role="presentation">
+          <div className={styles.photoViewer} role="dialog" aria-modal="true">
+            <button className={styles.photoViewerClose} type="button" onClick={closePhotoPreview}>
+              Cerrar
+            </button>
+            <div
+              className={styles.photoViewerStage}
+              onTouchStart={handlePreviewTouchStart}
+              onTouchMove={handlePreviewTouchMove}
+              onTouchEnd={handlePreviewTouchEnd}
+              onClick={(event) => {
+                if (event.currentTarget === event.target) closePhotoPreview();
+              }}
+            >
+              <img
+                src={previewPhoto.dataUrl}
+                alt={previewPhoto.name || "Foto del producto"}
+                style={{
+                  transform: `translate3d(${photoZoom.x}px, ${photoZoom.y}px, 0) scale(${photoZoom.scale})`,
+                }}
+              />
+            </div>
+          </div>
+        </div>
       ) : null}
     </main>
   );
