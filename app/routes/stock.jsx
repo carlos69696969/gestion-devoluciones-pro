@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Form, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
+import { Form, redirect, useActionData, useFetcher, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import prisma from "../db.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
 import styles from "../styles/stock.module.css";
@@ -353,6 +353,26 @@ export async function action({ request }) {
     return redirect(stockPortalHref());
   }
 
+  if (intent === "publish_stock_draft") {
+    if (stockUser?.role !== STOCK_USER_ROLES.PUBLISHER) {
+      return { ok: false, error: "Solo un publicador de productos puede marcar productos como listos." };
+    }
+    const draftId = Number(formData.get("draftId") || 0);
+    if (!draftId) return { ok: false, error: "Producto de stock invalido." };
+    const updatedDraft = await prisma.stockProductDraft.updateMany({
+      where: { id: draftId, shop, status: "pendiente" },
+      data: {
+        status: "listo",
+        publishedByStockUserId: stockUser.id,
+        publishedAt: new Date(),
+      },
+    });
+    if (!updatedDraft.count) {
+      return { ok: false, error: "No se encontro el producto pendiente o ya fue marcado como listo." };
+    }
+    return redirect(stockPortalHref("&publicado=1"));
+  }
+
   if (intent !== "create_stock_draft") {
     return { ok: false, error: "Accion no reconocida." };
   }
@@ -410,6 +430,7 @@ export async function action({ request }) {
         photos,
         variants,
         status: "pendiente",
+        preparedByStockUserId: stockUser.id,
       },
     }),
     prisma.stockLocationState.upsert({
@@ -548,6 +569,7 @@ async function compressImageFile(file) {
 export default function StockPortal() {
   const { shop, drafts, stockUser, accessCode, error, audiences, garments, nextSkuByCategory, locationByCategory } = useLoaderData();
   const actionData = useActionData();
+  const publishStockFetcher = useFetcher();
   const navigation = useNavigation();
   const [searchParams, setSearchParams] = useSearchParams();
   const savedFlag = searchParams.get("guardado");
@@ -561,6 +583,7 @@ export default function StockPortal() {
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
   const [photoZoom, setPhotoZoom] = useState({ scale: 1, x: 0, y: 0 });
+  const [checkedStockItems, setCheckedStockItems] = useState({});
   const photoGestureRef = useRef({ distance: 0, scale: 1, startX: 0, startY: 0 });
   const pendingStockSaveRef = useRef(false);
   const lastDraftCountRef = useRef(drafts.length);
@@ -578,6 +601,19 @@ export default function StockPortal() {
     () => drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) || drafts[0] || null,
     [drafts, selectedDraftId],
   );
+  const selectedDraftVariants = useMemo(() => stockDisplayVariants(selectedDraft), [selectedDraft]);
+  const selectedDraftChecklistKeys = useMemo(() => {
+    if (!selectedDraft) return [];
+    return [
+      `draft:${selectedDraft.id}:sku`,
+      ...selectedDraftVariants.flatMap((variant, variantIndex) =>
+        variant.sizes.map((sizeRow) => `draft:${selectedDraft.id}:variant:${variantIndex}:size:${sizeRow.size}`),
+      ),
+    ];
+  }, [selectedDraft, selectedDraftVariants]);
+  const isSelectedDraftPublishReady =
+    selectedDraftChecklistKeys.length > 1 &&
+    selectedDraftChecklistKeys.every((key) => checkedStockItems[key]);
   const currentStockSizes = useMemo(
     () => stockSizesFor(selectedAudience, selectedGarment),
     [selectedAudience, selectedGarment],
@@ -594,6 +630,10 @@ export default function StockPortal() {
         Array.isArray(variant.sizes) &&
         variant.sizes.length > 0,
     );
+
+  const toggleStockChecklistItem = (key) => {
+    setCheckedStockItems((current) => ({ ...current, [key]: !current[key] }));
+  };
 
   function resetStockCaptureFlow(clearSavedFlag = false) {
     try {
@@ -1343,18 +1383,44 @@ export default function StockPortal() {
                     <dt>SKU</dt>
                     <dd>
                       <span>{selectedDraft.sku || "-"}</span>
-                      <input type="checkbox" aria-label={`SKU listo ${selectedDraft.sku || ""}`} />
+                      <input
+                        type="checkbox"
+                        aria-label={`SKU listo ${selectedDraft.sku || ""}`}
+                        checked={Boolean(checkedStockItems[`draft:${selectedDraft.id}:sku`])}
+                        onChange={() => toggleStockChecklistItem(`draft:${selectedDraft.id}:sku`)}
+                      />
                     </dd>
                   </div>
                   <div>
                     <dt>Precio</dt>
                     <dd>{money(selectedDraft.price)}</dd>
                   </div>
+                  <publishStockFetcher.Form
+                    method="post"
+                    className={styles.stockPublishForm}
+                    onSubmit={(event) => {
+                      if (!window.confirm(`¿Marcar ${selectedDraft.sku || selectedDraft.locationCode} como listo?`)) {
+                        event.preventDefault();
+                      }
+                    }}
+                  >
+                    <input type="hidden" name="intent" value="publish_stock_draft" />
+                    <input type="hidden" name="shop" value={shop} />
+                    <input type="hidden" name="stockCode" value={accessCode || ""} />
+                    <input type="hidden" name="draftId" value={selectedDraft.id} />
+                    <button
+                      className={styles.primaryButton}
+                      type="submit"
+                      disabled={publishStockFetcher.state !== "idle" || !isSelectedDraftPublishReady}
+                    >
+                      {publishStockFetcher.state !== "idle" ? "Guardando..." : "Listo"}
+                    </button>
+                  </publishStockFetcher.Form>
                 </div>
                 <div className={styles.detailColorCard}>
                   <dt>Color</dt>
                   <dd>
-                    {stockDisplayVariants(selectedDraft).map((variant, variantIndex) => (
+                    {selectedDraftVariants.map((variant, variantIndex) => (
                       <div className={styles.detailColorRow} key={`${selectedDraft.id}-color-${variantIndex}`}>
                         <strong>{variant.color || "-"}</strong>
                         {variant.sizes.length ? (
@@ -1367,7 +1433,20 @@ export default function StockPortal() {
                                 <span>
                                   {sizeRow.size}=({sizeRow.quantity})
                                 </span>
-                                <input type="checkbox" aria-label={`Listo ${sizeRow.size}`} />
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Listo ${variant.color || "color"} ${sizeRow.size}`}
+                                  checked={Boolean(
+                                    checkedStockItems[
+                                      `draft:${selectedDraft.id}:variant:${variantIndex}:size:${sizeRow.size}`
+                                    ],
+                                  )}
+                                  onChange={() =>
+                                    toggleStockChecklistItem(
+                                      `draft:${selectedDraft.id}:variant:${variantIndex}:size:${sizeRow.size}`,
+                                    )
+                                  }
+                                />
                               </label>
                             ))}
                           </div>
@@ -1377,6 +1456,9 @@ export default function StockPortal() {
                   </dd>
                 </div>
               </dl>
+              {publishStockFetcher.data?.error ? (
+                <p className={styles.error}>{publishStockFetcher.data.error}</p>
+              ) : null}
               {selectedDraft.notes ? <p className={styles.notes}>{selectedDraft.notes}</p> : null}
             </article>
           ) : null}

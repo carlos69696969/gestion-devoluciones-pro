@@ -857,6 +857,17 @@ function normalizeStockUserRole(role) {
   return value === STOCK_USER_ROLES.PUBLISHER ? STOCK_USER_ROLES.PUBLISHER : STOCK_USER_ROLES.PREPARER;
 }
 
+function serializeStockHistoryDraft(draft) {
+  return {
+    id: draft.id,
+    sku: draft.sku || "",
+    locationCode: draft.locationCode || "",
+    preparedByName: draft.preparedByStockUser?.name || "",
+    publishedByName: draft.publishedByStockUser?.name || "",
+    publishedAt: draft.publishedAt ? draft.publishedAt.toISOString() : "",
+  };
+}
+
 function toFiniteNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -4086,6 +4097,20 @@ export const loader = async ({ request }) => {
           });
         })
       : [];
+  const stockHistoryDrafts =
+    viewMode === VIEW_MODE.STOCK
+      ? await safeLoaderArray("No se pudo cargar el historial de stock", () =>
+          prisma.stockProductDraft.findMany({
+            where: { shop: session.shop, status: "listo" },
+            include: {
+              preparedByStockUser: { select: { name: true } },
+              publishedByStockUser: { select: { name: true } },
+            },
+            orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+            take: 100,
+          }),
+        )
+      : [];
   if (
     (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryActivity) &&
     couriers.length
@@ -4176,6 +4201,7 @@ export const loader = async ({ request }) => {
     couriers,
     preparers,
     stockUsers,
+    stockHistoryDrafts: stockHistoryDrafts.map(serializeStockHistoryDraft),
     preparerAssignments,
     preparerRouteActivities,
     courierActivities,
@@ -6298,6 +6324,7 @@ export default function ReturnsRequests() {
     couriers = [],
     preparers = [],
     stockUsers = [],
+    stockHistoryDrafts = [],
     preparerAssignments = [],
     preparerRouteActivities = [],
     courierActivities = [],
@@ -7715,7 +7742,7 @@ export default function ReturnsRequests() {
       ) : null}
 
       {viewMode === VIEW_MODE.STOCK ? (
-        <StockUsersSection stockUsers={stockUsers} isSubmitting={isSubmitting} />
+        <StockUsersSection stockUsers={stockUsers} stockHistoryDrafts={stockHistoryDrafts} isSubmitting={isSubmitting} />
       ) : null}
     </s-page>
   );
@@ -9137,7 +9164,7 @@ function CouriersSection({ couriers, isSubmitting }) {
   );
 }
 
-function StockUsersSection({ stockUsers, isSubmitting }) {
+function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }) {
   const location = useLocation();
   const createStockUserFetcher = useFetcher();
   const deleteStockUserFetcher = useFetcher();
@@ -9146,6 +9173,7 @@ function StockUsersSection({ stockUsers, isSubmitting }) {
   const [code, setCode] = useState("");
   const [showStockSuccessMessage, setShowStockSuccessMessage] = useState(false);
   const [stockSuccessMessage, setStockSuccessMessage] = useState("");
+  const [showStockHistory, setShowStockHistory] = useState(false);
   const isCreateStockUserSubmitting = createStockUserFetcher.state !== "idle";
   const isDeleteStockUserSubmitting = deleteStockUserFetcher.state !== "idle";
   const stockAction = `${location.pathname}${location.search || ""}`;
@@ -9197,9 +9225,44 @@ function StockUsersSection({ stockUsers, isSubmitting }) {
   return (
     <s-section heading="Stock">
       <div className={`${styles.wrap} ${styles.couriersLayout}`}>
-        <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => setShowForm(true)}>
-          Agregar
-        </button>
+        <div className={styles.stockHeaderActions}>
+          <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => setShowForm(true)}>
+            Agregar
+          </button>
+          <button className={styles.btn} type="button" onClick={() => setShowStockHistory((current) => !current)}>
+            Historial en stock
+          </button>
+        </div>
+
+        {showStockHistory ? (
+          <div className={styles.card}>
+            <h3>Historial en stock</h3>
+            {stockHistoryDrafts.length ? (
+              <div className={styles.stockHistoryList}>
+                {stockHistoryDrafts.map((draft) => (
+                  <details key={draft.id} className={styles.stockUserRow}>
+                    <summary className={styles.stockUserSummary}>
+                      <strong>{draft.sku || draft.locationCode || `Producto ${draft.id}`}</strong>
+                    </summary>
+                    <div className={styles.stockHistoryDetails}>
+                      <span>
+                        Ubicacion: <strong>{draft.locationCode || "-"}</strong>
+                      </span>
+                      <span>
+                        Preparador de stock: <strong>{draft.preparedByName || "-"}</strong>
+                      </span>
+                      <span>
+                        Publicador de productos: <strong>{draft.publishedByName || "-"}</strong>
+                      </span>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            ) : (
+              <p>Todavia no hay productos marcados como listos.</p>
+            )}
+          </div>
+        ) : null}
 
         {showForm ? (
           <createStockUserFetcher.Form method="post" action={stockAction} className={`${styles.card} ${styles.courierCreateForm}`}>

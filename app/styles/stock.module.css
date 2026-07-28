@@ -744,6 +744,14 @@
   gap: 8px;
 }
 
+.stockPublishForm {
+  display: grid;
+}
+
+.stockPublishForm button {
+  width: 100%;
+}
+
 .detailGrid dt {
   color: #5f6b7a;
   font-size: 12px;

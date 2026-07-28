@@ -285,13 +285,19 @@ model StockProductDraft {
   photos      Json     @default("[]")
   variants    Json     @default("[]")
   status      String   @default("pendiente")
+  preparedByStockUserId Int?
+  publishedByStockUserId Int?
+  publishedAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  preparedByStockUser StockUser? @relation("StockPreparedProducts", fields: [preparedByStockUserId], references: [id])
+  publishedByStockUser StockUser? @relation("StockPublishedProducts", fields: [publishedByStockUserId], references: [id])
 
   @@index([shop, status, createdAt])
   @@index([shop, sku])
   @@index([shop, audience, garmentType])
   @@index([shop, locationCode])
+  @@index([shop, publishedAt])
 }
 
 model StockLocationState {
@@ -316,6 +322,8 @@ model StockUser {
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  preparedStockProducts StockProductDraft[] @relation("StockPreparedProducts")
+  publishedStockProducts StockProductDraft[] @relation("StockPublishedProducts")
 
   @@unique([shop, code])
   @@index([shop, role])

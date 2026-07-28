@@ -1927,6 +1927,32 @@
   padding: 0;
 }
 
+.stockHeaderActions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.stockHistoryList {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid #e1e3e5;
+  border-radius: 10px;
+}
+
+.stockHistoryDetails {
+  display: grid;
+  gap: 8px;
+  padding: 0 16px 14px;
+  color: #3f4448;
+}
+
+.stockHistoryDetails strong {
+  color: #202223;
+}
+
 .stockUserRow {
   border-top: 1px solid #e1e3e5;
 }
