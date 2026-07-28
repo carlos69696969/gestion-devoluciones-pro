@@ -45,10 +45,15 @@
 .userLine {
   display: block;
   margin-top: 4px;
-  color: #5f6b7a;
+  color: #344054;
   font-size: 14px;
   font-weight: 800;
   line-height: 1.25;
+}
+
+.userLine strong {
+  color: #005bd3;
+  font-weight: 900;
 }
 
 .tabs {

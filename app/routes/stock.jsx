@@ -1473,7 +1473,8 @@ export default function StockPortal() {
           <div>
             <h1>Portal stock</h1>
             <span className={styles.userLine}>
-              {stockUserRoleLabel(stockUser.role)}: {stockUser.name}
+              <span>{stockUserRoleLabel(stockUser.role)}:</span>{" "}
+              <strong>{stockUser.name}</strong>
             </span>
           </div>
         </header>
