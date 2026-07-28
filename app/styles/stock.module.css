@@ -749,6 +749,48 @@
   font-weight: 900;
 }
 
+.detailColorCard dd {
+  display: grid;
+  gap: 8px;
+}
+
+.detailColorRow {
+  display: grid;
+  gap: 7px;
+}
+
+.detailColorRow strong {
+  color: #111827;
+  font-size: 16px;
+  line-height: 1.15;
+}
+
+.detailSizeChecks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detailSizeCheck {
+  min-height: 34px;
+  border: 1px solid #d9dee7;
+  border-radius: 999px;
+  background: #fff;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.detailSizeCheck input {
+  width: 18px;
+  height: 18px;
+  accent-color: #008060;
+}
+
 .variantDetailList {
   margin: 0 0 12px;
   display: grid;

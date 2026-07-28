@@ -487,6 +487,35 @@ function formatStockSizes(sizes = []) {
   return sizes.map((sizeRow) => `${sizeRow.size}=(${sizeRow.quantity})`).join(", ");
 }
 
+function stockDisplayVariants(draft) {
+  if (!draft) return [];
+  const variants = Array.isArray(draft.variants) ? draft.variants : [];
+  const normalizedVariants = variants
+    .map((variant, index) => ({
+      color: String(variant?.color || `Color ${index + 1}`).trim(),
+      price: Number(variant?.price ?? draft.price ?? 0) || 0,
+      sizes: Array.isArray(variant?.sizes)
+        ? variant.sizes
+            .map((sizeRow) => ({
+              size: String(sizeRow?.size || "").trim().toUpperCase(),
+              quantity: Math.max(1, Number(sizeRow?.quantity || 0) || 0),
+            }))
+            .filter((sizeRow) => sizeRow.size && sizeRow.quantity)
+        : [],
+    }))
+    .filter((variant) => variant.color || variant.sizes.length);
+  if (normalizedVariants.length) return normalizedVariants;
+  const size = String(draft.size || "").trim().toUpperCase();
+  const quantity = Math.max(1, Number(draft.quantity || 0) || 0);
+  return [
+    {
+      color: String(draft.color || "-").trim(),
+      price: Number(draft.price || 0) || 0,
+      sizes: size ? [{ size, quantity }] : [],
+    },
+  ];
+}
+
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1248,29 +1277,6 @@ export default function StockPortal() {
 
           {selectedDraft ? (
             <article className={styles.detailCard}>
-              <dl className={styles.detailGrid}>
-                <div>
-                  <dt>Color</dt>
-                  <dd>{selectedDraft.color || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Talla</dt>
-                  <dd>{selectedDraft.size || "-"}</dd>
-                </div>
-                <div>
-                  <dt>SKU</dt>
-                  <dd>{selectedDraft.sku || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Ubicacion</dt>
-                  <dd>{selectedDraft.locationCode || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Precio</dt>
-                  <dd>{money(selectedDraft.price)}</dd>
-                </div>
-              </dl>
-              {selectedDraft.notes ? <p className={styles.notes}>{selectedDraft.notes}</p> : null}
               {selectedDraft.photos?.length ? (
                 <div className={styles.downloadGrid}>
                   {selectedDraft.photos.map((photo, index) => (
@@ -1296,6 +1302,46 @@ export default function StockPortal() {
               ) : (
                 <p className={styles.empty}>Este producto no tiene fotos.</p>
               )}
+              <dl className={styles.detailGrid}>
+                <div>
+                  <dt>Ubicacion</dt>
+                  <dd>{selectedDraft.locationCode || "-"}</dd>
+                </div>
+                <div>
+                  <dt>SKU</dt>
+                  <dd>{selectedDraft.sku || "-"}</dd>
+                </div>
+                <div className={styles.detailColorCard}>
+                  <dt>Color</dt>
+                  <dd>
+                    {stockDisplayVariants(selectedDraft).map((variant, variantIndex) => (
+                      <div className={styles.detailColorRow} key={`${selectedDraft.id}-color-${variantIndex}`}>
+                        <strong>{variant.color || "-"}</strong>
+                        {variant.sizes.length ? (
+                          <div className={styles.detailSizeChecks}>
+                            {variant.sizes.map((sizeRow) => (
+                              <label
+                                className={styles.detailSizeCheck}
+                                key={`${selectedDraft.id}-${variantIndex}-${sizeRow.size}`}
+                              >
+                                <span>
+                                  {sizeRow.size}=({sizeRow.quantity})
+                                </span>
+                                <input type="checkbox" aria-label={`Listo ${sizeRow.size}`} />
+                              </label>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Precio</dt>
+                  <dd>{money(selectedDraft.price)}</dd>
+                </div>
+              </dl>
+              {selectedDraft.notes ? <p className={styles.notes}>{selectedDraft.notes}</p> : null}
             </article>
           ) : null}
         </section>
