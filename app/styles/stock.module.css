@@ -143,6 +143,8 @@
 }
 
 .loginForm input {
+  box-sizing: border-box;
+  width: 100%;
   min-height: 54px;
   border: 1px solid #ccd3dd;
   border-radius: 12px;
@@ -160,6 +162,8 @@
 }
 
 .loginForm .primaryButton {
+  box-sizing: border-box;
+  width: 100%;
   min-height: 46px;
 }
 
