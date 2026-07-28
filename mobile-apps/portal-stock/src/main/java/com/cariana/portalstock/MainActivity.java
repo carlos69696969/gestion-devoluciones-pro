@@ -174,8 +174,15 @@ public class MainActivity extends Activity {
         @Override
         public boolean onTouch(View view, MotionEvent event) {
             if (webView == null) return false;
+            if (event.getPointerCount() > 1) {
+                trackingPullRefresh = false;
+                return false;
+            }
 
             switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_POINTER_DOWN:
+                    trackingPullRefresh = false;
+                    return false;
                 case MotionEvent.ACTION_DOWN:
                     trackingPullRefresh = webView.getScrollY() == 0;
                     pullStartY = event.getY();
