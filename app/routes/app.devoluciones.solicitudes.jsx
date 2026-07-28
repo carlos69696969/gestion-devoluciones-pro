@@ -9222,21 +9222,17 @@ function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }
     setRole(STOCK_USER_ROLES.PREPARER);
   };
 
-  return (
-    <s-section heading="Stock">
-      <div className={`${styles.wrap} ${styles.couriersLayout}`}>
-        <div className={styles.stockHeaderActions}>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => setShowForm(true)}>
-            Agregar
-          </button>
-          <button className={styles.btn} type="button" onClick={() => setShowStockHistory((current) => !current)}>
-            Historial en stock
-          </button>
-        </div>
-
-        {showStockHistory ? (
+  if (showStockHistory) {
+    return (
+      <s-section heading="Stock">
+        <div className={`${styles.wrap} ${styles.couriersLayout}`}>
+          <div className={styles.stockHeaderActions}>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => setShowStockHistory(false)}>
+              Regresar
+            </button>
+          </div>
           <div className={styles.card}>
-            <h3>Historial en stock</h3>
+            <h3>Historial de stock</h3>
             {stockHistoryDrafts.length ? (
               <div className={styles.stockHistoryList}>
                 {stockHistoryDrafts.map((draft) => (
@@ -9262,7 +9258,22 @@ function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }
               <p>Todavia no hay productos marcados como listos.</p>
             )}
           </div>
-        ) : null}
+        </div>
+      </s-section>
+    );
+  }
+
+  return (
+    <s-section heading="Stock">
+      <div className={`${styles.wrap} ${styles.couriersLayout}`}>
+        <div className={styles.stockHeaderActions}>
+          <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => setShowForm(true)}>
+            Agregar
+          </button>
+          <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => setShowStockHistory(true)}>
+            Historial de stock
+          </button>
+        </div>
 
         {showForm ? (
           <createStockUserFetcher.Form method="post" action={stockAction} className={`${styles.card} ${styles.courierCreateForm}`}>
