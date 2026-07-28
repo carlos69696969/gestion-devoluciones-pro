@@ -409,7 +409,7 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(15, 23, 42, 0.92);
+  background: #000;
   display: grid;
   place-items: stretch;
 }
@@ -417,15 +417,18 @@
 .photoViewer {
   position: relative;
   width: 100%;
-  height: 100%;
+  height: 100dvh;
+  min-height: 100vh;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .photoViewerClose {
-  justify-self: end;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
   min-height: 42px;
-  margin: 14px;
   padding: 0 18px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 999px;
@@ -442,13 +445,13 @@
   overflow: hidden;
   display: grid;
   place-items: center;
-  padding: 10px;
+  padding: 0;
   touch-action: none;
 }
 
 .photoViewerStage img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   transform-origin: center center;
   transition: transform 0.08s linear;
