@@ -8,6 +8,7 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
@@ -26,9 +27,12 @@ public class MainActivity extends Activity {
     private static final String PORTAL_HOST = "gestion-devoluciones-pro.onrender.com";
     private static final String BASE_URL = "https://" + PORTAL_HOST + "/stock?shop=" + SHOP_DOMAIN;
     private static final int FILE_CHOOSER_REQUEST = 9421;
+    private static final int PULL_REFRESH_DISTANCE_DP = 96;
 
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
+    private float pullStartY = 0f;
+    private boolean trackingPullRefresh = false;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -45,9 +49,10 @@ public class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
-        settings.setLoadWithOverviewMode(true);
-        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(false);
+        settings.setUseWideViewPort(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
+        webView.setOnTouchListener(new PullRefreshTouchListener());
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
@@ -110,6 +115,38 @@ public class MainActivity extends Activity {
         }
     }
 
+    private class PullRefreshTouchListener implements View.OnTouchListener {
+        @Override
+        public boolean onTouch(View view, MotionEvent event) {
+            if (webView == null) return false;
+
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    trackingPullRefresh = webView.getScrollY() == 0;
+                    pullStartY = event.getY();
+                    return false;
+                case MotionEvent.ACTION_MOVE:
+                    if (
+                        trackingPullRefresh &&
+                        webView.getScrollY() == 0 &&
+                        event.getY() - pullStartY > dpToPx(PULL_REFRESH_DISTANCE_DP)
+                    ) {
+                        trackingPullRefresh = false;
+                        webView.reload();
+                        Toast.makeText(MainActivity.this, "Actualizando...", Toast.LENGTH_SHORT).show();
+                        return true;
+                    }
+                    return false;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    trackingPullRefresh = false;
+                    return false;
+                default:
+                    return false;
+            }
+        }
+    }
+
     private boolean handleUrl(String url) {
         if (url == null || url.trim().isEmpty()) return false;
         String normalizedUrl = url.trim();
@@ -133,6 +170,10 @@ public class MainActivity extends Activity {
         } catch (ActivityNotFoundException error) {
             Toast.makeText(this, "No se pudo abrir el enlace.", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private int dpToPx(int dp) {
+        return Math.round(dp * getResources().getDisplayMetrics().density);
     }
 
     private String portalUrl() {

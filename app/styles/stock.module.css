@@ -1,5 +1,7 @@
 .page {
   min-height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
   background: #f6f7f9;
   color: #111827;
   padding: 18px;
@@ -9,10 +11,12 @@
 .loginPage {
   display: grid;
   place-items: center;
+  min-height: 100dvh;
   padding: 24px 16px;
   background:
     linear-gradient(rgba(246, 247, 249, 0.08), rgba(246, 247, 249, 0.08)),
-    url("/stock-login-background.png") center / cover no-repeat;
+    url("/stock-login-background.png") center center / cover no-repeat;
+  overflow-x: hidden;
 }
 
 .header {
@@ -93,6 +97,7 @@
 
 .loginAccessContainer {
   width: min(100%, 420px);
+  margin: auto;
 }
 
 .loginCard {
