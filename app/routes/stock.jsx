@@ -475,7 +475,7 @@ export async function loader({ request }) {
                 createdAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) },
               },
               select: { id: true, sku: true, createdAt: true },
-              orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
               take: 120,
             })
           : Promise.resolve([]),
@@ -1556,7 +1556,7 @@ export default function StockPortal() {
 
           {captureStep === "audience" && showPreparedHistory ? (
             <div className={styles.preparedHistoryPanel}>
-              <div className={styles.stepHeader}>
+              <div className={`${styles.stepHeader} ${styles.preparedHistoryHeader}`}>
                 <h2>Historial del dia</h2>
                 <button className={styles.textButton} type="button" onClick={() => setShowPreparedHistory(false)}>
                   Regresar

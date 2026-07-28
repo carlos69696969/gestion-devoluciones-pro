@@ -217,6 +217,14 @@
   gap: 12px;
 }
 
+.preparedHistoryHeader {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.preparedHistoryHeader .textButton {
+  min-width: 112px;
+}
+
 .preparedHistoryList {
   display: grid;
   gap: 8px;
@@ -1004,7 +1012,7 @@
   .productFields,
   .formActions,
   .generatedPanel,
-  .stepHeader {
+  .stepHeader:not(.preparedHistoryHeader) {
     grid-template-columns: 1fr;
   }
 
