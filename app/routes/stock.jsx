@@ -413,7 +413,7 @@ export async function loader({ request }) {
       [drafts, skuRows, locationRows, releasedLocationRows] = await Promise.all([
         prisma.stockProductDraft.findMany({
           where: { shop, status: "pendiente" },
-          orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           take: 80,
         }),
         prisma.stockProductDraft.findMany({
