@@ -842,11 +842,13 @@ export default function StockPortal() {
   const revalidator = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
   const savedFlag = searchParams.get("guardado");
+  const requestedPublisherDraftId = Number(searchParams.get("draftId") || 0);
   const [activeTab, setActiveTab] = useState("capturar");
   const [photos, setPhotos] = useState([]);
-  const [selectedDraftId, setSelectedDraftId] = useState(0);
+  const [selectedDraftId, setSelectedDraftId] = useState(requestedPublisherDraftId);
   const [pendingSelectedDraftId, setPendingSelectedDraftId] = useState(0);
   const [publisherMessage, setPublisherMessage] = useState("");
+  const [publisherStateLoaded, setPublisherStateLoaded] = useState(false);
   const [selectedAudience, setSelectedAudience] = useState(audiences?.[0]?.value || "hombre");
   const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
   const [captureStep, setCaptureStep] = useState("audience");
@@ -914,6 +916,16 @@ export default function StockPortal() {
     } catch (_error) {
       // localStorage puede estar bloqueado; en ese caso simplemente no se conserva esta vista.
     }
+  }
+
+  function setPublisherDraftUrl(draftId) {
+    const nextParams = new URLSearchParams(window.location.search);
+    if (draftId) {
+      nextParams.set("draftId", String(draftId));
+    } else {
+      nextParams.delete("draftId");
+    }
+    setSearchParams(nextParams, { replace: true });
   }
 
   function resetStockCaptureFlow(clearSavedFlag = false) {
@@ -993,18 +1005,24 @@ export default function StockPortal() {
   useEffect(() => {
     if (!isProductPublisher) {
       restoredPublisherStateKeyRef.current = "";
+      setPublisherStateLoaded(true);
       return;
     }
-    if (restoredPublisherStateKeyRef.current === publisherDraftKey) return;
-    restoredPublisherStateKeyRef.current = publisherDraftKey;
+    const restoreKey = `${publisherDraftKey}:${requestedPublisherDraftId || "saved"}`;
+    if (restoredPublisherStateKeyRef.current === restoreKey) {
+      setPublisherStateLoaded(true);
+      return;
+    }
+    restoredPublisherStateKeyRef.current = restoreKey;
+    setPublisherStateLoaded(false);
     try {
       const rawState = window.localStorage.getItem(publisherDraftKey);
-      if (!rawState) return;
-      const savedState = JSON.parse(rawState);
-      const draftId = Number(savedState?.selectedDraftId || 0);
+      const savedState = rawState ? JSON.parse(rawState) : {};
+      const draftId = requestedPublisherDraftId || Number(savedState?.selectedDraftId || 0);
       const restoredDraft = drafts.find((draft) => Number(draft.id) === draftId);
       if (!draftId || !restoredDraft || restoredDraft.isLockedByOther) {
         window.localStorage.removeItem(publisherDraftKey);
+        if (requestedPublisherDraftId) setPublisherDraftUrl(0);
         return;
       }
       const savedChecks =
@@ -1027,11 +1045,13 @@ export default function StockPortal() {
       }
     } catch (restoreError) {
       console.error("No se pudo restaurar el publicador de stock", restoreError);
+    } finally {
+      setPublisherStateLoaded(true);
     }
-  }, [accessCode, drafts, isProductPublisher, lockStockFetcher, publisherDraftKey, shop]);
+  }, [accessCode, drafts, isProductPublisher, lockStockFetcher, publisherDraftKey, requestedPublisherDraftId, shop]);
 
   useEffect(() => {
-    if (!isProductPublisher) return;
+    if (!isProductPublisher || !publisherStateLoaded) return;
     try {
       if (!selectedDraftId && !Object.keys(checkedStockItems).length) {
         window.localStorage.removeItem(publisherDraftKey);
@@ -1049,7 +1069,7 @@ export default function StockPortal() {
     } catch (saveError) {
       console.error("No se pudo guardar el avance del publicador de stock", saveError);
     }
-  }, [checkedStockItems, isProductPublisher, publisherDraftKey, selectedDraftId]);
+  }, [checkedStockItems, isProductPublisher, publisherDraftKey, publisherStateLoaded, selectedDraftId]);
 
   useEffect(() => {
     if (!isProductPublisher) return undefined;
@@ -1082,6 +1102,7 @@ export default function StockPortal() {
     if (responseDraftId && responseDraftId !== Number(pendingSelectedDraftId)) return;
     if (lockStockFetcher.data.ok) {
       setSelectedDraftId(responseDraftId || Number(pendingSelectedDraftId));
+      setPublisherDraftUrl(responseDraftId || Number(pendingSelectedDraftId));
       setPublisherMessage("");
       revalidator.revalidate();
     } else {
@@ -1089,6 +1110,7 @@ export default function StockPortal() {
       setSelectedDraftId(0);
       setCheckedStockItems({});
       clearPublisherDraftState();
+      setPublisherDraftUrl(0);
       revalidator.revalidate();
     }
     setPendingSelectedDraftId(0);
@@ -1100,6 +1122,7 @@ export default function StockPortal() {
     setSelectedDraftId(0);
     setCheckedStockItems({});
     clearPublisherDraftState();
+    setPublisherDraftUrl(0);
   }, [selectedDraft, selectedDraftId]);
 
   useEffect(() => {
@@ -1178,6 +1201,7 @@ export default function StockPortal() {
     setSelectedDraftId(0);
     setCheckedStockItems({});
     clearPublisherDraftState();
+    setPublisherDraftUrl(0);
     if (!draftId) return;
     releaseStockFetcher.submit(
       {
