@@ -1248,6 +1248,28 @@ export default function StockPortal() {
 
           {selectedDraft ? (
             <article className={styles.detailCard}>
+              <dl className={styles.detailGrid}>
+                <div>
+                  <dt>Color</dt>
+                  <dd>{selectedDraft.color || "-"}</dd>
+                </div>
+                <div>
+                  <dt>Talla</dt>
+                  <dd>{selectedDraft.size || "-"}</dd>
+                </div>
+                <div>
+                  <dt>SKU</dt>
+                  <dd>{selectedDraft.sku || "-"}</dd>
+                </div>
+                <div>
+                  <dt>Ubicacion</dt>
+                  <dd>{selectedDraft.locationCode || "-"}</dd>
+                </div>
+                <div>
+                  <dt>Precio</dt>
+                  <dd>{money(selectedDraft.price)}</dd>
+                </div>
+              </dl>
               {selectedDraft.notes ? <p className={styles.notes}>{selectedDraft.notes}</p> : null}
               {selectedDraft.photos?.length ? (
                 <div className={styles.downloadGrid}>
