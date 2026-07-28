@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Form, redirect, useActionData, useFetcher, useLoaderData, useNavigation, useSearchParams } from "react-router";
+import {
+  Form,
+  redirect,
+  useActionData,
+  useFetcher,
+  useLoaderData,
+  useNavigation,
+  useRevalidator,
+  useSearchParams,
+} from "react-router";
 import prisma from "../db.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
 import styles from "../styles/stock.module.css";
@@ -7,6 +16,9 @@ import styles from "../styles/stock.module.css";
 const MAX_STOCK_PHOTOS = 16;
 const MAX_STOCK_PHOTO_CHARS = 1_250_000;
 const ADMIN_API_VERSION = "2025-10";
+const STOCK_PUBLICATION_LOCK_MS = 2 * 60 * 1000;
+const STOCK_PUBLICATION_REFRESH_MS = 5000;
+const STOCK_PUBLICATION_HEARTBEAT_MS = 30000;
 const STOCK_CAPTURE_DRAFT_VERSION = 1;
 const STOCK_USER_ROLES = {
   PREPARER: "preparador_stock",
@@ -193,6 +205,22 @@ async function syncReleasedStockLocations(shop) {
   }
 }
 
+async function clearExpiredStockPublicationLocks(shop) {
+  const cleanShopDomain = cleanShop(shop);
+  if (!cleanShopDomain) return;
+  await prisma.stockProductDraft.updateMany({
+    where: {
+      shop: cleanShopDomain,
+      status: "pendiente",
+      publishingLockedAt: { lt: new Date(Date.now() - STOCK_PUBLICATION_LOCK_MS) },
+    },
+    data: {
+      publishingLockedByStockUserId: null,
+      publishingLockedAt: null,
+    },
+  });
+}
+
 function sanitizeText(value, maxLength = 180) {
   return String(value || "").trim().slice(0, maxLength);
 }
@@ -311,8 +339,10 @@ function sanitizeStockVariants(value, allowedSizes = STOCK_ALPHA_SIZES) {
     .filter((variant) => variant.color && variant.sizes.length);
 }
 
-function serializeDraft(draft) {
+function serializeDraft(draft, currentStockUserId = 0) {
   const variants = Array.isArray(draft.variants) ? draft.variants : [];
+  const lockedByUserId = Number(draft.publishingLockedByStockUserId || 0);
+  const isLockedByCurrentUser = Boolean(lockedByUserId && lockedByUserId === Number(currentStockUserId || 0));
   return {
     id: draft.id,
     productName: draft.productName,
@@ -330,6 +360,10 @@ function serializeDraft(draft) {
     photos: Array.isArray(draft.photos) ? draft.photos : [],
     variants,
     status: draft.status,
+    publishingLockedByStockUserId: lockedByUserId,
+    publishingLockedAt: draft.publishingLockedAt ? draft.publishingLockedAt.toISOString() : "",
+    isLockedByCurrentUser,
+    isLockedByOther: Boolean(lockedByUserId && !isLockedByCurrentUser),
     createdAt: draft.createdAt.toISOString(),
     updatedAt: draft.updatedAt.toISOString(),
   };
@@ -371,6 +405,7 @@ export async function loader({ request }) {
 
     if (stockUser) {
       await syncReleasedStockLocations(shop);
+      await clearExpiredStockPublicationLocks(shop);
       [drafts, skuRows, locationRows, releasedLocationRows] = await Promise.all([
         prisma.stockProductDraft.findMany({
           where: { shop, status: "pendiente" },
@@ -428,7 +463,7 @@ export async function loader({ request }) {
 
   return {
     shop,
-    drafts: drafts.map(serializeDraft),
+    drafts: drafts.map((draft) => serializeDraft(draft, stockUser?.id)),
     stockUser: serializeStockUser(stockUser),
     accessCode: stockUser ? accessCode : "",
     audiences: STOCK_AUDIENCES,
@@ -471,6 +506,7 @@ export async function action({ request }) {
         select: { id: true, role: true },
       })
     : null;
+  if (stockUser) await clearExpiredStockPublicationLocks(shop);
 
   if (intent === "advance_stock_location") {
     if (stockUser?.role !== STOCK_USER_ROLES.PREPARER) {
@@ -489,6 +525,56 @@ export async function action({ request }) {
     return redirect(stockPortalHref());
   }
 
+  if (intent === "lock_stock_draft") {
+    if (stockUser?.role !== STOCK_USER_ROLES.PUBLISHER) {
+      return { ok: false, error: "Solo un publicador de productos puede tomar productos." };
+    }
+    const draftId = Number(formData.get("draftId") || 0);
+    if (!draftId) return { ok: false, error: "Producto de stock invalido." };
+    const lockCutoff = new Date(Date.now() - STOCK_PUBLICATION_LOCK_MS);
+    const lockedDraft = await prisma.stockProductDraft.updateMany({
+      where: {
+        id: draftId,
+        shop,
+        status: "pendiente",
+        OR: [
+          { publishingLockedByStockUserId: null },
+          { publishingLockedByStockUserId: stockUser.id },
+          { publishingLockedAt: { lt: lockCutoff } },
+        ],
+      },
+      data: {
+        publishingLockedByStockUserId: stockUser.id,
+        publishingLockedAt: new Date(),
+      },
+    });
+    if (!lockedDraft.count) {
+      return { ok: false, error: "Esta orden ya esta siendo trabajada." };
+    }
+    return { ok: true, draftId };
+  }
+
+  if (intent === "release_stock_draft") {
+    if (stockUser?.role !== STOCK_USER_ROLES.PUBLISHER) {
+      return { ok: false, error: "Solo un publicador de productos puede soltar productos." };
+    }
+    const draftId = Number(formData.get("draftId") || 0);
+    if (!draftId) return { ok: false, error: "Producto de stock invalido." };
+    await prisma.stockProductDraft.updateMany({
+      where: {
+        id: draftId,
+        shop,
+        status: "pendiente",
+        publishingLockedByStockUserId: stockUser.id,
+      },
+      data: {
+        publishingLockedByStockUserId: null,
+        publishingLockedAt: null,
+      },
+    });
+    return { ok: true, draftId };
+  }
+
   if (intent === "publish_stock_draft") {
     if (stockUser?.role !== STOCK_USER_ROLES.PUBLISHER) {
       return { ok: false, error: "Solo un publicador de productos puede marcar productos como listos." };
@@ -496,15 +582,22 @@ export async function action({ request }) {
     const draftId = Number(formData.get("draftId") || 0);
     if (!draftId) return { ok: false, error: "Producto de stock invalido." };
     const updatedDraft = await prisma.stockProductDraft.updateMany({
-      where: { id: draftId, shop, status: "pendiente" },
+      where: {
+        id: draftId,
+        shop,
+        status: "pendiente",
+        publishingLockedByStockUserId: stockUser.id,
+      },
       data: {
         status: "listo",
         publishedByStockUserId: stockUser.id,
         publishedAt: new Date(),
+        publishingLockedByStockUserId: null,
+        publishingLockedAt: null,
       },
     });
     if (!updatedDraft.count) {
-      return { ok: false, error: "No se encontro el producto pendiente o ya fue marcado como listo." };
+      return { ok: false, error: "Toma este producto antes de marcarlo como listo." };
     }
     return redirect(stockPortalHref("&publicado=1"));
   }
@@ -733,12 +826,18 @@ export default function StockPortal() {
   const { shop, drafts, stockUser, accessCode, error, audiences, garments, nextSkuByCategory, locationByCategory } = useLoaderData();
   const actionData = useActionData();
   const publishStockFetcher = useFetcher();
+  const lockStockFetcher = useFetcher();
+  const releaseStockFetcher = useFetcher();
+  const heartbeatStockFetcher = useFetcher();
   const navigation = useNavigation();
+  const revalidator = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
   const savedFlag = searchParams.get("guardado");
   const [activeTab, setActiveTab] = useState("capturar");
   const [photos, setPhotos] = useState([]);
-  const [selectedDraftId, setSelectedDraftId] = useState(drafts[0]?.id || 0);
+  const [selectedDraftId, setSelectedDraftId] = useState(0);
+  const [pendingSelectedDraftId, setPendingSelectedDraftId] = useState(0);
+  const [publisherMessage, setPublisherMessage] = useState("");
   const [selectedAudience, setSelectedAudience] = useState(audiences?.[0]?.value || "hombre");
   const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
   const [captureStep, setCaptureStep] = useState("audience");
@@ -761,7 +860,7 @@ export default function StockPortal() {
     locationByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
     defaultStockLocation(selectedAudience, selectedGarment);
   const selectedDraft = useMemo(
-    () => drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) || drafts[0] || null,
+    () => drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) || null,
     [drafts, selectedDraftId],
   );
   const selectedDraftVariants = useMemo(() => stockDisplayVariants(selectedDraft), [selectedDraft]);
@@ -873,6 +972,53 @@ export default function StockPortal() {
   }, [actionData?.error]);
 
   useEffect(() => {
+    if (!isProductPublisher) return undefined;
+    const intervalId = window.setInterval(() => {
+      if (revalidator.state === "idle") revalidator.revalidate();
+    }, STOCK_PUBLICATION_REFRESH_MS);
+    return () => window.clearInterval(intervalId);
+  }, [isProductPublisher, revalidator]);
+
+  useEffect(() => {
+    if (!isProductPublisher || !selectedDraftId) return undefined;
+    const intervalId = window.setInterval(() => {
+      if (heartbeatStockFetcher.state !== "idle") return;
+      heartbeatStockFetcher.submit(
+        {
+          intent: "lock_stock_draft",
+          shop,
+          stockCode: accessCode || "",
+          draftId: String(selectedDraftId),
+        },
+        { method: "post" },
+      );
+    }, STOCK_PUBLICATION_HEARTBEAT_MS);
+    return () => window.clearInterval(intervalId);
+  }, [accessCode, heartbeatStockFetcher, isProductPublisher, selectedDraftId, shop]);
+
+  useEffect(() => {
+    if (!pendingSelectedDraftId || lockStockFetcher.state !== "idle" || !lockStockFetcher.data) return;
+    const responseDraftId = Number(lockStockFetcher.data.draftId || 0);
+    if (responseDraftId && responseDraftId !== Number(pendingSelectedDraftId)) return;
+    if (lockStockFetcher.data.ok) {
+      setSelectedDraftId(responseDraftId || Number(pendingSelectedDraftId));
+      setPublisherMessage("");
+      revalidator.revalidate();
+    } else {
+      setPublisherMessage(lockStockFetcher.data.error || "Esta orden ya esta siendo trabajada.");
+      revalidator.revalidate();
+    }
+    setPendingSelectedDraftId(0);
+  }, [lockStockFetcher.data, lockStockFetcher.state, pendingSelectedDraftId, revalidator]);
+
+  useEffect(() => {
+    if (!selectedDraftId) return;
+    if (selectedDraft) return;
+    setSelectedDraftId(0);
+    setCheckedStockItems({});
+  }, [selectedDraft, selectedDraftId]);
+
+  useEffect(() => {
     if (!captureDraftLoaded || savedFlag) return;
     const draft = {
       version: STOCK_CAPTURE_DRAFT_VERSION,
@@ -922,6 +1068,41 @@ export default function StockPortal() {
     }
     setPhotos((current) => [...current, ...compressed].slice(0, MAX_STOCK_PHOTOS));
     event.target.value = "";
+  }
+
+  function openPublisherDraft(draft) {
+    if (!draft) return;
+    if (draft.isLockedByOther) {
+      setPublisherMessage("Esta orden ya esta siendo trabajada.");
+      return;
+    }
+    setPublisherMessage("");
+    setPendingSelectedDraftId(draft.id);
+    lockStockFetcher.submit(
+      {
+        intent: "lock_stock_draft",
+        shop,
+        stockCode: accessCode || "",
+        draftId: String(draft.id),
+      },
+      { method: "post" },
+    );
+  }
+
+  function returnToPublisherList() {
+    const draftId = selectedDraftId;
+    setSelectedDraftId(0);
+    setCheckedStockItems({});
+    if (!draftId) return;
+    releaseStockFetcher.submit(
+      {
+        intent: "release_stock_draft",
+        shop,
+        stockCode: accessCode || "",
+        draftId: String(draftId),
+      },
+      { method: "post" },
+    );
   }
 
   function chooseAudience(value) {
@@ -1488,19 +1669,25 @@ export default function StockPortal() {
           ) : null}
         </section>
       ) : isProductPublisher ? (
-        <section className={styles.pendingLayout}>
+        <section className={`${styles.pendingLayout} ${selectedDraft ? styles.publisherDetailLayout : ""}`}>
+          {!selectedDraft ? (
           <div className={styles.listCard}>
             <h2>Productos listos</h2>
+            {publisherMessage ? <p className={styles.error}>{publisherMessage}</p> : null}
             {drafts.length ? (
               <div className={styles.draftList}>
                 {drafts.map((draft) => (
                   <button
-                    className={`${styles.draftButton} ${selectedDraft?.id === draft.id ? styles.draftButtonActive : ""}`}
+                    aria-disabled={draft.isLockedByOther}
+                    className={`${styles.draftButton} ${draft.isLockedByOther ? styles.draftButtonLocked : ""} ${
+                      pendingSelectedDraftId === draft.id ? styles.draftButtonPending : ""
+                    }`}
                     key={draft.id}
                     type="button"
-                    onClick={() => setSelectedDraftId(draft.id)}
+                    onClick={() => openPublisherDraft(draft)}
                   >
                     <strong>{draft.locationCode || draft.productName}</strong>
+                    {draft.isLockedByOther ? <small>Ya esta siendo trabajada</small> : null}
                   </button>
                 ))}
               </div>
@@ -1508,9 +1695,15 @@ export default function StockPortal() {
               <p className={styles.empty}>Todavia no hay productos listos.</p>
             )}
           </div>
+          ) : null}
 
           {selectedDraft ? (
             <article className={styles.detailCard}>
+              <div className={styles.publisherDetailActions}>
+                <button className={styles.secondaryButton} type="button" onClick={returnToPublisherList}>
+                  Regresar
+                </button>
+              </div>
               {selectedDraft.photos?.length ? (
                 <div className={styles.downloadGrid}>
                   {selectedDraft.photos.map((photo, index) => (
