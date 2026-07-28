@@ -318,14 +318,21 @@
   resize: vertical;
 }
 
+.photoPickerBlock {
+  display: grid;
+  gap: 10px;
+}
+
 .photoPicker {
   min-height: 86px;
   border: 2px dashed #9cc8ff;
   border-radius: 14px;
   background: #f0f7ff;
+  display: grid;
   place-items: center;
   text-align: center;
   cursor: pointer;
+  font: inherit;
 }
 
 .photoPicker span {
@@ -337,10 +344,31 @@
   color: #344054;
 }
 
-.photoPicker input {
+.photoPicker:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.photoInput {
   position: absolute;
   opacity: 0;
   pointer-events: none;
+}
+
+.photoSourcePanel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.photoSourcePanel button {
+  min-height: 46px;
+  border: 1px solid #ccd3dd;
+  border-radius: 999px;
+  background: #fff;
+  color: #005bd3;
+  font: inherit;
+  font-weight: 900;
 }
 
 .photoGrid,

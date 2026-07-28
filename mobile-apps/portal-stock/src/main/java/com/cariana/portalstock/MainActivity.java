@@ -8,6 +8,8 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -21,6 +23,12 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
+import androidx.core.content.FileProvider;
+import java.io.File;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static final String SHOP_DOMAIN = "qc1u2w-ft.myshopify.com";
@@ -31,6 +39,7 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
+    private Uri pendingCameraUri;
     private float pullStartY = 0f;
     private boolean trackingPullRefresh = false;
 
@@ -104,11 +113,25 @@ public class MainActivity extends Activity {
             }
             filePathCallback = callback;
             try {
-                Intent chooserIntent = params.createIntent();
-                startActivityForResult(chooserIntent, FILE_CHOOSER_REQUEST);
+                if (params != null && params.isCaptureEnabled()) {
+                    Intent cameraIntent = createCameraIntent();
+                    if (cameraIntent == null) {
+                        filePathCallback = null;
+                        Toast.makeText(MainActivity.this, "No se encontro una camara disponible.", Toast.LENGTH_SHORT).show();
+                        return false;
+                    }
+                    startActivityForResult(cameraIntent, FILE_CHOOSER_REQUEST);
+                } else {
+                    Intent chooserIntent = params.createIntent();
+                    startActivityForResult(chooserIntent, FILE_CHOOSER_REQUEST);
+                }
             } catch (ActivityNotFoundException error) {
                 filePathCallback = null;
                 Toast.makeText(MainActivity.this, "No se encontro una app para seleccionar fotos.", Toast.LENGTH_SHORT).show();
+                return false;
+            } catch (IOException error) {
+                filePathCallback = null;
+                Toast.makeText(MainActivity.this, "No se pudo preparar la camara.", Toast.LENGTH_SHORT).show();
                 return false;
             }
             return true;
@@ -172,6 +195,30 @@ public class MainActivity extends Activity {
         }
     }
 
+    private Intent createCameraIntent() throws IOException {
+        Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        if (cameraIntent.resolveActivity(getPackageManager()) == null) return null;
+
+        File imageFile = createImageFile();
+        pendingCameraUri = FileProvider.getUriForFile(
+            this,
+            getPackageName() + ".fileprovider",
+            imageFile
+        );
+        cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, pendingCameraUri);
+        cameraIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        return cameraIntent;
+    }
+
+    private File createImageFile() throws IOException {
+        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+        File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+        if (storageDir != null && !storageDir.exists()) {
+            storageDir.mkdirs();
+        }
+        return File.createTempFile("stock_" + timestamp + "_", ".jpg", storageDir);
+    }
+
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
     }
@@ -194,9 +241,15 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != FILE_CHOOSER_REQUEST || filePathCallback == null) return;
-        Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+        Uri[] results = null;
+        if (resultCode == RESULT_OK && pendingCameraUri != null) {
+            results = new Uri[] { pendingCameraUri };
+        } else {
+            results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+        }
         filePathCallback.onReceiveValue(results);
         filePathCallback = null;
+        pendingCameraUri = null;
     }
 
     @Override

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Form, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import prisma from "../db.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
 import styles from "../styles/stock.module.css";
 
-const MAX_STOCK_PHOTOS = 10;
+const MAX_STOCK_PHOTOS = 16;
 const MAX_STOCK_PHOTO_CHARS = 1_250_000;
 const STOCK_CAPTURE_DRAFT_VERSION = 1;
 const STOCK_USER_ROLES = {
@@ -530,6 +530,9 @@ export default function StockPortal() {
   const [captureStep, setCaptureStep] = useState("audience");
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
+  const [photoPickerOpen, setPhotoPickerOpen] = useState(false);
+  const cameraInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
   const isSubmitting = navigation.state !== "idle";
   const isPreparerStock = stockUser?.role === STOCK_USER_ROLES.PREPARER;
   const isProductPublisher = stockUser?.role === STOCK_USER_ROLES.PUBLISHER;
@@ -660,6 +663,12 @@ export default function StockPortal() {
     }
     setPhotos((current) => [...current, ...compressed].slice(0, MAX_STOCK_PHOTOS));
     event.target.value = "";
+  }
+
+  function openPhotoInput(inputRef) {
+    if (photos.length >= MAX_STOCK_PHOTOS) return;
+    setPhotoPickerOpen(false);
+    inputRef.current?.click();
   }
 
   function chooseAudience(value) {
@@ -945,11 +954,43 @@ export default function StockPortal() {
                   </span>
                 </div>
 
-                <label className={styles.photoPicker}>
-                  <span>Agregar fotos</span>
-                  <strong>{photos.length}/{MAX_STOCK_PHOTOS}</strong>
-                  <input accept="image/*" capture="environment" type="file" onChange={handlePhotoFiles} />
-                </label>
+                <div className={styles.photoPickerBlock}>
+                  <button
+                    className={styles.photoPicker}
+                    type="button"
+                    disabled={photos.length >= MAX_STOCK_PHOTOS}
+                    onClick={() => setPhotoPickerOpen((isOpen) => !isOpen)}
+                  >
+                    <span>Agregar fotos</span>
+                    <strong>{photos.length}/{MAX_STOCK_PHOTOS}</strong>
+                  </button>
+                  {photoPickerOpen ? (
+                    <div className={styles.photoSourcePanel}>
+                      <button type="button" onClick={() => openPhotoInput(cameraInputRef)}>
+                        Camara
+                      </button>
+                      <button type="button" onClick={() => openPhotoInput(galleryInputRef)}>
+                        Galeria
+                      </button>
+                    </div>
+                  ) : null}
+                  <input
+                    ref={cameraInputRef}
+                    accept="image/*"
+                    capture="environment"
+                    className={styles.photoInput}
+                    type="file"
+                    onChange={handlePhotoFiles}
+                  />
+                  <input
+                    ref={galleryInputRef}
+                    accept="image/*"
+                    className={styles.photoInput}
+                    multiple
+                    type="file"
+                    onChange={handlePhotoFiles}
+                  />
+                </div>
 
                 {photos.length ? (
                   <div className={styles.photoGrid}>
