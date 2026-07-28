@@ -3,8 +3,10 @@ package com.cariana.portalstock;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.ContentValues;
 import android.content.Intent;
+import android.content.pm.ResolveInfo;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
@@ -23,6 +25,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
+import java.util.List;
 
 public class MainActivity extends Activity {
     private static final String SHOP_DOMAIN = "qc1u2w-ft.myshopify.com";
@@ -132,7 +135,9 @@ public class MainActivity extends Activity {
         pendingCameraUri = createCameraImageUri();
         if (pendingCameraUri != null) {
             cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, pendingCameraUri);
+            cameraIntent.setClipData(ClipData.newUri(getContentResolver(), "Foto stock", pendingCameraUri));
             cameraIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            grantCameraUriPermissions(cameraIntent, pendingCameraUri);
         }
 
         Intent chooserIntent = Intent.createChooser(galleryIntent, "Agregar fotos");
@@ -140,6 +145,18 @@ public class MainActivity extends Activity {
             chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[] { cameraIntent });
         }
         return chooserIntent;
+    }
+
+    private void grantCameraUriPermissions(Intent cameraIntent, Uri cameraUri) {
+        List<ResolveInfo> cameraActivities = getPackageManager().queryIntentActivities(cameraIntent, 0);
+        for (ResolveInfo activity : cameraActivities) {
+            String packageName = activity.activityInfo.packageName;
+            grantUriPermission(
+                packageName,
+                cameraUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            );
+        }
     }
 
     private Uri createCameraImageUri() {
