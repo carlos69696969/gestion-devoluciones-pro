@@ -1934,12 +1934,55 @@
   align-items: center;
 }
 
+.stockHistoryHeaderActions {
+  justify-content: flex-start;
+}
+
+.stockHistorySearch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 280px;
+  max-width: 420px;
+}
+
+.stockHistorySearch span {
+  position: absolute;
+  left: 14px;
+  color: #5f6b7a;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.stockHistorySearch input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #d2d5d8;
+  border-radius: 999px;
+  background: #fff;
+  color: #202223;
+  font: inherit;
+  font-weight: 700;
+  padding: 0 14px 0 40px;
+}
+
+.stockHistorySearch input::placeholder {
+  color: #6d7175;
+}
+
 .stockHistoryList {
   display: grid;
   gap: 0;
   overflow: hidden;
   border: 1px solid #e1e3e5;
   border-radius: 10px;
+}
+
+.stockHistoryEmpty {
+  margin: 0;
+  padding: 14px 16px;
+  color: #6d7175;
 }
 
 .stockHistoryDetails {

@@ -9236,11 +9236,20 @@ function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }
   const [showStockSuccessMessage, setShowStockSuccessMessage] = useState(false);
   const [stockSuccessMessage, setStockSuccessMessage] = useState("");
   const [showStockHistory, setShowStockHistory] = useState(false);
+  const [stockHistorySearch, setStockHistorySearch] = useState("");
   const isCreateStockUserSubmitting = createStockUserFetcher.state !== "idle";
   const isDeleteStockUserSubmitting = deleteStockUserFetcher.state !== "idle";
   const stockAction = `${location.pathname}${location.search || ""}`;
   const roleLabel = stockUserRoleLabel(role);
   const stockActionError = createStockUserFetcher.data?.error || deleteStockUserFetcher.data?.error || "";
+  const stockHistoryQuery = stockHistorySearch.trim().toLowerCase();
+  const filteredStockHistoryDrafts = stockHistoryQuery
+    ? stockHistoryDrafts.filter((draft) =>
+        String(draft.sku || "")
+          .toLowerCase()
+          .includes(stockHistoryQuery),
+      )
+    : stockHistoryDrafts;
   const stockUserGroups = [
     {
       role: STOCK_USER_ROLES.PUBLISHER,
@@ -9288,16 +9297,26 @@ function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }
     return (
       <s-section heading="Stock">
         <div className={`${styles.wrap} ${styles.couriersLayout}`}>
-          <div className={styles.stockHeaderActions}>
+          <div className={`${styles.stockHeaderActions} ${styles.stockHistoryHeaderActions}`}>
             <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => setShowStockHistory(false)}>
               Regresar
             </button>
+            <label className={styles.stockHistorySearch}>
+              <span aria-hidden="true">&#128269;</span>
+              <input
+                aria-label="Buscar por SKU"
+                type="search"
+                placeholder="Buscar SKU"
+                value={stockHistorySearch}
+                onChange={(event) => setStockHistorySearch(event.target.value)}
+              />
+            </label>
           </div>
           <div className={styles.card}>
             <h3>Historial de stock</h3>
             {stockHistoryDrafts.length ? (
               <div className={styles.stockHistoryList}>
-                {stockHistoryDrafts.map((draft) => (
+                {filteredStockHistoryDrafts.map((draft) => (
                   <details key={draft.id} className={styles.stockUserRow}>
                     <summary className={styles.stockUserSummary}>
                       <strong>{draft.sku || draft.locationCode || `Producto ${draft.id}`}</strong>
@@ -9318,6 +9337,9 @@ function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }
                     </div>
                   </details>
                 ))}
+                {!filteredStockHistoryDrafts.length ? (
+                  <p className={styles.stockHistoryEmpty}>No se encontro ningun SKU con esa busqueda.</p>
+                ) : null}
               </div>
             ) : (
               <p>Todavia no hay productos marcados como listos.</p>
