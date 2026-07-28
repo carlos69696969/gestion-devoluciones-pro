@@ -723,6 +723,7 @@
 
   .loginAccessContainer {
     max-width: 340px;
+    transform: translateY(48px);
   }
 
   .header h1 {
