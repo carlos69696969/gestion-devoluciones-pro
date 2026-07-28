@@ -3,10 +3,10 @@ package com.cariana.portalstock;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
-import android.content.ContentValues;
+import android.content.ClipData;
 import android.content.Intent;
+import android.content.pm.ResolveInfo;
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -24,7 +24,9 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
-import java.io.OutputStream;
+import androidx.core.content.FileProvider;
+import java.io.File;
+import java.util.List;
 
 public class MainActivity extends Activity {
     private static final String SHOP_DOMAIN = "qc1u2w-ft.myshopify.com";
@@ -35,7 +37,8 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
-    private boolean cameraOptionWasOffered = false;
+    private Uri pendingCameraUri;
+    private File pendingCameraFile;
     private float pullStartY = 0f;
     private boolean trackingPullRefresh = false;
 
@@ -107,6 +110,7 @@ public class MainActivity extends Activity {
             if (filePathCallback != null) {
                 filePathCallback.onReceiveValue(null);
             }
+            deletePendingCameraFile();
             filePathCallback = callback;
             try {
                 Intent chooserIntent = buildImageChooserIntent(params);
@@ -126,30 +130,43 @@ public class MainActivity extends Activity {
         galleryIntent.setType("image/*");
 
         Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        cameraOptionWasOffered = cameraIntent.resolveActivity(getPackageManager()) != null;
+        pendingCameraUri = createPrivateCameraImageUri();
 
         Intent chooserIntent = Intent.createChooser(galleryIntent, "Agregar fotos");
-        if (cameraOptionWasOffered) {
+        if (cameraIntent.resolveActivity(getPackageManager()) != null && pendingCameraUri != null) {
+            cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, pendingCameraUri);
+            cameraIntent.setClipData(ClipData.newUri(getContentResolver(), "Foto stock", pendingCameraUri));
+            cameraIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            grantCameraUriPermissions(cameraIntent, pendingCameraUri);
             chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[] { cameraIntent });
         }
         return chooserIntent;
     }
 
-    private Uri saveCameraBitmap(Bitmap bitmap) {
-        if (bitmap == null) return null;
+    private Uri createPrivateCameraImageUri() {
         try {
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.Images.Media.DISPLAY_NAME, "stock_" + System.currentTimeMillis() + ".jpg");
-            values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
-            Uri imageUri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
-            if (imageUri == null) return null;
-            try (OutputStream outputStream = getContentResolver().openOutputStream(imageUri)) {
-                if (outputStream == null) return null;
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, outputStream);
-            }
-            return imageUri;
+            File cameraDir = new File(getCacheDir(), "stock-camera");
+            if (!cameraDir.exists() && !cameraDir.mkdirs()) return null;
+            pendingCameraFile = File.createTempFile("stock_", ".jpg", cameraDir);
+            return FileProvider.getUriForFile(
+                this,
+                getPackageName() + ".fileprovider",
+                pendingCameraFile
+            );
         } catch (Exception error) {
+            pendingCameraFile = null;
             return null;
+        }
+    }
+
+    private void grantCameraUriPermissions(Intent cameraIntent, Uri cameraUri) {
+        List<ResolveInfo> cameraActivities = getPackageManager().queryIntentActivities(cameraIntent, 0);
+        for (ResolveInfo activity : cameraActivities) {
+            grantUriPermission(
+                activity.activityInfo.packageName,
+                cameraUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            );
         }
     }
 
@@ -233,14 +250,10 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != FILE_CHOOSER_REQUEST || filePathCallback == null) return;
         Uri[] results = null;
-        if (resultCode == RESULT_OK && cameraOptionWasOffered && data != null && data.getExtras() != null) {
-            Object cameraBitmap = data.getExtras().get("data");
-            if (cameraBitmap instanceof Bitmap) {
-                Uri cameraImageUri = saveCameraBitmap((Bitmap) cameraBitmap);
-                if (cameraImageUri != null) {
-                    results = new Uri[] { cameraImageUri };
-                }
-            }
+        boolean usedCameraPhoto = false;
+        if (resultCode == RESULT_OK && pendingCameraUri != null && pendingCameraFile != null && pendingCameraFile.length() > 0) {
+            results = new Uri[] { pendingCameraUri };
+            usedCameraPhoto = true;
         }
         if (results == null) {
             results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
@@ -250,8 +263,20 @@ public class MainActivity extends Activity {
         } else {
             filePathCallback.onReceiveValue(results);
         }
+        if (!usedCameraPhoto) {
+            deletePendingCameraFile();
+        }
         filePathCallback = null;
-        cameraOptionWasOffered = false;
+        pendingCameraUri = null;
+        pendingCameraFile = null;
+    }
+
+    private void deletePendingCameraFile() {
+        if (pendingCameraFile != null && pendingCameraFile.exists()) {
+            pendingCameraFile.delete();
+        }
+        pendingCameraFile = null;
+        pendingCameraUri = null;
     }
 
     @Override
