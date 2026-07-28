@@ -12,7 +12,8 @@
   display: grid;
   place-items: center;
   min-height: 100dvh;
-  padding: 24px 16px;
+  min-height: 100svh;
+  padding: 24px 20px;
   background:
     linear-gradient(rgba(246, 247, 249, 0.08), rgba(246, 247, 249, 0.08)),
     url("/stock-login-background.png") center center / cover no-repeat;
@@ -96,11 +97,14 @@
 }
 
 .loginAccessContainer {
-  width: min(100%, 420px);
+  width: 100%;
+  max-width: 420px;
   margin: auto;
 }
 
 .loginCard {
+  box-sizing: border-box;
+  width: 100%;
   max-width: none;
   margin: 0;
   padding: 18px 14px;
@@ -707,6 +711,14 @@
 @media (max-width: 720px) {
   .page {
     padding: 16px 14px;
+  }
+
+  .loginPage {
+    padding: 24px 20px;
+  }
+
+  .loginAccessContainer {
+    max-width: 340px;
   }
 
   .header h1 {
