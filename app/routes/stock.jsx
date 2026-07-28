@@ -1334,16 +1334,22 @@ export default function StockPortal() {
                 <p className={styles.empty}>Este producto no tiene fotos.</p>
               )}
               <dl className={styles.detailGrid}>
-                <div>
-                  <dt>Ubicacion</dt>
-                  <dd>{selectedDraft.locationCode || "-"}</dd>
-                </div>
-                <div className={styles.detailCheckCard}>
-                  <dt>SKU</dt>
-                  <dd>
-                    <span>{selectedDraft.sku || "-"}</span>
-                    <input type="checkbox" aria-label={`SKU listo ${selectedDraft.sku || ""}`} />
-                  </dd>
+                <div className={styles.detailMetaColumn}>
+                  <div>
+                    <dt>Ubicacion</dt>
+                    <dd>{selectedDraft.locationCode || "-"}</dd>
+                  </div>
+                  <div className={styles.detailCheckCard}>
+                    <dt>SKU</dt>
+                    <dd>
+                      <span>{selectedDraft.sku || "-"}</span>
+                      <input type="checkbox" aria-label={`SKU listo ${selectedDraft.sku || ""}`} />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Precio</dt>
+                    <dd>{money(selectedDraft.price)}</dd>
+                  </div>
                 </div>
                 <div className={styles.detailColorCard}>
                   <dt>Color</dt>
@@ -1369,10 +1375,6 @@ export default function StockPortal() {
                       </div>
                     ))}
                   </dd>
-                </div>
-                <div>
-                  <dt>Precio</dt>
-                  <dd>{money(selectedDraft.price)}</dd>
                 </div>
               </dl>
               {selectedDraft.notes ? <p className={styles.notes}>{selectedDraft.notes}</p> : null}
