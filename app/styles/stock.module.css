@@ -727,13 +727,15 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+  align-items: start;
 }
 
-.detailGrid div {
+.detailGrid > div {
   border: 1px solid #d9dee7;
   border-radius: 10px;
   background: #f9fafb;
   padding: 10px;
+  box-sizing: border-box;
 }
 
 .detailGrid dt {
@@ -749,9 +751,24 @@
   font-weight: 900;
 }
 
+.detailCheckCard dd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.detailCheckCard input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: #008060;
+}
+
 .detailColorCard dd {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .detailColorRow {
@@ -766,23 +783,21 @@
 }
 
 .detailSizeChecks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  gap: 7px;
+  margin-top: 6px;
 }
 
 .detailSizeCheck {
-  min-height: 34px;
-  border: 1px solid #d9dee7;
-  border-radius: 999px;
-  background: #fff;
+  min-height: 24px;
   color: #111827;
   font-size: 13px;
   font-weight: 900;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0;
 }
 
 .detailSizeCheck input {

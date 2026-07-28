@@ -1307,9 +1307,12 @@ export default function StockPortal() {
                   <dt>Ubicacion</dt>
                   <dd>{selectedDraft.locationCode || "-"}</dd>
                 </div>
-                <div>
+                <div className={styles.detailCheckCard}>
                   <dt>SKU</dt>
-                  <dd>{selectedDraft.sku || "-"}</dd>
+                  <dd>
+                    <span>{selectedDraft.sku || "-"}</span>
+                    <input type="checkbox" aria-label={`SKU listo ${selectedDraft.sku || ""}`} />
+                  </dd>
                 </div>
                 <div className={styles.detailColorCard}>
                   <dt>Color</dt>
