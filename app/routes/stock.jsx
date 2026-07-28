@@ -728,6 +728,10 @@ function stockCaptureDraftKey(shop) {
   return `cariana-stock-capture-draft:${cleanShop(shop) || "portal-stock"}`;
 }
 
+function stockPublisherDraftKey(shop, accessCode) {
+  return `cariana-stock-publisher-draft:${cleanShop(shop) || "portal-stock"}:${String(accessCode || "").trim()}`;
+}
+
 function normalizeStockVariantDraft(variant, index = 0, allowedSizes = STOCK_ALPHA_SIZES) {
   const base = blankStockVariant(`variant-${index + 1}`);
   const sizes = (Array.isArray(variant?.sizes) ? variant.sizes : [])
@@ -854,10 +858,12 @@ export default function StockPortal() {
   const photoGestureRef = useRef({ distance: 0, scale: 1, startX: 0, startY: 0 });
   const pendingStockSaveRef = useRef(false);
   const lastDraftCountRef = useRef(drafts.length);
+  const restoredPublisherStateKeyRef = useRef("");
   const isSubmitting = navigation.state !== "idle";
   const isPreparerStock = stockUser?.role === STOCK_USER_ROLES.PREPARER;
   const isProductPublisher = stockUser?.role === STOCK_USER_ROLES.PUBLISHER;
   const captureDraftKey = useMemo(() => stockCaptureDraftKey(shop), [shop]);
+  const publisherDraftKey = useMemo(() => stockPublisherDraftKey(shop, accessCode), [accessCode, shop]);
   const suggestedSku =
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
     nextStockSkuForPrefix(stockSkuPrefix(selectedAudience, selectedGarment), []);
@@ -901,6 +907,14 @@ export default function StockPortal() {
   const toggleStockChecklistItem = (key) => {
     setCheckedStockItems((current) => ({ ...current, [key]: !current[key] }));
   };
+
+  function clearPublisherDraftState() {
+    try {
+      window.localStorage.removeItem(publisherDraftKey);
+    } catch (_error) {
+      // localStorage puede estar bloqueado; en ese caso simplemente no se conserva esta vista.
+    }
+  }
 
   function resetStockCaptureFlow(clearSavedFlag = false) {
     try {
@@ -977,6 +991,67 @@ export default function StockPortal() {
   }, [actionData?.error]);
 
   useEffect(() => {
+    if (!isProductPublisher) {
+      restoredPublisherStateKeyRef.current = "";
+      return;
+    }
+    if (restoredPublisherStateKeyRef.current === publisherDraftKey) return;
+    restoredPublisherStateKeyRef.current = publisherDraftKey;
+    try {
+      const rawState = window.localStorage.getItem(publisherDraftKey);
+      if (!rawState) return;
+      const savedState = JSON.parse(rawState);
+      const draftId = Number(savedState?.selectedDraftId || 0);
+      const restoredDraft = drafts.find((draft) => Number(draft.id) === draftId);
+      if (!draftId || !restoredDraft || restoredDraft.isLockedByOther) {
+        window.localStorage.removeItem(publisherDraftKey);
+        return;
+      }
+      const savedChecks =
+        savedState?.checkedStockItems && typeof savedState.checkedStockItems === "object"
+          ? savedState.checkedStockItems
+          : {};
+      setSelectedDraftId(draftId);
+      setCheckedStockItems(savedChecks);
+      if (!restoredDraft.isLockedByCurrentUser) {
+        setPendingSelectedDraftId(draftId);
+        lockStockFetcher.submit(
+          {
+            intent: "lock_stock_draft",
+            shop,
+            stockCode: accessCode || "",
+            draftId: String(draftId),
+          },
+          { method: "post" },
+        );
+      }
+    } catch (restoreError) {
+      console.error("No se pudo restaurar el publicador de stock", restoreError);
+    }
+  }, [accessCode, drafts, isProductPublisher, lockStockFetcher, publisherDraftKey, shop]);
+
+  useEffect(() => {
+    if (!isProductPublisher) return;
+    try {
+      if (!selectedDraftId && !Object.keys(checkedStockItems).length) {
+        window.localStorage.removeItem(publisherDraftKey);
+        return;
+      }
+      window.localStorage.setItem(
+        publisherDraftKey,
+        JSON.stringify({
+          version: STOCK_CAPTURE_DRAFT_VERSION,
+          selectedDraftId,
+          checkedStockItems,
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+    } catch (saveError) {
+      console.error("No se pudo guardar el avance del publicador de stock", saveError);
+    }
+  }, [checkedStockItems, isProductPublisher, publisherDraftKey, selectedDraftId]);
+
+  useEffect(() => {
     if (!isProductPublisher) return undefined;
     const intervalId = window.setInterval(() => {
       if (revalidator.state === "idle") revalidator.revalidate();
@@ -1011,6 +1086,9 @@ export default function StockPortal() {
       revalidator.revalidate();
     } else {
       setPublisherMessage(lockStockFetcher.data.error || "Esta orden ya esta siendo trabajada.");
+      setSelectedDraftId(0);
+      setCheckedStockItems({});
+      clearPublisherDraftState();
       revalidator.revalidate();
     }
     setPendingSelectedDraftId(0);
@@ -1021,6 +1099,7 @@ export default function StockPortal() {
     if (selectedDraft) return;
     setSelectedDraftId(0);
     setCheckedStockItems({});
+    clearPublisherDraftState();
   }, [selectedDraft, selectedDraftId]);
 
   useEffect(() => {
@@ -1098,6 +1177,7 @@ export default function StockPortal() {
     const draftId = selectedDraftId;
     setSelectedDraftId(0);
     setCheckedStockItems({});
+    clearPublisherDraftState();
     if (!draftId) return;
     releaseStockFetcher.submit(
       {
