@@ -689,10 +689,8 @@
   border-radius: 12px;
   background: #fff;
   color: #111827;
-  padding: 8px;
+  padding: 14px;
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  gap: 8px;
   text-align: left;
   align-items: center;
   font: inherit;
@@ -705,7 +703,6 @@
 
 .draftButton strong,
 .draftButton small {
-  grid-column: 2;
   min-width: 0;
   overflow-wrap: anywhere;
 }

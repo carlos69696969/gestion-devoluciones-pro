@@ -1237,12 +1237,7 @@ export default function StockPortal() {
                     type="button"
                     onClick={() => setSelectedDraftId(draft.id)}
                   >
-                    {draft.photos?.[0] ? <img src={draft.photos[0]} alt={draft.productName} /> : <span />}
                     <strong>{draft.locationCode || draft.productName}</strong>
-                    <small>
-                      {draft.sku ? `SKU ${draft.sku}` : "Sin SKU"}
-                      {draft.productName ? ` | ${draft.productName}` : ""}
-                    </small>
                   </button>
                 ))}
               </div>
@@ -1253,58 +1248,6 @@ export default function StockPortal() {
 
           {selectedDraft ? (
             <article className={styles.detailCard}>
-              <h2>{selectedDraft.locationCode || selectedDraft.productName}</h2>
-              <dl className={styles.detailGrid}>
-                <div>
-                  <dt>Color</dt>
-                  <dd>{selectedDraft.color || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Talla</dt>
-                  <dd>{selectedDraft.size || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Cantidad</dt>
-                  <dd>{selectedDraft.quantity}</dd>
-                </div>
-                <div>
-                  <dt>SKU</dt>
-                  <dd>{selectedDraft.sku || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Ubicacion</dt>
-                  <dd>{selectedDraft.locationCode || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Persona</dt>
-                  <dd>{selectedDraft.audienceLabel || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Prenda</dt>
-                  <dd>{selectedDraft.garmentLabel || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Precio</dt>
-                  <dd>{money(selectedDraft.price)}</dd>
-                </div>
-              </dl>
-              {selectedDraft.variants?.length ? (
-                <div className={styles.variantDetailList}>
-                  {selectedDraft.variants.map((variant, index) => (
-                    <div className={styles.variantDetailItem} key={`${selectedDraft.id}-variant-${index}`}>
-                      <div>
-                        <strong>{variant.color || `Color ${index + 1}`}</strong>
-                        <span>{money(variant.price)}</span>
-                      </div>
-                      <p>
-                        {(variant.sizes || [])
-                          .map((sizeRow) => `${sizeRow.size}=(${sizeRow.quantity})`)
-                          .join(" | ")}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
               {selectedDraft.notes ? <p className={styles.notes}>{selectedDraft.notes}</p> : null}
               {selectedDraft.photos?.length ? (
                 <div className={styles.downloadGrid}>
