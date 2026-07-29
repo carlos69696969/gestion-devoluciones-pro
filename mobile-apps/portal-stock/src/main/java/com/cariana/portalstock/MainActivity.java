@@ -544,24 +544,25 @@ public class MainActivity extends Activity {
         canvas.drawColor(Color.WHITE);
 
         drawStockBrand(canvas);
-        drawCenteredText(canvas, sku, STOCK_LABEL_WIDTH_DOTS / 2f, 124, stockSkuTextSize(sku), true);
+        drawCenteredText(canvas, sku, STOCK_LABEL_WIDTH_DOTS / 2f, 126, stockSkuTextSize(sku), true);
 
-        List<String> locationLines = wrapTextByWidth(locationCode, 292, 2, textPaint(21, true));
-        Paint locationPaint = textPaint(locationLines.size() > 1 ? 18 : 21, true);
-        int locationY = locationLines.size() > 1 ? 188 : 202;
+        Paint locationMeasurePaint = textPaint(23, true);
+        List<String> locationLines = wrapTextByWidth(locationCode, 296, 2, locationMeasurePaint);
+        Paint locationPaint = textPaint(locationLines.size() > 1 ? 20 : 23, true);
+        int locationY = locationLines.size() > 1 ? 186 : 204;
         for (String line : locationLines) {
-            drawText(canvas, line, 16, locationY, locationPaint);
-            locationY += 25;
+            drawText(canvas, line, 14, locationY, locationPaint);
+            locationY += 26;
         }
 
         return thresholdBitmap(bitmap, 178);
     }
 
     private void drawStockBrand(Canvas canvas) {
-        Paint brandPaint = textPaint(34, true);
+        Paint brandPaint = textPaint(40, true);
         brandPaint.setTypeface(Typeface.create(Typeface.SERIF, Typeface.BOLD));
-        drawText(canvas, "CARIANA", 35, 44, brandPaint);
-        drawLogo(canvas, 210, 6, 76, 44);
+        drawText(canvas, "CARIANA", 16, 50, brandPaint);
+        drawLogo(canvas, 232, 2, 78, 54);
     }
 
     private void drawLogo(Canvas canvas, int x, int y, int width, int height) {
@@ -605,8 +606,9 @@ public class MainActivity extends Activity {
 
     private int stockSkuTextSize(String sku) {
         int length = String.valueOf(sku == null ? "" : sku).length();
-        if (length > 10) return 42;
-        if (length > 8) return 48;
+        if (length >= 11) return 38;
+        if (length >= 9) return 42;
+        if (length >= 8) return 48;
         return 54;
     }
 
