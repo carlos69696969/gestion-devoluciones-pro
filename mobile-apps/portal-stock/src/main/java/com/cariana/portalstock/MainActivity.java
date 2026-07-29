@@ -14,8 +14,12 @@ import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -42,6 +46,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -53,6 +58,8 @@ public class MainActivity extends Activity {
     private static final String LABEL_PRINTER_MAC = "10:23:81:BE:81:FC";
     private static final int FILE_CHOOSER_REQUEST = 9421;
     private static final int PULL_REFRESH_DISTANCE_DP = 96;
+    private static final int STOCK_LABEL_WIDTH_DOTS = 320;
+    private static final int STOCK_LABEL_HEIGHT_DOTS = 240;
 
     private final Object printerSocketLock = new Object();
     private WebView webView;
@@ -510,7 +517,7 @@ public class MainActivity extends Activity {
     private byte[] buildStockLabelTspl(String sku, String locationCode, int quantity) {
         String cleanSku = tsplText(sku).replaceAll("[^0-9A-Za-z-]", "");
         if (cleanSku.length() == 0) cleanSku = tsplText(sku);
-        String[] locationLines = splitLocationForLabel(tsplText(locationCode), 22);
+        Bitmap labelBitmap = renderStockLabelBitmap(cleanSku, tsplText(locationCode));
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         appendCommand(output,
             "SIZE 40 mm,30 mm\r\n" +
@@ -520,97 +527,151 @@ public class MainActivity extends Activity {
             "OFFSET 0 mm\r\n" +
             "SPEED 4\r\n" +
             "DENSITY 10\r\n" +
-            "CLS\r\n"
+            "CLS\r\n" +
+            "BITMAP 0,0,40,240,0,"
         );
-        appendLogoBitmapCommand(output, 36, 8, 250, 52);
-        appendCommand(output,
-            "TEXT 34,82,\"4\",0,1,2,\"" + cleanSku + "\"\r\n"
-        );
-        appendLocationText(output, locationLines);
+        try {
+            output.write(bitmapToTsplBytes(labelBitmap, 178));
+        } catch (IOException ignored) {}
+        appendCommand(output, "\r\n");
         appendCommand(output, "PRINT " + quantity + ",1\r\n");
         return output.toByteArray();
     }
 
-    private void appendLocationText(ByteArrayOutputStream output, String[] lines) {
-        if (lines.length > 1) {
-            appendCommand(output,
-                "TEXT 18,186,\"2\",0,1,1,\"" + lines[0] + "\"\r\n" +
-                "TEXT 18,214,\"2\",0,1,1,\"" + lines[1] + "\"\r\n"
-            );
-            return;
+    private Bitmap renderStockLabelBitmap(String sku, String locationCode) {
+        Bitmap bitmap = Bitmap.createBitmap(STOCK_LABEL_WIDTH_DOTS, STOCK_LABEL_HEIGHT_DOTS, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        canvas.drawColor(Color.WHITE);
+
+        drawStockBrand(canvas);
+        drawCenteredText(canvas, sku, STOCK_LABEL_WIDTH_DOTS / 2f, 124, stockSkuTextSize(sku), true);
+
+        List<String> locationLines = wrapTextByWidth(locationCode, 292, 2, textPaint(21, true));
+        Paint locationPaint = textPaint(locationLines.size() > 1 ? 18 : 21, true);
+        int locationY = locationLines.size() > 1 ? 188 : 202;
+        for (String line : locationLines) {
+            drawText(canvas, line, 16, locationY, locationPaint);
+            locationY += 25;
         }
-        appendCommand(output, "TEXT 18,204,\"2\",0,1,1,\"" + lines[0] + "\"\r\n");
+
+        return thresholdBitmap(bitmap, 178);
     }
 
-    private void appendLogoBitmapCommand(ByteArrayOutputStream output, int x, int y, int maxWidth, int maxHeight) {
+    private void drawStockBrand(Canvas canvas) {
+        Paint brandPaint = textPaint(34, true);
+        brandPaint.setTypeface(Typeface.create(Typeface.SERIF, Typeface.BOLD));
+        drawText(canvas, "CARIANA", 35, 44, brandPaint);
+        drawLogo(canvas, 210, 6, 76, 44);
+    }
+
+    private void drawLogo(Canvas canvas, int x, int y, int width, int height) {
         try {
-            Bitmap source = BitmapFactory.decodeResource(getResources(), R.drawable.stock_label_logo);
+            Bitmap source = BitmapFactory.decodeResource(getResources(), R.drawable.cariana_hummingbird);
             if (source == null) return;
-            Bitmap cropped = cropLogoWhitespace(source);
-            int scaledWidth = Math.max(1, cropped.getWidth());
-            int scaledHeight = Math.max(1, cropped.getHeight());
-            float scale = Math.min(
-                (float) maxWidth / (float) scaledWidth,
-                (float) maxHeight / (float) scaledHeight
-            );
-            scaledWidth = Math.max(1, Math.round(scaledWidth * scale));
-            scaledHeight = Math.max(1, Math.round(scaledHeight * scale));
-            Bitmap scaled = Bitmap.createScaledBitmap(cropped, scaledWidth, scaledHeight, true);
-            int widthBytes = (scaled.getWidth() + 7) / 8;
-            byte[] imageBytes = new byte[widthBytes * scaled.getHeight()];
-
-            for (int row = 0; row < scaled.getHeight(); row++) {
-                for (int col = 0; col < scaled.getWidth(); col++) {
-                    int pixel = scaled.getPixel(col, row);
-                    int alpha = Color.alpha(pixel);
-                    int red = Color.red(pixel);
-                    int green = Color.green(pixel);
-                    int blue = Color.blue(pixel);
-                    boolean black = alpha > 64 && ((red + green + blue) / 3) < 150;
-                    if (black) {
-                        int byteIndex = row * widthBytes + (col / 8);
-                        imageBytes[byteIndex] |= (byte) (0x80 >> (col % 8));
-                    }
-                }
-            }
-
-            int centeredX = x + Math.max(0, (maxWidth - scaled.getWidth()) / 2);
-            appendCommand(output, "BITMAP " + centeredX + "," + y + "," + widthBytes + "," + scaled.getHeight() + ",0,");
-            output.write(imageBytes);
-            appendCommand(output, "\r\n");
+            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+            Rect src = new Rect(0, 0, source.getWidth(), source.getHeight());
+            RectF dst = fitCenter(src.width(), src.height(), x, y, width, height);
+            canvas.drawBitmap(source, src, dst, paint);
         } catch (Exception ignored) {}
     }
 
-    private Bitmap cropLogoWhitespace(Bitmap source) {
-        int left = source.getWidth();
-        int top = source.getHeight();
-        int right = -1;
-        int bottom = -1;
+    private RectF fitCenter(int sourceWidth, int sourceHeight, int x, int y, int width, int height) {
+        float scale = Math.min(width / (float) sourceWidth, height / (float) sourceHeight);
+        float drawWidth = sourceWidth * scale;
+        float drawHeight = sourceHeight * scale;
+        float left = x + ((width - drawWidth) / 2f);
+        float top = y + ((height - drawHeight) / 2f);
+        return new RectF(left, top, left + drawWidth, top + drawHeight);
+    }
 
+    private Paint textPaint(float size, boolean bold) {
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Color.BLACK);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, bold ? Typeface.BOLD : Typeface.NORMAL));
+        paint.setTextSize(size);
+        return paint;
+    }
+
+    private void drawText(Canvas canvas, String text, float x, float baseline, Paint paint) {
+        canvas.drawText(String.valueOf(text == null ? "" : text), x, baseline, paint);
+    }
+
+    private void drawCenteredText(Canvas canvas, String text, float centerX, float baseline, float size, boolean bold) {
+        Paint paint = textPaint(size, bold);
+        String value = String.valueOf(text == null ? "" : text);
+        canvas.drawText(value, centerX - (paint.measureText(value) / 2f), baseline, paint);
+    }
+
+    private int stockSkuTextSize(String sku) {
+        int length = String.valueOf(sku == null ? "" : sku).length();
+        if (length > 10) return 42;
+        if (length > 8) return 48;
+        return 54;
+    }
+
+    private List<String> wrapTextByWidth(String text, float maxWidth, int maxLines, Paint paint) {
+        String normalized = normalizeLabelText(text, "-").replaceAll("\\s+", " ").trim();
+        String[] words = normalized.split(" ");
+        java.util.ArrayList<String> lines = new java.util.ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (String word : words) {
+            String candidate = current.length() == 0 ? word : current + " " + word;
+            if (paint.measureText(candidate) <= maxWidth || current.length() == 0) {
+                current = new StringBuilder(candidate);
+                continue;
+            }
+            lines.add(current.toString());
+            current = new StringBuilder(word);
+            if (lines.size() >= maxLines - 1) break;
+        }
+        if (current.length() > 0 && lines.size() < maxLines) {
+            String remaining = current.toString();
+            while (paint.measureText(remaining) > maxWidth && remaining.length() > 1) {
+                remaining = remaining.substring(0, remaining.length() - 1).trim();
+            }
+            lines.add(remaining);
+        }
+        if (lines.isEmpty()) lines.add("-");
+        return lines;
+    }
+
+    private Bitmap thresholdBitmap(Bitmap source, int threshold) {
+        Bitmap target = Bitmap.createBitmap(source.getWidth(), source.getHeight(), Bitmap.Config.ARGB_8888);
         for (int y = 0; y < source.getHeight(); y++) {
             for (int x = 0; x < source.getWidth(); x++) {
-                int pixel = source.getPixel(x, y);
-                int alpha = Color.alpha(pixel);
-                int red = Color.red(pixel);
-                int green = Color.green(pixel);
-                int blue = Color.blue(pixel);
-                boolean visible = alpha > 32 && ((red + green + blue) / 3) < 245;
-                if (!visible) continue;
-                if (x < left) left = x;
-                if (y < top) top = y;
-                if (x > right) right = x;
-                if (y > bottom) bottom = y;
+                int color = source.getPixel(x, y);
+                int alpha = Color.alpha(color);
+                int red = Color.red(color);
+                int green = Color.green(color);
+                int blue = Color.blue(color);
+                int luminance = (int) ((0.299f * red) + (0.587f * green) + (0.114f * blue));
+                target.setPixel(x, y, alpha > 0 && luminance < threshold ? Color.BLACK : Color.WHITE);
             }
         }
+        return target;
+    }
 
-        if (right < left || bottom < top) return source;
-        Rect bounds = new Rect(
-            Math.max(0, left - 8),
-            Math.max(0, top - 8),
-            Math.min(source.getWidth(), right + 9),
-            Math.min(source.getHeight(), bottom + 9)
-        );
-        return Bitmap.createBitmap(source, bounds.left, bounds.top, bounds.width(), bounds.height());
+    private byte[] bitmapToTsplBytes(Bitmap bitmap, int threshold) {
+        int widthBytes = bitmap.getWidth() / 8;
+        byte[] bytes = new byte[widthBytes * bitmap.getHeight()];
+        Arrays.fill(bytes, (byte) 0xFF);
+        for (int y = 0; y < bitmap.getHeight(); y++) {
+            for (int byteX = 0; byteX < widthBytes; byteX++) {
+                for (int bit = 0; bit < 8; bit++) {
+                    int pixelX = byteX * 8 + bit;
+                    int color = bitmap.getPixel(pixelX, y);
+                    int alpha = Color.alpha(color);
+                    int luminance = (int) ((0.299f * Color.red(color)) + (0.587f * Color.green(color)) + (0.114f * Color.blue(color)));
+                    if (alpha > 0 && luminance < threshold) {
+                        int byteIndex = y * widthBytes + byteX;
+                        int bitMask = 0x80 >> bit;
+                        bytes[byteIndex] = (byte) (bytes[byteIndex] & ~bitMask);
+                    }
+                }
+            }
+        }
+        return bytes;
     }
 
     private void appendCommand(ByteArrayOutputStream output, String command) {
