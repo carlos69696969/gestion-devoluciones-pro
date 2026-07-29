@@ -510,7 +510,7 @@ public class MainActivity extends Activity {
     private byte[] buildStockLabelTspl(String sku, String locationCode, int quantity) {
         String cleanSku = tsplText(sku).replaceAll("[^0-9A-Za-z-]", "");
         if (cleanSku.length() == 0) cleanSku = tsplText(sku);
-        String cleanLocation = truncateForLabel(tsplText(locationCode), 24);
+        String[] locationLines = splitLocationForLabel(tsplText(locationCode), 22);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         appendCommand(output,
             "SIZE 40 mm,30 mm\r\n" +
@@ -522,13 +522,24 @@ public class MainActivity extends Activity {
             "DENSITY 10\r\n" +
             "CLS\r\n"
         );
-        appendLogoBitmapCommand(output, 50, 8, 220, 78);
+        appendLogoBitmapCommand(output, 36, 8, 250, 52);
         appendCommand(output,
-            "TEXT 56,92,\"4\",0,2,2,\"" + cleanSku + "\"\r\n" +
-            "TEXT 18,204,\"2\",0,1,1,\"" + cleanLocation + "\"\r\n" +
-            "PRINT " + quantity + ",1\r\n"
+            "TEXT 34,82,\"4\",0,1,2,\"" + cleanSku + "\"\r\n"
         );
+        appendLocationText(output, locationLines);
+        appendCommand(output, "PRINT " + quantity + ",1\r\n");
         return output.toByteArray();
+    }
+
+    private void appendLocationText(ByteArrayOutputStream output, String[] lines) {
+        if (lines.length > 1) {
+            appendCommand(output,
+                "TEXT 18,186,\"2\",0,1,1,\"" + lines[0] + "\"\r\n" +
+                "TEXT 18,214,\"2\",0,1,1,\"" + lines[1] + "\"\r\n"
+            );
+            return;
+        }
+        appendCommand(output, "TEXT 18,204,\"2\",0,1,1,\"" + lines[0] + "\"\r\n");
     }
 
     private void appendLogoBitmapCommand(ByteArrayOutputStream output, int x, int y, int maxWidth, int maxHeight) {
@@ -555,7 +566,7 @@ public class MainActivity extends Activity {
                     int red = Color.red(pixel);
                     int green = Color.green(pixel);
                     int blue = Color.blue(pixel);
-                    boolean black = alpha > 64 && ((red + green + blue) / 3) < 180;
+                    boolean black = alpha > 64 && ((red + green + blue) / 3) < 150;
                     if (black) {
                         int byteIndex = row * widthBytes + (col / 8);
                         imageBytes[byteIndex] |= (byte) (0x80 >> (col % 8));
@@ -630,6 +641,30 @@ public class MainActivity extends Activity {
             return text;
         }
         return text.substring(0, Math.max(0, maxChars)).trim();
+    }
+
+    private String[] splitLocationForLabel(String value, int maxCharsPerLine) {
+        String text = normalizeLabelText(value, "-").replaceAll("\\s+", " ");
+        if (text.length() <= maxCharsPerLine) {
+            return new String[] { text };
+        }
+
+        int splitAt = -1;
+        for (int i = Math.min(maxCharsPerLine, text.length() - 1); i > 0; i--) {
+            char character = text.charAt(i);
+            if (character == '-' || character == ' ') {
+                splitAt = i;
+                break;
+            }
+        }
+        if (splitAt <= 0) splitAt = Math.min(maxCharsPerLine, text.length());
+
+        String firstLine = text.substring(0, splitAt).trim();
+        String secondLine = text.substring(Math.min(text.length(), splitAt + 1)).trim();
+        if (secondLine.length() > maxCharsPerLine) {
+            secondLine = truncateForLabel(secondLine, maxCharsPerLine);
+        }
+        return new String[] { firstLine, secondLine };
     }
 
     private int parsePositiveInt(String value, int fallback) {
