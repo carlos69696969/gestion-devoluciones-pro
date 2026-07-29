@@ -12,7 +12,10 @@ import android.content.Intent;
 import android.content.pm.ResolveInfo;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -517,13 +520,86 @@ public class MainActivity extends Activity {
             "OFFSET 0 mm\r\n" +
             "SPEED 4\r\n" +
             "DENSITY 10\r\n" +
-            "CLS\r\n" +
-            "TEXT 34,18,\"3\",0,1,1,\"CARIANA\"\r\n" +
-            "TEXT 82,78,\"4\",0,2,2,\"" + cleanSku + "\"\r\n" +
+            "CLS\r\n"
+        );
+        appendLogoBitmapCommand(output, 50, 8, 220, 78);
+        appendCommand(output,
+            "TEXT 56,92,\"4\",0,2,2,\"" + cleanSku + "\"\r\n" +
             "TEXT 18,204,\"2\",0,1,1,\"" + cleanLocation + "\"\r\n" +
             "PRINT " + quantity + ",1\r\n"
         );
         return output.toByteArray();
+    }
+
+    private void appendLogoBitmapCommand(ByteArrayOutputStream output, int x, int y, int maxWidth, int maxHeight) {
+        try {
+            Bitmap source = BitmapFactory.decodeResource(getResources(), R.drawable.stock_label_logo);
+            if (source == null) return;
+            Bitmap cropped = cropLogoWhitespace(source);
+            int scaledWidth = Math.max(1, cropped.getWidth());
+            int scaledHeight = Math.max(1, cropped.getHeight());
+            float scale = Math.min(
+                (float) maxWidth / (float) scaledWidth,
+                (float) maxHeight / (float) scaledHeight
+            );
+            scaledWidth = Math.max(1, Math.round(scaledWidth * scale));
+            scaledHeight = Math.max(1, Math.round(scaledHeight * scale));
+            Bitmap scaled = Bitmap.createScaledBitmap(cropped, scaledWidth, scaledHeight, true);
+            int widthBytes = (scaled.getWidth() + 7) / 8;
+            byte[] imageBytes = new byte[widthBytes * scaled.getHeight()];
+
+            for (int row = 0; row < scaled.getHeight(); row++) {
+                for (int col = 0; col < scaled.getWidth(); col++) {
+                    int pixel = scaled.getPixel(col, row);
+                    int alpha = Color.alpha(pixel);
+                    int red = Color.red(pixel);
+                    int green = Color.green(pixel);
+                    int blue = Color.blue(pixel);
+                    boolean black = alpha > 64 && ((red + green + blue) / 3) < 180;
+                    if (black) {
+                        int byteIndex = row * widthBytes + (col / 8);
+                        imageBytes[byteIndex] |= (byte) (0x80 >> (col % 8));
+                    }
+                }
+            }
+
+            int centeredX = x + Math.max(0, (maxWidth - scaled.getWidth()) / 2);
+            appendCommand(output, "BITMAP " + centeredX + "," + y + "," + widthBytes + "," + scaled.getHeight() + ",0,");
+            output.write(imageBytes);
+            appendCommand(output, "\r\n");
+        } catch (Exception ignored) {}
+    }
+
+    private Bitmap cropLogoWhitespace(Bitmap source) {
+        int left = source.getWidth();
+        int top = source.getHeight();
+        int right = -1;
+        int bottom = -1;
+
+        for (int y = 0; y < source.getHeight(); y++) {
+            for (int x = 0; x < source.getWidth(); x++) {
+                int pixel = source.getPixel(x, y);
+                int alpha = Color.alpha(pixel);
+                int red = Color.red(pixel);
+                int green = Color.green(pixel);
+                int blue = Color.blue(pixel);
+                boolean visible = alpha > 32 && ((red + green + blue) / 3) < 245;
+                if (!visible) continue;
+                if (x < left) left = x;
+                if (y < top) top = y;
+                if (x > right) right = x;
+                if (y > bottom) bottom = y;
+            }
+        }
+
+        if (right < left || bottom < top) return source;
+        Rect bounds = new Rect(
+            Math.max(0, left - 8),
+            Math.max(0, top - 8),
+            Math.min(source.getWidth(), right + 9),
+            Math.min(source.getHeight(), bottom + 9)
+        );
+        return Bitmap.createBitmap(source, bounds.left, bounds.top, bounds.width(), bounds.height());
     }
 
     private void appendCommand(ByteArrayOutputStream output, String command) {
