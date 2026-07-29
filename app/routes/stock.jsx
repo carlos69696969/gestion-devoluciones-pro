@@ -750,7 +750,13 @@ export async function action({ request }) {
 
   await prisma.$transaction(stockWriteOperations);
 
-  return redirect(stockPortalHref("&guardado=1"));
+  return redirect(
+    stockPortalHref(
+      `&guardado=1&sku=${encodeURIComponent(sku)}&ubicacion=${encodeURIComponent(locationCode)}&cantidad=${encodeURIComponent(
+        String(quantity),
+      )}`,
+    ),
+  );
 }
 
 function money(value) {
@@ -820,6 +826,16 @@ function normalizeStockPhotoDraft(photo, index = 0) {
 
 function formatStockSizes(sizes = []) {
   return sizes.map((sizeRow) => `${sizeRow.size}=(${sizeRow.quantity})`).join(", ");
+}
+
+function printStockLabels({ sku, locationCode, quantity }) {
+  try {
+    const labelCount = Math.max(1, Math.min(9999, Number(quantity || 0) || 0));
+    if (!sku || !locationCode || !window.Android || typeof window.Android.printStockLabels !== "function") return;
+    window.Android.printStockLabels(String(sku), String(locationCode), String(labelCount));
+  } catch (_error) {
+    // La impresion es una mejora nativa de Android; el guardado debe continuar si no esta disponible.
+  }
 }
 
 function stockDisplayVariants(draft) {
@@ -1010,6 +1026,11 @@ export default function StockPortal() {
 
   useEffect(() => {
     if (savedFlag) {
+      printStockLabels({
+        sku: searchParams.get("sku") || "",
+        locationCode: searchParams.get("ubicacion") || "",
+        quantity: searchParams.get("cantidad") || "",
+      });
       pendingStockSaveRef.current = false;
       resetStockCaptureFlow(true);
       return;
