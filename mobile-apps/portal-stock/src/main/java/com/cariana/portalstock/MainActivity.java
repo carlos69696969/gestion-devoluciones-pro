@@ -661,7 +661,7 @@ public class MainActivity extends Activity {
         drawCenteredText(canvas, sku, STOCK_LABEL_WIDTH_DOTS / 2f, 108, stockSkuTextSize(sku), true);
         String cleanSize = tsplText(size).replaceAll("[^0-9A-Za-z.]", "").toUpperCase();
         if (!cleanSize.isEmpty()) {
-            drawCenteredText(canvas, "Talla=" + cleanSize, STOCK_LABEL_WIDTH_DOTS / 2f, 148, 25, true);
+            drawCenteredText(canvas, "Talla=" + cleanSize, STOCK_LABEL_WIDTH_DOTS / 2f, 150, 32, true);
         }
 
         Paint locationMeasurePaint = textPaint(23, true);
