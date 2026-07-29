@@ -8,6 +8,7 @@ import {
   useNavigation,
   useRevalidator,
   useSearchParams,
+  useSubmit,
 } from "react-router";
 import prisma from "../db.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
@@ -438,8 +439,30 @@ function serializeStockUser(stockUser) {
     id: stockUser.id,
     name: stockUser.name,
     role: stockUser.role,
-    code: stockUser.code,
   };
+}
+
+function generateStockSessionToken() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+async function generateUniqueStockCode(shop, excludeUserId = 0) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const existingUser = await prisma.stockUser.findFirst({
+      where: {
+        shop,
+        code,
+        ...(excludeUserId ? { NOT: { id: excludeUserId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (!existingUser) return code;
+  }
+  return "";
 }
 
 function serializePreparedStockHistory(draft) {
@@ -462,6 +485,7 @@ export async function loader({ request }) {
   const url = new URL(request.url);
   const shop = portalShopFromRequest(request);
   const accessCode = String(url.searchParams.get("codigo") || url.searchParams.get("code") || "").trim();
+  const sessionToken = String(url.searchParams.get("sesion") || url.searchParams.get("session") || "").trim();
   let drafts = [];
   let skuRows = [];
   let locationRows = [];
@@ -471,12 +495,36 @@ export async function loader({ request }) {
   let error = "";
   let stockUser = null;
   try {
-    if (accessCode) await ensureStockUserTable(prisma);
-    if (accessCode) {
+    if (accessCode || sessionToken) await ensureStockUserTable(prisma);
+    if (sessionToken) {
       stockUser = await prisma.stockUser.findFirst({
-        where: { shop, code: accessCode, active: true },
+        where: { shop, sessionToken, active: true },
       });
-      if (!stockUser) error = "Codigo invalido. Revisa el codigo en la seccion Stock del administrador.";
+      if (stockUser) {
+        await prisma.stockUser.update({
+          where: { id: stockUser.id },
+          data: { sessionLastSeenAt: new Date() },
+        });
+      } else {
+        error = "Tu sesion ya no esta activa. Ingresa tu codigo nuevamente.";
+      }
+    } else if (accessCode) {
+      stockUser = await prisma.stockUser.findFirst({
+        where: { shop, code: accessCode, active: true, sessionToken: null },
+      });
+      if (stockUser) {
+        const nextSessionToken = generateStockSessionToken();
+        await prisma.stockUser.update({
+          where: { id: stockUser.id },
+          data: {
+            sessionToken: nextSessionToken,
+            sessionStartedAt: new Date(),
+            sessionLastSeenAt: new Date(),
+          },
+        });
+        return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(nextSessionToken)}`);
+      }
+      error = "Codigo invalido o la cuenta ya inicio sesion.";
     }
 
     if (stockUser) {
@@ -560,7 +608,8 @@ export async function loader({ request }) {
       .filter((draft) => stockMexicoDateKey(draft.createdAt) === stockMexicoDateKey(new Date()))
       .map(serializePreparedStockHistory),
     stockUser: serializeStockUser(stockUser),
-    accessCode: stockUser ? accessCode : "",
+    accessCode: stockUser ? sessionToken || accessCode : "",
+    sessionToken: stockUser ? sessionToken || "" : "",
     audiences: STOCK_AUDIENCES,
     garments: STOCK_GARMENTS,
     nextSkuByCategory,
@@ -576,7 +625,7 @@ export async function action({ request }) {
   const shop = cleanShop(formData.get("shop")) || portalShopFromRequest(request);
   const stockCode = String(formData.get("stockCode") || "").trim();
   const stockPortalHref = (params = "") =>
-    `/stock?shop=${encodeURIComponent(shop)}${stockCode ? `&codigo=${encodeURIComponent(stockCode)}` : ""}${params}`;
+    `/stock?shop=${encodeURIComponent(shop)}${stockCode ? `&sesion=${encodeURIComponent(stockCode)}` : ""}${params}`;
 
   if (intent === "stock_login") {
     try {
@@ -585,10 +634,22 @@ export async function action({ request }) {
       if (!/^\d{6}$/.test(code)) return { ok: false, error: "Escribe tu codigo de 6 digitos." };
       const stockUser = await prisma.stockUser.findFirst({
         where: { shop, code, active: true },
-        select: { id: true },
+        select: { id: true, sessionToken: true },
       });
       if (!stockUser) return { ok: false, error: "Codigo invalido. Revisa el codigo con el administrador." };
-      return redirect(`/stock?shop=${encodeURIComponent(shop)}&codigo=${encodeURIComponent(code)}`);
+      if (stockUser.sessionToken) {
+        return { ok: false, error: "Esta cuenta ya inicio sesion." };
+      }
+      const sessionToken = generateStockSessionToken();
+      await prisma.stockUser.update({
+        where: { id: stockUser.id },
+        data: {
+          sessionToken,
+          sessionStartedAt: new Date(),
+          sessionLastSeenAt: new Date(),
+        },
+      });
+      return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(sessionToken)}`);
     } catch (stockLoginError) {
       console.error("No se pudo validar el codigo de stock", stockLoginError);
       return { ok: false, error: "No se pudo validar el codigo. Intenta nuevamente." };
@@ -598,10 +659,30 @@ export async function action({ request }) {
   if (stockCode) await ensureStockUserTable(prisma);
   const stockUser = stockCode
     ? await prisma.stockUser.findFirst({
-        where: { shop, code: stockCode, active: true },
+        where: { shop, sessionToken: stockCode, active: true },
         select: { id: true, role: true },
       })
     : null;
+
+  if (intent === "stock_logout") {
+    if (!stockUser) return redirect(`/stock?shop=${encodeURIComponent(shop)}`);
+    try {
+      const nextCode = await generateUniqueStockCode(shop, stockUser.id);
+      await prisma.stockUser.update({
+        where: { id: stockUser.id },
+        data: {
+          ...(nextCode ? { code: nextCode } : {}),
+          sessionToken: null,
+          sessionStartedAt: null,
+          sessionLastSeenAt: null,
+        },
+      });
+    } catch (stockLogoutError) {
+      console.error("No se pudo cerrar la sesion de stock", stockLogoutError);
+    }
+    return redirect(`/stock?shop=${encodeURIComponent(shop)}`);
+  }
+
   if (stockUser) await clearExpiredStockPublicationLocks(shop);
 
   if (intent === "advance_stock_location") {
@@ -826,6 +907,10 @@ function stockCaptureDraftKey(shop) {
   return `cariana-stock-capture-draft:${cleanShop(shop) || "portal-stock"}`;
 }
 
+function stockSessionStorageKey(shop) {
+  return `cariana-stock-session:${cleanShop(shop) || "portal-stock"}`;
+}
+
 function stockPublisherDraftKey(shop, accessCode) {
   return `cariana-stock-publisher-draft:${cleanShop(shop) || "portal-stock"}:${String(accessCode || "").trim()}`;
 }
@@ -946,6 +1031,7 @@ export default function StockPortal() {
     preparedHistory = [],
     stockUser,
     accessCode,
+    sessionToken,
     error,
     audiences,
     garments,
@@ -960,6 +1046,7 @@ export default function StockPortal() {
   const heartbeatStockFetcher = useFetcher();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
+  const submit = useSubmit();
   const [searchParams, setSearchParams] = useSearchParams();
   const savedFlag = searchParams.get("guardado");
   const requestedPublisherDraftId = Number(searchParams.get("draftId") || 0);
@@ -990,6 +1077,7 @@ export default function StockPortal() {
   const isPreparerStock = stockUser?.role === STOCK_USER_ROLES.PREPARER;
   const isProductPublisher = stockUser?.role === STOCK_USER_ROLES.PUBLISHER;
   const captureDraftKey = useMemo(() => stockCaptureDraftKey(shop), [shop]);
+  const stockSessionKey = useMemo(() => stockSessionStorageKey(shop), [shop]);
   const publisherDraftKey = useMemo(() => stockPublisherDraftKey(shop, accessCode), [accessCode, shop]);
   const suggestedSku =
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
@@ -1082,6 +1170,7 @@ export default function StockPortal() {
     try {
       window.localStorage.removeItem(captureDraftKey);
       window.localStorage.removeItem(publisherDraftKey);
+      window.localStorage.removeItem(stockSessionKey);
     } catch (_error) {
       // Si localStorage no esta disponible, de todos modos se fuerza la pantalla de codigo.
     }
@@ -1090,13 +1179,40 @@ export default function StockPortal() {
     setCheckedStockItems({});
     setShowPreparedHistory(false);
     setStockReprintMode(false);
-    window.location.assign(stockLoginUrl());
+    const logoutForm = new FormData();
+    logoutForm.set("intent", "stock_logout");
+    logoutForm.set("shop", shop);
+    logoutForm.set("stockCode", accessCode || sessionToken || "");
+    submit(logoutForm, { method: "post" });
   }
 
   function confirmAndLogoutStockPortal() {
     if (!window.confirm("¿Seguro que quieres cerrar sesión?")) return;
     logoutStockPortal();
   }
+
+  useEffect(() => {
+    const urlSessionToken = String(searchParams.get("sesion") || searchParams.get("session") || "").trim();
+    const activeSessionToken = String(sessionToken || accessCode || "").trim();
+    try {
+      if (stockUser && activeSessionToken) {
+        window.localStorage.setItem(stockSessionKey, activeSessionToken);
+        return;
+      }
+      if (!stockUser && urlSessionToken) {
+        window.localStorage.removeItem(stockSessionKey);
+        return;
+      }
+      if (!stockUser && !urlSessionToken) {
+        const storedToken = String(window.localStorage.getItem(stockSessionKey) || "").trim();
+        if (storedToken) {
+          window.location.replace(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(storedToken)}`);
+        }
+      }
+    } catch (_error) {
+      // Si localStorage no esta disponible, el usuario puede entrar con su codigo.
+    }
+  }, [accessCode, searchParams, sessionToken, shop, stockSessionKey, stockUser]);
 
   useEffect(() => {
     if (savedFlag) {

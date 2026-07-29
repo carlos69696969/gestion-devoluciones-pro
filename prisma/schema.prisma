@@ -326,6 +326,9 @@ model StockUser {
   name      String
   role      String
   code      String
+  sessionToken String?
+  sessionStartedAt DateTime?
+  sessionLastSeenAt DateTime?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -335,4 +338,5 @@ model StockUser {
   @@unique([shop, code])
   @@index([shop, role])
   @@index([shop, active])
+  @@index([shop, sessionToken])
 }
