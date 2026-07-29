@@ -89,6 +89,28 @@
   color: rgba(255, 255, 255, 0.92);
 }
 
+.loadingButtonContent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.buttonSpinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: stockSpin 0.75s linear infinite;
+}
+
+@keyframes stockSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .secondaryButton:disabled {
   opacity: 0.45;
 }
@@ -222,6 +244,12 @@
 
 .slimSessionButton {
   color: #1f2937;
+}
+
+.slimHistoryButton:disabled,
+.slimSessionButton:disabled {
+  opacity: 0.62;
+  cursor: wait;
 }
 
 .preparedHistoryPanel {

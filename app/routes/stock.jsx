@@ -974,6 +974,7 @@ export default function StockPortal() {
   const [captureStep, setCaptureStep] = useState("audience");
   const [showPreparedHistory, setShowPreparedHistory] = useState(false);
   const [stockReprintMode, setStockReprintMode] = useState(false);
+  const [stockPortalLoggingOut, setStockPortalLoggingOut] = useState(false);
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -984,6 +985,8 @@ export default function StockPortal() {
   const lastDraftCountRef = useRef(drafts.length);
   const restoredPublisherStateKeyRef = useRef("");
   const isSubmitting = navigation.state !== "idle";
+  const navigationIntent = navigation.formData?.get("intent");
+  const isStockLoginSubmitting = navigation.state !== "idle" && navigationIntent === "stock_login";
   const isPreparerStock = stockUser?.role === STOCK_USER_ROLES.PREPARER;
   const isProductPublisher = stockUser?.role === STOCK_USER_ROLES.PUBLISHER;
   const captureDraftKey = useMemo(() => stockCaptureDraftKey(shop), [shop]);
@@ -1075,6 +1078,7 @@ export default function StockPortal() {
   }
 
   function logoutStockPortal() {
+    setStockPortalLoggingOut(true);
     try {
       window.localStorage.removeItem(captureDraftKey);
       window.localStorage.removeItem(publisherDraftKey);
@@ -1666,7 +1670,14 @@ export default function StockPortal() {
                 required
               />
             <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
-              Entrar
+              {isStockLoginSubmitting ? (
+                <span className={styles.loadingButtonContent}>
+                  <span className={styles.buttonSpinner} aria-hidden="true" />
+                  Cargando
+                </span>
+              ) : (
+                "Entrar"
+              )}
             </button>
             </Form>
             {error ? <p className={styles.error}>{error}</p> : null}
@@ -1694,8 +1705,20 @@ export default function StockPortal() {
         <section className={styles.card}>
           {captureStep === "audience" && !showPreparedHistory ? (
             <div className={styles.stockHomeActions}>
-              <button className={styles.slimSessionButton} type="button" onClick={confirmAndLogoutStockPortal}>
-                Cerrar sesión
+              <button
+                className={styles.slimSessionButton}
+                type="button"
+                disabled={stockPortalLoggingOut}
+                onClick={confirmAndLogoutStockPortal}
+              >
+                {stockPortalLoggingOut ? (
+                  <span className={styles.loadingButtonContent}>
+                    <span className={styles.buttonSpinner} aria-hidden="true" />
+                    Cargando
+                  </span>
+                ) : (
+                  "Cerrar sesión"
+                )}
               </button>
               <button className={styles.slimHistoryButton} type="button" onClick={() => setShowPreparedHistory(true)}>
                 Historial
@@ -1707,9 +1730,6 @@ export default function StockPortal() {
             <div className={styles.preparedHistoryPanel}>
               <div className={`${styles.stepHeader} ${styles.preparedHistoryHeader}`}>
                 <h2>Historial del dia</h2>
-                <button className={styles.textButton} type="button" onClick={closePreparedHistory}>
-                  Regresar
-                </button>
                 <button
                   aria-label={stockReprintMode ? "Cancelar reimpresion" : "Reimprimir etiquetas"}
                   className={`${styles.stockReprintButton} ${
@@ -1720,6 +1740,9 @@ export default function StockPortal() {
                   onClick={() => setStockReprintMode((current) => !current)}
                 >
                   🖨️
+                </button>
+                <button className={styles.textButton} type="button" onClick={closePreparedHistory}>
+                  Regresar
                 </button>
               </div>
               {stockReprintMode ? (

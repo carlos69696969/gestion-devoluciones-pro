@@ -1928,16 +1928,15 @@
 }
 
 .stockHeaderActions {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(180px, 220px) auto;
   justify-content: space-between;
   gap: 12px;
   align-items: center;
-  flex-wrap: wrap;
 }
 
 .stockScheduleControl {
   display: flex;
-  flex: 1 1 220px;
   align-items: center;
   justify-content: center;
   gap: 8px;
@@ -1946,6 +1945,7 @@
 }
 
 .stockScheduleControl select {
+  width: 122px;
   min-height: 40px;
   border: 1px solid #d2d5d8;
   border-radius: 999px;
@@ -1957,7 +1957,9 @@
 }
 
 .stockHistoryHeaderActions {
+  display: flex;
   justify-content: flex-start;
+  flex-wrap: wrap;
 }
 
 .stockHistorySearch {
@@ -2240,10 +2242,15 @@
   .rejectForm .input { width: 100%; }
   .rejectForm .rejectReasonTextarea { width: 100%; }
   .courierCodeField { grid-template-columns: 1fr; }
-  .stockHeaderActions { align-items: stretch; }
-  .stockScheduleControl {
-    flex-basis: 100%;
-    justify-content: flex-start;
+  .stockHeaderActions {
+    grid-template-columns: auto minmax(160px, 200px) auto;
+    align-items: center;
   }
-  .stockScheduleControl select { flex: 1; }
+  .stockScheduleControl {
+    justify-content: center;
+  }
+  .stockScheduleControl select { width: 112px; }
+  .stockHistoryHeaderActions {
+    align-items: stretch;
+  }
 }
