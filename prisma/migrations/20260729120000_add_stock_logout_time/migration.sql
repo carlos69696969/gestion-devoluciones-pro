@@ -1,0 +1,2 @@
+ALTER TABLE "ReturnSettings"
+ADD COLUMN IF NOT EXISTS "stockLogoutTime" TEXT NOT NULL DEFAULT '';

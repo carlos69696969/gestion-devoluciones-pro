@@ -198,6 +198,7 @@ model ReturnSettings {
   maintenanceEvidenceDays Int      @default(120)
   maintenancePurgeDays    Int      @default(180)
   maintenanceBatchSize    Int      @default(200)
+  stockLogoutTime         String   @default("")
   updatedAt               DateTime @updatedAt
   createdAt               DateTime @default(now())
 }

@@ -70,6 +70,11 @@ const STOCK_USER_ROLES = {
   PREPARER: "preparador_stock",
   PUBLISHER: "publicador_productos",
 };
+const STOCK_LOGOUT_TIME_OPTIONS = [
+  ...Array.from({ length: 11 }, (_, index) => `${String(index + 13).padStart(2, "0")}:00`),
+  "00:00",
+  ...Array.from({ length: 12 }, (_, index) => `${String(index + 1).padStart(2, "0")}:00`),
+];
 const COURIER_HISTORY_SINCE = new Date("2026-06-10T00:00:00-06:00");
 const COURIER_ROUTE_PLANNED_ACTION = "courier_route_planned";
 const COURIER_ADMIN_REPROGRAM_ACTION = "courier_admin_order_reprogrammed";
@@ -850,6 +855,22 @@ function toMoney(value) {
 
 function stockUserRoleLabel(role) {
   return role === STOCK_USER_ROLES.PUBLISHER ? "Publicador de productos" : "Preparador de stock";
+}
+
+function stockLogoutTimeLabel(value) {
+  const cleanValue = String(value || "").trim();
+  if (!cleanValue) return "Sin horario";
+  const [hourValue = "0"] = cleanValue.split(":");
+  const hour = Number(hourValue || 0);
+  if (!Number.isFinite(hour)) return cleanValue;
+  if (hour === 0) return "12:00 a.m.";
+  if (hour === 12) return "12:00 p.m.";
+  return `${hour > 12 ? hour - 12 : hour}:00 ${hour > 12 ? "p.m." : "a.m."}`;
+}
+
+function normalizeStockLogoutTime(value) {
+  const cleanValue = String(value || "").trim();
+  return STOCK_LOGOUT_TIME_OPTIONS.includes(cleanValue) ? cleanValue : "";
 }
 
 function normalizeStockUserRole(role) {
@@ -4173,6 +4194,16 @@ export const loader = async ({ request }) => {
           }),
         )
       : [];
+  const stockSettings =
+    viewMode === VIEW_MODE.STOCK
+      ? await safeLoader("No se pudo cargar la configuracion de stock", async () => {
+          await ensureStockUserTable(prisma);
+          return prisma.returnSettings.findUnique({
+            where: { shop: session.shop },
+            select: { stockLogoutTime: true },
+          });
+        })
+      : null;
   if (
     (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryActivity) &&
     couriers.length
@@ -4264,6 +4295,7 @@ export const loader = async ({ request }) => {
     preparers,
     stockUsers,
     stockHistoryDrafts: stockHistoryDrafts.map(serializeStockHistoryDraft),
+    stockLogoutTime: normalizeStockLogoutTime(stockSettings?.stockLogoutTime),
     preparerAssignments,
     preparerRouteActivities,
     courierActivities,
@@ -4809,6 +4841,28 @@ export const action = async ({ request }) => {
       return { ok: false, error: "No se encontro el preparador." };
     }
     return { ok: true, message: "Preparador dado de baja correctamente." };
+  }
+
+  if (intent === "update_stock_logout_time") {
+    try {
+      await ensureStockUserTable(prisma);
+      const stockLogoutTime = normalizeStockLogoutTime(formData.get("stockLogoutTime"));
+      await prisma.returnSettings.upsert({
+        where: { shop: session.shop },
+        create: { shop: session.shop, stockLogoutTime },
+        update: { stockLogoutTime },
+      });
+      return {
+        ok: true,
+        intent: "update_stock_logout_time",
+        message: stockLogoutTime
+          ? `Horario de cierre guardado: ${stockLogoutTimeLabel(stockLogoutTime)}.`
+          : "Horario de cierre desactivado.",
+      };
+    } catch (stockSettingsError) {
+      console.error("No se pudo guardar el horario de stock", stockSettingsError);
+      return { ok: false, intent: "update_stock_logout_time", error: "No se pudo guardar el horario de stock." };
+    }
   }
 
   if (intent === "create_stock_user") {
@@ -6387,6 +6441,7 @@ export default function ReturnsRequests() {
     preparers = [],
     stockUsers = [],
     stockHistoryDrafts = [],
+    stockLogoutTime = "",
     preparerAssignments = [],
     preparerRouteActivities = [],
     courierActivities = [],
@@ -7804,7 +7859,12 @@ export default function ReturnsRequests() {
       ) : null}
 
       {viewMode === VIEW_MODE.STOCK ? (
-        <StockUsersSection stockUsers={stockUsers} stockHistoryDrafts={stockHistoryDrafts} isSubmitting={isSubmitting} />
+        <StockUsersSection
+          stockUsers={stockUsers}
+          stockHistoryDrafts={stockHistoryDrafts}
+          stockLogoutTime={stockLogoutTime}
+          isSubmitting={isSubmitting}
+        />
       ) : null}
     </s-page>
   );
@@ -9226,10 +9286,11 @@ function CouriersSection({ couriers, isSubmitting }) {
   );
 }
 
-function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }) {
+function StockUsersSection({ stockUsers, stockHistoryDrafts = [], stockLogoutTime = "", isSubmitting }) {
   const location = useLocation();
   const createStockUserFetcher = useFetcher();
   const deleteStockUserFetcher = useFetcher();
+  const stockSettingsFetcher = useFetcher();
   const [showForm, setShowForm] = useState(false);
   const [role, setRole] = useState(STOCK_USER_ROLES.PREPARER);
   const [code, setCode] = useState("");
@@ -9237,11 +9298,17 @@ function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }
   const [stockSuccessMessage, setStockSuccessMessage] = useState("");
   const [showStockHistory, setShowStockHistory] = useState(false);
   const [stockHistorySearch, setStockHistorySearch] = useState("");
+  const [selectedStockLogoutTime, setSelectedStockLogoutTime] = useState(stockLogoutTime || "");
   const isCreateStockUserSubmitting = createStockUserFetcher.state !== "idle";
   const isDeleteStockUserSubmitting = deleteStockUserFetcher.state !== "idle";
+  const isSavingStockSettings = stockSettingsFetcher.state !== "idle";
   const stockAction = `${location.pathname}${location.search || ""}`;
   const roleLabel = stockUserRoleLabel(role);
-  const stockActionError = createStockUserFetcher.data?.error || deleteStockUserFetcher.data?.error || "";
+  const stockSettingsError =
+    stockSettingsFetcher.data?.intent === "update_stock_logout_time" && !stockSettingsFetcher.data?.ok
+      ? stockSettingsFetcher.data?.error
+      : "";
+  const stockActionError = createStockUserFetcher.data?.error || deleteStockUserFetcher.data?.error || stockSettingsError || "";
   const stockHistoryQuery = stockHistorySearch.trim().toLowerCase();
   const filteredStockHistoryDrafts = stockHistoryQuery
     ? stockHistoryDrafts.filter((draft) =>
@@ -9277,6 +9344,15 @@ function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }
   }, [deleteStockUserFetcher.data]);
 
   useEffect(() => {
+    setSelectedStockLogoutTime(stockLogoutTime || "");
+  }, [stockLogoutTime]);
+
+  useEffect(() => {
+    if (!stockSettingsFetcher.data?.ok || stockSettingsFetcher.data?.intent !== "update_stock_logout_time") return;
+    setStockSuccessMessage(stockSettingsFetcher.data.message || "");
+  }, [stockSettingsFetcher.data]);
+
+  useEffect(() => {
     if (!stockSuccessMessage) return undefined;
     setShowStockSuccessMessage(true);
     const timeoutId = window.setTimeout(() => setShowStockSuccessMessage(false), 3500);
@@ -9291,6 +9367,14 @@ function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }
     setShowForm(false);
     setCode("");
     setRole(STOCK_USER_ROLES.PREPARER);
+  };
+
+  const saveStockLogoutTime = (value) => {
+    setSelectedStockLogoutTime(value);
+    stockSettingsFetcher.submit(
+      { intent: "update_stock_logout_time", stockLogoutTime: value },
+      { method: "post", action: stockAction },
+    );
   };
 
   if (showStockHistory) {
@@ -9357,6 +9441,22 @@ function StockUsersSection({ stockUsers, stockHistoryDrafts = [], isSubmitting }
           <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => setShowForm(true)}>
             Agregar
           </button>
+          <label className={styles.stockScheduleControl}>
+            <span>Horario</span>
+            <select
+              aria-label="Horario de cierre de sesiones stock"
+              value={selectedStockLogoutTime}
+              disabled={isSavingStockSettings}
+              onChange={(event) => saveStockLogoutTime(event.currentTarget.value)}
+            >
+              <option value="">Sin cierre</option>
+              {STOCK_LOGOUT_TIME_OPTIONS.map((timeValue) => (
+                <option key={timeValue} value={timeValue}>
+                  {stockLogoutTimeLabel(timeValue)}
+                </option>
+              ))}
+            </select>
+          </label>
           <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => setShowStockHistory(true)}>
             Historial de stock
           </button>

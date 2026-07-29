@@ -325,6 +325,41 @@ function stockMexicoDateKey(value) {
   return `${partMap.year}-${partMap.month}-${partMap.day}`;
 }
 
+function stockMexicoDateTimeParts(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return { dateKey: "", minutes: -1 };
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: STOCK_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const partMap = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  const hour = Number(partMap.hour || 0);
+  const minute = Number(partMap.minute || 0);
+  return {
+    dateKey: `${partMap.year}-${partMap.month}-${partMap.day}`,
+    minutes: hour * 60 + minute,
+  };
+}
+
+function normalizeStockLogoutTime(value) {
+  const cleanValue = String(value || "").trim();
+  return /^([01]\d|2[0-3]):00$/.test(cleanValue) ? cleanValue : "";
+}
+
+function stockLogoutMinutes(value) {
+  const [hour = "0", minute = "0"] = String(value || "").split(":");
+  return Number(hour || 0) * 60 + Number(minute || 0);
+}
+
+function stockAutoLogoutKey(shop, logoutTime, dateKey) {
+  return `cariana-stock-auto-logout:${cleanShop(shop) || "portal-stock"}:${logoutTime}:${dateKey}`;
+}
+
 function formatStockHistoryTime(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -432,6 +467,7 @@ export async function loader({ request }) {
   let locationRows = [];
   let releasedLocationRows = [];
   let preparedHistoryRows = [];
+  let stockSettings = null;
   let error = "";
   let stockUser = null;
   try {
@@ -446,7 +482,7 @@ export async function loader({ request }) {
     if (stockUser) {
       await syncReleasedStockLocations(shop);
       await clearExpiredStockPublicationLocks(shop);
-      [drafts, skuRows, locationRows, releasedLocationRows, preparedHistoryRows] = await Promise.all([
+      [drafts, skuRows, locationRows, releasedLocationRows, preparedHistoryRows, stockSettings] = await Promise.all([
         prisma.stockProductDraft.findMany({
           where: { shop, status: "pendiente" },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -481,6 +517,10 @@ export async function loader({ request }) {
               take: 120,
             })
           : Promise.resolve([]),
+        prisma.returnSettings.findUnique({
+          where: { shop },
+          select: { stockLogoutTime: true },
+        }),
       ]);
     }
   } catch (loadError) {
@@ -525,6 +565,7 @@ export async function loader({ request }) {
     garments: STOCK_GARMENTS,
     nextSkuByCategory,
     locationByCategory,
+    stockLogoutTime: normalizeStockLogoutTime(stockSettings?.stockLogoutTime),
     error,
   };
 }
@@ -910,6 +951,7 @@ export default function StockPortal() {
     garments,
     nextSkuByCategory,
     locationByCategory,
+    stockLogoutTime,
   } = useLoaderData();
   const actionData = useActionData();
   const publishStockFetcher = useFetcher();
@@ -1028,6 +1070,25 @@ export default function StockPortal() {
     }
   }
 
+  function stockLoginUrl() {
+    return `/stock?shop=${encodeURIComponent(shop)}`;
+  }
+
+  function logoutStockPortal() {
+    try {
+      window.localStorage.removeItem(captureDraftKey);
+      window.localStorage.removeItem(publisherDraftKey);
+    } catch (_error) {
+      // Si localStorage no esta disponible, de todos modos se fuerza la pantalla de codigo.
+    }
+    setSelectedDraftId(0);
+    setPendingSelectedDraftId(0);
+    setCheckedStockItems({});
+    setShowPreparedHistory(false);
+    setStockReprintMode(false);
+    window.location.assign(stockLoginUrl());
+  }
+
   useEffect(() => {
     if (savedFlag) {
       printStockLabels({
@@ -1075,6 +1136,35 @@ export default function StockPortal() {
       setCaptureDraftLoaded(true);
     }
   }, [captureDraftKey, savedFlag, setSearchParams]);
+
+  useEffect(() => {
+    if (!stockUser || !stockLogoutTime) return undefined;
+    const checkStockLogoutTime = () => {
+      const { dateKey, minutes } = stockMexicoDateTimeParts();
+      const targetMinutes = stockLogoutMinutes(stockLogoutTime);
+      if (!dateKey || minutes < 0 || !Number.isFinite(targetMinutes) || minutes < targetMinutes) return;
+      const storageKey = stockAutoLogoutKey(shop, stockLogoutTime, dateKey);
+      try {
+        if (window.localStorage.getItem(storageKey)) return;
+        window.localStorage.setItem(storageKey, "1");
+      } catch (_error) {
+        // Si no se puede marcar localmente, cerrar sesion sigue siendo lo correcto.
+      }
+      logoutStockPortal();
+    };
+
+    checkStockLogoutTime();
+    const intervalId = window.setInterval(checkStockLogoutTime, 15000);
+    return () => window.clearInterval(intervalId);
+  }, [shop, stockLogoutTime, stockUser, captureDraftKey, publisherDraftKey]);
+
+  useEffect(() => {
+    if (!stockUser || !isPreparerStock) return undefined;
+    const intervalId = window.setInterval(() => {
+      if (revalidator.state === "idle") revalidator.revalidate();
+    }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [isPreparerStock, revalidator, stockUser]);
 
   useEffect(() => {
     if (navigation.state !== "idle") return;
@@ -1598,15 +1688,23 @@ export default function StockPortal() {
       {isPreparerStock && activeTab === "capturar" ? (
         <section className={styles.card}>
           {captureStep === "audience" && !showPreparedHistory ? (
-            <button className={styles.slimHistoryButton} type="button" onClick={() => setShowPreparedHistory(true)}>
-              Historial
-            </button>
+            <div className={styles.stockHomeActions}>
+              <button className={styles.slimSessionButton} type="button" onClick={logoutStockPortal}>
+                Cerrar sesión
+              </button>
+              <button className={styles.slimHistoryButton} type="button" onClick={() => setShowPreparedHistory(true)}>
+                Historial
+              </button>
+            </div>
           ) : null}
 
           {captureStep === "audience" && showPreparedHistory ? (
             <div className={styles.preparedHistoryPanel}>
               <div className={`${styles.stepHeader} ${styles.preparedHistoryHeader}`}>
                 <h2>Historial del dia</h2>
+                <button className={styles.textButton} type="button" onClick={closePreparedHistory}>
+                  Regresar
+                </button>
                 <button
                   aria-label={stockReprintMode ? "Cancelar reimpresion" : "Reimprimir etiquetas"}
                   className={`${styles.stockReprintButton} ${
@@ -1617,9 +1715,6 @@ export default function StockPortal() {
                   onClick={() => setStockReprintMode((current) => !current)}
                 >
                   🖨️
-                </button>
-                <button className={styles.textButton} type="button" onClick={closePreparedHistory}>
-                  Regresar
                 </button>
               </div>
               {stockReprintMode ? (

@@ -1932,6 +1932,28 @@
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.stockScheduleControl {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #202223;
+  font-weight: 800;
+}
+
+.stockScheduleControl select {
+  min-height: 40px;
+  border: 1px solid #d2d5d8;
+  border-radius: 999px;
+  background: #fff;
+  color: #202223;
+  font: inherit;
+  font-weight: 800;
+  padding: 0 14px;
 }
 
 .stockHistoryHeaderActions {
@@ -2218,4 +2240,10 @@
   .rejectForm .input { width: 100%; }
   .rejectForm .rejectReasonTextarea { width: 100%; }
   .courierCodeField { grid-template-columns: 1fr; }
+  .stockHeaderActions { align-items: stretch; }
+  .stockScheduleControl {
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+  .stockScheduleControl select { flex: 1; }
 }

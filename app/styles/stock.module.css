@@ -199,10 +199,18 @@
   white-space: nowrap;
 }
 
-.slimHistoryButton {
+.stockHomeActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.slimHistoryButton,
+.slimSessionButton {
   width: 100%;
   min-height: 38px;
-  margin: 0 0 12px;
+  margin: 0;
   border: 1px solid #ccd3dd;
   border-radius: 999px;
   background: #fff;
@@ -210,6 +218,10 @@
   font: inherit;
   font-size: 13px;
   font-weight: 900;
+}
+
+.slimSessionButton {
+  color: #1f2937;
 }
 
 .preparedHistoryPanel {
