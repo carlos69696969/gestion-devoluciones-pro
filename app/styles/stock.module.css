@@ -231,15 +231,25 @@
 
 .preparedHistoryHeader {
   grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.preparedHistoryHeader h2 {
+  font-size: 18px;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 .preparedHistoryHeader .textButton {
-  min-width: 112px;
+  min-width: 92px;
+  min-height: 38px;
+  padding: 0 12px;
 }
 
 .stockReprintButton {
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   border: 1px solid #ccd3dd;
   border-radius: 999px;
   background: #fff;
@@ -1066,6 +1076,22 @@
   .generatedPanel,
   .stepHeader:not(.preparedHistoryHeader) {
     grid-template-columns: 1fr;
+  }
+
+  .preparedHistoryHeader h2 {
+    font-size: 16px;
+  }
+
+  .preparedHistoryHeader .textButton {
+    min-width: 86px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  .stockReprintButton {
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
   }
 
   .choiceGrid,

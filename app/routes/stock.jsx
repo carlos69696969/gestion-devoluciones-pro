@@ -1089,6 +1089,11 @@ export default function StockPortal() {
     window.location.assign(stockLoginUrl());
   }
 
+  function confirmAndLogoutStockPortal() {
+    if (!window.confirm("¿Seguro que quieres cerrar sesión?")) return;
+    logoutStockPortal();
+  }
+
   useEffect(() => {
     if (savedFlag) {
       printStockLabels({
@@ -1689,7 +1694,7 @@ export default function StockPortal() {
         <section className={styles.card}>
           {captureStep === "audience" && !showPreparedHistory ? (
             <div className={styles.stockHomeActions}>
-              <button className={styles.slimSessionButton} type="button" onClick={logoutStockPortal}>
+              <button className={styles.slimSessionButton} type="button" onClick={confirmAndLogoutStockPortal}>
                 Cerrar sesión
               </button>
               <button className={styles.slimHistoryButton} type="button" onClick={() => setShowPreparedHistory(true)}>

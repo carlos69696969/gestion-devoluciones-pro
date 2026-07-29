@@ -4196,7 +4196,7 @@ export const loader = async ({ request }) => {
       : [];
   const stockSettings =
     viewMode === VIEW_MODE.STOCK
-      ? await safeLoader("No se pudo cargar la configuracion de stock", async () => {
+      ? await safeLoaderValue("No se pudo cargar la configuracion de stock", null, async () => {
           await ensureStockUserTable(prisma);
           return prisma.returnSettings.findUnique({
             where: { shop: session.shop },
