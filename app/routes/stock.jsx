@@ -411,6 +411,8 @@ function serializePreparedStockHistory(draft) {
   return {
     id: draft.id,
     sku: draft.sku || "",
+    locationCode: draft.locationCode || "",
+    quantity: Math.max(1, Number(draft.quantity || 0) || 1),
     createdAt: draft.createdAt.toISOString(),
     time: formatStockHistoryTime(draft.createdAt),
   };
@@ -474,7 +476,7 @@ export async function loader({ request }) {
                 preparedByStockUserId: stockUser.id,
                 createdAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) },
               },
-              select: { id: true, sku: true, createdAt: true },
+              select: { id: true, sku: true, locationCode: true, quantity: true, createdAt: true },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
               take: 120,
             })
@@ -929,6 +931,7 @@ export default function StockPortal() {
   const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
   const [captureStep, setCaptureStep] = useState("audience");
   const [showPreparedHistory, setShowPreparedHistory] = useState(false);
+  const [stockReprintMode, setStockReprintMode] = useState(false);
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -1014,6 +1017,7 @@ export default function StockPortal() {
     setActiveTab("capturar");
     setCaptureStep("audience");
     setShowPreparedHistory(false);
+    setStockReprintMode(false);
     setPhotos([]);
     resetStockVariants();
     setCaptureDraftLoaded(true);
@@ -1299,8 +1303,32 @@ export default function StockPortal() {
 
   function chooseAudience(value) {
     setShowPreparedHistory(false);
+    setStockReprintMode(false);
     setSelectedAudience(value);
     setCaptureStep("product");
+  }
+
+  function closePreparedHistory() {
+    setShowPreparedHistory(false);
+    setStockReprintMode(false);
+  }
+
+  function reprintPreparedHistoryItem(item) {
+    if (!stockReprintMode) return;
+    const sku = String(item?.sku || "").trim();
+    const locationCode = String(item?.locationCode || "").trim();
+    if (!sku || !locationCode) {
+      window.alert("No se puede reimprimir esta orden porque falta SKU o ubicacion.");
+      return;
+    }
+    const confirmed = window.confirm(`¿Seguro que quieres reimprimir las etiquetas de ${sku}?`);
+    if (!confirmed) return;
+    printStockLabels({
+      sku,
+      locationCode,
+      quantity: item?.quantity || 1,
+    });
+    setStockReprintMode(false);
   }
 
   function chooseGarment(value) {
@@ -1579,17 +1607,39 @@ export default function StockPortal() {
             <div className={styles.preparedHistoryPanel}>
               <div className={`${styles.stepHeader} ${styles.preparedHistoryHeader}`}>
                 <h2>Historial del dia</h2>
-                <button className={styles.textButton} type="button" onClick={() => setShowPreparedHistory(false)}>
+                <button
+                  aria-label={stockReprintMode ? "Cancelar reimpresion" : "Reimprimir etiquetas"}
+                  className={`${styles.stockReprintButton} ${
+                    stockReprintMode ? styles.stockReprintButtonActive : ""
+                  }`}
+                  title={stockReprintMode ? "Cancelar reimpresion" : "Reimprimir etiquetas"}
+                  type="button"
+                  onClick={() => setStockReprintMode((current) => !current)}
+                >
+                  🖨️
+                </button>
+                <button className={styles.textButton} type="button" onClick={closePreparedHistory}>
                   Regresar
                 </button>
               </div>
+              {stockReprintMode ? (
+                <p className={styles.reprintHint}>Presiona la orden que quieres reimprimir.</p>
+              ) : null}
               {preparedHistory.length ? (
                 <div className={styles.preparedHistoryList}>
                   {preparedHistory.map((item) => (
-                    <div className={styles.preparedHistoryRow} key={item.id}>
+                    <button
+                      aria-disabled={!stockReprintMode}
+                      className={`${styles.preparedHistoryRow} ${
+                        stockReprintMode ? styles.preparedHistoryRowSelectable : ""
+                      }`}
+                      key={item.id}
+                      type="button"
+                      onClick={() => reprintPreparedHistoryItem(item)}
+                    >
                       <strong>{item.sku || "-"}</strong>
                       <span>{item.time || "-"}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               ) : (
