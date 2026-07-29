@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  createCookie,
   Form,
   redirect,
   useActionData,
@@ -453,6 +454,45 @@ function generateStockDeviceId() {
   return `stock-device-${generateStockSessionToken()}`;
 }
 
+function stockPortalSessionCookie() {
+  return createCookie("stock_portal_session_v1", {
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 30,
+    path: "/",
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
+}
+
+async function readStockPortalSessionCookie(request) {
+  return (await stockPortalSessionCookie().parse(request.headers.get("Cookie"))) || {};
+}
+
+function stockSessionBelongsToDevice(cookieAccess, sessionToken, stockUser) {
+  const cookieSessionToken = String(cookieAccess?.sessionToken || "").trim();
+  const cookieDeviceId = String(cookieAccess?.deviceId || "").trim();
+  const userDeviceId = String(stockUser?.sessionDeviceId || "").trim();
+  return Boolean(
+    sessionToken &&
+      stockUser &&
+      cookieSessionToken === sessionToken &&
+      userDeviceId &&
+      cookieDeviceId &&
+      cookieDeviceId === userDeviceId,
+  );
+}
+
+async function stockSessionSetCookieHeader({ sessionToken, deviceId }) {
+  return await stockPortalSessionCookie().serialize({
+    sessionToken: String(sessionToken || "").trim(),
+    deviceId: String(deviceId || "").trim(),
+  });
+}
+
+async function stockSessionClearCookieHeader() {
+  return await stockPortalSessionCookie().serialize("", { maxAge: 0 });
+}
+
 async function generateUniqueStockCode(shop, excludeUserId = 0) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -488,6 +528,8 @@ export const headers = () => ({
 export async function loader({ request }) {
   const url = new URL(request.url);
   const shop = portalShopFromRequest(request);
+  const stockCookieAccess = await readStockPortalSessionCookie(request);
+  const cookieSessionToken = String(stockCookieAccess?.sessionToken || "").trim();
   const accessCode = String(url.searchParams.get("codigo") || url.searchParams.get("code") || "").trim();
   const sessionToken = String(url.searchParams.get("sesion") || url.searchParams.get("session") || "").trim();
   const sessionDeviceId = sanitizeText(url.searchParams.get("dispositivo") || url.searchParams.get("device"), 220);
@@ -500,16 +542,24 @@ export async function loader({ request }) {
   let error = "";
   let stockUser = null;
   try {
+    if (!accessCode && !sessionToken && !sessionDeviceId && cookieSessionToken) {
+      return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(cookieSessionToken)}`);
+    }
     if (accessCode || sessionToken || sessionDeviceId) await ensureStockUserTable(prisma);
     if (sessionToken) {
       stockUser = await prisma.stockUser.findFirst({
         where: { shop, sessionToken, active: true },
       });
       if (stockUser) {
-        await prisma.stockUser.update({
-          where: { id: stockUser.id },
-          data: { sessionLastSeenAt: new Date() },
-        });
+        if (stockSessionBelongsToDevice(stockCookieAccess, sessionToken, stockUser)) {
+          await prisma.stockUser.update({
+            where: { id: stockUser.id },
+            data: { sessionLastSeenAt: new Date() },
+          });
+        } else {
+          stockUser = null;
+          error = "Esta sesion pertenece a otro dispositivo. Ingresa tu codigo.";
+        }
       } else {
         error = "Tu sesion ya no esta activa. Ingresa tu codigo nuevamente.";
       }
@@ -524,24 +574,39 @@ export async function loader({ request }) {
         });
         return redirect(
           `/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(stockUser.sessionToken)}&dispositivo=${encodeURIComponent(sessionDeviceId)}`,
+          {
+            headers: {
+              "Set-Cookie": await stockSessionSetCookieHeader({
+                sessionToken: stockUser.sessionToken,
+                deviceId: sessionDeviceId,
+              }),
+            },
+          },
         );
       }
     } else if (accessCode) {
       stockUser = await prisma.stockUser.findFirst({
         where: { shop, code: accessCode, active: true, sessionToken: null },
       });
-      if (stockUser) {
+      if (stockUser && sessionDeviceId) {
         const nextSessionToken = generateStockSessionToken();
         await prisma.stockUser.update({
           where: { id: stockUser.id },
           data: {
             sessionToken: nextSessionToken,
-            sessionDeviceId: "",
+            sessionDeviceId,
             sessionStartedAt: new Date(),
             sessionLastSeenAt: new Date(),
           },
         });
-        return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(nextSessionToken)}`);
+        return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(nextSessionToken)}`, {
+          headers: {
+            "Set-Cookie": await stockSessionSetCookieHeader({
+              sessionToken: nextSessionToken,
+              deviceId: sessionDeviceId,
+            }),
+          },
+        });
       }
       error = "Codigo invalido o la cuenta ya inicio sesion.";
     }
@@ -643,6 +708,7 @@ export async function action({ request }) {
   const intent = String(formData.get("intent") || "").trim();
   const shop = cleanShop(formData.get("shop")) || portalShopFromRequest(request);
   const stockCode = String(formData.get("stockCode") || "").trim();
+  const stockCookieAccess = await readStockPortalSessionCookie(request);
   const stockPortalHref = (params = "") =>
     `/stock?shop=${encodeURIComponent(shop)}${stockCode ? `&sesion=${encodeURIComponent(stockCode)}` : ""}${params}`;
 
@@ -666,7 +732,14 @@ export async function action({ request }) {
               sessionLastSeenAt: new Date(),
             },
           });
-          return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(stockUser.sessionToken)}`);
+          return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(stockUser.sessionToken)}`, {
+            headers: {
+              "Set-Cookie": await stockSessionSetCookieHeader({
+                sessionToken: stockUser.sessionToken,
+                deviceId: stockUser.sessionDeviceId || stockDeviceId,
+              }),
+            },
+          });
         }
         return { ok: false, error: "Esta cuenta ya inicio sesion." };
       }
@@ -680,7 +753,14 @@ export async function action({ request }) {
           sessionLastSeenAt: new Date(),
         },
       });
-      return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(sessionToken)}`);
+      return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(sessionToken)}`, {
+        headers: {
+          "Set-Cookie": await stockSessionSetCookieHeader({
+            sessionToken,
+            deviceId: stockDeviceId,
+          }),
+        },
+      });
     } catch (stockLoginError) {
       console.error("No se pudo validar el codigo de stock", stockLoginError);
       return { ok: false, error: "No se pudo validar el codigo. Intenta nuevamente." };
@@ -688,19 +768,26 @@ export async function action({ request }) {
   }
 
   if (stockCode) await ensureStockUserTable(prisma);
-  const stockUser = stockCode
+  const sessionStockUser = stockCode
     ? await prisma.stockUser.findFirst({
         where: { shop, sessionToken: stockCode, active: true },
-        select: { id: true, role: true },
+        select: { id: true, role: true, sessionDeviceId: true, sessionToken: true },
       })
+    : null;
+  const activeStockUser = stockSessionBelongsToDevice(stockCookieAccess, stockCode, sessionStockUser)
+    ? sessionStockUser
     : null;
 
   if (intent === "stock_logout") {
-    if (!stockUser) return redirect(`/stock?shop=${encodeURIComponent(shop)}`);
+    if (!activeStockUser) {
+      return redirect(`/stock?shop=${encodeURIComponent(shop)}`, {
+        headers: { "Set-Cookie": await stockSessionClearCookieHeader() },
+      });
+    }
     try {
-      const nextCode = await generateUniqueStockCode(shop, stockUser.id);
+      const nextCode = await generateUniqueStockCode(shop, activeStockUser.id);
       await prisma.stockUser.update({
-        where: { id: stockUser.id },
+        where: { id: activeStockUser.id },
         data: {
           ...(nextCode ? { code: nextCode } : {}),
           sessionToken: null,
@@ -712,8 +799,16 @@ export async function action({ request }) {
     } catch (stockLogoutError) {
       console.error("No se pudo cerrar la sesion de stock", stockLogoutError);
     }
-    return redirect(`/stock?shop=${encodeURIComponent(shop)}`);
+    return redirect(`/stock?shop=${encodeURIComponent(shop)}`, {
+      headers: { "Set-Cookie": await stockSessionClearCookieHeader() },
+    });
   }
+
+  if (stockCode && !activeStockUser) {
+    return { ok: false, error: "Esta sesion pertenece a otro dispositivo. Ingresa tu codigo." };
+  }
+
+  const stockUser = activeStockUser;
 
   if (stockUser) await clearExpiredStockPublicationLocks(shop);
 
