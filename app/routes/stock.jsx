@@ -1730,6 +1730,9 @@ export default function StockPortal() {
             <div className={styles.preparedHistoryPanel}>
               <div className={`${styles.stepHeader} ${styles.preparedHistoryHeader}`}>
                 <h2>Historial del dia</h2>
+                <button className={styles.textButton} type="button" onClick={closePreparedHistory}>
+                  Regresar
+                </button>
                 <button
                   aria-label={stockReprintMode ? "Cancelar reimpresion" : "Reimprimir etiquetas"}
                   className={`${styles.stockReprintButton} ${
@@ -1740,9 +1743,6 @@ export default function StockPortal() {
                   onClick={() => setStockReprintMode((current) => !current)}
                 >
                   🖨️
-                </button>
-                <button className={styles.textButton} type="button" onClick={closePreparedHistory}>
-                  Regresar
                 </button>
               </div>
               {stockReprintMode ? (
