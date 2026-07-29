@@ -490,6 +490,7 @@ export async function loader({ request }) {
   const shop = portalShopFromRequest(request);
   const accessCode = String(url.searchParams.get("codigo") || url.searchParams.get("code") || "").trim();
   const sessionToken = String(url.searchParams.get("sesion") || url.searchParams.get("session") || "").trim();
+  const sessionDeviceId = sanitizeText(url.searchParams.get("dispositivo") || url.searchParams.get("device"), 220);
   let drafts = [];
   let skuRows = [];
   let locationRows = [];
@@ -499,7 +500,7 @@ export async function loader({ request }) {
   let error = "";
   let stockUser = null;
   try {
-    if (accessCode || sessionToken) await ensureStockUserTable(prisma);
+    if (accessCode || sessionToken || sessionDeviceId) await ensureStockUserTable(prisma);
     if (sessionToken) {
       stockUser = await prisma.stockUser.findFirst({
         where: { shop, sessionToken, active: true },
@@ -511,6 +512,19 @@ export async function loader({ request }) {
         });
       } else {
         error = "Tu sesion ya no esta activa. Ingresa tu codigo nuevamente.";
+      }
+    } else if (sessionDeviceId) {
+      stockUser = await prisma.stockUser.findFirst({
+        where: { shop, sessionDeviceId, active: true, sessionToken: { not: null } },
+      });
+      if (stockUser?.sessionToken) {
+        await prisma.stockUser.update({
+          where: { id: stockUser.id },
+          data: { sessionLastSeenAt: new Date() },
+        });
+        return redirect(
+          `/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(stockUser.sessionToken)}&dispositivo=${encodeURIComponent(sessionDeviceId)}`,
+        );
       }
     } else if (accessCode) {
       stockUser = await prisma.stockUser.findFirst({
@@ -1102,6 +1116,7 @@ export default function StockPortal() {
   const captureDraftKey = useMemo(() => stockCaptureDraftKey(shop), [shop]);
   const stockSessionKey = useMemo(() => stockSessionStorageKey(shop), [shop]);
   const stockDeviceKey = useMemo(() => stockDeviceStorageKey(shop), [shop]);
+  const urlStockDeviceId = String(searchParams.get("dispositivo") || searchParams.get("device") || "").trim();
   const publisherDraftKey = useMemo(() => stockPublisherDraftKey(shop, accessCode), [accessCode, shop]);
   const suggestedSku =
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
@@ -1217,6 +1232,11 @@ export default function StockPortal() {
 
   useEffect(() => {
     try {
+      if (urlStockDeviceId) {
+        window.localStorage.setItem(stockDeviceKey, urlStockDeviceId);
+        setStockDeviceId(urlStockDeviceId);
+        return;
+      }
       const savedDeviceId = String(window.localStorage.getItem(stockDeviceKey) || "").trim();
       if (savedDeviceId) {
         setStockDeviceId(savedDeviceId);
@@ -1228,22 +1248,26 @@ export default function StockPortal() {
     } catch (_error) {
       setStockDeviceId(generateStockDeviceId());
     }
-  }, [stockDeviceKey]);
+  }, [stockDeviceKey, urlStockDeviceId]);
 
   useEffect(() => {
     const urlSessionToken = String(searchParams.get("sesion") || searchParams.get("session") || "").trim();
     const activeSessionToken = String(sessionToken || accessCode || "").trim();
     try {
+      const storedToken = String(window.localStorage.getItem(stockSessionKey) || "").trim();
       if (stockUser && activeSessionToken) {
         window.localStorage.setItem(stockSessionKey, activeSessionToken);
         return;
       }
       if (!stockUser && urlSessionToken) {
+        if (storedToken && storedToken !== urlSessionToken) {
+          window.location.replace(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(storedToken)}`);
+          return;
+        }
         window.localStorage.removeItem(stockSessionKey);
         return;
       }
       if (!stockUser && !urlSessionToken) {
-        const storedToken = String(window.localStorage.getItem(stockSessionKey) || "").trim();
         if (storedToken) {
           window.location.replace(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(storedToken)}`);
         }

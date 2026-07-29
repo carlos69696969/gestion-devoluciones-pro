@@ -269,17 +269,17 @@ public class MainActivity extends Activity {
     }
 
     private String portalUrl() {
-        return BASE_URL + "&sesion=" + getInstallSessionId();
+        return BASE_URL + "&dispositivo=" + getInstallDeviceId();
     }
 
-    private String getInstallSessionId() {
+    private String getInstallDeviceId() {
         SharedPreferences preferences = getSharedPreferences("portal", MODE_PRIVATE);
-        String sessionId = preferences.getString("install_session_id", "");
-        if (sessionId == null || sessionId.trim().isEmpty()) {
-            sessionId = java.util.UUID.randomUUID().toString();
-            preferences.edit().putString("install_session_id", sessionId).apply();
+        String deviceId = preferences.getString("install_device_id", "");
+        if (deviceId == null || deviceId.trim().isEmpty()) {
+            deviceId = java.util.UUID.randomUUID().toString();
+            preferences.edit().putString("install_device_id", deviceId).apply();
         }
-        return sessionId;
+        return deviceId;
     }
 
     private class PortalBridge {
