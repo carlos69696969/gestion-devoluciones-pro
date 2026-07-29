@@ -20,6 +20,9 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -67,8 +70,23 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> filePathCallback;
     private Uri pendingCameraUri;
     private File pendingCameraFile;
+    private Handler networkRetryHandler;
     private float pullStartY = 0f;
     private boolean trackingPullRefresh = false;
+    private boolean showingOfflinePage = false;
+    private final Runnable networkRetryRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (isNetworkAvailable()) {
+                showingOfflinePage = false;
+                if (webView != null) {
+                    webView.loadUrl(portalUrl());
+                }
+                return;
+            }
+            startNetworkRetry();
+        }
+    };
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -80,6 +98,7 @@ public class MainActivity extends Activity {
         webView.setBackgroundColor(Color.rgb(246, 247, 249));
         webView.setWebViewClient(new PortalWebViewClient());
         webView.setWebChromeClient(new PortalChromeClient());
+        networkRetryHandler = new Handler(getMainLooper());
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -104,8 +123,10 @@ public class MainActivity extends Activity {
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
-        } else {
+        } else if (isNetworkAvailable()) {
             webView.loadUrl(portalUrl());
+        } else {
+            showOfflinePage();
         }
         requestBluetoothPermissionOnLaunch();
     }
@@ -125,7 +146,7 @@ public class MainActivity extends Activity {
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             super.onReceivedError(view, request, error);
             if (request != null && request.isForMainFrame()) {
-                Toast.makeText(MainActivity.this, "No se pudo cargar portal stock.", Toast.LENGTH_SHORT).show();
+                showOfflinePage();
             }
         }
     }
@@ -272,6 +293,58 @@ public class MainActivity extends Activity {
         return BASE_URL + "&dispositivo=" + getInstallDeviceId();
     }
 
+    private boolean isNetworkAvailable() {
+        try {
+            ConnectivityManager manager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (manager == null) return false;
+            Network network = manager.getActiveNetwork();
+            if (network == null) return false;
+            NetworkCapabilities capabilities = manager.getNetworkCapabilities(network);
+            return capabilities != null && (
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+            );
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private void showOfflinePage() {
+        if (webView == null) return;
+        showingOfflinePage = true;
+        webView.loadDataWithBaseURL(
+            "https://" + PORTAL_HOST + "/offline",
+            offlineHtml(),
+            "text/html",
+            "UTF-8",
+            null
+        );
+        startNetworkRetry();
+    }
+
+    private void startNetworkRetry() {
+        if (networkRetryHandler == null) return;
+        networkRetryHandler.removeCallbacks(networkRetryRunnable);
+        networkRetryHandler.postDelayed(networkRetryRunnable, 3000);
+    }
+
+    private String offlineHtml() {
+        return "<!doctype html><html><head><meta charset=\"utf-8\">" +
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">" +
+            "<style>" +
+            "html,body{margin:0;height:100%;font-family:Arial,sans-serif;background:#050505;color:#fff;overflow:hidden;}" +
+            ".screen{position:relative;min-height:100%;background:url('file:///android_asset/stock_offline.png') center/cover no-repeat;}" +
+            ".shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.18) 48%,rgba(0,0,0,.72));}" +
+            ".msg{position:absolute;left:24px;right:24px;bottom:54px;text-align:center;text-shadow:0 2px 10px rgba(0,0,0,.75);}" +
+            ".msg h1{margin:0 0 10px;font-size:24px;line-height:1.05;font-weight:800;}" +
+            ".msg p{margin:0;font-size:16px;line-height:1.35;font-weight:700;}" +
+            "</style></head><body><main class=\"screen\"><div class=\"shade\"></div>" +
+            "<section class=\"msg\"><h1>Parece que no tienes internet</h1>" +
+            "<p>Comprueba que estes conectado a Wi-Fi o que tengas datos moviles.</p></section>" +
+            "</main></body></html>";
+    }
+
     private String getInstallDeviceId() {
         SharedPreferences preferences = getSharedPreferences("portal", MODE_PRIVATE);
         String deviceId = preferences.getString("install_device_id", "");
@@ -285,9 +358,19 @@ public class MainActivity extends Activity {
     private class PortalBridge {
         @JavascriptInterface
         public void printStockLabels(String sku, String locationCode, String quantity) {
+            printStockLabelsInternal(sku, locationCode, quantity, "");
+        }
+
+        @JavascriptInterface
+        public void printStockLabelsBySize(String sku, String locationCode, String quantity, String sizeBatches) {
+            printStockLabelsInternal(sku, locationCode, quantity, sizeBatches);
+        }
+
+        private void printStockLabelsInternal(String sku, String locationCode, String quantity, String sizeBatches) {
             final String cleanSku = normalizeLabelText(sku, "SKU");
             final String cleanLocation = normalizeLabelText(locationCode, "UBICACION");
             final int labelCount = Math.max(1, Math.min(9999, parsePositiveInt(quantity, 1)));
+            final String cleanSizeBatches = normalizeLabelText(sizeBatches, "");
 
             new Thread(new Runnable() {
                 @Override
@@ -317,7 +400,7 @@ public class MainActivity extends Activity {
 
                         BluetoothSocket socket = getPrinterSocket(printer);
                         OutputStream outputStream = socket.getOutputStream();
-                        outputStream.write(buildStockLabelTspl(cleanSku, cleanLocation, labelCount));
+                        outputStream.write(buildStockLabelTspl(cleanSku, cleanLocation, labelCount, cleanSizeBatches));
                         outputStream.flush();
                         showToast(labelCount + " etiqueta(s) enviadas a la impresora.");
                     } catch (SecurityException error) {
@@ -514,10 +597,20 @@ public class MainActivity extends Activity {
         return fallback;
     }
 
-    private byte[] buildStockLabelTspl(String sku, String locationCode, int quantity) {
+    private static class LabelBatch {
+        final String size;
+        final int quantity;
+
+        LabelBatch(String size, int quantity) {
+            this.size = size;
+            this.quantity = quantity;
+        }
+    }
+
+    private byte[] buildStockLabelTspl(String sku, String locationCode, int quantity, String sizeBatches) {
         String cleanSku = tsplText(sku).replaceAll("[^0-9A-Za-z-]", "");
         if (cleanSku.length() == 0) cleanSku = tsplText(sku);
-        Bitmap labelBitmap = renderStockLabelBitmap(cleanSku, tsplText(locationCode));
+        List<LabelBatch> batches = parseLabelBatches(sizeBatches, quantity);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         appendCommand(output,
             "SIZE 40 mm,30 mm\r\n" +
@@ -526,30 +619,55 @@ public class MainActivity extends Activity {
             "REFERENCE 0,0\r\n" +
             "OFFSET 0 mm\r\n" +
             "SPEED 4\r\n" +
-            "DENSITY 10\r\n" +
-            "CLS\r\n" +
-            "BITMAP 0,0,40,240,0,"
+            "DENSITY 10\r\n"
         );
-        try {
-            output.write(bitmapToTsplBytes(labelBitmap, 178));
-        } catch (IOException ignored) {}
-        appendCommand(output, "\r\n");
-        appendCommand(output, "PRINT " + quantity + ",1\r\n");
+        for (LabelBatch batch : batches) {
+            Bitmap labelBitmap = renderStockLabelBitmap(cleanSku, tsplText(locationCode), batch.size);
+            appendCommand(output, "CLS\r\nBITMAP 0,0,40,240,0,");
+            try {
+                output.write(bitmapToTsplBytes(labelBitmap, 178));
+            } catch (IOException ignored) {}
+            appendCommand(output, "\r\n");
+            appendCommand(output, "PRINT " + batch.quantity + ",1\r\n");
+        }
         return output.toByteArray();
     }
 
-    private Bitmap renderStockLabelBitmap(String sku, String locationCode) {
+    private List<LabelBatch> parseLabelBatches(String sizeBatches, int fallbackQuantity) {
+        java.util.ArrayList<LabelBatch> batches = new java.util.ArrayList<>();
+        String raw = String.valueOf(sizeBatches == null ? "" : sizeBatches).trim();
+        if (!raw.isEmpty()) {
+            String[] parts = raw.split("\\|");
+            for (String part : parts) {
+                String[] pair = part.split(":", 2);
+                if (pair.length != 2) continue;
+                String size = tsplText(pair[0]).replaceAll("[^0-9A-Za-z.]", "").toUpperCase();
+                int quantity = Math.max(1, Math.min(9999, parsePositiveInt(pair[1], 1)));
+                if (!size.isEmpty()) batches.add(new LabelBatch(size, quantity));
+            }
+        }
+        if (batches.isEmpty()) {
+            batches.add(new LabelBatch("", Math.max(1, Math.min(9999, fallbackQuantity))));
+        }
+        return batches;
+    }
+
+    private Bitmap renderStockLabelBitmap(String sku, String locationCode, String size) {
         Bitmap bitmap = Bitmap.createBitmap(STOCK_LABEL_WIDTH_DOTS, STOCK_LABEL_HEIGHT_DOTS, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         canvas.drawColor(Color.WHITE);
 
         drawStockBrand(canvas);
-        drawCenteredText(canvas, sku, STOCK_LABEL_WIDTH_DOTS / 2f, 126, stockSkuTextSize(sku), true);
+        drawCenteredText(canvas, sku, STOCK_LABEL_WIDTH_DOTS / 2f, 108, stockSkuTextSize(sku), true);
+        String cleanSize = tsplText(size).replaceAll("[^0-9A-Za-z.]", "").toUpperCase();
+        if (!cleanSize.isEmpty()) {
+            drawCenteredText(canvas, "Talla=" + cleanSize, STOCK_LABEL_WIDTH_DOTS / 2f, 148, 25, true);
+        }
 
         Paint locationMeasurePaint = textPaint(23, true);
         List<String> locationLines = wrapTextByWidth(locationCode, 296, 2, locationMeasurePaint);
         Paint locationPaint = textPaint(locationLines.size() > 1 ? 20 : 23, true);
-        int locationY = locationLines.size() > 1 ? 186 : 204;
+        int locationY = locationLines.size() > 1 ? 192 : 210;
         for (String line : locationLines) {
             drawText(canvas, line, 14, locationY, locationPaint);
             locationY += 26;
@@ -801,6 +919,15 @@ public class MainActivity extends Activity {
     protected void onStop() {
         CookieManager.getInstance().flush();
         super.onStop();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (networkRetryHandler != null) {
+            networkRetryHandler.removeCallbacks(networkRetryRunnable);
+        }
+        closeCachedPrinterSocket();
+        super.onDestroy();
     }
 
     @Override

@@ -510,11 +510,14 @@ async function generateUniqueStockCode(shop, excludeUserId = 0) {
 }
 
 function serializePreparedStockHistory(draft) {
+  const variants = Array.isArray(draft.variants) ? draft.variants : [];
   return {
     id: draft.id,
     sku: draft.sku || "",
     locationCode: draft.locationCode || "",
     quantity: Math.max(1, Number(draft.quantity || 0) || 1),
+    variants,
+    sizeBatches: stockPrintSizeBatches(variants),
     createdAt: draft.createdAt.toISOString(),
     time: formatStockHistoryTime(draft.createdAt),
   };
@@ -644,7 +647,7 @@ export async function loader({ request }) {
                 preparedByStockUserId: stockUser.id,
                 createdAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) },
               },
-              select: { id: true, sku: true, locationCode: true, quantity: true, createdAt: true },
+              select: { id: true, sku: true, locationCode: true, quantity: true, variants: true, createdAt: true },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
               take: 120,
             })
@@ -1005,7 +1008,7 @@ export async function action({ request }) {
     stockPortalHref(
       `&guardado=1&sku=${encodeURIComponent(sku)}&ubicacion=${encodeURIComponent(locationCode)}&cantidad=${encodeURIComponent(
         String(quantity),
-      )}`,
+      )}&tallas=${encodeURIComponent(stockPrintSizeBatches(variants))}`,
     ),
   );
 }
@@ -1087,11 +1090,30 @@ function formatStockSizes(sizes = []) {
   return sizes.map((sizeRow) => `${sizeRow.size}=(${sizeRow.quantity})`).join(", ");
 }
 
-function printStockLabels({ sku, locationCode, quantity }) {
+function stockPrintSizeBatches(variants = []) {
+  return (Array.isArray(variants) ? variants : [])
+    .flatMap((variant) =>
+      (Array.isArray(variant?.sizes) ? variant.sizes : []).map((sizeRow) => {
+        const size = String(sizeRow?.size || "").trim().toUpperCase().replace(/[^0-9A-Z.]/g, "");
+        const quantity = Math.max(1, Math.min(9999, Number(sizeRow?.quantity || 0) || 0));
+        return size && quantity ? `${size}:${quantity}` : "";
+      }),
+    )
+    .filter(Boolean)
+    .join("|");
+}
+
+function printStockLabels({ sku, locationCode, quantity, sizeBatches }) {
   try {
     const labelCount = Math.max(1, Math.min(9999, Number(quantity || 0) || 0));
-    if (!sku || !locationCode || !window.Android || typeof window.Android.printStockLabels !== "function") return;
-    window.Android.printStockLabels(String(sku), String(locationCode), String(labelCount));
+    if (!sku || !locationCode || !window.Android) return;
+    if (typeof window.Android.printStockLabelsBySize === "function") {
+      window.Android.printStockLabelsBySize(String(sku), String(locationCode), String(labelCount), String(sizeBatches || ""));
+      return;
+    }
+    if (typeof window.Android.printStockLabels === "function") {
+      window.Android.printStockLabels(String(sku), String(locationCode), String(labelCount));
+    }
   } catch (_error) {
     // La impresion es una mejora nativa de Android; el guardado debe continuar si no esta disponible.
   }
@@ -1378,6 +1400,7 @@ export default function StockPortal() {
         sku: searchParams.get("sku") || "",
         locationCode: searchParams.get("ubicacion") || "",
         quantity: searchParams.get("cantidad") || "",
+        sizeBatches: searchParams.get("tallas") || "",
       });
       pendingStockSaveRef.current = false;
       resetStockCaptureFlow(true);
@@ -1700,6 +1723,7 @@ export default function StockPortal() {
       sku,
       locationCode,
       quantity: item?.quantity || 1,
+      sizeBatches: item?.sizeBatches || stockPrintSizeBatches(item?.variants),
     });
     setStockReprintMode(false);
   }
