@@ -860,6 +860,18 @@
   font-size: 18px;
 }
 
+.publisherListActions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 12px;
+}
+
+.publisherListActions .slimSessionButton {
+  width: auto;
+  min-width: 150px;
+  padding: 0 18px;
+}
+
 .draftList {
   display: grid;
   gap: 8px;

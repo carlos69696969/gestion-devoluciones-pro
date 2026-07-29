@@ -2254,6 +2254,23 @@ export default function StockPortal() {
         >
           {!selectedDraft ? (
           <div className={styles.listCard}>
+            <div className={styles.publisherListActions}>
+              <button
+                className={styles.slimSessionButton}
+                type="button"
+                disabled={stockPortalLoggingOut}
+                onClick={confirmAndLogoutStockPortal}
+              >
+                {stockPortalLoggingOut ? (
+                  <span className={styles.loadingButtonContent}>
+                    <span className={styles.buttonSpinner} aria-hidden="true" />
+                    Cargando
+                  </span>
+                ) : (
+                  "Cerrar sesión"
+                )}
+              </button>
+            </div>
             <h2>Productos listos</h2>
             {publisherMessage ? <p className={styles.error}>{publisherMessage}</p> : null}
             {drafts.length ? (
