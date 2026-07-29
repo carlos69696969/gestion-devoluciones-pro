@@ -449,6 +449,10 @@ function generateStockSessionToken() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
+function generateStockDeviceId() {
+  return `stock-device-${generateStockSessionToken()}`;
+}
+
 async function generateUniqueStockCode(shop, excludeUserId = 0) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -518,6 +522,7 @@ export async function loader({ request }) {
           where: { id: stockUser.id },
           data: {
             sessionToken: nextSessionToken,
+            sessionDeviceId: "",
             sessionStartedAt: new Date(),
             sessionLastSeenAt: new Date(),
           },
@@ -631,13 +636,24 @@ export async function action({ request }) {
     try {
       await ensureStockUserTable(prisma);
       const code = String(formData.get("code") || "").trim();
+      const stockDeviceId = String(formData.get("stockDeviceId") || "").trim();
       if (!/^\d{6}$/.test(code)) return { ok: false, error: "Escribe tu codigo de 6 digitos." };
       const stockUser = await prisma.stockUser.findFirst({
         where: { shop, code, active: true },
-        select: { id: true, sessionToken: true },
+        select: { id: true, sessionToken: true, sessionDeviceId: true },
       });
       if (!stockUser) return { ok: false, error: "Codigo invalido. Revisa el codigo con el administrador." };
       if (stockUser.sessionToken) {
+        if (stockDeviceId && (!stockUser.sessionDeviceId || stockDeviceId === stockUser.sessionDeviceId)) {
+          await prisma.stockUser.update({
+            where: { id: stockUser.id },
+            data: {
+              sessionDeviceId: stockUser.sessionDeviceId || stockDeviceId,
+              sessionLastSeenAt: new Date(),
+            },
+          });
+          return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(stockUser.sessionToken)}`);
+        }
         return { ok: false, error: "Esta cuenta ya inicio sesion." };
       }
       const sessionToken = generateStockSessionToken();
@@ -645,6 +661,7 @@ export async function action({ request }) {
         where: { id: stockUser.id },
         data: {
           sessionToken,
+          sessionDeviceId: stockDeviceId,
           sessionStartedAt: new Date(),
           sessionLastSeenAt: new Date(),
         },
@@ -673,6 +690,7 @@ export async function action({ request }) {
         data: {
           ...(nextCode ? { code: nextCode } : {}),
           sessionToken: null,
+          sessionDeviceId: null,
           sessionStartedAt: null,
           sessionLastSeenAt: null,
         },
@@ -911,6 +929,10 @@ function stockSessionStorageKey(shop) {
   return `cariana-stock-session:${cleanShop(shop) || "portal-stock"}`;
 }
 
+function stockDeviceStorageKey(shop) {
+  return `cariana-stock-device:${cleanShop(shop) || "portal-stock"}`;
+}
+
 function stockPublisherDraftKey(shop, accessCode) {
   return `cariana-stock-publisher-draft:${cleanShop(shop) || "portal-stock"}:${String(accessCode || "").trim()}`;
 }
@@ -1062,6 +1084,7 @@ export default function StockPortal() {
   const [showPreparedHistory, setShowPreparedHistory] = useState(false);
   const [stockReprintMode, setStockReprintMode] = useState(false);
   const [stockPortalLoggingOut, setStockPortalLoggingOut] = useState(false);
+  const [stockDeviceId, setStockDeviceId] = useState("");
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -1078,6 +1101,7 @@ export default function StockPortal() {
   const isProductPublisher = stockUser?.role === STOCK_USER_ROLES.PUBLISHER;
   const captureDraftKey = useMemo(() => stockCaptureDraftKey(shop), [shop]);
   const stockSessionKey = useMemo(() => stockSessionStorageKey(shop), [shop]);
+  const stockDeviceKey = useMemo(() => stockDeviceStorageKey(shop), [shop]);
   const publisherDraftKey = useMemo(() => stockPublisherDraftKey(shop, accessCode), [accessCode, shop]);
   const suggestedSku =
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
@@ -1190,6 +1214,21 @@ export default function StockPortal() {
     if (!window.confirm("¿Seguro que quieres cerrar sesión?")) return;
     logoutStockPortal();
   }
+
+  useEffect(() => {
+    try {
+      const savedDeviceId = String(window.localStorage.getItem(stockDeviceKey) || "").trim();
+      if (savedDeviceId) {
+        setStockDeviceId(savedDeviceId);
+        return;
+      }
+      const nextDeviceId = generateStockDeviceId();
+      window.localStorage.setItem(stockDeviceKey, nextDeviceId);
+      setStockDeviceId(nextDeviceId);
+    } catch (_error) {
+      setStockDeviceId(generateStockDeviceId());
+    }
+  }, [stockDeviceKey]);
 
   useEffect(() => {
     const urlSessionToken = String(searchParams.get("sesion") || searchParams.get("session") || "").trim();
@@ -1775,6 +1814,7 @@ export default function StockPortal() {
             <Form method="post" className={styles.loginForm}>
               <input type="hidden" name="intent" value="stock_login" />
               <input type="hidden" name="shop" value={shop} />
+              <input type="hidden" name="stockDeviceId" value={stockDeviceId} />
               <input
                 autoFocus
                 aria-label="Codigo unico"
@@ -1785,7 +1825,7 @@ export default function StockPortal() {
                 placeholder="000000"
                 required
               />
-            <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
+            <button className={styles.primaryButton} type="submit" disabled={isSubmitting || !stockDeviceId}>
               {isStockLoginSubmitting ? (
                 <span className={styles.loadingButtonContent}>
                   <span className={styles.buttonSpinner} aria-hidden="true" />

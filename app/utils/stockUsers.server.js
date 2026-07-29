@@ -16,6 +16,7 @@ export async function ensureStockUserTable(prisma) {
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "StockUser_shop_role_idx" ON "StockUser"("shop", "role")`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "StockUser_shop_active_idx" ON "StockUser"("shop", "active")`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "StockUser" ADD COLUMN IF NOT EXISTS "sessionToken" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "StockUser" ADD COLUMN IF NOT EXISTS "sessionDeviceId" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "StockUser" ADD COLUMN IF NOT EXISTS "sessionStartedAt" TIMESTAMP(3)`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "StockUser" ADD COLUMN IF NOT EXISTS "sessionLastSeenAt" TIMESTAMP(3)`);
   await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "StockUser_shop_sessionToken_idx" ON "StockUser"("shop", "sessionToken")`);

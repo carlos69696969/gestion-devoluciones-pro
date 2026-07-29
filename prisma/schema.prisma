@@ -327,6 +327,7 @@ model StockUser {
   role      String
   code      String
   sessionToken String?
+  sessionDeviceId String?
   sessionStartedAt DateTime?
   sessionLastSeenAt DateTime?
   active    Boolean  @default(true)
