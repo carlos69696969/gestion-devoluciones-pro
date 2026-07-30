@@ -1563,6 +1563,9 @@ export default function PreparerPortal() {
                               const checked = readyUnitKeySet.has(unitKey);
                               return (
                                 <div key={`${unitKey}-${itemIndex}-${unitIndex}`} className={styles.preparerProductItem}>
+                                  {item.stockLocationCode ? (
+                                    <span className={styles.preparerProductLocation}>Ubicacion: {item.stockLocationCode}</span>
+                                  ) : null}
                                   {item.imageUrl ? (
                                     <button
                                       className={styles.preparerProductImageButton}
@@ -1584,9 +1587,6 @@ export default function PreparerPortal() {
                                     <span className={styles.preparerProductImagePlaceholder} />
                                   )}
                                   <div className={styles.preparerProductCopy}>
-                                    {item.stockLocationCode ? (
-                                      <span className={styles.preparerProductSku}>Ubicacion: {item.stockLocationCode}</span>
-                                    ) : null}
                                     {item.sku ? <span className={styles.preparerProductSku}>Articulo: {item.sku}</span> : null}
                                     <strong>{item.title || "Producto"}</strong>
                                     {item.variantSummary ? <span>Variante: {item.variantSummary}</span> : null}

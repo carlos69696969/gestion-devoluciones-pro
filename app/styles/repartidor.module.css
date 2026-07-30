@@ -301,6 +301,18 @@
   background: #f9fafb;
 }
 
+.preparerProductLocation {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: #005bd3;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .preparerProductImage,
 .preparerProductImagePlaceholder {
   width: 72px;
