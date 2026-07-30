@@ -165,12 +165,10 @@ function normalizeMaintenanceInputs(formDataLike) {
     25,
     MAX_BATCH_SIZE,
   );
-  const archivedProductCleanupMode = String(formDataLike?.get?.("archivedProductCleanupMode") || "").trim();
-  const archivedProductCleanupDays =
-    archivedProductCleanupMode === "never"
-      ? 0
-      : normalizeStockArchivedProductCleanupDays(formDataLike?.get?.("archivedProductCleanupDays")) ||
-        DEFAULT_ARCHIVED_PRODUCT_CLEANUP_DAYS;
+  const archivedProductCleanupRaw = String(formDataLike?.get?.("archivedProductCleanupDays") || "").trim();
+  const archivedProductCleanupDays = /^no\s+eliminar/i.test(archivedProductCleanupRaw)
+    ? 0
+    : normalizeStockArchivedProductCleanupDays(archivedProductCleanupRaw) || DEFAULT_ARCHIVED_PRODUCT_CLEANUP_DAYS;
   return { evidenceDays, purgeDays, batchSize, archivedProductCleanupDays };
 }
 
@@ -180,11 +178,10 @@ function maintenanceInputsFromSettings(settings) {
       if (name === "evidenceDays") return settings?.maintenanceEvidenceDays;
       if (name === "purgeDays") return settings?.maintenancePurgeDays;
       if (name === "batchSize") return settings?.maintenanceBatchSize;
-      if (name === "archivedProductCleanupMode") {
-        return normalizeStockArchivedProductCleanupDays(settings?.stockArchivedProductCleanupDays) ? "days" : "never";
-      }
       if (name === "archivedProductCleanupDays") {
-        return settings?.stockArchivedProductCleanupDays || DEFAULT_ARCHIVED_PRODUCT_CLEANUP_DAYS;
+        return normalizeStockArchivedProductCleanupDays(settings?.stockArchivedProductCleanupDays)
+          ? settings?.stockArchivedProductCleanupDays
+          : "No eliminar automaticamente";
       }
       return "";
     },
@@ -900,33 +897,30 @@ export default function ReturnsAdmin() {
             </p>
 
             <Form method="post" className={styles.grid}>
-              <div className={styles.grid2}>
-                <label className={styles.label}>
-                  Dias de limpieza para productos archivados
-                  <span className={styles.help}>
-                    Elige si los productos archivados se borran solos o si se quedan hasta borrarlos manualmente.
-                  </span>
-                  <select
-                    className={styles.input}
-                    name="archivedProductCleanupMode"
-                    defaultValue={maintenanceInputs.archivedProductCleanupDays ? "days" : "never"}
-                  >
-                    <option value="never">No eliminar automaticamente</option>
-                    <option value="days">Eliminar despues de estos dias</option>
-                  </select>
-                </label>
-                <label className={styles.label}>
-                  Dias despues de archivarse
-                  <span className={styles.help}>Puedes poner 10, 20, 40, 60 o el tiempo que necesites.</span>
-                  <input
-                    className={styles.input}
-                    name="archivedProductCleanupDays"
-                    type="number"
-                    min="1"
-                    defaultValue={maintenanceInputs.archivedProductCleanupDays || DEFAULT_ARCHIVED_PRODUCT_CLEANUP_DAYS}
-                  />
-                </label>
-              </div>
+              <label className={styles.label}>
+                Dias para eliminar despues de archivarse productos
+                <span className={styles.help}>Puedes poner el tiempo que necesites.</span>
+                <input
+                  className={styles.input}
+                  name="archivedProductCleanupDays"
+                  type="text"
+                  inputMode="numeric"
+                  list="archived-product-cleanup-options"
+                  defaultValue={
+                    maintenanceInputs.archivedProductCleanupDays
+                      ? maintenanceInputs.archivedProductCleanupDays
+                      : "No eliminar automaticamente"
+                  }
+                />
+                <datalist id="archived-product-cleanup-options">
+                  <option value="No eliminar automaticamente" />
+                  <option value="10" />
+                  <option value="20" />
+                  <option value="30" />
+                  <option value="45" />
+                  <option value="60" />
+                </datalist>
+              </label>
 
               <div className={styles.grid2}>
                 <label className={styles.label}>
