@@ -20,6 +20,7 @@ import {
 } from "../utils/courier.shared";
 import { geocodeAddressWithCache, haversineDistanceMeters } from "../utils/googleMaps.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
+import { ensureStockInventoryArchiveWebhooks } from "../utils/stockZeroInventoryArchive.server";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -4301,6 +4302,7 @@ export const loader = async ({ request }) => {
   if (viewMode === VIEW_MODE.STOCK) {
     await safeLoaderArray("No se pudo sincronizar el inventario de stock", async () => {
       await ensureStockUserTable(prisma);
+      await ensureStockInventoryArchiveWebhooks(admin);
       await syncReleasedStockLocationsFromShopify(admin, session.shop);
       return [];
     });
