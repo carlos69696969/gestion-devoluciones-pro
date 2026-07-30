@@ -323,10 +323,12 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
                   id
                   sku
                   createdAt
+                  updatedAt
                   product {
                     id
                     title
                     createdAt
+                    updatedAt
                     featuredMedia {
                       preview {
                         image {
@@ -355,9 +357,11 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
             skuKey: sku.toLowerCase(),
             variantId: String(variant?.id || ""),
             variantCreatedAt: variant?.createdAt || "",
+            variantUpdatedAt: variant?.updatedAt || "",
             productId: String(product?.id || ""),
             productName: String(product?.title || "Producto sin nombre"),
             productCreatedAt: product?.createdAt || "",
+            productUpdatedAt: product?.updatedAt || "",
             imageUrl: String(product?.featuredMedia?.preview?.image?.url || ""),
           });
         }
@@ -383,6 +387,16 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
   }
 
   const duplicateProducts = [];
+  const skuTouchTime = (occurrence) => {
+    const value =
+      occurrence.variantUpdatedAt ||
+      occurrence.variantCreatedAt ||
+      occurrence.productUpdatedAt ||
+      occurrence.productCreatedAt ||
+      "";
+    const time = new Date(value).getTime();
+    return Number.isFinite(time) ? time : 0;
+  };
   for (const group of occurrencesBySku.values()) {
     if (group.length < 2) continue;
     const productById = new Map();
@@ -393,15 +407,15 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
         productById.set(productKey, occurrence);
         continue;
       }
-      const currentTime = new Date(current.productCreatedAt || current.variantCreatedAt || 0).getTime();
-      const occurrenceTime = new Date(occurrence.productCreatedAt || occurrence.variantCreatedAt || 0).getTime();
+      const currentTime = skuTouchTime(current);
+      const occurrenceTime = skuTouchTime(occurrence);
       if (occurrenceTime < currentTime) productById.set(productKey, occurrence);
     }
     const productsWithSku = [...productById.values()];
     if (productsWithSku.length < 2) continue;
     const sortedGroup = productsWithSku.sort((first, second) => {
-      const firstTime = new Date(first.productCreatedAt || first.variantCreatedAt || 0).getTime();
-      const secondTime = new Date(second.productCreatedAt || second.variantCreatedAt || 0).getTime();
+      const firstTime = skuTouchTime(first);
+      const secondTime = skuTouchTime(second);
       if (firstTime !== secondTime) return firstTime - secondTime;
       return first.productId.localeCompare(second.productId) || first.variantId.localeCompare(second.variantId);
     });
@@ -425,14 +439,11 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
     orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
     take: 500,
   });
-  const publisherBySku = new Map();
   const publisherByProductName = new Map();
   for (const draft of publishedDrafts) {
     const publisherName = String(draft?.publishedByStockUser?.name || "").trim();
     if (!publisherName) continue;
-    const skuKey = String(draft.sku || "").trim().toLowerCase();
     const productNameKey = normalizeStockLookupText(draft.productName);
-    if (skuKey && !publisherBySku.has(skuKey)) publisherBySku.set(skuKey, publisherName);
     if (productNameKey && !publisherByProductName.has(productNameKey)) {
       publisherByProductName.set(productNameKey, publisherName);
     }
@@ -440,8 +451,8 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
 
   return duplicateProducts
     .sort((first, second) => {
-      const firstTime = new Date(first.productCreatedAt || first.variantCreatedAt || 0).getTime();
-      const secondTime = new Date(second.productCreatedAt || second.variantCreatedAt || 0).getTime();
+      const firstTime = skuTouchTime(first);
+      const secondTime = skuTouchTime(second);
       return secondTime - firstTime;
     })
     .slice(0, 12)
@@ -452,8 +463,7 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
         productId: product.productId,
         productName: product.productName,
         imageUrl: product.imageUrl,
-        publisherName:
-          publisherByProductName.get(productNameKey) || publisherBySku.get(product.skuKey) || "No identificado",
+        publisherName: publisherByProductName.get(productNameKey) || "No identificado",
       };
     });
 }
