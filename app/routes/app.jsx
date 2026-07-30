@@ -9,6 +9,10 @@ import {
   fetchCourierOrdersForShop,
 } from "../utils/courier.server";
 import { getCourierRouteStatusFromTags } from "../utils/courier.shared";
+import {
+  archiveAllZeroInventoryProducts,
+  ensureStockInventoryArchiveWebhooks,
+} from "../utils/stockZeroInventoryArchive.server";
 
 const METHOD_QUEUE_STATUSES = new Set([
   "aprobada",
@@ -45,6 +49,8 @@ const HIDDEN_COURIER_DELIVERY_STATUSES = new Set([
   "completada",
   "recoger_en_sucursal",
 ]);
+const ZERO_INVENTORY_ARCHIVE_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const zeroInventoryArchiveSyncByShop = new Map();
 
 function itemKeyFromRecord(item) {
   const lineItemId = String(item?.lineItemId || "").trim();
@@ -76,6 +82,22 @@ function isCourierLocalDeliveryOrder(orderNode) {
 function shouldCountActiveCourierDeliveryOrder(order) {
   const status = String(order?.status || order?.currentStatus || "").trim().toLowerCase();
   return !HIDDEN_COURIER_DELIVERY_STATUSES.has(status);
+}
+
+async function syncZeroInventoryArchiveFromAdmin(admin, shop) {
+  const normalizedShop = String(shop || "").trim().toLowerCase();
+  if (!admin || !normalizedShop) return;
+  const now = Date.now();
+  const lastSyncAt = Number(zeroInventoryArchiveSyncByShop.get(normalizedShop) || 0);
+  if (now - lastSyncAt < ZERO_INVENTORY_ARCHIVE_SYNC_INTERVAL_MS) return;
+  zeroInventoryArchiveSyncByShop.set(normalizedShop, now);
+  try {
+    await ensureStockInventoryArchiveWebhooks(admin);
+    await archiveAllZeroInventoryProducts({ admin, shop: normalizedShop });
+  } catch (error) {
+    zeroInventoryArchiveSyncByShop.delete(normalizedShop);
+    console.error("No se pudo sincronizar el archivado de productos agotados", error);
+  }
 }
 
 async function fetchCourierDeliveryCountFromAdmin(admin, queryString) {
@@ -188,6 +210,7 @@ async function activePlannedCourierDeliveryCount(shop, sessionCandidates = []) {
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
+  await syncZeroInventoryArchiveFromAdmin(admin, session.shop);
 
   const requests = await prisma.returnRequest.findMany({
     where: {
