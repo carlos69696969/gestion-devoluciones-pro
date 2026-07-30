@@ -888,16 +888,29 @@
   font-size: 18px;
 }
 
-.publisherListActions {
-  display: flex;
-  justify-content: flex-end;
+.publisherListHeader {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
   margin: 0 0 12px;
 }
 
-.publisherListActions .slimSessionButton {
+.publisherListHeader h2 {
+  margin: 0;
+}
+
+.publisherListActions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 0;
+}
+
+.publisherListActions .slimSessionButton,
+.publisherListActions .slimHistoryButton {
   width: auto;
-  min-width: 150px;
-  padding: 0 18px;
+  min-width: 126px;
+  padding: 0 16px;
 }
 
 .duplicateSkuPanel {
@@ -1225,6 +1238,7 @@
   .productFields,
   .formActions,
   .generatedPanel,
+  .publisherListHeader,
   .stepHeader:not(.preparedHistoryHeader) {
     grid-template-columns: 1fr;
   }

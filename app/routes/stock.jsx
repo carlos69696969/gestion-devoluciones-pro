@@ -3237,23 +3237,6 @@ export default function StockPortal() {
         >
           {!selectedDraft ? (
           <div className={styles.listCard}>
-            <div className={styles.publisherListActions}>
-              <button
-                className={styles.slimSessionButton}
-                type="button"
-                disabled={isStockLogoutSubmitting}
-                onClick={confirmAndLogoutStockPortal}
-              >
-                {isStockLogoutSubmitting ? (
-                  <span className={styles.loadingButtonContent}>
-                    <span className={styles.buttonSpinner} aria-hidden="true" />
-                    Cargando
-                  </span>
-                ) : (
-                  "Cerrar sesión"
-                )}
-              </button>
-            </div>
             {duplicateSkuProducts.length ? (
               <div className={styles.duplicateSkuPanel}>
                 <h3>SKU duplicado</h3>
@@ -3312,7 +3295,29 @@ export default function StockPortal() {
                 </div>
               </div>
             ) : null}
-            <h2>Productos listos</h2>
+            <div className={styles.publisherListHeader}>
+              <div className={styles.publisherListActions}>
+                <button
+                  className={styles.slimSessionButton}
+                  type="button"
+                  disabled={isStockLogoutSubmitting}
+                  onClick={confirmAndLogoutStockPortal}
+                >
+                  {isStockLogoutSubmitting ? (
+                    <span className={styles.loadingButtonContent}>
+                      <span className={styles.buttonSpinner} aria-hidden="true" />
+                      Cargando
+                    </span>
+                  ) : (
+                    "Cerrar sesión"
+                  )}
+                </button>
+                <button className={styles.slimHistoryButton} type="button">
+                  Mi historial
+                </button>
+              </div>
+              <h2>Productos listos</h2>
+            </div>
             {publisherMessage ? <p className={styles.error}>{publisherMessage}</p> : null}
             {drafts.length ? (
               <div className={styles.draftList}>
