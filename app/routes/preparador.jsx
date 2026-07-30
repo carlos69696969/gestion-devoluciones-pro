@@ -303,6 +303,10 @@ function preparerItemLookupKeys(item = {}) {
     .filter(Boolean);
 }
 
+function preparerItemSkuKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function mergeLivePreparerItems(storedItems = [], liveItems = []) {
   const cleanStoredItems = Array.isArray(storedItems) ? storedItems : [];
   const cleanLiveItems = Array.isArray(liveItems) ? liveItems : [];
@@ -870,6 +874,54 @@ export async function loader({ request }) {
       },
     };
   });
+  const assignmentStockSkus = [
+    ...new Set(
+      assignments
+        .flatMap((assignment) => {
+          const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+          return Array.isArray(orderData.items) ? orderData.items : [];
+        })
+        .map((item) => String(item?.sku || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (access && assignmentStockSkus.length) {
+    const stockRows = await prisma.stockProductDraft.findMany({
+      where: {
+        shop: access.shop,
+        sku: { in: assignmentStockSkus },
+        locationCode: { not: null },
+      },
+      select: { sku: true, locationCode: true },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    });
+    const stockLocationBySku = new Map();
+    for (const row of stockRows) {
+      const skuKey = preparerItemSkuKey(row.sku);
+      const locationCode = String(row.locationCode || "").trim();
+      if (skuKey && locationCode && !stockLocationBySku.has(skuKey)) {
+        stockLocationBySku.set(skuKey, locationCode);
+      }
+    }
+    if (stockLocationBySku.size) {
+      assignments = assignments.map((assignment) => {
+        const orderData = assignment.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+        const items = Array.isArray(orderData.items) ? orderData.items : [];
+        return {
+          ...assignment,
+          orderData: {
+            ...orderData,
+            items: items.map((item) => ({
+              ...item,
+              stockLocationCode:
+                stockLocationBySku.get(preparerItemSkuKey(item?.sku)) ||
+                String(item?.stockLocationCode || "").trim(),
+            })),
+          },
+        };
+      });
+    }
+  }
   return {
     shop: access?.shop || shop,
     preparerName: access?.name || "",
@@ -1532,7 +1584,10 @@ export default function PreparerPortal() {
                                     <span className={styles.preparerProductImagePlaceholder} />
                                   )}
                                   <div className={styles.preparerProductCopy}>
-                                    {item.sku ? <span className={styles.preparerProductSku}>Articulo {item.sku}</span> : null}
+                                    {item.stockLocationCode ? (
+                                      <span className={styles.preparerProductSku}>Ubicacion: {item.stockLocationCode}</span>
+                                    ) : null}
+                                    {item.sku ? <span className={styles.preparerProductSku}>Articulo: {item.sku}</span> : null}
                                     <strong>{item.title || "Producto"}</strong>
                                     {item.variantSummary ? <span>Variante: {item.variantSummary}</span> : null}
                                     <span>Cantidad: 1</span>
