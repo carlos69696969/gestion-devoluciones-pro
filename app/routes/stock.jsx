@@ -1826,6 +1826,7 @@ export default function StockPortal() {
   const pendingStockSaveRef = useRef(false);
   const lastDraftCountRef = useRef(drafts.length);
   const restoredPublisherStateKeyRef = useRef("");
+  const publishNoticeArmedRef = useRef(false);
   const isSubmitting = navigation.state !== "idle";
   const navigationIntent = navigation.formData?.get("intent");
   const isStockLoginSubmitting = navigation.state !== "idle" && navigationIntent === "stock_login";
@@ -2258,7 +2259,12 @@ export default function StockPortal() {
   }, [editStockFetcher.data, editStockFetcher.state, pendingEditDraftId, revalidator]);
 
   useEffect(() => {
-    if (publishStockFetcher.state !== "idle" || !publishStockFetcher.data) return;
+    if (publishStockFetcher.state !== "idle") {
+      publishNoticeArmedRef.current = true;
+      return;
+    }
+    if (!publishNoticeArmedRef.current || !publishStockFetcher.data) return;
+    publishNoticeArmedRef.current = false;
     if (publishStockFetcher.data.intent !== "publish_stock_draft") return;
     if (publishStockFetcher.data.ok) {
       setStockToast({ tone: "success", message: publishStockFetcher.data.message || "Producto publicado correctamente." });
