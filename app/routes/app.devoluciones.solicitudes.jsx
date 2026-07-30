@@ -894,16 +894,19 @@ function serializeStockHistoryDraft(draft) {
   };
 }
 
-async function fetchStockInventoryQuantityBySku(admin, sku) {
+async function fetchStockInventoryStateBySku(admin, sku) {
   const cleanSku = String(sku || "").trim();
   if (!cleanSku) return null;
   const response = await admin.graphql(
     `#graphql
     query StockVariantInventoryBySku($query: String!) {
-      productVariants(first: 20, query: $query) {
+      productVariants(first: 100, query: $query) {
         nodes {
           sku
           inventoryQuantity
+          product {
+            id
+          }
         }
       }
     }`,
@@ -915,7 +918,72 @@ async function fetchStockInventoryQuantityBySku(admin, sku) {
     (variant) => String(variant?.sku || "").trim().toLowerCase() === cleanSku.toLowerCase(),
   );
   if (!matchingVariants.length) return null;
-  return matchingVariants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0);
+  return {
+    quantity: matchingVariants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0),
+    productIds: [
+      ...new Set(
+        matchingVariants
+          .map((variant) => String(variant?.product?.id || "").trim())
+          .filter(Boolean),
+      ),
+    ],
+  };
+}
+
+async function fetchStockProductTotalInventory(admin, productId) {
+  const response = await admin.graphql(
+    `#graphql
+    query StockProductInventory($id: ID!) {
+      product(id: $id) {
+        id
+        variants(first: 100) {
+          nodes {
+            inventoryQuantity
+          }
+        }
+      }
+    }`,
+    { variables: { id: productId } },
+  );
+  const payload = await response.json();
+  const product = payload?.data?.product;
+  if (!product) return null;
+  const variants = product?.variants?.nodes || [];
+  return variants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0);
+}
+
+async function deleteStockProductFromShopify(admin, productId) {
+  const response = await admin.graphql(
+    `#graphql
+    mutation DeleteStockProduct($input: ProductDeleteInput!) {
+      productDelete(input: $input) {
+        deletedProductId
+        userErrors {
+          field
+          message
+        }
+      }
+    }`,
+    { variables: { input: { id: productId } } },
+  );
+  const payload = await response.json();
+  const errors = payload?.data?.productDelete?.userErrors || [];
+  if (errors.length) {
+    throw new Error(errors.map((error) => error.message).filter(Boolean).join(", ") || "No se pudo borrar el producto.");
+  }
+  return payload?.data?.productDelete?.deletedProductId || productId;
+}
+
+async function deleteStockProductsIfInventoryIsEmpty(admin, stockState) {
+  if (!stockState?.productIds?.length) return false;
+  let deletedAnyProduct = false;
+  for (const productId of stockState.productIds) {
+    const productQuantity = await fetchStockProductTotalInventory(admin, productId);
+    if (productQuantity === null || productQuantity > 0) continue;
+    await deleteStockProductFromShopify(admin, productId);
+    deletedAnyProduct = true;
+  }
+  return deletedAnyProduct;
 }
 
 async function syncReleasedStockLocationsFromShopify(admin, shop) {
@@ -932,11 +1000,16 @@ async function syncReleasedStockLocationsFromShopify(admin, shop) {
     take: 80,
   });
   for (const draft of publishedDrafts) {
-    const quantity = await fetchStockInventoryQuantityBySku(admin, draft.sku).catch((error) => {
+    const stockState = await fetchStockInventoryStateBySku(admin, draft.sku).catch((error) => {
       console.error("No se pudo sincronizar inventario de stock", { sku: draft.sku, error });
       return null;
     });
-    if (quantity === null || quantity > 0) continue;
+    if (!stockState || stockState.quantity > 0) continue;
+    const deletedProduct = await deleteStockProductsIfInventoryIsEmpty(admin, stockState).catch((error) => {
+      console.error("No se pudo borrar producto agotado de Shopify", { sku: draft.sku, error });
+      return false;
+    });
+    if (!deletedProduct) continue;
     await prisma.stockProductDraft.updateMany({
       where: { id: draft.id, shop, locationReleasedAt: null },
       data: { locationReleasedAt: new Date() },

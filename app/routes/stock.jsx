@@ -150,7 +150,7 @@ async function shopifyStockGraphql({ shop, accessToken, query, variables }) {
   return payload.data;
 }
 
-async function fetchShopifyInventoryQuantityBySku({ sessions, sku }) {
+async function fetchShopifyInventoryStateBySku({ sessions, sku }) {
   const cleanSku = String(sku || "").trim();
   if (!cleanSku || !sessions.length) return null;
   let lastError = null;
@@ -161,10 +161,13 @@ async function fetchShopifyInventoryQuantityBySku({ sessions, sku }) {
         accessToken: session.accessToken,
         query: `#graphql
           query StockVariantInventoryBySku($query: String!) {
-            productVariants(first: 20, query: $query) {
+            productVariants(first: 100, query: $query) {
               nodes {
                 sku
                 inventoryQuantity
+                product {
+                  id
+                }
               }
             }
           }`,
@@ -175,13 +178,84 @@ async function fetchShopifyInventoryQuantityBySku({ sessions, sku }) {
         (variant) => String(variant?.sku || "").trim().toLowerCase() === cleanSku.toLowerCase(),
       );
       if (!matchingVariants.length) return null;
-      return matchingVariants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0);
+      return {
+        quantity: matchingVariants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0),
+        productIds: [
+          ...new Set(
+            matchingVariants
+              .map((variant) => String(variant?.product?.id || "").trim())
+              .filter(Boolean),
+          ),
+        ],
+        session,
+      };
     } catch (error) {
       lastError = error;
     }
   }
   if (lastError) throw lastError;
   return null;
+}
+
+async function fetchShopifyProductTotalInventory({ session, productId }) {
+  const data = await shopifyStockGraphql({
+    shop: session.shop,
+    accessToken: session.accessToken,
+    query: `#graphql
+      query StockProductInventory($id: ID!) {
+        product(id: $id) {
+          id
+          variants(first: 100) {
+            nodes {
+              inventoryQuantity
+            }
+          }
+        }
+      }`,
+    variables: { id: productId },
+  });
+  const product = data?.product;
+  if (!product) return null;
+  const variants = product?.variants?.nodes || [];
+  return variants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0);
+}
+
+async function deleteShopifyProduct({ session, productId }) {
+  const data = await shopifyStockGraphql({
+    shop: session.shop,
+    accessToken: session.accessToken,
+    query: `#graphql
+      mutation DeleteStockProduct($input: ProductDeleteInput!) {
+        productDelete(input: $input) {
+          deletedProductId
+          userErrors {
+            field
+            message
+          }
+        }
+      }`,
+    variables: { input: { id: productId } },
+  });
+  const errors = data?.productDelete?.userErrors || [];
+  if (errors.length) {
+    throw new Error(errors.map((error) => error.message).filter(Boolean).join(", ") || "No se pudo borrar el producto.");
+  }
+  return data?.productDelete?.deletedProductId || productId;
+}
+
+async function deleteShopifyProductsIfInventoryIsEmpty(stockState) {
+  if (!stockState?.session || !stockState.productIds?.length) return false;
+  let deletedAnyProduct = false;
+  for (const productId of stockState.productIds) {
+    const productQuantity = await fetchShopifyProductTotalInventory({
+      session: stockState.session,
+      productId,
+    });
+    if (productQuantity === null || productQuantity > 0) continue;
+    await deleteShopifyProduct({ session: stockState.session, productId });
+    deletedAnyProduct = true;
+  }
+  return deletedAnyProduct;
 }
 
 async function syncReleasedStockLocations(shop) {
@@ -203,11 +277,16 @@ async function syncReleasedStockLocations(shop) {
   const sessions = await resolveStockShopSessions(cleanShopDomain);
   if (!sessions.length) return;
   for (const draft of publishedDrafts) {
-    const quantity = await fetchShopifyInventoryQuantityBySku({ sessions, sku: draft.sku }).catch((error) => {
+    const stockState = await fetchShopifyInventoryStateBySku({ sessions, sku: draft.sku }).catch((error) => {
       console.error("No se pudo consultar inventario de stock", { sku: draft.sku, error });
       return null;
     });
-    if (quantity === null || quantity > 0) continue;
+    if (!stockState || stockState.quantity > 0) continue;
+    const deletedProduct = await deleteShopifyProductsIfInventoryIsEmpty(stockState).catch((error) => {
+      console.error("No se pudo borrar producto agotado de Shopify", { sku: draft.sku, error });
+      return false;
+    });
+    if (!deletedProduct) continue;
     await prisma.stockProductDraft.updateMany({
       where: { id: draft.id, shop: cleanShopDomain, locationReleasedAt: null },
       data: { locationReleasedAt: new Date() },
