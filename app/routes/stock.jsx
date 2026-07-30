@@ -1352,11 +1352,15 @@ export async function action({ request }) {
       const sessions = await resolveStockShopSessions(shop);
       const stockState = await fetchShopifyInventoryStateBySku({ sessions, sku: expectedSku });
       if (!stockState) {
-        return { ok: false, error: "Ese SKU aun no existe en ningun producto." };
+        return {
+          ok: false,
+          intent: "publish_stock_draft",
+          error: "Ese SKU aun no existe en ningun producto. Revisa si escribiste correctamente el SKU en el producto.",
+        };
       }
     } catch (skuValidationError) {
       console.error("No se pudo validar el SKU en Shopify", { sku: expectedSku, error: skuValidationError });
-      return { ok: false, error: "No se pudo validar el SKU en Shopify. Intenta nuevamente." };
+      return { ok: false, intent: "publish_stock_draft", error: "No se pudo validar el SKU en Shopify. Intenta nuevamente." };
     }
     const updatedDraft = await prisma.stockProductDraft.updateMany({
       where: {
@@ -1376,7 +1380,7 @@ export async function action({ request }) {
     if (!updatedDraft.count) {
       return { ok: false, error: "Toma este producto antes de marcarlo como listo." };
     }
-    return redirect(stockPortalHref("&publicado=1"));
+    return { ok: true, intent: "publish_stock_draft", message: "Producto publicado correctamente." };
   }
 
   if (intent === "begin_stock_edit_draft") {
@@ -1799,6 +1803,7 @@ export default function StockPortal() {
   const [selectedDraftId, setSelectedDraftId] = useState(requestedPublisherDraftId);
   const [pendingSelectedDraftId, setPendingSelectedDraftId] = useState(0);
   const [publisherMessage, setPublisherMessage] = useState("");
+  const [stockToast, setStockToast] = useState(null);
   const [publisherStateLoaded, setPublisherStateLoaded] = useState(false);
   const [selectedAudience, setSelectedAudience] = useState(audiences?.[0]?.value || "hombre");
   const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
@@ -2251,6 +2256,29 @@ export default function StockPortal() {
     }
     setPendingEditDraftId(0);
   }, [editStockFetcher.data, editStockFetcher.state, pendingEditDraftId, revalidator]);
+
+  useEffect(() => {
+    if (publishStockFetcher.state !== "idle" || !publishStockFetcher.data) return;
+    if (publishStockFetcher.data.intent !== "publish_stock_draft") return;
+    if (publishStockFetcher.data.ok) {
+      setStockToast({ tone: "success", message: publishStockFetcher.data.message || "Producto publicado correctamente." });
+      setSelectedDraftId(0);
+      setCheckedStockItems({});
+      clearPublisherDraftState();
+      setPublisherDraftUrl(0);
+      revalidator.revalidate();
+      return;
+    }
+    if (publishStockFetcher.data.error) {
+      setStockToast({ tone: "error", message: publishStockFetcher.data.error });
+    }
+  }, [publishStockFetcher.data, publishStockFetcher.state, revalidator]);
+
+  useEffect(() => {
+    if (!stockToast) return undefined;
+    const timeoutId = window.setTimeout(() => setStockToast(null), 3600);
+    return () => window.clearTimeout(timeoutId);
+  }, [stockToast]);
 
   useEffect(() => {
     if (!selectedDraftId) return;
@@ -3397,13 +3425,22 @@ export default function StockPortal() {
                   </dd>
                 </div>
               </dl>
-              {!selectedPublisherHistory && publishStockFetcher.data?.error ? (
-                <p className={styles.error}>{publishStockFetcher.data.error}</p>
-              ) : null}
               {selectedStockDetail.notes ? <p className={styles.notes}>{selectedStockDetail.notes}</p> : null}
             </article>
           ) : null}
         </section>
+      ) : null}
+      {stockToast ? (
+        <div className={styles.stockToastLayer} role="presentation">
+          <div
+            className={`${styles.stockToast} ${
+              stockToast.tone === "success" ? styles.stockToastSuccess : styles.stockToastError
+            }`}
+            role={stockToast.tone === "success" ? "status" : "alert"}
+          >
+            {stockToast.message}
+          </div>
+        </div>
       ) : null}
       {previewPhoto ? (
         <div className={styles.photoViewerBackdrop} role="presentation">
