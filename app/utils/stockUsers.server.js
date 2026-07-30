@@ -28,6 +28,11 @@ export async function ensureStockUserTable(prisma) {
   await prisma.$executeRawUnsafe(`ALTER TABLE "StockProductDraft" ADD COLUMN IF NOT EXISTS "locationReleasedAt" TIMESTAMP(3)`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "StockProductDraft" ADD COLUMN IF NOT EXISTS "locationReusedAt" TIMESTAMP(3)`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "stockLogoutTime" TEXT NOT NULL DEFAULT ''`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "stockProfitPercent" DOUBLE PRECISION NOT NULL DEFAULT 50`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "stockTaxPercent" DOUBLE PRECISION NOT NULL DEFAULT 10`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "stockShopifyCommission" DOUBLE PRECISION NOT NULL DEFAULT 3`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "stockOperationalCost" DOUBLE PRECISION NOT NULL DEFAULT 15`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "stockTransactionPercent" DOUBLE PRECISION NOT NULL DEFAULT 3`);
   await prisma.$executeRawUnsafe(
     `CREATE INDEX IF NOT EXISTS "StockProductDraft_shop_publishedAt_idx" ON "StockProductDraft"("shop", "publishedAt")`,
   );

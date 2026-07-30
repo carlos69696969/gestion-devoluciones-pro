@@ -14,6 +14,7 @@ import {
 import prisma from "../db.server";
 import { recordArchivedStockProduct } from "../utils/stockZeroInventoryArchive.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
+import { applyStockStorePriceToVariants, normalizeStockPriceSettings } from "../utils/stockPrice.shared";
 import styles from "../styles/stock.module.css";
 
 const MAX_STOCK_PHOTOS = 16;
@@ -751,6 +752,7 @@ function sanitizeStockVariants(value, allowedSizes = STOCK_ALPHA_SIZES) {
     .map((variant) => {
       const color = sanitizeText(variant?.color, 80);
       const price = Math.max(0, Number(variant?.price || 0) || 0);
+      const basePrice = Math.max(0, Number(variant?.basePrice ?? price) || 0);
       const sizes = (Array.isArray(variant?.sizes) ? variant.sizes : [])
         .map((sizeRow) => ({
           size: allowedSizes.includes(String(sizeRow?.size || "").trim().toUpperCase())
@@ -759,9 +761,23 @@ function sanitizeStockVariants(value, allowedSizes = STOCK_ALPHA_SIZES) {
           quantity: Math.max(1, Math.min(9999, Number(sizeRow?.quantity || 0) || 0)),
         }))
         .filter((sizeRow) => sizeRow.size && sizeRow.quantity);
-      return { color, price, sizes };
+      return { color, price, basePrice, sizes };
     })
     .filter((variant) => variant.color && variant.sizes.length);
+}
+
+async function loadStockPriceSettings(shop) {
+  const settings = await prisma.returnSettings.findUnique({
+    where: { shop },
+    select: {
+      stockProfitPercent: true,
+      stockTaxPercent: true,
+      stockShopifyCommission: true,
+      stockOperationalCost: true,
+      stockTransactionPercent: true,
+    },
+  });
+  return normalizeStockPriceSettings(settings);
 }
 
 function serializeDraft(draft, currentStockUserId = 0) {
@@ -1465,8 +1481,10 @@ export async function action({ request }) {
   const audience = normalizeAudience(formData.get("audience"));
   const garmentType = normalizeGarment(formData.get("garmentType"));
   const productName = sanitizeText(formData.get("productName")) || garmentConfig(garmentType).label;
-  const variants = sanitizeStockVariants(formData.get("variants"), stockSizesFor(audience, garmentType));
-  if (!variants.length) return { ok: false, error: "Agrega color y al menos una talla con cantidad." };
+  const baseVariants = sanitizeStockVariants(formData.get("variants"), stockSizesFor(audience, garmentType));
+  if (!baseVariants.length) return { ok: false, error: "Agrega color y al menos una talla con cantidad." };
+  const stockPriceSettings = await loadStockPriceSettings(shop);
+  const variants = applyStockStorePriceToVariants(baseVariants, stockPriceSettings);
   const quantity = variants.reduce(
     (sum, variant) => sum + variant.sizes.reduce((sizeSum, sizeRow) => sizeSum + sizeRow.quantity, 0),
     0,
@@ -1653,7 +1671,7 @@ function normalizeStockVariantDraft(variant, index = 0, allowedSizes = STOCK_ALP
     ...base,
     id: String(variant?.id || base.id),
     color: String(variant?.color || "").slice(0, 80),
-    price: String(variant?.price ?? ""),
+    price: String(variant?.basePrice ?? variant?.price ?? ""),
     sizes,
     sizeMenuOpen: Boolean(variant?.sizeMenuOpen),
     selectedSize: allowedSizes.includes(String(variant?.selectedSize || "").trim().toUpperCase())
@@ -3049,7 +3067,7 @@ export default function StockPortal() {
                           />
                         </label>
                         <label>
-                          Precio
+                          Costo base
                           <input
                             min="0"
                             name={`priceDraft-${variant.id}`}

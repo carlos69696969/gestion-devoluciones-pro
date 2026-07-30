@@ -8,6 +8,12 @@ import {
   ensureStockArchivedProductCleanupStorage,
   normalizeStockArchivedProductCleanupDays,
 } from "../utils/stockZeroInventoryArchive.server";
+import {
+  normalizeStockPriceAmount,
+  normalizeStockPricePercent,
+  normalizeStockPriceSettings,
+  STOCK_PRICE_SETTINGS_DEFAULTS,
+} from "../utils/stockPrice.shared";
 
 const HISTORY_STATUSES = ["reembolsada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"];
 const COURIER_HISTORY_FINAL_ACTIONS = [
@@ -51,6 +57,24 @@ const NOTIFICATIONS_API_KEYS = Array.from(
       .filter(Boolean),
   ),
 );
+
+async function ensureStockPriceSettingsStorage() {
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "stockProfitPercent" DOUBLE PRECISION NOT NULL DEFAULT 50`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "stockTaxPercent" DOUBLE PRECISION NOT NULL DEFAULT 10`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "stockShopifyCommission" DOUBLE PRECISION NOT NULL DEFAULT 3`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "stockOperationalCost" DOUBLE PRECISION NOT NULL DEFAULT 15`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "stockTransactionPercent" DOUBLE PRECISION NOT NULL DEFAULT 3`,
+  );
+}
 
 function parsePositiveInt(value, fallback, min = 1, max = Number.MAX_SAFE_INTEGER) {
   const parsed = Number(value);
@@ -639,6 +663,7 @@ async function syncReturnSettingsToNotifications(shopDomain, settings) {
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   await ensureStockArchivedProductCleanupStorage();
+  await ensureStockPriceSettingsStorage();
   const settings = await getOrCreateSettings(session.shop);
   const inputs = maintenanceInputsFromSettings(settings);
   const preview = await getMaintenancePreview(session.shop, inputs);
@@ -648,6 +673,7 @@ export const loader = async ({ request }) => {
 export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   await ensureStockArchivedProductCleanupStorage();
+  await ensureStockPriceSettingsStorage();
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
 
@@ -662,6 +688,23 @@ export const action = async ({ request }) => {
       branchHours: String(formData.get("branchHours") || ""),
       pickupInstructions: String(formData.get("pickupInstructions") || ""),
       pickupHours: String(formData.get("pickupHours") || ""),
+      stockProfitPercent: normalizeStockPricePercent(
+        formData.get("stockProfitPercent"),
+        STOCK_PRICE_SETTINGS_DEFAULTS.profitPercent,
+      ),
+      stockTaxPercent: normalizeStockPricePercent(
+        formData.get("stockTaxPercent"),
+        STOCK_PRICE_SETTINGS_DEFAULTS.taxPercent,
+      ),
+      stockShopifyCommission: normalizeStockPriceAmount(
+        formData.get("stockShopifyCommission"),
+        STOCK_PRICE_SETTINGS_DEFAULTS.shopifyCommission,
+      ),
+      stockOperationalCost: normalizeStockPriceAmount(formData.get("stockOperationalCost"), STOCK_PRICE_SETTINGS_DEFAULTS.operationalCost),
+      stockTransactionPercent: normalizeStockPricePercent(
+        formData.get("stockTransactionPercent"),
+        STOCK_PRICE_SETTINGS_DEFAULTS.transactionPercent,
+      ),
     };
     await prisma.returnSettings.upsert({
       where: { shop: session.shop },
@@ -763,6 +806,7 @@ function formatDateLabel(isoValue) {
 
 export default function ReturnsAdmin() {
   const { settings, maintenance: initialMaintenance } = useLoaderData();
+  const stockPriceSettings = normalizeStockPriceSettings(settings);
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -869,6 +913,76 @@ export default function ReturnsAdmin() {
                     name="evidenceReasons"
                     defaultValue={settings.evidenceReasons || ""}
                     placeholder={"No era lo que pedi\nLlego danado"}
+                  />
+                </label>
+              </div>
+
+              <div className={styles.grid}>
+                <p className={styles.help}>
+                  Estos valores calculan el precio final que vera el publicador cuando stock marque un producto como listo.
+                </p>
+                <div className={styles.grid2}>
+                  <label className={styles.label}>
+                    Ganancia (%)
+                    <span className={styles.help}>Porcentaje que se suma sobre el costo base.</span>
+                    <input
+                      className={styles.input}
+                      name="stockProfitPercent"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={stockPriceSettings.profitPercent}
+                    />
+                  </label>
+                  <label className={styles.label}>
+                    Impuestos (%)
+                    <span className={styles.help}>Porcentaje que se suma sobre la ganancia.</span>
+                    <input
+                      className={styles.input}
+                      name="stockTaxPercent"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={stockPriceSettings.taxPercent}
+                    />
+                  </label>
+                </div>
+                <div className={styles.grid2}>
+                  <label className={styles.label}>
+                    Comision de Shopify (MXN)
+                    <span className={styles.help}>Cantidad fija en pesos que se suma al subtotal.</span>
+                    <input
+                      className={styles.input}
+                      name="stockShopifyCommission"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={stockPriceSettings.shopifyCommission}
+                    />
+                  </label>
+                  <label className={styles.label}>
+                    Costo operativo (MXN)
+                    <span className={styles.help}>Cantidad fija en pesos que se suma al subtotal.</span>
+                    <input
+                      className={styles.input}
+                      name="stockOperationalCost"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={stockPriceSettings.operationalCost}
+                    />
+                  </label>
+                </div>
+                <label className={styles.label}>
+                  Transaccion (%)
+                  <span className={styles.help}>Porcentaje aplicado despues de sumar ganancia, impuestos y costos fijos.</span>
+                  <input
+                    className={styles.input}
+                    name="stockTransactionPercent"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={stockPriceSettings.transactionPercent}
                   />
                 </label>
               </div>

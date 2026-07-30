@@ -200,6 +200,11 @@ model ReturnSettings {
   maintenanceBatchSize    Int      @default(200)
   stockArchivedProductCleanupDays Int @default(0)
   stockLogoutTime         String   @default("")
+  stockProfitPercent      Float    @default(50)
+  stockTaxPercent         Float    @default(10)
+  stockShopifyCommission  Float    @default(3)
+  stockOperationalCost    Float    @default(15)
+  stockTransactionPercent Float    @default(3)
   updatedAt               DateTime @updatedAt
   createdAt               DateTime @default(now())
 }
