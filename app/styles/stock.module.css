@@ -242,10 +242,6 @@
   font-weight: 900;
 }
 
-.slimSessionButton {
-  color: #1f2937;
-}
-
 .slimHistoryButton:disabled,
 .slimSessionButton:disabled {
   opacity: 0.62;
@@ -927,8 +923,9 @@
 
 .publisherListHeader {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
-  justify-items: start;
+  align-items: center;
   margin: 0 0 12px;
 }
 
@@ -936,18 +933,11 @@
   margin: 0;
 }
 
-.publisherListActions {
-  display: flex;
-  justify-content: flex-start;
-  gap: 8px;
-  margin: 0;
-}
-
-.publisherListActions .slimSessionButton,
-.publisherListActions .slimHistoryButton {
+.publisherListHeader .slimSessionButton {
   width: auto;
   min-width: 126px;
   padding: 0 16px;
+  justify-self: end;
 }
 
 .duplicateSkuPanel {
