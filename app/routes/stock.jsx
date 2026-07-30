@@ -258,6 +258,68 @@ async function deleteShopifyProductsIfInventoryIsEmpty(stockState) {
   return deletedAnyProduct;
 }
 
+async function fetchShopifyZeroInventoryProducts({ session }) {
+  const data = await shopifyStockGraphql({
+    shop: session.shop,
+    accessToken: session.accessToken,
+    query: `#graphql
+      query StockZeroInventoryProducts($query: String!) {
+        products(first: 100, query: $query) {
+          nodes {
+            id
+            title
+            totalInventory
+            variants(first: 100) {
+              nodes {
+                sku
+              }
+            }
+          }
+        }
+      }`,
+    variables: { query: "status:active inventory_total:0" },
+  });
+  return data?.products?.nodes || [];
+}
+
+async function deleteShopifyZeroInventoryProducts({ cleanShopDomain, sessions }) {
+  if (!sessions.length) return;
+  for (const session of sessions) {
+    const products = await fetchShopifyZeroInventoryProducts({ session }).catch((error) => {
+      console.error("No se pudieron consultar productos agotados de Shopify", { error });
+      return [];
+    });
+    for (const product of products) {
+      if (!product?.id || Number(product.totalInventory) > 0) continue;
+      const productSkus = [
+        ...new Set(
+          (product?.variants?.nodes || [])
+            .map((variant) => String(variant?.sku || "").trim())
+            .filter(Boolean),
+        ),
+      ];
+      const deletedProduct = await deleteShopifyProduct({ session, productId: product.id }).catch((error) => {
+        console.error("No se pudo borrar producto agotado de Shopify", {
+          productId: product.id,
+          title: product.title,
+          error,
+        });
+        return null;
+      });
+      if (!deletedProduct || !productSkus.length) continue;
+      await prisma.stockProductDraft.updateMany({
+        where: {
+          shop: cleanShopDomain,
+          status: STOCK_DRAFT_STATUS.READY,
+          locationReleasedAt: null,
+          sku: { in: productSkus },
+        },
+        data: { locationReleasedAt: new Date() },
+      });
+    }
+  }
+}
+
 async function syncReleasedStockLocations(shop) {
   const cleanShopDomain = cleanShop(shop);
   if (!cleanShopDomain) return;
@@ -273,7 +335,6 @@ async function syncReleasedStockLocations(shop) {
     orderBy: [{ publishedAt: "asc" }, { id: "asc" }],
     take: 60,
   });
-  if (!publishedDrafts.length) return;
   const sessions = await resolveStockShopSessions(cleanShopDomain);
   if (!sessions.length) return;
   for (const draft of publishedDrafts) {
@@ -292,6 +353,7 @@ async function syncReleasedStockLocations(shop) {
       data: { locationReleasedAt: new Date() },
     });
   }
+  await deleteShopifyZeroInventoryProducts({ cleanShopDomain, sessions });
 }
 
 async function clearExpiredStockPublicationLocks(shop) {

@@ -986,6 +986,64 @@ async function deleteStockProductsIfInventoryIsEmpty(admin, stockState) {
   return deletedAnyProduct;
 }
 
+async function fetchStockZeroInventoryProducts(admin) {
+  const response = await admin.graphql(
+    `#graphql
+    query StockZeroInventoryProducts($query: String!) {
+      products(first: 100, query: $query) {
+        nodes {
+          id
+          title
+          totalInventory
+          variants(first: 100) {
+            nodes {
+              sku
+            }
+          }
+        }
+      }
+    }`,
+    { variables: { query: "status:active inventory_total:0" } },
+  );
+  const payload = await response.json();
+  return payload?.data?.products?.nodes || [];
+}
+
+async function deleteZeroInventoryStockProductsFromShopify(admin, shop) {
+  const products = await fetchStockZeroInventoryProducts(admin).catch((error) => {
+    console.error("No se pudieron consultar productos agotados de Shopify", { error });
+    return [];
+  });
+  for (const product of products) {
+    if (!product?.id || Number(product.totalInventory) > 0) continue;
+    const productSkus = [
+      ...new Set(
+        (product?.variants?.nodes || [])
+          .map((variant) => String(variant?.sku || "").trim())
+          .filter(Boolean),
+      ),
+    ];
+    const deletedProduct = await deleteStockProductFromShopify(admin, product.id).catch((error) => {
+      console.error("No se pudo borrar producto agotado de Shopify", {
+        productId: product.id,
+        title: product.title,
+        error,
+      });
+      return null;
+    });
+    if (!deletedProduct || !productSkus.length) continue;
+    await prisma.stockProductDraft.updateMany({
+      where: {
+        shop,
+        status: "listo",
+        locationReleasedAt: null,
+        sku: { in: productSkus },
+      },
+      data: { locationReleasedAt: new Date() },
+    });
+  }
+}
+
 async function syncReleasedStockLocationsFromShopify(admin, shop) {
   const publishedDrafts = await prisma.stockProductDraft.findMany({
     where: {
@@ -1015,6 +1073,7 @@ async function syncReleasedStockLocationsFromShopify(admin, shop) {
       data: { locationReleasedAt: new Date() },
     });
   }
+  await deleteZeroInventoryStockProductsFromShopify(admin, shop);
 }
 
 function toFiniteNumber(value, fallback = 0) {
