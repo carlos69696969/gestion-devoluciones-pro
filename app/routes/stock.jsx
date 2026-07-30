@@ -1568,7 +1568,6 @@ export default function StockPortal() {
   const [editingDraftId, setEditingDraftId] = useState(0);
   const [editingDraftMeta, setEditingDraftMeta] = useState(null);
   const [pendingEditDraftId, setPendingEditDraftId] = useState(0);
-  const [stockPortalLoggingOut, setStockPortalLoggingOut] = useState(false);
   const [stockDeviceId, setStockDeviceId] = useState("");
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
@@ -1582,6 +1581,7 @@ export default function StockPortal() {
   const isSubmitting = navigation.state !== "idle";
   const navigationIntent = navigation.formData?.get("intent");
   const isStockLoginSubmitting = navigation.state !== "idle" && navigationIntent === "stock_login";
+  const isStockLogoutSubmitting = navigation.state !== "idle" && navigationIntent === "stock_logout";
   const isPreparerStock = stockUser?.role === STOCK_USER_ROLES.PREPARER;
   const isProductPublisher = stockUser?.role === STOCK_USER_ROLES.PUBLISHER;
   const captureDraftKey = useMemo(() => stockCaptureDraftKey(shop), [shop]);
@@ -1682,7 +1682,6 @@ export default function StockPortal() {
   }
 
   function logoutStockPortal() {
-    setStockPortalLoggingOut(true);
     try {
       window.localStorage.removeItem(captureDraftKey);
       window.localStorage.removeItem(publisherDraftKey);
@@ -2456,7 +2455,7 @@ export default function StockPortal() {
                 placeholder="000000"
                 required
               />
-            <button className={styles.primaryButton} type="submit" disabled={isSubmitting || !stockDeviceId}>
+            <button className={styles.primaryButton} type="submit" disabled={isStockLoginSubmitting || !stockDeviceId}>
               {isStockLoginSubmitting ? (
                 <span className={styles.loadingButtonContent}>
                   <span className={styles.buttonSpinner} aria-hidden="true" />
@@ -2495,10 +2494,10 @@ export default function StockPortal() {
               <button
                 className={styles.slimSessionButton}
                 type="button"
-                disabled={stockPortalLoggingOut}
+                disabled={isStockLogoutSubmitting}
                 onClick={confirmAndLogoutStockPortal}
               >
-                {stockPortalLoggingOut ? (
+                {isStockLogoutSubmitting ? (
                   <span className={styles.loadingButtonContent}>
                     <span className={styles.buttonSpinner} aria-hidden="true" />
                     Cargando
@@ -2900,10 +2899,10 @@ export default function StockPortal() {
               <button
                 className={styles.slimSessionButton}
                 type="button"
-                disabled={stockPortalLoggingOut}
+                disabled={isStockLogoutSubmitting}
                 onClick={confirmAndLogoutStockPortal}
               >
-                {stockPortalLoggingOut ? (
+                {isStockLogoutSubmitting ? (
                   <span className={styles.loadingButtonContent}>
                     <span className={styles.buttonSpinner} aria-hidden="true" />
                     Cargando
