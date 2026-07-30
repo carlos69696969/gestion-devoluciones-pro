@@ -385,11 +385,25 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
   const duplicateProducts = [];
   for (const group of occurrencesBySku.values()) {
     if (group.length < 2) continue;
-    const sortedGroup = [...group].sort((first, second) => {
+    const productById = new Map();
+    for (const occurrence of group) {
+      const productKey = occurrence.productId || occurrence.variantId;
+      const current = productById.get(productKey);
+      if (!current) {
+        productById.set(productKey, occurrence);
+        continue;
+      }
+      const currentTime = new Date(current.productCreatedAt || current.variantCreatedAt || 0).getTime();
+      const occurrenceTime = new Date(occurrence.productCreatedAt || occurrence.variantCreatedAt || 0).getTime();
+      if (occurrenceTime < currentTime) productById.set(productKey, occurrence);
+    }
+    const productsWithSku = [...productById.values()];
+    if (productsWithSku.length < 2) continue;
+    const sortedGroup = productsWithSku.sort((first, second) => {
       const firstTime = new Date(first.productCreatedAt || first.variantCreatedAt || 0).getTime();
       const secondTime = new Date(second.productCreatedAt || second.variantCreatedAt || 0).getTime();
       if (firstTime !== secondTime) return firstTime - secondTime;
-      return first.variantId.localeCompare(second.variantId);
+      return first.productId.localeCompare(second.productId) || first.variantId.localeCompare(second.variantId);
     });
     duplicateProducts.push(...sortedGroup.slice(1));
   }
