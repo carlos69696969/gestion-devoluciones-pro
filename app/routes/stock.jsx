@@ -295,6 +295,155 @@ async function fetchShopifyZeroInventoryProducts({ session }) {
   return data?.products?.nodes || [];
 }
 
+function normalizeStockLookupText(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+async function fetchShopifyDuplicateSkuProducts(shop) {
+  const cleanShopDomain = cleanShop(shop);
+  if (!cleanShopDomain) return [];
+  const sessions = await resolveStockShopSessions(cleanShopDomain);
+  if (!sessions.length) return [];
+  let skuOccurrences = [];
+  let lastError = null;
+  for (const session of sessions) {
+    try {
+      let cursor = null;
+      let hasNextPage = true;
+      let pageCount = 0;
+      const occurrences = [];
+      while (hasNextPage && pageCount < 10) {
+        const data = await shopifyStockGraphql({
+          shop: session.shop,
+          accessToken: session.accessToken,
+          query: `#graphql
+            query StockSkuDuplicateAudit($cursor: String) {
+              productVariants(first: 250, after: $cursor) {
+                nodes {
+                  id
+                  sku
+                  createdAt
+                  product {
+                    id
+                    title
+                    createdAt
+                    featuredMedia {
+                      preview {
+                        image {
+                          url
+                          altText
+                        }
+                      }
+                    }
+                  }
+                }
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
+              }
+            }`,
+          variables: { cursor },
+        });
+        const variants = data?.productVariants?.nodes || [];
+        for (const variant of variants) {
+          const sku = String(variant?.sku || "").trim();
+          if (!sku) continue;
+          const product = variant?.product || {};
+          occurrences.push({
+            sku,
+            skuKey: sku.toLowerCase(),
+            variantId: String(variant?.id || ""),
+            variantCreatedAt: variant?.createdAt || "",
+            productId: String(product?.id || ""),
+            productName: String(product?.title || "Producto sin nombre"),
+            productCreatedAt: product?.createdAt || "",
+            imageUrl: String(product?.featuredMedia?.preview?.image?.url || ""),
+          });
+        }
+        hasNextPage = Boolean(data?.productVariants?.pageInfo?.hasNextPage);
+        cursor = data?.productVariants?.pageInfo?.endCursor || null;
+        pageCount += 1;
+      }
+      skuOccurrences = occurrences;
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!skuOccurrences.length) {
+    if (lastError) throw lastError;
+    return [];
+  }
+
+  const occurrencesBySku = new Map();
+  for (const occurrence of skuOccurrences) {
+    if (!occurrencesBySku.has(occurrence.skuKey)) occurrencesBySku.set(occurrence.skuKey, []);
+    occurrencesBySku.get(occurrence.skuKey).push(occurrence);
+  }
+
+  const duplicateProducts = [];
+  for (const group of occurrencesBySku.values()) {
+    if (group.length < 2) continue;
+    const sortedGroup = [...group].sort((first, second) => {
+      const firstTime = new Date(first.productCreatedAt || first.variantCreatedAt || 0).getTime();
+      const secondTime = new Date(second.productCreatedAt || second.variantCreatedAt || 0).getTime();
+      if (firstTime !== secondTime) return firstTime - secondTime;
+      return first.variantId.localeCompare(second.variantId);
+    });
+    duplicateProducts.push(...sortedGroup.slice(1));
+  }
+
+  if (!duplicateProducts.length) return [];
+
+  const publishedDrafts = await prisma.stockProductDraft.findMany({
+    where: {
+      shop: cleanShopDomain,
+      publishedByStockUserId: { not: null },
+    },
+    select: {
+      sku: true,
+      productName: true,
+      publishedAt: true,
+      updatedAt: true,
+      publishedByStockUser: { select: { name: true } },
+    },
+    orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+    take: 500,
+  });
+  const publisherBySku = new Map();
+  const publisherByProductName = new Map();
+  for (const draft of publishedDrafts) {
+    const publisherName = String(draft?.publishedByStockUser?.name || "").trim();
+    if (!publisherName) continue;
+    const skuKey = String(draft.sku || "").trim().toLowerCase();
+    const productNameKey = normalizeStockLookupText(draft.productName);
+    if (skuKey && !publisherBySku.has(skuKey)) publisherBySku.set(skuKey, publisherName);
+    if (productNameKey && !publisherByProductName.has(productNameKey)) {
+      publisherByProductName.set(productNameKey, publisherName);
+    }
+  }
+
+  return duplicateProducts
+    .sort((first, second) => {
+      const firstTime = new Date(first.productCreatedAt || first.variantCreatedAt || 0).getTime();
+      const secondTime = new Date(second.productCreatedAt || second.variantCreatedAt || 0).getTime();
+      return secondTime - firstTime;
+    })
+    .slice(0, 12)
+    .map((product) => {
+      const productNameKey = normalizeStockLookupText(product.productName);
+      return {
+        sku: product.sku,
+        productId: product.productId,
+        productName: product.productName,
+        imageUrl: product.imageUrl,
+        publisherName:
+          publisherByProductName.get(productNameKey) || publisherBySku.get(product.skuKey) || "No identificado",
+      };
+    });
+}
+
 async function archiveShopifyZeroInventoryProducts({ cleanShopDomain, sessions }) {
   if (!sessions.length) return;
   for (const session of sessions) {
@@ -743,6 +892,7 @@ export async function loader({ request }) {
   let locationRows = [];
   let releasedLocationRows = [];
   let preparedHistoryRows = [];
+  let duplicateSkuProducts = [];
   let stockSettings = null;
   let error = "";
   let stockUser = null;
@@ -880,6 +1030,12 @@ export async function loader({ request }) {
           select: { stockLogoutTime: true },
         }),
       ]);
+      if (stockUser.role === STOCK_USER_ROLES.PUBLISHER) {
+        duplicateSkuProducts = await fetchShopifyDuplicateSkuProducts(shop).catch((duplicateSkuError) => {
+          console.error("No se pudieron revisar SKUs duplicados de Shopify", duplicateSkuError);
+          return [];
+        });
+      }
     }
   } catch (loadError) {
     console.error("No se pudo cargar portal stock", loadError);
@@ -922,6 +1078,7 @@ export async function loader({ request }) {
     sessionToken: stockUser ? sessionToken || "" : "",
     audiences: STOCK_AUDIENCES,
     garments: STOCK_GARMENTS,
+    duplicateSkuProducts,
     nextSkuByCategory,
     locationByCategory,
     stockLogoutTime: normalizeStockLogoutTime(stockSettings?.stockLogoutTime),
@@ -1535,6 +1692,7 @@ export default function StockPortal() {
     error,
     audiences,
     garments,
+    duplicateSkuProducts = [],
     nextSkuByCategory,
     locationByCategory,
     stockLogoutTime,
@@ -2912,6 +3070,33 @@ export default function StockPortal() {
                 )}
               </button>
             </div>
+            {duplicateSkuProducts.length ? (
+              <div className={styles.duplicateSkuPanel}>
+                <h3>SKU duplicado</h3>
+                <p>Este SKU ya existe en otro producto. Corrige el SKU en Shopify para evitar errores de inventario.</p>
+                <div className={styles.duplicateSkuList}>
+                  {duplicateSkuProducts.map((product) => (
+                    <div className={styles.duplicateSkuItem} key={`${product.productId}-${product.sku}`}>
+                      {product.imageUrl ? (
+                        <img
+                          className={styles.duplicateSkuImage}
+                          src={product.imageUrl}
+                          alt={product.productName || product.sku}
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className={styles.duplicateSkuPlaceholder}>Sin foto</div>
+                      )}
+                      <div className={styles.duplicateSkuBody}>
+                        <strong>{product.productName || "Producto sin nombre"}</strong>
+                        <span>SKU duplicado: {product.sku}</span>
+                        <span>Publicador: {product.publisherName || "No identificado"}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <h2>Productos listos</h2>
             {publisherMessage ? <p className={styles.error}>{publisherMessage}</p> : null}
             {drafts.length ? (
