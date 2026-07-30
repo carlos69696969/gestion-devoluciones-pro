@@ -220,42 +220,45 @@ async function fetchShopifyProductTotalInventory({ session, productId }) {
   return variants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0);
 }
 
-async function deleteShopifyProduct({ session, productId }) {
+async function archiveShopifyProduct({ session, productId }) {
   const data = await shopifyStockGraphql({
     shop: session.shop,
     accessToken: session.accessToken,
     query: `#graphql
-      mutation DeleteStockProduct($input: ProductDeleteInput!) {
-        productDelete(input: $input) {
-          deletedProductId
+      mutation ArchiveStockProduct($product: ProductUpdateInput!) {
+        productUpdate(product: $product) {
+          product {
+            id
+            status
+          }
           userErrors {
             field
             message
           }
         }
       }`,
-    variables: { input: { id: productId } },
+    variables: { product: { id: productId, status: "ARCHIVED" } },
   });
-  const errors = data?.productDelete?.userErrors || [];
+  const errors = data?.productUpdate?.userErrors || [];
   if (errors.length) {
-    throw new Error(errors.map((error) => error.message).filter(Boolean).join(", ") || "No se pudo borrar el producto.");
+    throw new Error(errors.map((error) => error.message).filter(Boolean).join(", ") || "No se pudo archivar el producto.");
   }
-  return data?.productDelete?.deletedProductId || productId;
+  return data?.productUpdate?.product?.id || productId;
 }
 
-async function deleteShopifyProductsIfInventoryIsEmpty(stockState) {
+async function archiveShopifyProductsIfInventoryIsEmpty(stockState) {
   if (!stockState?.session || !stockState.productIds?.length) return false;
-  let deletedAnyProduct = false;
+  let archivedAnyProduct = false;
   for (const productId of stockState.productIds) {
     const productQuantity = await fetchShopifyProductTotalInventory({
       session: stockState.session,
       productId,
     });
     if (productQuantity === null || productQuantity > 0) continue;
-    await deleteShopifyProduct({ session: stockState.session, productId });
-    deletedAnyProduct = true;
+    await archiveShopifyProduct({ session: stockState.session, productId });
+    archivedAnyProduct = true;
   }
-  return deletedAnyProduct;
+  return archivedAnyProduct;
 }
 
 async function fetchShopifyZeroInventoryProducts({ session }) {
@@ -282,7 +285,7 @@ async function fetchShopifyZeroInventoryProducts({ session }) {
   return data?.products?.nodes || [];
 }
 
-async function deleteShopifyZeroInventoryProducts({ cleanShopDomain, sessions }) {
+async function archiveShopifyZeroInventoryProducts({ cleanShopDomain, sessions }) {
   if (!sessions.length) return;
   for (const session of sessions) {
     const products = await fetchShopifyZeroInventoryProducts({ session }).catch((error) => {
@@ -298,15 +301,15 @@ async function deleteShopifyZeroInventoryProducts({ cleanShopDomain, sessions })
             .filter(Boolean),
         ),
       ];
-      const deletedProduct = await deleteShopifyProduct({ session, productId: product.id }).catch((error) => {
-        console.error("No se pudo borrar producto agotado de Shopify", {
+      const archivedProduct = await archiveShopifyProduct({ session, productId: product.id }).catch((error) => {
+        console.error("No se pudo archivar producto agotado de Shopify", {
           productId: product.id,
           title: product.title,
           error,
         });
         return null;
       });
-      if (!deletedProduct || !productSkus.length) continue;
+      if (!archivedProduct || !productSkus.length) continue;
       await prisma.stockProductDraft.updateMany({
         where: {
           shop: cleanShopDomain,
@@ -343,17 +346,17 @@ async function syncReleasedStockLocations(shop) {
       return null;
     });
     if (!stockState || stockState.quantity > 0) continue;
-    const deletedProduct = await deleteShopifyProductsIfInventoryIsEmpty(stockState).catch((error) => {
-      console.error("No se pudo borrar producto agotado de Shopify", { sku: draft.sku, error });
+    const archivedProduct = await archiveShopifyProductsIfInventoryIsEmpty(stockState).catch((error) => {
+      console.error("No se pudo archivar producto agotado de Shopify", { sku: draft.sku, error });
       return false;
     });
-    if (!deletedProduct) continue;
+    if (!archivedProduct) continue;
     await prisma.stockProductDraft.updateMany({
       where: { id: draft.id, shop: cleanShopDomain, locationReleasedAt: null },
       data: { locationReleasedAt: new Date() },
     });
   }
-  await deleteShopifyZeroInventoryProducts({ cleanShopDomain, sessions });
+  await archiveShopifyZeroInventoryProducts({ cleanShopDomain, sessions });
 }
 
 async function clearExpiredStockPublicationLocks(shop) {
