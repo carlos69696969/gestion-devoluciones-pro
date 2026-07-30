@@ -1067,6 +1067,7 @@ export async function loader({ request }) {
   let locationRows = [];
   let releasedLocationRows = [];
   let preparedHistoryRows = [];
+  let publisherHistoryRows = [];
   let duplicateSkuProducts = [];
   let incorrectSkuProducts = [];
   let stockSettings = null;
@@ -1145,7 +1146,7 @@ export async function loader({ request }) {
     if (stockUser) {
       await syncReleasedStockLocations(shop);
       await clearExpiredStockPublicationLocks(shop);
-      [drafts, skuRows, locationRows, releasedLocationRows, preparedHistoryRows, stockSettings] = await Promise.all([
+      [drafts, skuRows, locationRows, releasedLocationRows, preparedHistoryRows, publisherHistoryRows, stockSettings] = await Promise.all([
         prisma.stockProductDraft.findMany({
           where: {
             shop,
@@ -1198,6 +1199,37 @@ export async function loader({ request }) {
                 createdAt: true,
               },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              take: 120,
+            })
+          : Promise.resolve([]),
+        stockUser.role === STOCK_USER_ROLES.PUBLISHER
+          ? prisma.stockProductDraft.findMany({
+              where: {
+                shop,
+                publishedByStockUserId: stockUser.id,
+                publishedAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) },
+              },
+              select: {
+                id: true,
+                productName: true,
+                audience: true,
+                garmentType: true,
+                color: true,
+                size: true,
+                sku: true,
+                locationCode: true,
+                quantity: true,
+                price: true,
+                notes: true,
+                photos: true,
+                variants: true,
+                status: true,
+                publishingLockedByStockUserId: true,
+                publishingLockedAt: true,
+                createdAt: true,
+                publishedAt: true,
+              },
+              orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
               take: 120,
             })
           : Promise.resolve([]),
@@ -1255,6 +1287,9 @@ export async function loader({ request }) {
     preparedHistory: preparedHistoryRows
       .filter((draft) => stockMexicoDateKey(draft.createdAt) === stockMexicoDateKey(new Date()))
       .map(serializePreparedStockHistory),
+    publisherHistory: publisherHistoryRows
+      .filter((draft) => stockMexicoDateKey(draft.publishedAt) === stockMexicoDateKey(new Date()))
+      .map((draft) => serializePreparedStockHistory({ ...draft, createdAt: draft.publishedAt || draft.createdAt })),
     stockUser: serializeStockUser(stockUser),
     accessCode: stockUser ? sessionToken || accessCode : "",
     sessionToken: stockUser ? sessionToken || "" : "",
@@ -1467,7 +1502,6 @@ export async function action({ request }) {
       },
       data: {
         status: STOCK_DRAFT_STATUS.READY,
-        photos: [],
         publishedByStockUserId: stockUser.id,
         publishedAt: new Date(),
         publishingLockedByStockUserId: null,
@@ -1869,6 +1903,7 @@ export default function StockPortal() {
     shop,
     drafts,
     preparedHistory = [],
+    publisherHistory = [],
     stockUser,
     accessCode,
     sessionToken,
@@ -1905,6 +1940,8 @@ export default function StockPortal() {
   const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
   const [captureStep, setCaptureStep] = useState("audience");
   const [showPreparedHistory, setShowPreparedHistory] = useState(false);
+  const [showPublisherHistory, setShowPublisherHistory] = useState(false);
+  const [selectedPublisherHistoryId, setSelectedPublisherHistoryId] = useState(0);
   const [stockReprintMode, setStockReprintMode] = useState(false);
   const [stockEditMode, setStockEditMode] = useState(false);
   const [editingDraftId, setEditingDraftId] = useState(0);
@@ -1943,7 +1980,12 @@ export default function StockPortal() {
     () => drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) || null,
     [drafts, selectedDraftId],
   );
-  const selectedDraftVariants = useMemo(() => stockDisplayVariants(selectedDraft), [selectedDraft]);
+  const selectedPublisherHistory = useMemo(
+    () => publisherHistory.find((draft) => Number(draft.id) === Number(selectedPublisherHistoryId)) || null,
+    [publisherHistory, selectedPublisherHistoryId],
+  );
+  const selectedStockDetail = selectedPublisherHistory || selectedDraft;
+  const selectedDraftVariants = useMemo(() => stockDisplayVariants(selectedStockDetail), [selectedStockDetail]);
   const selectedDraftChecklistKeys = useMemo(() => {
     if (!selectedDraft) return [];
     return [
@@ -2033,6 +2075,8 @@ export default function StockPortal() {
     }
     setSelectedDraftId(0);
     setPendingSelectedDraftId(0);
+    setShowPublisherHistory(false);
+    setSelectedPublisherHistoryId(0);
     setCheckedStockItems({});
     setShowPreparedHistory(false);
     setStockReprintMode(false);
@@ -2411,6 +2455,8 @@ export default function StockPortal() {
 
   function openPublisherDraft(draft) {
     if (!draft) return;
+    setShowPublisherHistory(false);
+    setSelectedPublisherHistoryId(0);
     if (draft.isLockedByOther) {
       setPublisherMessage(draft.isBeingEdited ? "Esta orden esta siendo editada." : "Esta orden ya esta siendo trabajada.");
       return;
@@ -2428,7 +2474,28 @@ export default function StockPortal() {
     );
   }
 
+  function openPublisherHistory() {
+    setPublisherMessage("");
+    setSelectedDraftId(0);
+    setPendingSelectedDraftId(0);
+    setCheckedStockItems({});
+    clearPublisherDraftState();
+    setPublisherDraftUrl(0);
+    setSelectedPublisherHistoryId(0);
+    setShowPublisherHistory(true);
+  }
+
+  function closePublisherHistory() {
+    setShowPublisherHistory(false);
+    setSelectedPublisherHistoryId(0);
+  }
+
   function returnToPublisherList() {
+    if (selectedPublisherHistory) {
+      setSelectedPublisherHistoryId(0);
+      setShowPublisherHistory(true);
+      return;
+    }
     const draftId = selectedDraftId;
     setSelectedDraftId(0);
     setCheckedStockItems({});
@@ -3232,10 +3299,10 @@ export default function StockPortal() {
       ) : isProductPublisher ? (
         <section
           className={`${styles.pendingLayout} ${
-            selectedDraft ? styles.publisherDetailLayout : styles.publisherListLayout
+            selectedStockDetail ? styles.publisherDetailLayout : styles.publisherListLayout
           }`}
         >
-          {!selectedDraft ? (
+          {!selectedStockDetail && !showPublisherHistory ? (
           <div className={styles.listCard}>
             {duplicateSkuProducts.length ? (
               <div className={styles.duplicateSkuPanel}>
@@ -3312,8 +3379,8 @@ export default function StockPortal() {
                     "Cerrar sesión"
                   )}
                 </button>
-                <button className={styles.slimHistoryButton} type="button">
-                  Mi historial
+                <button className={styles.slimHistoryButton} type="button" onClick={openPublisherHistory}>
+                  Historial
                 </button>
               </div>
               <h2>Productos listos</h2>
@@ -3344,30 +3411,58 @@ export default function StockPortal() {
           </div>
           ) : null}
 
-          {selectedDraft ? (
+          {!selectedStockDetail && showPublisherHistory ? (
+            <div className={styles.listCard}>
+              <div className={styles.publisherListHeader}>
+                <button className={styles.secondaryButton} type="button" onClick={closePublisherHistory}>
+                  Regresar
+                </button>
+                <h2>Historial</h2>
+              </div>
+              {publisherHistory.length ? (
+                <div className={styles.preparedHistoryList}>
+                  {publisherHistory.map((item) => (
+                    <button
+                      className={`${styles.preparedHistoryRow} ${styles.preparedHistoryRowSelectable}`}
+                      key={item.id}
+                      type="button"
+                      onClick={() => setSelectedPublisherHistoryId(item.id)}
+                    >
+                      <strong>{item.sku || "-"}</strong>
+                      <span>{item.time || "-"}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className={styles.empty}>Todavia no hay productos publicados hoy.</p>
+              )}
+            </div>
+          ) : null}
+
+          {selectedStockDetail ? (
             <article className={styles.detailCard}>
               <div className={styles.publisherDetailActions}>
                 <button className={styles.secondaryButton} type="button" onClick={returnToPublisherList}>
                   Regresar
                 </button>
               </div>
-              {selectedDraft.photos?.length ? (
+              {selectedStockDetail.photos?.length ? (
                 <div className={styles.downloadGrid}>
-                  {selectedDraft.photos.map((photo, index) => (
-                    <figure className={styles.downloadPhoto} key={`${selectedDraft.id}-${index}`}>
+                  {selectedStockDetail.photos.map((photo, index) => (
+                    <figure className={styles.downloadPhoto} key={`${selectedStockDetail.id}-${index}`}>
                       <button
                         className={styles.photoPreviewButton}
                         type="button"
                         onClick={() =>
                           openPhotoPreview({
                             dataUrl: photo,
-                            name: `${selectedDraft.productName || "producto"} ${index + 1}`,
+                            name: `${selectedStockDetail.productName || "producto"} ${index + 1}`,
                           })
                         }
                       >
-                        <img src={photo} alt={`${selectedDraft.productName} ${index + 1}`} />
+                        <img src={photo} alt={`${selectedStockDetail.productName} ${index + 1}`} />
                       </button>
-                      <a href={photo} download={`${selectedDraft.sku || selectedDraft.productName}-foto-${index + 1}.jpg`}>
+                      <a href={photo} download={`${selectedStockDetail.sku || selectedStockDetail.productName}-foto-${index + 1}.jpg`}>
                         Descargar foto
                       </a>
                     </figure>
@@ -3379,77 +3474,87 @@ export default function StockPortal() {
               <dl className={styles.detailGrid}>
                 <div className={styles.detailMetaColumn}>
                   <div>
+                    <dt>Producto</dt>
+                    <dd>{selectedStockDetail.productName || "-"}</dd>
+                  </div>
+                  <div>
                     <dt>Ubicacion</dt>
-                    <dd>{selectedDraft.locationCode || "-"}</dd>
+                    <dd>{selectedStockDetail.locationCode || "-"}</dd>
                   </div>
                   <div className={styles.detailCheckCard}>
                     <dt>SKU</dt>
                     <dd>
-                      <span>{selectedDraft.sku || "-"}</span>
-                      <input
-                        type="checkbox"
-                        aria-label={`SKU listo ${selectedDraft.sku || ""}`}
-                        checked={Boolean(checkedStockItems[`draft:${selectedDraft.id}:sku`])}
-                        onChange={() => toggleStockChecklistItem(`draft:${selectedDraft.id}:sku`)}
-                      />
+                      <span>{selectedStockDetail.sku || "-"}</span>
+                      {!selectedPublisherHistory ? (
+                        <input
+                          type="checkbox"
+                          aria-label={`SKU listo ${selectedStockDetail.sku || ""}`}
+                          checked={Boolean(checkedStockItems[`draft:${selectedStockDetail.id}:sku`])}
+                          onChange={() => toggleStockChecklistItem(`draft:${selectedStockDetail.id}:sku`)}
+                        />
+                      ) : null}
                     </dd>
                   </div>
                   <div>
                     <dt>Precio</dt>
-                    <dd>{money(selectedDraft.price)}</dd>
+                    <dd>{money(selectedStockDetail.price)}</dd>
                   </div>
-                  <publishStockFetcher.Form
-                    method="post"
-                    className={styles.stockPublishForm}
-                    onSubmit={(event) => {
-                      if (!window.confirm(`¿Marcar ${selectedDraft.sku || selectedDraft.locationCode} como listo?`)) {
-                        event.preventDefault();
-                      }
-                    }}
-                  >
-                    <input type="hidden" name="intent" value="publish_stock_draft" />
-                    <input type="hidden" name="shop" value={shop} />
-                    <input type="hidden" name="stockCode" value={accessCode || ""} />
-                    <input type="hidden" name="draftId" value={selectedDraft.id} />
-                    <button
-                      className={styles.primaryButton}
-                      type="submit"
-                      disabled={publishStockFetcher.state !== "idle" || !isSelectedDraftPublishReady}
+                  {!selectedPublisherHistory ? (
+                    <publishStockFetcher.Form
+                      method="post"
+                      className={styles.stockPublishForm}
+                      onSubmit={(event) => {
+                        if (!window.confirm(`¿Marcar ${selectedStockDetail.sku || selectedStockDetail.locationCode} como listo?`)) {
+                          event.preventDefault();
+                        }
+                      }}
                     >
-                      {publishStockFetcher.state !== "idle" ? "Guardando..." : "Listo"}
-                    </button>
-                  </publishStockFetcher.Form>
+                      <input type="hidden" name="intent" value="publish_stock_draft" />
+                      <input type="hidden" name="shop" value={shop} />
+                      <input type="hidden" name="stockCode" value={accessCode || ""} />
+                      <input type="hidden" name="draftId" value={selectedStockDetail.id} />
+                      <button
+                        className={styles.primaryButton}
+                        type="submit"
+                        disabled={publishStockFetcher.state !== "idle" || !isSelectedDraftPublishReady}
+                      >
+                        {publishStockFetcher.state !== "idle" ? "Guardando..." : "Listo"}
+                      </button>
+                    </publishStockFetcher.Form>
+                  ) : null}
                 </div>
                 <div className={styles.detailColorCard}>
                   <dt>Color</dt>
                   <dd>
                     {selectedDraftVariants.map((variant, variantIndex) => (
-                      <div className={styles.detailColorRow} key={`${selectedDraft.id}-color-${variantIndex}`}>
+                      <div className={styles.detailColorRow} key={`${selectedStockDetail.id}-color-${variantIndex}`}>
                         <strong>{variant.color || "-"}</strong>
                         {variant.sizes.length ? (
                           <div className={styles.detailSizeChecks}>
                             {variant.sizes.map((sizeRow) => (
                               <label
                                 className={styles.detailSizeCheck}
-                                key={`${selectedDraft.id}-${variantIndex}-${sizeRow.size}`}
+                                key={`${selectedStockDetail.id}-${variantIndex}-${sizeRow.size}`}
                               >
                                 <span>
                                   {sizeRow.size}=({sizeRow.quantity})
                                 </span>
-                                <input
-                                  type="checkbox"
-                                  aria-label={`Listo ${variant.color || "color"} ${sizeRow.size}`}
-                                  checked={Boolean(
-                                    checkedStockItems[
-                                      `draft:${selectedDraft.id}:variant:${variantIndex}:size:${sizeRow.size}`
-                                    ],
-                                  )}
-                                  onChange={() =>
-                                    toggleStockChecklistItem(
-                                      `draft:${selectedDraft.id}:variant:${variantIndex}:size:${sizeRow.size}`,
-                                    )
-                                  }
-                                />
+                                {!selectedPublisherHistory ? (
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Listo ${variant.color || "color"} ${sizeRow.size}`}
+                                    checked={Boolean(
+                                      checkedStockItems[
+                                        `draft:${selectedStockDetail.id}:variant:${variantIndex}:size:${sizeRow.size}`
+                                      ],
+                                    )}
+                                    onChange={() =>
+                                      toggleStockChecklistItem(
+                                        `draft:${selectedStockDetail.id}:variant:${variantIndex}:size:${sizeRow.size}`,
+                                      )
+                                    }
+                                  />
+                                ) : null}
                               </label>
                             ))}
                           </div>
@@ -3459,10 +3564,10 @@ export default function StockPortal() {
                   </dd>
                 </div>
               </dl>
-              {publishStockFetcher.data?.error ? (
+              {!selectedPublisherHistory && publishStockFetcher.data?.error ? (
                 <p className={styles.error}>{publishStockFetcher.data.error}</p>
               ) : null}
-              {selectedDraft.notes ? <p className={styles.notes}>{selectedDraft.notes}</p> : null}
+              {selectedStockDetail.notes ? <p className={styles.notes}>{selectedStockDetail.notes}</p> : null}
             </article>
           ) : null}
         </section>
