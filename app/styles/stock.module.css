@@ -278,8 +278,11 @@
 }
 
 .preparedHistoryHeader .editHistoryButton {
+  width: max-content;
   min-width: 62px;
+  max-width: 72px;
   padding: 0 10px;
+  justify-self: center;
 }
 
 .textButtonActive {
@@ -1156,8 +1159,11 @@
   }
 
   .preparedHistoryHeader .editHistoryButton {
+    width: max-content;
     min-width: 54px;
+    max-width: 62px;
     padding: 0 8px;
+    justify-self: center;
   }
 
   .stockReprintButton {
