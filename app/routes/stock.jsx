@@ -28,6 +28,8 @@ const STOCK_DRAFT_STATUS = {
   EDITING: "editando",
   READY: "listo",
 };
+const STOCK_PUBLICATION_EDIT_BLOCKED_MESSAGE =
+  "No se puede editar esta orden por que ya esta siendo trabajada por un publicador, por favor avisale a un supervisor.";
 const STOCK_USER_ROLES = {
   PREPARER: "preparador_stock",
   PUBLISHER: "publicador_productos",
@@ -1013,7 +1015,7 @@ export async function action({ request }) {
         return { ok: false, error: "Esta orden ya esta siendo editada." };
       }
       if (currentDraft?.publishingLockedByStockUserId) {
-        return { ok: false, error: "No se puede editar esta orden porque ya esta siendo trabajada por un publicador." };
+        return { ok: false, error: STOCK_PUBLICATION_EDIT_BLOCKED_MESSAGE };
       }
       return { ok: false, error: "No se pudo tomar esta orden para editar." };
     }
@@ -2017,7 +2019,7 @@ export default function StockPortal() {
     }
     const lockedBy = Number(item.publishingLockedByStockUserId || 0);
     if (lockedBy && lockedBy !== Number(stockUser?.id || 0)) {
-      window.alert("No se puede editar esta orden porque ya esta siendo trabajada por un publicador.");
+      window.alert(STOCK_PUBLICATION_EDIT_BLOCKED_MESSAGE);
       return;
     }
     setPendingEditDraftId(Number(item.id));
@@ -2354,7 +2356,9 @@ export default function StockPortal() {
                   Regresar
                 </button>
                 <button
-                  className={`${styles.textButton} ${stockEditMode ? styles.textButtonActive : ""}`}
+                  className={`${styles.textButton} ${styles.editHistoryButton} ${
+                    stockEditMode ? styles.textButtonActive : ""
+                  }`}
                   type="button"
                   disabled={editStockFetcher.state !== "idle"}
                   onClick={() => {
@@ -2385,28 +2389,33 @@ export default function StockPortal() {
               ) : null}
               {preparedHistory.length ? (
                 <div className={styles.preparedHistoryList}>
-                  {preparedHistory.map((item) => (
-                    <button
-                      aria-disabled={!stockReprintMode && !stockEditMode}
-                      className={`${styles.preparedHistoryRow} ${
-                        stockReprintMode || stockEditMode ? styles.preparedHistoryRowSelectable : ""
-                      } ${
-                        pendingEditDraftId === item.id ? styles.draftButtonPending : ""
-                      }`}
-                      key={item.id}
-                      type="button"
-                      onClick={() => {
-                        if (stockEditMode) {
-                          editPreparedHistoryItem(item);
-                          return;
-                        }
-                        reprintPreparedHistoryItem(item);
-                      }}
-                    >
-                      <strong>{item.sku || "-"}</strong>
-                      <span>{item.time || "-"}</span>
-                    </button>
-                  ))}
+                  {preparedHistory.map((item) => {
+                    const lockedBy = Number(item.publishingLockedByStockUserId || 0);
+                    const blockedForEdit =
+                      stockEditMode && lockedBy && lockedBy !== Number(stockUser?.id || 0);
+                    return (
+                      <button
+                        aria-disabled={!stockReprintMode && !stockEditMode}
+                        className={`${styles.preparedHistoryRow} ${
+                          stockReprintMode || stockEditMode ? styles.preparedHistoryRowSelectable : ""
+                        } ${blockedForEdit ? styles.preparedHistoryRowBlocked : ""} ${
+                          pendingEditDraftId === item.id ? styles.draftButtonPending : ""
+                        }`}
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          if (stockEditMode) {
+                            editPreparedHistoryItem(item);
+                            return;
+                          }
+                          reprintPreparedHistoryItem(item);
+                        }}
+                      >
+                        <strong>{item.sku || "-"}</strong>
+                        <span>{item.time || "-"}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className={styles.empty}>Todavia no hay productos guardados hoy.</p>

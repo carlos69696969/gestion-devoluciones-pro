@@ -277,6 +277,11 @@
   white-space: nowrap;
 }
 
+.preparedHistoryHeader .editHistoryButton {
+  min-width: 62px;
+  padding: 0 10px;
+}
+
 .textButtonActive {
   border-color: #005bd3;
   background: #eef6ff;
@@ -339,6 +344,18 @@
   border-color: #005bd3;
   background: #eef6ff;
   cursor: pointer;
+}
+
+.preparedHistoryRowBlocked {
+  border-color: #d9dee7;
+  background: #f7f9fc;
+  color: #7b8492;
+  opacity: 0.48;
+}
+
+.preparedHistoryRowBlocked strong,
+.preparedHistoryRowBlocked span {
+  color: #7b8492;
 }
 
 .preparedHistoryRow strong {
@@ -1136,6 +1153,11 @@
     min-width: 66px;
     padding: 0 10px;
     font-size: 12px;
+  }
+
+  .preparedHistoryHeader .editHistoryButton {
+    min-width: 54px;
+    padding: 0 8px;
   }
 
   .stockReprintButton {
