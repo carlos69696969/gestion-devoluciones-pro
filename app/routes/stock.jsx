@@ -2352,6 +2352,9 @@ export default function StockPortal() {
             <div className={styles.preparedHistoryPanel}>
               <div className={`${styles.stepHeader} ${styles.preparedHistoryHeader}`}>
                 <h2>Historial del dia</h2>
+                <button className={styles.textButton} type="button" onClick={closePreparedHistory}>
+                  Regresar
+                </button>
                 <button
                   className={`${styles.textButton} ${styles.editHistoryButton} ${
                     stockEditMode ? styles.textButtonActive : ""
@@ -2380,13 +2383,6 @@ export default function StockPortal() {
                   🖨️
                 </button>
               </div>
-              <button
-                className={`${styles.textButton} ${styles.preparedHistoryBackButton}`}
-                type="button"
-                onClick={closePreparedHistory}
-              >
-                Regresar
-              </button>
               {stockEditMode ? <p className={styles.reprintHint}>Presiona la orden que quieres editar.</p> : null}
               {stockReprintMode ? (
                 <p className={styles.reprintHint}>Presiona la orden que quieres reimprimir.</p>

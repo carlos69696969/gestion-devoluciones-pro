@@ -258,7 +258,7 @@
 }
 
 .preparedHistoryHeader {
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
 }
@@ -271,24 +271,19 @@
 
 .preparedHistoryHeader .textButton {
   width: auto;
-  min-width: 64px;
-  min-height: 32px;
+  min-width: 78px;
+  min-height: 38px;
   padding: 0 12px;
   white-space: nowrap;
 }
 
 .preparedHistoryHeader .editHistoryButton {
-  width: max-content;
-  min-width: 62px;
-  max-width: 72px;
-  min-height: 32px;
-  padding: 0 10px;
-  justify-self: center;
-}
-
-.preparedHistoryBackButton {
   width: 100%;
-  min-height: 44px;
+  min-width: 0;
+  max-width: none;
+  min-height: 36px;
+  padding: 0 12px;
+  justify-self: stretch;
 }
 
 .textButtonActive {
@@ -1159,19 +1154,19 @@
 
   .preparedHistoryHeader .textButton {
     width: auto;
-    min-width: 58px;
-    min-height: 30px;
+    min-width: 66px;
+    min-height: 36px;
     padding: 0 10px;
     font-size: 12px;
   }
 
   .preparedHistoryHeader .editHistoryButton {
-    width: max-content;
-    min-width: 54px;
-    max-width: 62px;
-    min-height: 30px;
-    padding: 0 8px;
-    justify-self: center;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    min-height: 36px;
+    padding: 0 10px;
+    justify-self: stretch;
   }
 
   .stockReprintButton {
