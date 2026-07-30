@@ -1858,15 +1858,12 @@ export default function StockPortal() {
   const selectedDraftVariants = useMemo(() => stockDisplayVariants(selectedStockDetail), [selectedStockDetail]);
   const selectedDraftChecklistKeys = useMemo(() => {
     if (!selectedDraft) return [];
-    return [
-      `draft:${selectedDraft.id}:sku`,
-      ...selectedDraftVariants.flatMap((variant, variantIndex) =>
+    return selectedDraftVariants.flatMap((variant, variantIndex) =>
         variant.sizes.map((sizeRow) => `draft:${selectedDraft.id}:variant:${variantIndex}:size:${sizeRow.size}`),
-      ),
-    ];
+      );
   }, [selectedDraft, selectedDraftVariants]);
   const isSelectedDraftPublishReady =
-    selectedDraftChecklistKeys.length > 1 &&
+    selectedDraftChecklistKeys.length > 0 &&
     selectedDraftChecklistKeys.every((key) => checkedStockItems[key]);
   const currentStockSizes = useMemo(
     () => stockSizesFor(selectedAudience, selectedGarment),
@@ -3352,14 +3349,6 @@ export default function StockPortal() {
                     <dt>SKU</dt>
                     <dd>
                       <span>{selectedStockDetail.sku || "-"}</span>
-                      {!selectedPublisherHistory ? (
-                        <input
-                          type="checkbox"
-                          aria-label={`SKU listo ${selectedStockDetail.sku || ""}`}
-                          checked={Boolean(checkedStockItems[`draft:${selectedStockDetail.id}:sku`])}
-                          onChange={() => toggleStockChecklistItem(`draft:${selectedStockDetail.id}:sku`)}
-                        />
-                      ) : null}
                     </dd>
                   </div>
                   <div>
