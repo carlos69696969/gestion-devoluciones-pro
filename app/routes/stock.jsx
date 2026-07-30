@@ -12,6 +12,7 @@ import {
   useSubmit,
 } from "react-router";
 import prisma from "../db.server";
+import { recordArchivedStockProduct } from "../utils/stockZeroInventoryArchive.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
 import styles from "../styles/stock.module.css";
 
@@ -256,6 +257,15 @@ async function archiveShopifyProductsIfInventoryIsEmpty(stockState) {
     });
     if (productQuantity === null || productQuantity > 0) continue;
     await archiveShopifyProduct({ session: stockState.session, productId });
+    await recordArchivedStockProduct({
+      shop: stockState.session.shop,
+      product: { id: productId, title: stockState.productTitle || stockState.locationCode || "" },
+    }).catch((error) => {
+      console.error("No se pudo registrar producto archivado desde stock", {
+        productId,
+        error,
+      });
+    });
     archivedAnyProduct = true;
   }
   return archivedAnyProduct;
@@ -309,7 +319,18 @@ async function archiveShopifyZeroInventoryProducts({ cleanShopDomain, sessions }
         });
         return null;
       });
-      if (!archivedProduct || !productSkus.length) continue;
+      if (!archivedProduct) continue;
+      await recordArchivedStockProduct({
+        shop: cleanShopDomain,
+        product,
+      }).catch((error) => {
+        console.error("No se pudo registrar producto archivado de Shopify", {
+          productId: product.id,
+          title: product.title,
+          error,
+        });
+      });
+      if (!productSkus.length) continue;
       await prisma.stockProductDraft.updateMany({
         where: {
           shop: cleanShopDomain,

@@ -11,6 +11,8 @@ import {
 import { getCourierRouteStatusFromTags } from "../utils/courier.shared";
 import {
   archiveAllZeroInventoryProducts,
+  deleteExpiredArchivedStockProductsFromAdmin,
+  ensureStockArchivedProductCleanupStorage,
   ensureStockInventoryArchiveWebhooks,
 } from "../utils/stockZeroInventoryArchive.server";
 
@@ -92,8 +94,22 @@ async function syncZeroInventoryArchiveFromAdmin(admin, shop) {
   if (now - lastSyncAt < ZERO_INVENTORY_ARCHIVE_SYNC_INTERVAL_MS) return;
   zeroInventoryArchiveSyncByShop.set(normalizedShop, now);
   try {
+    await ensureStockArchivedProductCleanupStorage();
     await ensureStockInventoryArchiveWebhooks(admin);
     await archiveAllZeroInventoryProducts({ admin, shop: normalizedShop });
+    const cleanupSettings = await prisma.returnSettings.findUnique({
+      where: { shop: normalizedShop },
+      select: {
+        stockArchivedProductCleanupDays: true,
+        maintenanceBatchSize: true,
+      },
+    });
+    await deleteExpiredArchivedStockProductsFromAdmin({
+      admin,
+      shop: normalizedShop,
+      cleanupDays: cleanupSettings?.stockArchivedProductCleanupDays || 0,
+      batchSize: cleanupSettings?.maintenanceBatchSize || 100,
+    });
   } catch (error) {
     zeroInventoryArchiveSyncByShop.delete(normalizedShop);
     console.error("No se pudo sincronizar el archivado de productos agotados", error);

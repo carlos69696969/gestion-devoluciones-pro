@@ -1,6 +1,7 @@
 import prisma from "../db.server";
 
 const STOCK_DRAFT_READY_STATUS = "listo";
+const STOCK_ARCHIVE_STORAGE_FLAG = "__carianaStockArchiveCleanupStorageReady";
 const STOCK_WEBHOOKS = [
   {
     topic: "PRODUCTS_UPDATE",
@@ -29,6 +30,60 @@ function productSkus(product) {
 function productIsActive(product) {
   const status = String(product?.status || "ACTIVE").trim().toUpperCase();
   return status === "ACTIVE";
+}
+
+function productIsArchived(product) {
+  const status = String(product?.status || "").trim().toUpperCase();
+  return status === "ARCHIVED";
+}
+
+function cutoffDateFromDays(days) {
+  const at = new Date();
+  at.setHours(0, 0, 0, 0);
+  at.setDate(at.getDate() - days);
+  return at;
+}
+
+export function normalizeStockArchivedProductCleanupDays(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  const rounded = Math.floor(parsed);
+  if (rounded <= 0) return 0;
+  if (rounded > 5000) return 5000;
+  return rounded;
+}
+
+export async function ensureStockArchivedProductCleanupStorage() {
+  if (globalThis[STOCK_ARCHIVE_STORAGE_FLAG]) return;
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "ReturnSettings"
+    ADD COLUMN IF NOT EXISTS "stockArchivedProductCleanupDays" INTEGER NOT NULL DEFAULT 0
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "StockArchivedProduct" (
+      "id" SERIAL PRIMARY KEY,
+      "shop" TEXT NOT NULL,
+      "productId" TEXT NOT NULL,
+      "title" TEXT,
+      "archivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "deletedAt" TIMESTAMP(3),
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "StockArchivedProduct_shop_productId_key"
+    ON "StockArchivedProduct"("shop", "productId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "StockArchivedProduct_shop_archivedAt_idx"
+    ON "StockArchivedProduct"("shop", "archivedAt")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "StockArchivedProduct_shop_deletedAt_idx"
+    ON "StockArchivedProduct"("shop", "deletedAt")
+  `);
+  globalThis[STOCK_ARCHIVE_STORAGE_FLAG] = true;
 }
 
 async function adminGraphql(admin, query, variables = {}) {
@@ -65,6 +120,33 @@ export async function archiveStockProductInShopify(admin, productId) {
   return data?.productUpdate?.product || null;
 }
 
+export async function recordArchivedStockProduct({ shop, product }) {
+  const cleanShop = cleanShopDomain(shop);
+  const productId = String(product?.id || "").trim();
+  if (!cleanShop || !productId) return null;
+  await ensureStockArchivedProductCleanupStorage();
+  const existing = await prisma.stockArchivedProduct.findUnique({
+    where: { shop_productId: { shop: cleanShop, productId } },
+    select: { id: true, deletedAt: true },
+  });
+  const title = String(product?.title || "").trim() || null;
+  if (existing) {
+    return prisma.stockArchivedProduct.update({
+      where: { id: existing.id },
+      data: existing.deletedAt
+        ? { title, archivedAt: new Date(), deletedAt: null }
+        : { title },
+    });
+  }
+  return prisma.stockArchivedProduct.create({
+    data: {
+      shop: cleanShop,
+      productId,
+      title,
+    },
+  });
+}
+
 async function releaseStockLocationsForProduct(shop, product) {
   const skus = productSkus(product);
   if (!skus.length) return 0;
@@ -90,8 +172,129 @@ export async function archiveProductIfInventoryIsZero({ admin, shop, product }) 
   }
 
   await archiveStockProductInShopify(admin, product.id);
+  await recordArchivedStockProduct({ shop, product });
   const releasedLocations = await releaseStockLocationsForProduct(shop, product);
   return { archived: true, releasedLocations };
+}
+
+async function fetchArchivedProductForDeletion(graphqlRequest, productId) {
+  const data = await graphqlRequest(
+    `#graphql
+    query StockArchivedProductForDeletion($id: ID!) {
+      product(id: $id) {
+        id
+        title
+        status
+        totalInventory
+      }
+    }`,
+    { id: productId },
+  );
+  return data?.product || null;
+}
+
+async function deleteArchivedProductInShopify(graphqlRequest, productId) {
+  const data = await graphqlRequest(
+    `#graphql
+    mutation DeleteArchivedStockProduct($input: ProductDeleteInput!) {
+      productDelete(input: $input) {
+        deletedProductId
+        userErrors {
+          field
+          message
+        }
+      }
+    }`,
+    { input: { id: productId } },
+  );
+  const errors = data?.productDelete?.userErrors || [];
+  if (errors.length) {
+    throw new Error(errors.map((error) => error.message).filter(Boolean).join(", ") || "No se pudo borrar el producto archivado.");
+  }
+  return data?.productDelete?.deletedProductId || productId;
+}
+
+export async function deleteExpiredArchivedStockProducts({
+  shop,
+  cleanupDays,
+  batchSize = 50,
+  graphqlRequest,
+}) {
+  const cleanShop = cleanShopDomain(shop);
+  const days = normalizeStockArchivedProductCleanupDays(cleanupDays);
+  if (!cleanShop || !days) {
+    return { disabled: true, candidates: 0, deletedProducts: 0, skippedProducts: 0 };
+  }
+  await ensureStockArchivedProductCleanupStorage();
+  const cutoff = cutoffDateFromDays(days);
+  const rows = await prisma.stockArchivedProduct.findMany({
+    where: {
+      shop: cleanShop,
+      deletedAt: null,
+      archivedAt: { lt: cutoff },
+    },
+    select: { id: true, productId: true, title: true, archivedAt: true },
+    orderBy: [{ archivedAt: "asc" }, { id: "asc" }],
+    take: Math.max(1, Math.min(Number(batchSize) || 50, 500)),
+  });
+  if (!rows.length) {
+    return { disabled: false, candidates: 0, deletedProducts: 0, skippedProducts: 0 };
+  }
+  if (typeof graphqlRequest !== "function") {
+    return { disabled: false, candidates: rows.length, deletedProducts: 0, skippedProducts: rows.length };
+  }
+
+  let deletedProducts = 0;
+  let skippedProducts = 0;
+  for (const row of rows) {
+    try {
+      const product = await fetchArchivedProductForDeletion(graphqlRequest, row.productId);
+      if (!product) {
+        await prisma.stockArchivedProduct.update({
+          where: { id: row.id },
+          data: { deletedAt: new Date() },
+        });
+        deletedProducts += 1;
+        continue;
+      }
+      const totalInventory = Number(product.totalInventory || 0);
+      if (!productIsArchived(product) || (Number.isFinite(totalInventory) && totalInventory > 0)) {
+        await prisma.stockArchivedProduct.delete({ where: { id: row.id } });
+        skippedProducts += 1;
+        continue;
+      }
+      await deleteArchivedProductInShopify(graphqlRequest, row.productId);
+      await prisma.stockArchivedProduct.update({
+        where: { id: row.id },
+        data: { deletedAt: new Date() },
+      });
+      deletedProducts += 1;
+    } catch (error) {
+      skippedProducts += 1;
+      console.error("No se pudo borrar producto archivado de Shopify", {
+        shop: cleanShop,
+        productId: row.productId,
+        title: row.title || "",
+        error,
+      });
+    }
+  }
+  return { disabled: false, candidates: rows.length, deletedProducts, skippedProducts };
+}
+
+export async function deleteExpiredArchivedStockProductsFromAdmin({
+  admin,
+  shop,
+  cleanupDays,
+  batchSize,
+}) {
+  if (!admin) return { disabled: true, candidates: 0, deletedProducts: 0, skippedProducts: 0 };
+  return deleteExpiredArchivedStockProducts({
+    shop,
+    cleanupDays,
+    batchSize,
+    graphqlRequest: (query, variables) => adminGraphql(admin, query, variables),
+  });
 }
 
 export async function fetchShopifyProductById(admin, productId) {

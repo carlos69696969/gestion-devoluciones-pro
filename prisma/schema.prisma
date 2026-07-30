@@ -198,6 +198,7 @@ model ReturnSettings {
   maintenanceEvidenceDays Int      @default(120)
   maintenancePurgeDays    Int      @default(180)
   maintenanceBatchSize    Int      @default(200)
+  stockArchivedProductCleanupDays Int @default(0)
   stockLogoutTime         String   @default("")
   updatedAt               DateTime @updatedAt
   createdAt               DateTime @default(now())
@@ -305,6 +306,21 @@ model StockProductDraft {
   @@index([shop, publishedAt])
   @@index([shop, publishingLockedAt])
   @@index([shop, locationReleasedAt])
+}
+
+model StockArchivedProduct {
+  id         Int       @id @default(autoincrement())
+  shop       String
+  productId  String
+  title      String?
+  archivedAt DateTime  @default(now())
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([shop, productId])
+  @@index([shop, archivedAt])
+  @@index([shop, deletedAt])
 }
 
 model StockLocationState {

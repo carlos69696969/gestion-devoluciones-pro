@@ -1,4 +1,9 @@
 import prisma from "../db.server";
+import {
+  deleteExpiredArchivedStockProducts,
+  ensureStockArchivedProductCleanupStorage,
+  normalizeStockArchivedProductCleanupDays,
+} from "./stockZeroInventoryArchive.server";
 
 const ADMIN_API_VERSION = "2025-10";
 const MEXICO_TIME_ZONE = "America/Mexico_City";
@@ -51,7 +56,10 @@ function normalizeMaintenanceInputs(settings = {}) {
   const evidenceDays = parsePositiveInt(settings.maintenanceEvidenceDays, DEFAULT_EVIDENCE_DAYS, 1, 2000);
   const purgeDays = parsePositiveInt(settings.maintenancePurgeDays, DEFAULT_PURGE_DAYS, evidenceDays + 1, 5000);
   const batchSize = parsePositiveInt(settings.maintenanceBatchSize, DEFAULT_BATCH_SIZE, 25, MAX_BATCH_SIZE);
-  return { evidenceDays, purgeDays, batchSize };
+  const archivedProductCleanupDays = normalizeStockArchivedProductCleanupDays(
+    settings.stockArchivedProductCleanupDays,
+  );
+  return { evidenceDays, purgeDays, batchSize, archivedProductCleanupDays };
 }
 
 function cutoffDateFromDays(days) {
@@ -565,6 +573,7 @@ async function purgeHistoryBatch({ shop, session, inputs, logger }) {
 }
 
 export async function runMaintenanceCleanupForAllShops({ logger = console } = {}) {
+  await ensureStockArchivedProductCleanupStorage();
   const [settingsRows, sessionsByShop] = await Promise.all([
     prisma.returnSettings.findMany({
       select: {
@@ -572,6 +581,7 @@ export async function runMaintenanceCleanupForAllShops({ logger = console } = {}
         maintenanceEvidenceDays: true,
         maintenancePurgeDays: true,
         maintenanceBatchSize: true,
+        stockArchivedProductCleanupDays: true,
       },
     }),
     resolveAllShopSessions(),
@@ -593,6 +603,8 @@ export async function runMaintenanceCleanupForAllShops({ logger = console } = {}
     deletedDeliveryCodes: 0,
     purgedOrderMarkers: 0,
     purgedScheduledOrderMarkers: 0,
+    deletedArchivedProducts: 0,
+    skippedArchivedProducts: 0,
   };
   const shops = [];
 
@@ -602,12 +614,36 @@ export async function runMaintenanceCleanupForAllShops({ logger = console } = {}
     const session = sessionsByShop.get(shop)?.[0] || null;
     const evidenceResult = await cleanupEvidenceBatch(shop, inputs);
     const purgeResult = await purgeHistoryBatch({ shop, session, inputs, logger });
+    const archivedProductCleanup = session
+      ? await deleteExpiredArchivedStockProducts({
+          shop,
+          cleanupDays: inputs.archivedProductCleanupDays,
+          batchSize: inputs.batchSize,
+          graphqlRequest: async (query, variables) => {
+            const payload = await shopifyGraphql({
+              shop,
+              session,
+              query,
+              variables,
+            });
+            return payload?.data || {};
+          },
+        }).catch((error) => {
+          logger.error?.("No se pudo limpiar productos archivados de stock", {
+            shop,
+            error: String(error?.message || error || "unknown"),
+          });
+          return { deletedProducts: 0, skippedProducts: 0 };
+        })
+      : { deletedProducts: 0, skippedProducts: 0 };
     const shopResult = {
       shop,
       inputs,
       touchedRequests: evidenceResult.touchedRequests,
       cleanedPhotos: evidenceResult.cleanedPhotos,
       deletedRequests: purgeResult.deletedRequests,
+      deletedArchivedProducts: archivedProductCleanup.deletedProducts || 0,
+      skippedArchivedProducts: archivedProductCleanup.skippedProducts || 0,
       ...purgeResult.courierHistory,
     };
     shops.push(shopResult);
@@ -621,6 +657,8 @@ export async function runMaintenanceCleanupForAllShops({ logger = console } = {}
     totals.deletedDeliveryCodes += shopResult.deletedDeliveryCodes;
     totals.purgedOrderMarkers += shopResult.purgedOrderMarkers;
     totals.purgedScheduledOrderMarkers += shopResult.purgedScheduledOrderMarkers;
+    totals.deletedArchivedProducts += shopResult.deletedArchivedProducts;
+    totals.skippedArchivedProducts += shopResult.skippedArchivedProducts;
   }
 
   return { ...totals, shops };

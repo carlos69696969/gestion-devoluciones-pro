@@ -4,6 +4,10 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import styles from "../styles/admin.module.css";
+import {
+  ensureStockArchivedProductCleanupStorage,
+  normalizeStockArchivedProductCleanupDays,
+} from "../utils/stockZeroInventoryArchive.server";
 
 const HISTORY_STATUSES = ["reembolsada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"];
 const COURIER_HISTORY_FINAL_ACTIONS = [
@@ -28,6 +32,7 @@ const COURIER_HISTORY_FINAL_STATUSES = [
 const DEFAULT_EVIDENCE_DAYS = 120;
 const DEFAULT_PURGE_DAYS = 180;
 const DEFAULT_BATCH_SIZE = 200;
+const DEFAULT_ARCHIVED_PRODUCT_CLEANUP_DAYS = 45;
 const MAX_BATCH_SIZE = 500;
 const COURIER_HISTORY_SINCE = new Date("2026-06-10T00:00:00-06:00");
 const BRANCH_PICKUP_STATUSES = new Set([
@@ -160,7 +165,13 @@ function normalizeMaintenanceInputs(formDataLike) {
     25,
     MAX_BATCH_SIZE,
   );
-  return { evidenceDays, purgeDays, batchSize };
+  const archivedProductCleanupMode = String(formDataLike?.get?.("archivedProductCleanupMode") || "").trim();
+  const archivedProductCleanupDays =
+    archivedProductCleanupMode === "never"
+      ? 0
+      : normalizeStockArchivedProductCleanupDays(formDataLike?.get?.("archivedProductCleanupDays")) ||
+        DEFAULT_ARCHIVED_PRODUCT_CLEANUP_DAYS;
+  return { evidenceDays, purgeDays, batchSize, archivedProductCleanupDays };
 }
 
 function maintenanceInputsFromSettings(settings) {
@@ -169,6 +180,12 @@ function maintenanceInputsFromSettings(settings) {
       if (name === "evidenceDays") return settings?.maintenanceEvidenceDays;
       if (name === "purgeDays") return settings?.maintenancePurgeDays;
       if (name === "batchSize") return settings?.maintenanceBatchSize;
+      if (name === "archivedProductCleanupMode") {
+        return normalizeStockArchivedProductCleanupDays(settings?.stockArchivedProductCleanupDays) ? "days" : "never";
+      }
+      if (name === "archivedProductCleanupDays") {
+        return settings?.stockArchivedProductCleanupDays || DEFAULT_ARCHIVED_PRODUCT_CLEANUP_DAYS;
+      }
       return "";
     },
   });
@@ -182,8 +199,12 @@ function historyWhere(shop) {
 }
 
 async function getMaintenancePreview(shop, inputs) {
+  await ensureStockArchivedProductCleanupStorage();
   const evidenceCutoff = cutoffDateFromDays(inputs.evidenceDays);
   const purgeCutoff = cutoffDateFromDays(inputs.purgeDays);
+  const archivedProductCleanupCutoff = inputs.archivedProductCleanupDays
+    ? cutoffDateFromDays(inputs.archivedProductCleanupDays)
+    : null;
   const baseWhere = historyWhere(shop);
   const purgedCourierHistoryRows = await prisma.courierHistoryPurge.findMany({
     where: { shop },
@@ -211,6 +232,9 @@ async function getMaintenancePreview(shop, inputs) {
     oldestCourierActivity,
     oldestCourierEvent,
     oldestCourierSnapshot,
+    archivedProductTotal,
+    archivedProductCandidates,
+    oldestArchivedProduct,
   ] = await Promise.all([
     prisma.returnRequest.count({ where: baseWhere }),
     prisma.returnRequest.count({
@@ -254,6 +278,21 @@ async function getMaintenancePreview(shop, inputs) {
       orderBy: { finishedAt: "asc" },
       select: { finishedAt: true },
     }),
+    prisma.stockArchivedProduct.count({ where: { shop, deletedAt: null } }),
+    archivedProductCleanupCutoff
+      ? prisma.stockArchivedProduct.count({
+          where: {
+            shop,
+            deletedAt: null,
+            archivedAt: { lt: archivedProductCleanupCutoff },
+          },
+        })
+      : Promise.resolve(0),
+    prisma.stockArchivedProduct.findFirst({
+      where: { shop, deletedAt: null },
+      orderBy: { archivedAt: "asc" },
+      select: { archivedAt: true },
+    }),
   ]);
 
   const oldestCourierHistoryDates = [
@@ -279,6 +318,10 @@ async function getMaintenancePreview(shop, inputs) {
     oldestCourierHistoryAt: oldestCourierHistoryDates[0]?.toISOString?.() || "",
     evidenceCutoff: evidenceCutoff.toISOString(),
     purgeCutoff: purgeCutoff.toISOString(),
+    archivedProductCleanupCutoff: archivedProductCleanupCutoff?.toISOString?.() || "",
+    archivedProductTotal,
+    archivedProductCandidates,
+    oldestArchivedProductAt: oldestArchivedProduct?.archivedAt ? oldestArchivedProduct.archivedAt.toISOString() : "",
   };
 }
 async function cleanupEvidenceBatch(shop, inputs) {
@@ -598,6 +641,7 @@ async function syncReturnSettingsToNotifications(shopDomain, settings) {
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
+  await ensureStockArchivedProductCleanupStorage();
   const settings = await getOrCreateSettings(session.shop);
   const inputs = maintenanceInputsFromSettings(settings);
   const preview = await getMaintenancePreview(session.shop, inputs);
@@ -606,6 +650,7 @@ export const loader = async ({ request }) => {
 
 export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
+  await ensureStockArchivedProductCleanupStorage();
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
 
@@ -661,12 +706,14 @@ export const action = async ({ request }) => {
         maintenanceEvidenceDays: inputs.evidenceDays,
         maintenancePurgeDays: inputs.purgeDays,
         maintenanceBatchSize: inputs.batchSize,
+        stockArchivedProductCleanupDays: inputs.archivedProductCleanupDays,
       },
       create: {
         shop: session.shop,
         maintenanceEvidenceDays: inputs.evidenceDays,
         maintenancePurgeDays: inputs.purgeDays,
         maintenanceBatchSize: inputs.batchSize,
+        stockArchivedProductCleanupDays: inputs.archivedProductCleanupDays,
       },
     });
     const preview = await getMaintenancePreview(session.shop, inputs);
@@ -855,6 +902,34 @@ export default function ReturnsAdmin() {
             <Form method="post" className={styles.grid}>
               <div className={styles.grid2}>
                 <label className={styles.label}>
+                  Dias de limpieza para productos archivados
+                  <span className={styles.help}>
+                    Elige si los productos archivados se borran solos o si se quedan hasta borrarlos manualmente.
+                  </span>
+                  <select
+                    className={styles.input}
+                    name="archivedProductCleanupMode"
+                    defaultValue={maintenanceInputs.archivedProductCleanupDays ? "days" : "never"}
+                  >
+                    <option value="never">No eliminar automaticamente</option>
+                    <option value="days">Eliminar despues de estos dias</option>
+                  </select>
+                </label>
+                <label className={styles.label}>
+                  Dias despues de archivarse
+                  <span className={styles.help}>Puedes poner 10, 20, 40, 60 o el tiempo que necesites.</span>
+                  <input
+                    className={styles.input}
+                    name="archivedProductCleanupDays"
+                    type="number"
+                    min="1"
+                    defaultValue={maintenanceInputs.archivedProductCleanupDays || DEFAULT_ARCHIVED_PRODUCT_CLEANUP_DAYS}
+                  />
+                </label>
+              </div>
+
+              <div className={styles.grid2}>
+                <label className={styles.label}>
                   Dias para limpiar evidencias
                   <span className={styles.help}>Se borran solo fotos antiguas en historial (no elimina la orden).</span>
                   <input
@@ -900,10 +975,26 @@ export default function ReturnsAdmin() {
                 <p className={styles.statRow}>Actividades repartidor candidatas: {maintenancePreview.courierActivityCandidates || 0}</p>
                 <p className={styles.statRow}>Eventos repartidor candidatos: {maintenancePreview.courierEventCandidates || 0}</p>
                 <p className={styles.statRow}>Cierres de ruta candidatos: {maintenancePreview.courierSnapshotCandidates || 0}</p>
+                <p className={styles.statRow}>Productos archivados rastreados: {maintenancePreview.archivedProductTotal || 0}</p>
+                <p className={styles.statRow}>
+                  Productos archivados candidatos a eliminacion: {maintenancePreview.archivedProductCandidates || 0}
+                </p>
+                <p className={styles.statRow}>
+                  Limpieza de productos archivados:{" "}
+                  {maintenanceInputs.archivedProductCleanupDays
+                    ? `${maintenanceInputs.archivedProductCleanupDays} dias`
+                    : "No eliminar automaticamente"}
+                </p>
                 <p className={styles.statRow}>Corte de limpieza: {formatDateLabel(maintenancePreview.evidenceCutoff)}</p>
                 <p className={styles.statRow}>Corte de purga: {formatDateLabel(maintenancePreview.purgeCutoff)}</p>
+                <p className={styles.statRow}>
+                  Corte de productos archivados: {formatDateLabel(maintenancePreview.archivedProductCleanupCutoff)}
+                </p>
                 <p className={styles.statRow}>Orden historica mas antigua: {formatDateLabel(maintenancePreview.oldestHistoryAt)}</p>
                 <p className={styles.statRow}>Historial repartidor mas antiguo: {formatDateLabel(maintenancePreview.oldestCourierHistoryAt)}</p>
+                <p className={styles.statRow}>
+                  Producto archivado mas antiguo: {formatDateLabel(maintenancePreview.oldestArchivedProductAt)}
+                </p>
               </div>
 
               <div className={styles.actions}>
