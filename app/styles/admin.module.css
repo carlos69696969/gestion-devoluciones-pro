@@ -44,6 +44,7 @@
   font-weight: 800;
   min-height: 40px;
   padding: 0 16px;
+  white-space: normal;
 }
 
 .adminTabActive {
@@ -2329,10 +2330,6 @@
 }
 
 @media (max-width: 720px) {
-  .adminTabs {
-    grid-template-columns: 1fr;
-  }
-
   .grid2 { grid-template-columns: 1fr; }
   .financeTierRule {
     gap: 8px;
