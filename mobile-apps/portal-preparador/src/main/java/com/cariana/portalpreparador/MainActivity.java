@@ -344,7 +344,12 @@ public class MainActivity extends Activity {
     }
 
     private String portalUrl() {
-        return BASE_URL + "&sesion=" + getInstallSessionId();
+        String url = BASE_URL + "&sesion=" + getInstallSessionId();
+        String accessId = getSavedPreparerAccessId();
+        if (accessId != null && !accessId.trim().isEmpty()) {
+            url += "&access=" + Uri.encode(accessId.trim());
+        }
+        return url;
     }
 
     private String getInstallSessionId() {
@@ -357,7 +362,39 @@ public class MainActivity extends Activity {
         return sessionId;
     }
 
+    private String getSavedPreparerAccessId() {
+        SharedPreferences preferences = getSharedPreferences("portal", MODE_PRIVATE);
+        String accessId = preferences.getString("preparer_access_id", "");
+        return accessId == null ? "" : accessId.trim();
+    }
+
+    private void savePreparerAccessId(String accessId) {
+        String cleanAccessId = accessId == null ? "" : accessId.trim();
+        if (cleanAccessId.isEmpty()) return;
+        getSharedPreferences("portal", MODE_PRIVATE)
+            .edit()
+            .putString("preparer_access_id", cleanAccessId)
+            .apply();
+    }
+
+    private void clearPreparerAccessId() {
+        getSharedPreferences("portal", MODE_PRIVATE)
+            .edit()
+            .remove("preparer_access_id")
+            .apply();
+    }
+
     private class PortalBridge {
+        @JavascriptInterface
+        public void savePreparerAccess(String accessId) {
+            savePreparerAccessId(accessId);
+        }
+
+        @JavascriptInterface
+        public void clearPreparerAccess() {
+            clearPreparerAccessId();
+        }
+
         @JavascriptInterface
         public void printPrepLabel(String orderNumber, String routeNumber, String customerName, String address) {
             final String cleanOrderNumber = normalizeLabelText(orderNumber, "SIN ORDEN");

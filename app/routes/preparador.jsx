@@ -27,7 +27,7 @@ function preparerPortalCookies() {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 26,
+    maxAge: 60 * 60 * 24 * 30,
     secrets: [process.env.SHOPIFY_API_SECRET || "preparer-daily-access"],
   };
   return {
@@ -1243,9 +1243,13 @@ export default function PreparerPortal() {
   const [missingReviewOpen, setMissingReviewOpen] = useState(false);
   const [reviewUnitKeys, setReviewUnitKeys] = useState([]);
   const [reprintMode, setReprintMode] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
   const isSubmitting = navigation.state === "submitting";
   const isLoginSubmitting = isSubmitting && !activeSubmitIntent;
   const isLoggingOut = isSubmitting && activeSubmitIntent === "logout";
+  const isLoginLoading = isLoginSubmitting || loginLoading;
+  const isLogoutLoading = isLoggingOut || logoutLoading;
   const pendingLogoutOrders = Array.isArray(actionData?.pendingOrders) ? actionData.pendingOrders : [];
   const initialTab = String(searchParams.get("tab") || "ordenes").trim().toLowerCase();
   const [activeTab, setActiveTab] = useState(initialTab === "despachar" ? "despachar" : "ordenes");
@@ -1264,6 +1268,26 @@ export default function PreparerPortal() {
     ]),
   );
   const dispatchAssignment = pendingAssignments[0] || null;
+
+  useEffect(() => {
+    const accessId = String(searchParams.get("access") || "").trim();
+    try {
+      if (isLoggedIn && accessId && window.Android?.savePreparerAccess) {
+        window.Android.savePreparerAccess(accessId);
+        return;
+      }
+      if (!isLoggedIn && window.Android?.clearPreparerAccess) {
+        window.Android.clearPreparerAccess();
+      }
+    } catch (_error) {
+      // La persistencia nativa solo aplica dentro del APK Android.
+    }
+  }, [isLoggedIn, searchParams]);
+
+  useEffect(() => {
+    if (isLoggedIn || actionData?.error) setLoginLoading(false);
+    if (!isLoggedIn || actionData?.error || pendingLogoutOrders.length) setLogoutLoading(false);
+  }, [actionData?.error, isLoggedIn, pendingLogoutOrders.length]);
 
   useEffect(() => {
     setReadyUnitKeys([]);
@@ -1366,16 +1390,19 @@ export default function PreparerPortal() {
                     onSubmit={(event) => {
                       if (!window.confirm("Deseas finalizar?")) {
                         event.preventDefault();
+                        setLogoutLoading(false);
+                        return;
                       }
+                      setLogoutLoading(true);
                     }}
                   >
                     <input type="hidden" name="intent" value="logout" />
                     <input type="hidden" name="shop" value={shop || ""} />
-                    <button className={styles.accessButton} type="submit" disabled={isLoggingOut}>
-                      {isLoggingOut ? (
+                    <button className={styles.accessButton} type="submit" disabled={isLogoutLoading}>
+                      {isLogoutLoading ? (
                         <>
                           <span className={styles.buttonSpinner} aria-hidden="true" />
-                          Cerrando...
+                          Cargando
                         </>
                       ) : (
                         "Finalizar"
@@ -1696,7 +1723,7 @@ export default function PreparerPortal() {
             <>
               <h1 className={styles.cardTitle}>Ingresa tu codigo</h1>
               <p className={styles.subtitle}>Tu codigo es necesario para acceder a tus ordenes de preparacion.</p>
-              <Form method="post" className={styles.accessForm}>
+              <Form method="post" className={styles.accessForm} onSubmit={() => setLoginLoading(true)}>
                 <input type="hidden" name="shop" value={shop || ""} />
                 <input
                   className={styles.accessInput}
@@ -1707,11 +1734,11 @@ export default function PreparerPortal() {
                   placeholder="000000"
                   required
                 />
-                <button className={styles.accessButton} type="submit" disabled={isLoginSubmitting}>
-                  {isLoginSubmitting ? (
+                <button className={styles.accessButton} type="submit" disabled={isLoginLoading}>
+                  {isLoginLoading ? (
                     <>
                       <span className={styles.buttonSpinner} aria-hidden="true" />
-                      Entrando...
+                      Cargando
                     </>
                   ) : (
                     "Entrar"
