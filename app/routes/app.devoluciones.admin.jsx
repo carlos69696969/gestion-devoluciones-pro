@@ -1186,58 +1186,6 @@ export default function ReturnsAdmin() {
                   />
                 </label>
                 <label className={styles.label}>
-                  Cantidad a llegar 1 (MXN)
-                  <span className={styles.help}>Desde este monto se usa la primera ganancia especial.</span>
-                  <input
-                    className={styles.input}
-                    name="financeHighProfitThreshold"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    defaultValue={financePriceSettings.highProfitThreshold}
-                  />
-                </label>
-              </div>
-              <div className={styles.grid2}>
-                <label className={styles.label}>
-                  Ganancia al llegar 1 (%)
-                  <span className={styles.help}>Porcentaje usado cuando el pedido llega a la cantidad 1.</span>
-                  <input
-                    className={styles.input}
-                    name="financeHighProfitPercent"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    defaultValue={financePriceSettings.highProfitPercent}
-                  />
-                </label>
-                <label className={styles.label}>
-                  Cantidad a llegar 2 (MXN)
-                  <span className={styles.help}>Desde este monto se usa la segunda ganancia especial.</span>
-                  <input
-                    className={styles.input}
-                    name="financeVeryHighProfitThreshold"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    defaultValue={financePriceSettings.veryHighProfitThreshold}
-                  />
-                </label>
-              </div>
-              <div className={styles.grid2}>
-                <label className={styles.label}>
-                  Ganancia al llegar 2 (%)
-                  <span className={styles.help}>Porcentaje usado cuando el pedido llega a la cantidad 2.</span>
-                  <input
-                    className={styles.input}
-                    name="financeVeryHighProfitPercent"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    defaultValue={financePriceSettings.veryHighProfitPercent}
-                  />
-                </label>
-                <label className={styles.label}>
                   Impuestos (%)
                   <span className={styles.help}>Porcentaje aplicado sobre la ganancia.</span>
                   <input
@@ -1288,6 +1236,61 @@ export default function ReturnsAdmin() {
                   defaultValue={financePriceSettings.transactionPercent}
                 />
               </label>
+              <div className={styles.financeTierRules}>
+                <p className={styles.financeTierTitle}>Reglas de ganancia por monto</p>
+                <label className={styles.financeTierRule}>
+                  <span>Cantidad a llegar 1</span>
+                  <span className={styles.financeTierInputGroup}>
+                    <span className={styles.financeTierAffix}>$</span>
+                    <input
+                      className={styles.input}
+                      name="financeHighProfitThreshold"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={financePriceSettings.highProfitThreshold}
+                    />
+                  </span>
+                  <span className={styles.financeTierEquals}>=</span>
+                  <span className={styles.financeTierInputGroup}>
+                    <input
+                      className={styles.input}
+                      name="financeHighProfitPercent"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={financePriceSettings.highProfitPercent}
+                    />
+                    <span className={styles.financeTierAffix}>%</span>
+                  </span>
+                </label>
+                <label className={styles.financeTierRule}>
+                  <span>Cantidad a llegar 2</span>
+                  <span className={styles.financeTierInputGroup}>
+                    <span className={styles.financeTierAffix}>$</span>
+                    <input
+                      className={styles.input}
+                      name="financeVeryHighProfitThreshold"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={financePriceSettings.veryHighProfitThreshold}
+                    />
+                  </span>
+                  <span className={styles.financeTierEquals}>=</span>
+                  <span className={styles.financeTierInputGroup}>
+                    <input
+                      className={styles.input}
+                      name="financeVeryHighProfitPercent"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={financePriceSettings.veryHighProfitPercent}
+                    />
+                    <span className={styles.financeTierAffix}>%</span>
+                  </span>
+                </label>
+              </div>
               <div className={styles.actions}>
                 <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
                   Guardar porcentajes de finanzas

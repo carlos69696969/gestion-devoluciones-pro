@@ -98,6 +98,64 @@
   margin-top: 6px;
 }
 
+.financeTierRules {
+  border: 1px solid #e1e3e5;
+  border-radius: 12px;
+  background: #fafbfb;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.financeTierTitle {
+  color: #202223;
+  font-size: 14px;
+  font-weight: 800;
+  margin: 0;
+}
+
+.financeTierRule {
+  align-items: center;
+  color: #202223;
+  display: grid;
+  font-size: 14px;
+  font-weight: 700;
+  gap: 10px;
+  grid-template-columns: minmax(142px, 1fr) minmax(110px, 150px) auto minmax(86px, 120px);
+}
+
+.financeTierInputGroup {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e1e3e5;
+  border-radius: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.financeTierInputGroup .input {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.financeTierAffix {
+  color: #6d7175;
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.financeTierEquals {
+  color: #6d7175;
+  font-weight: 900;
+  text-align: center;
+}
+
 .maintenanceStats {
   border: 1px solid #e1e3e5;
   border-radius: 12px;
@@ -2265,6 +2323,13 @@
 
 @media (max-width: 720px) {
   .grid2 { grid-template-columns: 1fr; }
+  .financeTierRule {
+    gap: 8px;
+    grid-template-columns: minmax(112px, 1fr) minmax(88px, 1fr) auto minmax(72px, 0.8fr);
+  }
+  .financeTierAffix {
+    padding: 0 8px;
+  }
   .statusForm .select { width: 100%; }
   .rejectForm .input { width: 100%; }
   .rejectForm .rejectReasonTextarea { width: 100%; }
