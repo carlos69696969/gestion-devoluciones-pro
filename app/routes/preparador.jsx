@@ -27,7 +27,7 @@ function preparerPortalCookies() {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: 60 * 60 * 12,
     secrets: [process.env.SHOPIFY_API_SECRET || "preparer-daily-access"],
   };
   return {
