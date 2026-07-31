@@ -1,4 +1,4 @@
-import { Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
+import { Outlet, useLoaderData, useLocation, useNavigation, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
@@ -52,7 +52,39 @@ const HIDDEN_COURIER_DELIVERY_STATUSES = new Set([
   "recoger_en_sucursal",
 ]);
 const ZERO_INVENTORY_ARCHIVE_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const NAV_COUNTS_CACHE_TTL_MS = 45 * 1000;
+const NAV_COUNTS_EMPTY = {
+  pickup: 0,
+  branch: 0,
+  review: 0,
+  refunds: 0,
+  toReturn: 0,
+  courier: 0,
+  branchPickup: 0,
+};
 const zeroInventoryArchiveSyncByShop = new Map();
+const navCountsCacheByShop = new Map();
+const navCountsRefreshByShop = new Map();
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeNavCounts(counts = {}) {
+  return {
+    ...NAV_COUNTS_EMPTY,
+    ...Object.fromEntries(
+      Object.entries(counts || {}).map(([key, value]) => [key, Math.max(0, Number(value || 0))]),
+    ),
+  };
+}
+
+function cachedNavCounts(shop) {
+  const cached = navCountsCacheByShop.get(shop);
+  if (!cached) return null;
+  if (Date.now() - Number(cached.updatedAt || 0) > NAV_COUNTS_CACHE_TTL_MS) return null;
+  return normalizeNavCounts(cached.counts);
+}
 
 function itemKeyFromRecord(item) {
   const lineItemId = String(item?.lineItemId || "").trim();
@@ -224,13 +256,10 @@ async function activePlannedCourierDeliveryCount(shop, sessionCandidates = []) {
   return assignedOrders.filter(shouldCountActiveCourierDeliveryOrder).length;
 }
 
-export const loader = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
-  await syncZeroInventoryArchiveFromAdmin(admin, session.shop);
-
+async function loadReturnNavCounts(shop) {
   const requests = await prisma.returnRequest.findMany({
     where: {
-      shop: session.shop,
+      shop,
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: {
@@ -291,13 +320,31 @@ export const loader = async ({ request }) => {
   const navCounts = Object.fromEntries(
     Object.entries(uniqueRequests).map(([key, signatures]) => [key, signatures.size]),
   );
-  const deliveryCourierOrders = await fetchCourierOrdersForShop({
-    shop: session.shop,
-    sessionCandidates: [session],
-  }).catch((error) => {
-    console.error("No se pudieron contar las entregas del repartidor", error);
-    return [];
-  });
+  return normalizeNavCounts(navCounts);
+}
+
+async function loadNavCounts(admin, session) {
+  const [returnCounts, deliveryCourierOrders, branchPickupCourierOrders] = await Promise.all([
+    loadReturnNavCounts(session.shop).catch((error) => {
+      console.error("No se pudieron contar las devoluciones del menu", error);
+      return NAV_COUNTS_EMPTY;
+    }),
+    fetchCourierOrdersForShop({
+      shop: session.shop,
+      sessionCandidates: [session],
+    }).catch((error) => {
+      console.error("No se pudieron contar las entregas del repartidor", error);
+      return [];
+    }),
+    fetchBranchPickupCourierOrdersForShop({
+      shop: session.shop,
+      sessionCandidates: [session],
+    }).catch((error) => {
+      console.error("No se pudieron contar las ordenes para recoger en sucursal", error);
+      return [];
+    }),
+  ]);
+  const navCounts = normalizeNavCounts(returnCounts);
   const adminDeliveryCount = deliveryCourierOrders.length
     ? 0
     : await fetchCourierDeliveryCount(admin).catch((error) => {
@@ -311,15 +358,42 @@ export const loader = async ({ request }) => {
         return 0;
       });
   navCounts.courier = deliveryCourierOrders.length || adminDeliveryCount || plannedDeliveryCount;
-
-  const branchPickupCourierOrders = await fetchBranchPickupCourierOrdersForShop({
-    shop: session.shop,
-    sessionCandidates: [session],
-  }).catch((error) => {
-    console.error("No se pudieron contar las ordenes para recoger en sucursal", error);
-    return [];
-  });
   navCounts.branchPickup = branchPickupCourierOrders.length;
+  return navCounts;
+}
+
+function refreshNavCounts(admin, session) {
+  const shop = String(session?.shop || "").trim();
+  if (!shop) return Promise.resolve(NAV_COUNTS_EMPTY);
+  const existingRefresh = navCountsRefreshByShop.get(shop);
+  if (existingRefresh) return existingRefresh;
+  const refreshPromise = loadNavCounts(admin, session)
+    .then((counts) => {
+      const navCounts = normalizeNavCounts(counts);
+      navCountsCacheByShop.set(shop, { counts: navCounts, updatedAt: Date.now() });
+      return navCounts;
+    })
+    .catch((error) => {
+      console.error("No se pudieron refrescar los contadores del menu", error);
+      return cachedNavCounts(shop) || NAV_COUNTS_EMPTY;
+    })
+    .finally(() => {
+      navCountsRefreshByShop.delete(shop);
+    });
+  navCountsRefreshByShop.set(shop, refreshPromise);
+  return refreshPromise;
+}
+
+export const loader = async ({ request }) => {
+  const { admin, session } = await authenticate.admin(request);
+  syncZeroInventoryArchiveFromAdmin(admin, session.shop);
+
+  const cachedCounts = cachedNavCounts(session.shop);
+  const refreshPromise = refreshNavCounts(admin, session);
+  const navCounts = cachedCounts || await Promise.race([
+    refreshPromise,
+    wait(900).then(() => NAV_COUNTS_EMPTY),
+  ]);
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "", navCounts, shop: session.shop };
@@ -327,6 +401,8 @@ export const loader = async ({ request }) => {
 
 export default function App() {
   const { apiKey, navCounts, shop: sessionShop } = useLoaderData();
+  const navigation = useNavigation();
+  const isNavigating = navigation.state === "loading";
   const location = useLocation();
   const withCount = (label, count) => (count > 0 ? `${label} (${count})` : label);
   const navParams = new URLSearchParams(location.search || "");
@@ -342,6 +418,22 @@ export default function App() {
 
   return (
     <AppProvider embedded apiKey={apiKey}>
+      {isNavigating ? (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            height: 3,
+            background: "#005bd3",
+            boxShadow: "0 0 12px rgba(0, 91, 211, 0.45)",
+          }}
+        />
+      ) : null}
       <s-app-nav>
         <s-link href={withEmbedParams("/app/devoluciones/admin")}>Administrador del panel</s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/pickup")}>
@@ -359,7 +451,7 @@ export default function App() {
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/to_return")}>
           {withCount("Devoluciones a devolver", navCounts?.toReturn || 0)}
         </s-link>
-        <s-link href={withEmbedParams("/app/devoluciones/solicitudes/history")}>Historial</s-link>
+        <s-link href={withEmbedParams("/app/devoluciones/solicitudes/history")}>Historial de devoluciones</s-link>
         <s-link href={withEmbedParams("/app/devoluciones/solicitudes/repartidor")}>
           {withCount("Ordenes repartidor", navCounts?.courier || 0)}
         </s-link>

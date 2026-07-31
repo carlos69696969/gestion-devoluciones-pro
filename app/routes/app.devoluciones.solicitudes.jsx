@@ -3698,6 +3698,23 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function withCourierLabel(orders, courierLabel) {
+  return (Array.isArray(orders) ? orders : []).map((requestRow) => ({
+    ...requestRow,
+    courierLabel,
+  }));
+}
+
+function dedupeCourierOrders(orders) {
+  return [
+    ...new Map(
+      (Array.isArray(orders) ? orders : [])
+        .filter(Boolean)
+        .map((requestRow) => [String(requestRow.id || ""), requestRow]),
+    ).values(),
+  ];
+}
+
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
@@ -3791,143 +3808,115 @@ export const loader = async ({ request }) => {
     );
   }
 
-  let courierOrdersRaw =
-    viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS
-      ? [
-          ...new Map(
-            [
-              ...(await safeLoaderArray("No se pudieron cargar las ordenes de rutas activas para repartidor/preparador", async () => {
-                const activeRequestIds = await activeCourierRouteAssignmentRequestIds(session.shop);
-                return fetchCourierOrdersByIdsForShop({
-                  shop: session.shop,
-                  sessionCandidates: [session],
-                  orderIds: activeRequestIds,
-                });
-              })).map((requestRow) => ({
-                ...requestRow,
-                courierLabel: "Entrega",
-              })),
-              ...(await safeLoaderArray("No se pudieron cargar las ordenes de entrega para repartidor/preparador", () =>
-                fetchCourierOrders(admin),
-              )).map((requestRow) => ({
-                ...requestRow,
-                courierLabel: "Entrega",
-              })),
-              ...(await safeLoaderArray("No se pudieron cargar las ordenes de entrega compartidas para repartidor/preparador", () =>
-                fetchCourierOrdersForShop({
-                  shop: session.shop,
-                  sessionCandidates: [session],
-                }),
-              )).map((requestRow) => ({
-                ...requestRow,
-                courierLabel: "Entrega",
-              })),
-            ].map((requestRow) => [String(requestRow.id || ""), requestRow]),
-          ).values(),
-          ...(await safeLoaderArray("No se pudieron cargar las devoluciones de recoleccion para repartidor/preparador", () =>
-            fetchPickupCourierOrders(session.shop),
-          )).map((requestRow) => ({
-            ...requestRow,
-            courierLabel: "Devolución",
-          })),
-        ]
-      : viewMode === VIEW_MODE.BRANCH_PICKUP
-        ? [
-            ...new Map(
-              [
-                ...(await safeLoaderArray("No se pudieron cargar las ordenes para recoger en sucursal desde el contador", () =>
-                  fetchBranchPickupCourierOrdersForShop({
-                    shop: session.shop,
-                    sessionCandidates: [session],
-                  }),
-                )).map((requestRow) => ({
-                  ...requestRow,
-                  courierLabel: "Entrega",
-                })),
-                ...(await safeLoaderArray("No se pudieron cargar las ordenes para recoger en sucursal", () =>
-                  fetchBranchPickupCourierOrders(admin),
-                )).map((requestRow) => ({
-                  ...requestRow,
-                  courierLabel: "Entrega",
-                })),
-              ].map((requestRow) => [String(requestRow.id || ""), requestRow]),
-            ).values(),
-          ]
-      : shouldLoadCourierHistoryOrders
-        ? [
-            ...new Map(
-              [
-                ...(await safeLoaderArray("No se pudieron cargar las ordenes activas para historial repartidor", () =>
-                  fetchCourierOrders(admin),
-                )).map((requestRow) => ({
-                  ...requestRow,
-                  courierLabel: "Entrega",
-                })),
-                ...(await safeLoaderArray("No se pudieron cargar las devoluciones activas para historial repartidor", () =>
-                  fetchPickupCourierOrders(session.shop),
-                )).map((requestRow) => ({
-                  ...requestRow,
-                  courierLabel: "Devolución",
-                })),
-                ...(await safeLoaderArray("No se pudo cargar el historial de entregas repartidor", () =>
-                  fetchCourierHistoryOrders(admin),
-                )).map((requestRow) => ({
-                  ...requestRow,
-                  courierLabel: "Entrega",
-                })),
-                ...(await safeLoaderArray("No se pudo cargar el historial de recoger en sucursal", () =>
-                  fetchBranchPickupCourierOrders(admin),
-                )).map((requestRow) => ({
-                  ...requestRow,
-                  courierLabel: "Entrega",
-                })),
-                ...(await safeLoaderArray("No se pudo cargar el historial de recolecciones repartidor", () =>
-                  fetchPickupCourierHistoryOrders(session.shop),
-                )).map((requestRow) => ({
-                  ...requestRow,
-                  courierLabel: "Devolución",
-                })),
-              ].map((requestRow) => [String(requestRow.id || ""), requestRow]),
-            ).values(),
-          ]
-      : [];
+  let courierOrdersRaw = [];
+  if (viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS) {
+    const [activeRouteOrders, deliveryAdminOrders, sharedDeliveryOrders, pickupOrders] = await Promise.all([
+      safeLoaderArray("No se pudieron cargar las ordenes de rutas activas para repartidor/preparador", async () => {
+        const activeRequestIds = await activeCourierRouteAssignmentRequestIds(session.shop);
+        return fetchCourierOrdersByIdsForShop({
+          shop: session.shop,
+          sessionCandidates: [session],
+          orderIds: activeRequestIds,
+        });
+      }),
+      safeLoaderArray("No se pudieron cargar las ordenes de entrega para repartidor/preparador", () =>
+        fetchCourierOrders(admin),
+      ),
+      safeLoaderArray("No se pudieron cargar las ordenes de entrega compartidas para repartidor/preparador", () =>
+        fetchCourierOrdersForShop({
+          shop: session.shop,
+          sessionCandidates: [session],
+        }),
+      ),
+      safeLoaderArray("No se pudieron cargar las devoluciones de recoleccion para repartidor/preparador", () =>
+        fetchPickupCourierOrders(session.shop),
+      ),
+    ]);
+    courierOrdersRaw = [
+      ...dedupeCourierOrders([
+        ...withCourierLabel(activeRouteOrders, "Entrega"),
+        ...withCourierLabel(deliveryAdminOrders, "Entrega"),
+        ...withCourierLabel(sharedDeliveryOrders, "Entrega"),
+      ]),
+      ...withCourierLabel(pickupOrders, "Devolución"),
+    ];
+  } else if (viewMode === VIEW_MODE.BRANCH_PICKUP) {
+    const [sharedBranchPickupOrders, branchPickupOrders] = await Promise.all([
+      safeLoaderArray("No se pudieron cargar las ordenes para recoger en sucursal desde el contador", () =>
+        fetchBranchPickupCourierOrdersForShop({
+          shop: session.shop,
+          sessionCandidates: [session],
+        }),
+      ),
+      safeLoaderArray("No se pudieron cargar las ordenes para recoger en sucursal", () =>
+        fetchBranchPickupCourierOrders(admin),
+      ),
+    ]);
+    courierOrdersRaw = dedupeCourierOrders([
+      ...withCourierLabel(sharedBranchPickupOrders, "Entrega"),
+      ...withCourierLabel(branchPickupOrders, "Entrega"),
+    ]);
+  } else if (shouldLoadCourierHistoryOrders) {
+    const [
+      activeDeliveryOrders,
+      activePickupOrders,
+      deliveryHistoryOrders,
+      branchPickupHistoryOrders,
+      pickupHistoryOrders,
+    ] = await Promise.all([
+      safeLoaderArray("No se pudieron cargar las ordenes activas para historial repartidor", () =>
+        fetchCourierOrders(admin),
+      ),
+      safeLoaderArray("No se pudieron cargar las devoluciones activas para historial repartidor", () =>
+        fetchPickupCourierOrders(session.shop),
+      ),
+      safeLoaderArray("No se pudo cargar el historial de entregas repartidor", () =>
+        fetchCourierHistoryOrders(admin),
+      ),
+      safeLoaderArray("No se pudo cargar el historial de recoger en sucursal", () =>
+        fetchBranchPickupCourierOrders(admin),
+      ),
+      safeLoaderArray("No se pudo cargar el historial de recolecciones repartidor", () =>
+        fetchPickupCourierHistoryOrders(session.shop),
+      ),
+    ]);
+    courierOrdersRaw = dedupeCourierOrders([
+      ...withCourierLabel(activeDeliveryOrders, "Entrega"),
+      ...withCourierLabel(activePickupOrders, "Devolución"),
+      ...withCourierLabel(deliveryHistoryOrders, "Entrega"),
+      ...withCourierLabel(branchPickupHistoryOrders, "Entrega"),
+      ...withCourierLabel(pickupHistoryOrders, "Devolución"),
+    ]);
+  }
   if (
     (viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS) &&
     !courierOrdersRaw.some((requestRow) => requestRow?.courierLabel === "Entrega")
   ) {
-    await wait(600);
-    const retryDeliveryOrders = [
-      ...new Map(
-        [
-          ...(await safeLoaderArray("No se pudieron recargar las ordenes de rutas activas para repartidor/preparador", async () => {
-            const activeRequestIds = await activeCourierRouteAssignmentRequestIds(session.shop);
-            return fetchCourierOrdersByIdsForShop({
-              shop: session.shop,
-              sessionCandidates: [session],
-              orderIds: activeRequestIds,
-            });
-          })).map((requestRow) => ({
-            ...requestRow,
-            courierLabel: "Entrega",
-          })),
-          ...(await safeLoaderArray("No se pudieron recargar las ordenes de entrega para repartidor/preparador", () =>
-            fetchCourierOrders(admin),
-          )).map((requestRow) => ({
-            ...requestRow,
-            courierLabel: "Entrega",
-          })),
-          ...(await safeLoaderArray("No se pudieron recargar las ordenes de entrega compartidas para repartidor/preparador", () =>
-            fetchCourierOrdersForShop({
-              shop: session.shop,
-              sessionCandidates: [session],
-            }),
-          )).map((requestRow) => ({
-            ...requestRow,
-            courierLabel: "Entrega",
-          })),
-        ].map((requestRow) => [String(requestRow.id || ""), requestRow]),
-      ).values(),
-    ];
+    await wait(150);
+    const [retryActiveRouteOrders, retryDeliveryAdminOrders, retrySharedDeliveryOrders] = await Promise.all([
+      safeLoaderArray("No se pudieron recargar las ordenes de rutas activas para repartidor/preparador", async () => {
+        const activeRequestIds = await activeCourierRouteAssignmentRequestIds(session.shop);
+        return fetchCourierOrdersByIdsForShop({
+          shop: session.shop,
+          sessionCandidates: [session],
+          orderIds: activeRequestIds,
+        });
+      }),
+      safeLoaderArray("No se pudieron recargar las ordenes de entrega para repartidor/preparador", () =>
+        fetchCourierOrders(admin),
+      ),
+      safeLoaderArray("No se pudieron recargar las ordenes de entrega compartidas para repartidor/preparador", () =>
+        fetchCourierOrdersForShop({
+          shop: session.shop,
+          sessionCandidates: [session],
+        }),
+      ),
+    ]);
+    const retryDeliveryOrders = dedupeCourierOrders([
+      ...withCourierLabel(retryActiveRouteOrders, "Entrega"),
+      ...withCourierLabel(retryDeliveryAdminOrders, "Entrega"),
+      ...withCourierLabel(retrySharedDeliveryOrders, "Entrega"),
+    ]);
     if (retryDeliveryOrders.length) {
       courierOrdersRaw = [
         ...new Map(
@@ -3940,28 +3929,22 @@ export const loader = async ({ request }) => {
     }
   }
   if (viewMode === VIEW_MODE.BRANCH_PICKUP && courierOrdersRaw.length === 0) {
-    await wait(600);
-    const retryBranchPickupOrders = [
-      ...new Map(
-        [
-          ...(await safeLoaderArray("No se pudieron recargar las ordenes para recoger en sucursal desde el contador", () =>
-            fetchBranchPickupCourierOrdersForShop({
-              shop: session.shop,
-              sessionCandidates: [session],
-            }),
-          )).map((requestRow) => ({
-            ...requestRow,
-            courierLabel: "Entrega",
-          })),
-          ...(await safeLoaderArray("No se pudieron recargar las ordenes para recoger en sucursal", () =>
-            fetchBranchPickupCourierOrders(admin),
-          )).map((requestRow) => ({
-            ...requestRow,
-            courierLabel: "Entrega",
-          })),
-        ].map((requestRow) => [String(requestRow.id || ""), requestRow]),
-      ).values(),
-    ];
+    await wait(150);
+    const [retrySharedBranchPickupOrders, retryBranchPickupOrdersFromAdmin] = await Promise.all([
+      safeLoaderArray("No se pudieron recargar las ordenes para recoger en sucursal desde el contador", () =>
+        fetchBranchPickupCourierOrdersForShop({
+          shop: session.shop,
+          sessionCandidates: [session],
+        }),
+      ),
+      safeLoaderArray("No se pudieron recargar las ordenes para recoger en sucursal", () =>
+        fetchBranchPickupCourierOrders(admin),
+      ),
+    ]);
+    const retryBranchPickupOrders = dedupeCourierOrders([
+      ...withCourierLabel(retrySharedBranchPickupOrders, "Entrega"),
+      ...withCourierLabel(retryBranchPickupOrdersFromAdmin, "Entrega"),
+    ]);
     if (retryBranchPickupOrders.length) {
       courierOrdersRaw = retryBranchPickupOrders;
     }
@@ -3986,32 +3969,23 @@ export const loader = async ({ request }) => {
     .filter((requestRow) => requestRow.courierLabel === "Entrega")
     .map((requestRow) => String(requestRow.id || "").trim())
     .filter(Boolean);
-  let deliveryHistoryEvents = [];
-  if (deliveryRequestIds.length) {
-    try {
-      deliveryHistoryEvents = await prisma.courierEvent.findMany({
-        where: {
-          shop: session.shop,
-          requestId: { in: deliveryRequestIds },
-        },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      });
-    } catch (error) {
-      console.error("Courier event history is not available yet", error);
-    }
-  }
-  const deliveryHistoryByRequestId = new Map();
-  for (const event of deliveryHistoryEvents) {
-    const current = deliveryHistoryByRequestId.get(event.requestId) || [];
-    current.push(event);
-    deliveryHistoryByRequestId.set(event.requestId, current);
-  }
   const courierRequestIds = courierOrdersRaw
     .map((requestRow) => String(requestRow.id || "").trim())
     .filter(Boolean);
-  const courierActivitiesForCards =
+  const [deliveryHistoryEvents, courierActivitiesForCards, preparerAssignmentsForCourierOrders] = await Promise.all([
+    deliveryRequestIds.length
+      ? safeLoaderArray("Courier event history is not available yet", () =>
+          prisma.courierEvent.findMany({
+            where: {
+              shop: session.shop,
+              requestId: { in: deliveryRequestIds },
+            },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          }),
+        )
+      : [],
     courierRequestIds.length
-      ? await safeLoaderArray("No se pudieron cargar las actividades de rutas para tarjetas", () =>
+      ? safeLoaderArray("No se pudieron cargar las actividades de rutas para tarjetas", () =>
           prisma.courierActivity.findMany({
             where: {
               shop: session.shop,
@@ -4020,18 +3994,9 @@ export const loader = async ({ request }) => {
             orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           }),
         )
-      : [];
-  const courierActivitiesByRequestId = new Map();
-  for (const activity of courierActivitiesForCards) {
-    const requestId = String(activity.requestId || "").trim();
-    if (!requestId) continue;
-    const current = courierActivitiesByRequestId.get(requestId) || [];
-    current.push(activity);
-    courierActivitiesByRequestId.set(requestId, current);
-  }
-  const preparerAssignmentsForCourierOrders =
+      : [],
     courierRequestIds.length && (viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.COURIER_HISTORY)
-      ? await safeLoaderArray("No se pudieron cargar las asignaciones de preparadores para ordenes", () =>
+      ? safeLoaderArray("No se pudieron cargar las asignaciones de preparadores para ordenes", () =>
           prisma.preparerAssignment.findMany({
             where: {
               shop: session.shop,
@@ -4040,7 +4005,22 @@ export const loader = async ({ request }) => {
             orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
           }),
         )
-      : [];
+      : [],
+  ]);
+  const deliveryHistoryByRequestId = new Map();
+  for (const event of deliveryHistoryEvents) {
+    const current = deliveryHistoryByRequestId.get(event.requestId) || [];
+    current.push(event);
+    deliveryHistoryByRequestId.set(event.requestId, current);
+  }
+  const courierActivitiesByRequestId = new Map();
+  for (const activity of courierActivitiesForCards) {
+    const requestId = String(activity.requestId || "").trim();
+    if (!requestId) continue;
+    const current = courierActivitiesByRequestId.get(requestId) || [];
+    current.push(activity);
+    courierActivitiesByRequestId.set(requestId, current);
+  }
   const preparerAssignmentByRequestId = new Map();
   for (const assignment of preparerAssignmentsForCourierOrders) {
     const requestId = String(assignment.requestId || "").trim();
@@ -4300,47 +4280,43 @@ export const loader = async ({ request }) => {
         )
       : [];
   if (viewMode === VIEW_MODE.STOCK) {
-    await safeLoaderArray("No se pudo sincronizar el inventario de stock", async () => {
+    safeLoaderArray("No se pudo sincronizar el inventario de stock", async () => {
       await ensureStockUserTable(prisma);
       await ensureStockInventoryArchiveWebhooks(admin);
       await syncReleasedStockLocationsFromShopify(admin, session.shop);
       return [];
     });
   }
-  const stockUsers =
+  const [stockUsers, stockHistoryDrafts, stockSettings] =
     viewMode === VIEW_MODE.STOCK
-      ? await safeLoaderArray("No se pudieron cargar los usuarios de stock", async () => {
-          await ensureStockUserTable(prisma);
-          return prisma.stockUser.findMany({
-            where: { shop: session.shop, active: true },
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          });
-        })
-      : [];
-  const stockHistoryDrafts =
-    viewMode === VIEW_MODE.STOCK
-      ? await safeLoaderArray("No se pudo cargar el historial de stock", () =>
-          prisma.stockProductDraft.findMany({
-            where: { shop: session.shop, status: "listo" },
-            include: {
-              preparedByStockUser: { select: { name: true } },
-              publishedByStockUser: { select: { name: true } },
-            },
-            orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
-            take: 100,
+      ? await Promise.all([
+          safeLoaderArray("No se pudieron cargar los usuarios de stock", async () => {
+            await ensureStockUserTable(prisma);
+            return prisma.stockUser.findMany({
+              where: { shop: session.shop, active: true },
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            });
           }),
-        )
-      : [];
-  const stockSettings =
-    viewMode === VIEW_MODE.STOCK
-      ? await safeLoaderValue("No se pudo cargar la configuracion de stock", null, async () => {
-          await ensureStockUserTable(prisma);
-          return prisma.returnSettings.findUnique({
-            where: { shop: session.shop },
-            select: { stockLogoutTime: true },
-          });
-        })
-      : null;
+          safeLoaderArray("No se pudo cargar el historial de stock", () =>
+            prisma.stockProductDraft.findMany({
+              where: { shop: session.shop, status: "listo" },
+              include: {
+                preparedByStockUser: { select: { name: true } },
+                publishedByStockUser: { select: { name: true } },
+              },
+              orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+              take: 100,
+            }),
+          ),
+          safeLoaderValue("No se pudo cargar la configuracion de stock", null, async () => {
+            await ensureStockUserTable(prisma);
+            return prisma.returnSettings.findUnique({
+              where: { shop: session.shop },
+              select: { stockLogoutTime: true },
+            });
+          }),
+        ])
+      : [[], [], null];
   if (
     (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryActivity) &&
     couriers.length
