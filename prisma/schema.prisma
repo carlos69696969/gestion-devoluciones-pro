@@ -184,29 +184,34 @@ model CourierRouteSnapshot {
 }
 
 model ReturnSettings {
-  id                      Int      @id @default(autoincrement())
-  shop                    String   @unique
-  pickupCost              Float    @default(100)
-  returnWindowDays        Int      @default(30)
-  returnReasons           String   @default("")
-  evidenceReasons         String   @default("")
-  branchInstructions      String   @default("Entrega el paquete sellado con tu numero de pedido.")
-  branchAddress           String   @default("Sucursal principal por definir")
-  branchHours             String   @default("Lunes a Viernes de 9:00 a 18:00")
-  pickupInstructions      String   @default("Ten el paquete listo y sellado para recoleccion.")
-  pickupHours             String   @default("Lunes a Viernes de 9:00 a 18:00")
-  maintenanceEvidenceDays Int      @default(120)
-  maintenancePurgeDays    Int      @default(180)
-  maintenanceBatchSize    Int      @default(200)
-  stockArchivedProductCleanupDays Int @default(0)
-  stockLogoutTime         String   @default("")
-  stockProfitPercent      Float    @default(50)
-  stockTaxPercent         Float    @default(10)
-  stockShopifyCommission  Float    @default(3)
-  stockOperationalCost    Float    @default(15)
-  stockTransactionPercent Float    @default(3)
-  updatedAt               DateTime @updatedAt
-  createdAt               DateTime @default(now())
+  id                              Int      @id @default(autoincrement())
+  shop                            String   @unique
+  pickupCost                      Float    @default(100)
+  returnWindowDays                Int      @default(30)
+  returnReasons                   String   @default("")
+  evidenceReasons                 String   @default("")
+  branchInstructions              String   @default("Entrega el paquete sellado con tu numero de pedido.")
+  branchAddress                   String   @default("Sucursal principal por definir")
+  branchHours                     String   @default("Lunes a Viernes de 9:00 a 18:00")
+  pickupInstructions              String   @default("Ten el paquete listo y sellado para recoleccion.")
+  pickupHours                     String   @default("Lunes a Viernes de 9:00 a 18:00")
+  maintenanceEvidenceDays         Int      @default(120)
+  maintenancePurgeDays            Int      @default(180)
+  maintenanceBatchSize            Int      @default(200)
+  stockArchivedProductCleanupDays Int      @default(0)
+  stockLogoutTime                 String   @default("")
+  stockProfitPercent              Float    @default(50)
+  stockTaxPercent                 Float    @default(10)
+  stockShopifyCommission          Float    @default(3)
+  stockOperationalCost            Float    @default(15)
+  stockTransactionPercent         Float    @default(3)
+  financeProfitPercent            Float    @default(50)
+  financeTaxPercent               Float    @default(10)
+  financeShopifyCommission        Float    @default(3)
+  financeOperationalCost          Float    @default(15)
+  financeTransactionPercent       Float    @default(3)
+  updatedAt                       DateTime @updatedAt
+  createdAt                       DateTime @default(now())
 }
 
 model PushDevice {
@@ -277,32 +282,32 @@ model CourierHistoryPurge {
 }
 
 model StockProductDraft {
-  id          Int      @id @default(autoincrement())
-  shop        String
-  productName String
-  audience    String?
-  garmentType String?
-  locationCode String?
-  color       String?
-  size        String?
-  quantity    Int      @default(1)
-  sku         String?
-  price       Float    @default(0)
-  notes       String?
-  photos      Json     @default("[]")
-  variants    Json     @default("[]")
-  status      String   @default("pendiente")
-  preparedByStockUserId Int?
-  publishedByStockUserId Int?
-  publishedAt DateTime?
+  id                            Int        @id @default(autoincrement())
+  shop                          String
+  productName                   String
+  audience                      String?
+  garmentType                   String?
+  locationCode                  String?
+  color                         String?
+  size                          String?
+  quantity                      Int        @default(1)
+  sku                           String?
+  price                         Float      @default(0)
+  notes                         String?
+  photos                        Json       @default("[]")
+  variants                      Json       @default("[]")
+  status                        String     @default("pendiente")
+  preparedByStockUserId         Int?
+  publishedByStockUserId        Int?
+  publishedAt                   DateTime?
   publishingLockedByStockUserId Int?
-  publishingLockedAt DateTime?
-  locationReleasedAt DateTime?
-  locationReusedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  preparedByStockUser StockUser? @relation("StockPreparedProducts", fields: [preparedByStockUserId], references: [id])
-  publishedByStockUser StockUser? @relation("StockPublishedProducts", fields: [publishedByStockUserId], references: [id])
+  publishingLockedAt            DateTime?
+  locationReleasedAt            DateTime?
+  locationReusedAt              DateTime?
+  createdAt                     DateTime   @default(now())
+  updatedAt                     DateTime   @updatedAt
+  preparedByStockUser           StockUser? @relation("StockPreparedProducts", fields: [preparedByStockUserId], references: [id])
+  publishedByStockUser          StockUser? @relation("StockPublishedProducts", fields: [publishedByStockUserId], references: [id])
 
   @@index([shop, status, createdAt])
   @@index([shop, sku])
@@ -329,6 +334,20 @@ model StockArchivedProduct {
   @@index([shop, deletedAt])
 }
 
+model FinancePriceSettingsVersion {
+  id                 Int      @id @default(autoincrement())
+  shop               String
+  profitPercent      Float    @default(50)
+  taxPercent         Float    @default(10)
+  shopifyCommission  Float    @default(3)
+  operationalCost    Float    @default(15)
+  transactionPercent Float    @default(3)
+  effectiveAt        DateTime @default(now())
+  createdAt          DateTime @default(now())
+
+  @@index([shop, effectiveAt])
+}
+
 model StockLocationState {
   id              Int      @id @default(autoincrement())
   shop            String
@@ -343,19 +362,19 @@ model StockLocationState {
 }
 
 model StockUser {
-  id        Int      @id @default(autoincrement())
-  shop      String
-  name      String
-  role      String
-  code      String
-  sessionToken String?
-  sessionDeviceId String?
-  sessionStartedAt DateTime?
-  sessionLastSeenAt DateTime?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  preparedStockProducts StockProductDraft[] @relation("StockPreparedProducts")
+  id                     Int                 @id @default(autoincrement())
+  shop                   String
+  name                   String
+  role                   String
+  code                   String
+  sessionToken           String?
+  sessionDeviceId        String?
+  sessionStartedAt       DateTime?
+  sessionLastSeenAt      DateTime?
+  active                 Boolean             @default(true)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  preparedStockProducts  StockProductDraft[] @relation("StockPreparedProducts")
   publishedStockProducts StockProductDraft[] @relation("StockPublishedProducts")
 
   @@unique([shop, code])

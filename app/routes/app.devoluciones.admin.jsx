@@ -5,6 +5,16 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import styles from "../styles/admin.module.css";
 import {
+  ensureFinancePriceSettingsStorage,
+  saveFinancePriceSettingsVersion,
+} from "../utils/financePriceSettings.server";
+import {
+  FINANCE_PRICE_SETTINGS_DEFAULTS,
+  normalizeFinancePriceAmount,
+  normalizeFinancePricePercent,
+  normalizeFinancePriceSettings,
+} from "../utils/financePrice.shared";
+import {
   ensureStockArchivedProductCleanupStorage,
   normalizeStockArchivedProductCleanupDays,
 } from "../utils/stockZeroInventoryArchive.server";
@@ -664,6 +674,7 @@ export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   await ensureStockArchivedProductCleanupStorage();
   await ensureStockPriceSettingsStorage();
+  await ensureFinancePriceSettingsStorage();
   const settings = await getOrCreateSettings(session.shop);
   const inputs = maintenanceInputsFromSettings(settings);
   const preview = await getMaintenancePreview(session.shop, inputs);
@@ -674,6 +685,7 @@ export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   await ensureStockArchivedProductCleanupStorage();
   await ensureStockPriceSettingsStorage();
+  await ensureFinancePriceSettingsStorage();
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
 
@@ -730,6 +742,40 @@ export const action = async ({ request }) => {
       },
     });
     return { ok: true, intent, message: "Porcentajes del precio guardados." };
+  }
+
+  if (intent === "update_finance_price_settings") {
+    const nextSettings = {
+      profitPercent: normalizeFinancePricePercent(
+        formData.get("financeProfitPercent"),
+        FINANCE_PRICE_SETTINGS_DEFAULTS.profitPercent,
+      ),
+      taxPercent: normalizeFinancePricePercent(
+        formData.get("financeTaxPercent"),
+        FINANCE_PRICE_SETTINGS_DEFAULTS.taxPercent,
+      ),
+      shopifyCommission: normalizeFinancePriceAmount(
+        formData.get("financeShopifyCommission"),
+        FINANCE_PRICE_SETTINGS_DEFAULTS.shopifyCommission,
+      ),
+      operationalCost: normalizeFinancePriceAmount(
+        formData.get("financeOperationalCost"),
+        FINANCE_PRICE_SETTINGS_DEFAULTS.operationalCost,
+      ),
+      transactionPercent: normalizeFinancePricePercent(
+        formData.get("financeTransactionPercent"),
+        FINANCE_PRICE_SETTINGS_DEFAULTS.transactionPercent,
+      ),
+    };
+    await saveFinancePriceSettingsVersion({
+      shop: session.shop,
+      settings: nextSettings,
+    });
+    return {
+      ok: true,
+      intent,
+      message: "Porcentajes de finanzas guardados. Se aplicaran desde ahora en adelante.",
+    };
   }
 
   if (
@@ -821,6 +867,7 @@ function formatDateLabel(isoValue) {
 export default function ReturnsAdmin() {
   const { settings, maintenance: initialMaintenance } = useLoaderData();
   const stockPriceSettings = normalizeStockPriceSettings(settings);
+  const financePriceSettings = normalizeFinancePriceSettings(settings);
   const actionData = useActionData();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -828,12 +875,17 @@ export default function ReturnsAdmin() {
   const maintenanceInputs = maintenance?.inputs || initialMaintenance?.inputs || {};
   const maintenancePreview = maintenance?.preview || initialMaintenance?.preview || {};
   const maintenanceFeedback =
-    actionData?.intent && actionData.intent !== "update_settings" && actionData.intent !== "update_stock_price_settings"
+    actionData?.intent &&
+    actionData.intent !== "update_settings" &&
+    actionData.intent !== "update_stock_price_settings" &&
+    actionData.intent !== "update_finance_price_settings"
       ? actionData?.message || actionData?.error || ""
       : "";
   const maintenanceFeedbackClassName = actionData?.ok ? styles.successMsg : styles.errorMsg;
   const settingsFeedback =
-    actionData?.intent === "update_settings" || actionData?.intent === "update_stock_price_settings"
+    actionData?.intent === "update_settings" ||
+    actionData?.intent === "update_stock_price_settings" ||
+    actionData?.intent === "update_finance_price_settings"
       ? actionData?.message || actionData?.error || ""
       : "";
   const settingsFeedbackClassName = actionData?.ok ? styles.successMsg : styles.errorMsg;
@@ -843,6 +895,10 @@ export default function ReturnsAdmin() {
   useEffect(() => {
     if (actionData?.intent === "update_stock_price_settings") {
       setActiveAdminSection("price");
+      return;
+    }
+    if (actionData?.intent === "update_finance_price_settings") {
+      setActiveAdminSection("financePrice");
       return;
     }
     if (actionData?.intent === "update_settings") {
@@ -879,6 +935,14 @@ export default function ReturnsAdmin() {
           onClick={() => setActiveAdminSection("price")}
         >
           Porcentajes del precio del producto
+        </button>
+        <button
+          className={`${styles.adminTab} ${activeAdminSection === "financePrice" ? styles.adminTabActive : ""}`}
+          type="button"
+          aria-selected={activeAdminSection === "financePrice"}
+          onClick={() => setActiveAdminSection("financePrice")}
+        >
+          Porcentaje de la app de finanzas
         </button>
         <button
           className={`${styles.adminTab} ${activeAdminSection === "maintenance" ? styles.adminTabActive : ""}`}
@@ -1070,6 +1134,95 @@ export default function ReturnsAdmin() {
               <div className={styles.actions}>
                 <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
                   Guardar porcentajes
+                </button>
+              </div>
+              {visibleSettingsFeedback ? (
+                <p className={settingsFeedbackClassName} role="status" aria-live="polite">
+                  {visibleSettingsFeedback}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </Form>
+      </s-section>
+      ) : null}
+
+      {activeAdminSection === "financePrice" ? (
+      <s-section heading="Porcentaje de la app de finanzas">
+        <Form method="post">
+          <input type="hidden" name="intent" value="update_finance_price_settings" />
+          <div className={styles.wrap}>
+            <div className={`${styles.card} ${styles.grid}`}>
+              <p className={styles.help}>
+                Estos valores calculan las tarjetas del portal de finanzas. Al guardar, aplican solo desde ese momento en adelante.
+              </p>
+              <div className={styles.grid2}>
+                <label className={styles.label}>
+                  Ganancia (%)
+                  <span className={styles.help}>Porcentaje base usado para calcular margen y costo recuperado.</span>
+                  <input
+                    className={styles.input}
+                    name="financeProfitPercent"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={financePriceSettings.profitPercent}
+                  />
+                </label>
+                <label className={styles.label}>
+                  Impuestos (%)
+                  <span className={styles.help}>Porcentaje aplicado sobre la ganancia.</span>
+                  <input
+                    className={styles.input}
+                    name="financeTaxPercent"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={financePriceSettings.taxPercent}
+                  />
+                </label>
+              </div>
+              <div className={styles.grid2}>
+                <label className={styles.label}>
+                  Comision de Shopify (MXN)
+                  <span className={styles.help}>Cantidad fija por producto.</span>
+                  <input
+                    className={styles.input}
+                    name="financeShopifyCommission"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={financePriceSettings.shopifyCommission}
+                  />
+                </label>
+                <label className={styles.label}>
+                  Costo operativo (MXN)
+                  <span className={styles.help}>Cantidad fija por producto.</span>
+                  <input
+                    className={styles.input}
+                    name="financeOperationalCost"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={financePriceSettings.operationalCost}
+                  />
+                </label>
+              </div>
+              <label className={styles.label}>
+                Transaccion (%)
+                <span className={styles.help}>Porcentaje descontado al calcular el costo recuperado.</span>
+                <input
+                  className={styles.input}
+                  name="financeTransactionPercent"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={financePriceSettings.transactionPercent}
+                />
+              </label>
+              <div className={styles.actions}>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+                  Guardar porcentajes de finanzas
                 </button>
               </div>
               {visibleSettingsFeedback ? (

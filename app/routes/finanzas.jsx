@@ -11,18 +11,16 @@ import {
   useSubmit,
 } from "react-router";
 import prisma from "../db.server";
+import {
+  financePriceSettingsForDate,
+  financePriceSettingsSignature,
+  FINANCE_PRICE_SETTINGS_DEFAULTS,
+} from "../utils/financePrice.shared";
+import { loadFinancePriceSettingsTimeline } from "../utils/financePriceSettings.server";
 import styles from "../styles/finanzas.module.css";
 
 const ADMIN_API_VERSION = "2025-10";
 const FINANCE_TIME_ZONE = "America/Mexico_City";
-const OPERATING_COST_PER_ITEM = 15;
-const SHOPIFY_FIXED_COMMISSION_PER_ITEM = 3;
-const DEFAULT_PROFIT_MARGIN_RATE = 0.5;
-const HIGH_ORDER_PROFIT_MARGIN_RATE = 0.4;
-const VERY_HIGH_ORDER_PROFIT_MARGIN_RATE = 0.35;
-const COST_RECOVERY_MARGIN_RATE = 0.5;
-const PROFIT_TAX_RATE = 0.1;
-const TRANSACTION_RATE = 0.03;
 const HIGH_ORDER_DISCOUNT_RATE = 0.1;
 const VERY_HIGH_ORDER_DISCOUNT_RATE = 0.15;
 const FINANCE_RANGE_CACHE_TTL_MS = 45 * 1000;
@@ -208,7 +206,7 @@ function groupRefundsByLocalDay(refundEvents) {
   }, {});
 }
 
-function buildFinanceDayEntry(dayDate, ordersByDay, refundsByDay) {
+function buildFinanceDayEntry(dayDate, ordersByDay, refundsByDay, settingsTimeline = []) {
   const key = getLocalDateKey(dayDate);
   const dayOrders = ordersByDay[key] || [];
   const dayRefunds = refundsByDay[key] || [];
@@ -217,36 +215,41 @@ function buildFinanceDayEntry(dayDate, ordersByDay, refundsByDay) {
     dayName: capitalize(dayNameFormatter.format(dayDate)),
     dateLabel: formatFinanceDate(dayDate),
     refunds: dayRefunds,
-    totals: calculateFinanceTotals(dayOrders, dayRefunds),
+    totals: calculateFinanceTotals(dayOrders, dayRefunds, settingsTimeline),
   };
 }
 
-function buildFinanceDayEntries(start, dayCount, salesOrders, refundEvents) {
+function buildFinanceDayEntries(start, dayCount, salesOrders, refundEvents, settingsTimeline = []) {
   const ordersByDay = groupOrdersByLocalDay(salesOrders);
   const refundsByDay = groupRefundsByLocalDay(refundEvents);
 
   return Array.from({ length: dayCount }, (_, index) =>
-    buildFinanceDayEntry(new Date(start.getTime() + index * 24 * 60 * 60 * 1000), ordersByDay, refundsByDay),
+    buildFinanceDayEntry(
+      new Date(start.getTime() + index * 24 * 60 * 60 * 1000),
+      ordersByDay,
+      refundsByDay,
+      settingsTimeline,
+    ),
   );
 }
 
-function buildWeekBreakdown(start, end, salesOrders, refundEvents) {
+function buildWeekBreakdown(start, end, salesOrders, refundEvents, settingsTimeline = []) {
   return {
     label: formatWeekLabel(start, end),
-    days: buildFinanceDayEntries(start, 7, salesOrders, refundEvents),
+    days: buildFinanceDayEntries(start, 7, salesOrders, refundEvents, settingsTimeline),
   };
 }
 
-function buildChartBreakdown(start, end, salesOrders, refundEvents, monthKey) {
+function buildChartBreakdown(start, end, salesOrders, refundEvents, monthKey, settingsTimeline = []) {
   const dayCount = Math.max(0, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
   return {
     label: formatMonthLabel(start),
-    days: buildFinanceDayEntries(start, dayCount, salesOrders, refundEvents),
+    days: buildFinanceDayEntries(start, dayCount, salesOrders, refundEvents, settingsTimeline),
     ...buildChartNavigation(monthKey),
   };
 }
 
-function buildMonthBreakdown(start, end, salesOrders, refundEvents) {
+function buildMonthBreakdown(start, end, salesOrders, refundEvents, settingsTimeline = []) {
   const dayCount = Math.max(0, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
   const ordersByDay = groupOrdersByLocalDay(salesOrders);
   const refundsByDay = groupRefundsByLocalDay(refundEvents);
@@ -258,7 +261,7 @@ function buildMonthBreakdown(start, end, salesOrders, refundEvents) {
   for (let index = 0; index < dayCount; index += 1) {
     const dayDate = new Date(start.getTime() + index * 24 * 60 * 60 * 1000);
     const key = getLocalDateKey(dayDate);
-    const dayEntry = buildFinanceDayEntry(dayDate, ordersByDay, refundsByDay);
+    const dayEntry = buildFinanceDayEntry(dayDate, ordersByDay, refundsByDay, settingsTimeline);
     if (!weekStartDate) weekStartDate = dayDate;
 
     entries.push(dayEntry);
@@ -271,7 +274,7 @@ function buildMonthBreakdown(start, end, salesOrders, refundEvents) {
         dayName: "Corte",
         dateLabel: `Semana del ${formatFinanceDate(weekStartDate, { includeYear: false })} al ${formatFinanceDate(dayDate)}`,
         refunds: weekRefunds,
-        totals: calculateFinanceTotals(weekOrders, weekRefunds),
+        totals: calculateFinanceTotals(weekOrders, weekRefunds, settingsTimeline),
         isCut: true,
       });
       weekStartDate = null;
@@ -464,16 +467,16 @@ function isRecordInDateRange(value, start, end) {
   return date.getTime() >= start.getTime() && date.getTime() < end.getTime();
 }
 
-function buildHistoryMonthBreakdowns(selectedMonthKey, salesOrders, refundEvents) {
+function buildHistoryMonthBreakdowns(selectedMonthKey, salesOrders, refundEvents, settingsTimeline = []) {
   const cleanSelectedMonthKey = clampChartMonthKey(selectedMonthKey);
   return buildChartMonthOptions(cleanSelectedMonthKey)
     .map((monthOption) => {
       const { start, end, monthKey } = getMonthRangeInMexico(monthOption.value);
       const monthOrders = salesOrders.filter((order) => isRecordInDateRange(order?.createdAt, start, end));
       const monthRefunds = refundEvents.filter((refundEvent) => isRecordInDateRange(refundEvent?.createdAt, start, end));
-      const totals = calculateFinanceTotals(monthOrders, monthRefunds);
+      const totals = calculateFinanceTotals(monthOrders, monthRefunds, settingsTimeline);
       return {
-        ...buildMonthBreakdown(start, end, monthOrders, monthRefunds),
+        ...buildMonthBreakdown(start, end, monthOrders, monthRefunds, settingsTimeline),
         ...buildChartNavigation(monthKey),
         totals,
       };
@@ -751,8 +754,13 @@ async function fetchUpdatedOrdersForRangeWithSessions({ sessions, start, end }) 
   throw lastError || new Error("No se encontro una sesion valida para consultar reembolsos.");
 }
 
-function getFinanceRangeCacheKey({ shop, start, end }) {
-  return [cleanShop(shop), start.toISOString(), end.toISOString()].join("|");
+function getFinanceRangeCacheKey({ shop, start, end, settingsTimeline = [] }) {
+  return [
+    cleanShop(shop),
+    start.toISOString(),
+    end.toISOString(),
+    financePriceSettingsSignature(settingsTimeline),
+  ].join("|");
 }
 
 function getCachedFinanceRangeData(cacheKey) {
@@ -773,8 +781,14 @@ function setCachedFinanceRangeData(cacheKey, data) {
   }
 }
 
-async function fetchFinanceRangeDataWithCache({ shop, sessions, start, end }) {
-  const cacheKey = getFinanceRangeCacheKey({ shop, start, end });
+async function fetchFinanceRangeDataWithCache({
+  shop,
+  sessions,
+  start,
+  end,
+  settingsTimeline = [],
+}) {
+  const cacheKey = getFinanceRangeCacheKey({ shop, start, end, settingsTimeline });
   const cached = getCachedFinanceRangeData(cacheKey);
   if (cached) return cached;
 
@@ -783,7 +797,7 @@ async function fetchFinanceRangeDataWithCache({ shop, sessions, start, end }) {
   let loadedRefunds = true;
   try {
     const refundOrders = await fetchUpdatedOrdersForRangeWithSessions({ sessions, start, end });
-    refundEvents = extractRefundEventsFromOrders(refundOrders, start, end);
+    refundEvents = extractRefundEventsFromOrders(refundOrders, start, end, settingsTimeline);
   } catch (refundError) {
     loadedRefunds = false;
     console.error("Finance portal loaded sales but failed to load refunds", refundError);
@@ -794,7 +808,7 @@ async function fetchFinanceRangeDataWithCache({ shop, sessions, start, end }) {
   return data;
 }
 
-function calculateFinanceTotals(orders, refundEvents = []) {
+function calculateFinanceTotals(orders, refundEvents = [], settingsTimeline = []) {
   const orderCount = orders.length;
   const orderIdentitySet = new Set(orders.flatMap((order) => [order?.id, order?.name].filter(Boolean)));
   const itemCount = orders.reduce(
@@ -805,17 +819,26 @@ function calculateFinanceTotals(orders, refundEvents = []) {
   );
   const financeTotals = orders.reduce(
     (totals, order) => {
-      const orderFinance = calculateOrderFinanceTotals(order);
+      const orderFinance = calculateOrderFinanceTotals(order, settingsTimeline);
       return {
         salesTotal: totals.salesTotal + orderFinance.salesTotal,
         originalSubtotalTotal: totals.originalSubtotalTotal + orderFinance.originalSubtotalTotal,
+        operatingCostTotal: totals.operatingCostTotal + orderFinance.operatingCostTotal,
         shippingTotal: totals.shippingTotal + orderFinance.shippingTotal,
         recoveredCostTotal: totals.recoveredCostTotal + orderFinance.recoveredCostTotal,
         taxesTotal: totals.taxesTotal + orderFinance.taxesTotal,
         profitTotal: totals.profitTotal + orderFinance.profitTotal,
       };
     },
-    { salesTotal: 0, originalSubtotalTotal: 0, shippingTotal: 0, recoveredCostTotal: 0, taxesTotal: 0, profitTotal: 0 },
+    {
+      salesTotal: 0,
+      originalSubtotalTotal: 0,
+      operatingCostTotal: 0,
+      shippingTotal: 0,
+      recoveredCostTotal: 0,
+      taxesTotal: 0,
+      profitTotal: 0,
+    },
   );
   const refundTotals = refundEvents.reduce(
     (totals, refundEvent) => ({
@@ -844,7 +867,7 @@ function calculateFinanceTotals(orders, refundEvents = []) {
     },
   );
   const shippingTotal = financeTotals.shippingTotal;
-  const operatingCostTotal = itemCount * OPERATING_COST_PER_ITEM;
+  const operatingCostTotal = financeTotals.operatingCostTotal;
   const hasRefunds =
     refundTotals.refundSalesTotal > 0 ||
     refundTotals.refundProfitTotal > 0 ||
@@ -883,8 +906,8 @@ function calculateFinanceTotals(orders, refundEvents = []) {
   };
 }
 
-function calculateDayTotals(orders) {
-  return calculateFinanceTotals(orders);
+function calculateDayTotals(orders, settingsTimeline = []) {
+  return calculateFinanceTotals(orders, [], settingsTimeline);
 }
 
 function formatRefundAmount(value, formatter = currencyFormatter) {
@@ -1171,10 +1194,11 @@ function createFinancePdfBlob({ title, subtitle, totals, rows }) {
   return new Blob([pdf], { type: "application/pdf" });
 }
 
-function getProfitMarginRateForOrderTotal(orderTotal) {
-  if (orderTotal >= 1000) return VERY_HIGH_ORDER_PROFIT_MARGIN_RATE;
-  if (orderTotal >= 750) return HIGH_ORDER_PROFIT_MARGIN_RATE;
-  return DEFAULT_PROFIT_MARGIN_RATE;
+function getProfitMarginRateForOrderTotal(orderTotal, settings) {
+  const baseRate = normalizeRate(settings?.profitPercent, FINANCE_PRICE_SETTINGS_DEFAULTS.profitPercent);
+  if (orderTotal >= 1000) return Math.max(0, baseRate - 0.15);
+  if (orderTotal >= 750) return Math.max(0, baseRate - 0.1);
+  return baseRate;
 }
 
 function getDiscountRateForOrderTotal(orderTotal) {
@@ -1183,21 +1207,29 @@ function getDiscountRateForOrderTotal(orderTotal) {
   return 0;
 }
 
-function calculateOrderFinanceTotals(order) {
+function normalizeRate(value, fallbackPercent = 0) {
+  const parsed = Number(value);
+  const percent = Number.isFinite(parsed) ? parsed : fallbackPercent;
+  return Math.max(0, percent) / 100;
+}
+
+function calculateOrderFinanceTotals(order, settingsTimeline = []) {
+  const settings = financePriceSettingsForDate(settingsTimeline, order?.createdAt);
   const lineItems = order?.lineItems?.nodes || [];
+  const itemCount = lineItems.reduce((sum, item) => sum + Math.max(0, Number(item?.quantity || 0)), 0);
   const lineItemsOriginalTotal = lineItems.reduce((sum, item) => {
     const quantity = Math.max(0, Number(item?.quantity || 0));
     const unitPrice = Number(item?.originalUnitPriceSet?.shopMoney?.amount || 0);
     return sum + unitPrice * quantity;
   }, 0);
   const originalOrderTotal = lineItemsOriginalTotal || Number(order?.subtotalPriceSet?.shopMoney?.amount || 0);
-  const profitMarginRate = getProfitMarginRateForOrderTotal(originalOrderTotal);
+  const profitMarginRate = getProfitMarginRateForOrderTotal(originalOrderTotal, settings);
   const discountRate = getDiscountRateForOrderTotal(originalOrderTotal);
   const totals = lineItems.reduce(
     (itemTotals, item) => {
       const quantity = Math.max(0, Number(item?.quantity || 0));
       const originalUnitPrice = Number(item?.originalUnitPriceSet?.shopMoney?.amount || 0);
-      const recoveredUnitCost = Math.round(Math.max(0, calculateRecoveredUnitCost(originalUnitPrice)));
+      const recoveredUnitCost = Math.round(Math.max(0, calculateRecoveredUnitCost(originalUnitPrice, settings)));
       return {
         salesTotal: itemTotals.salesTotal + originalUnitPrice * (1 - discountRate) * quantity,
         recoveredCostTotal: itemTotals.recoveredCostTotal + recoveredUnitCost * quantity,
@@ -1207,24 +1239,34 @@ function calculateOrderFinanceTotals(order) {
   );
   const recoveredCostTotal = totals.recoveredCostTotal;
   const marginTotal = recoveredCostTotal * profitMarginRate;
-  const taxesTotal = marginTotal * PROFIT_TAX_RATE;
+  const taxesTotal = marginTotal * normalizeRate(settings.taxPercent, FINANCE_PRICE_SETTINGS_DEFAULTS.taxPercent);
   const profitTotal = marginTotal - taxesTotal;
+  const operatingCostTotal = itemCount * settings.operationalCost;
   const actualShippingTotal = Number(order?.totalShippingPriceSet?.shopMoney?.amount || 0);
   const shippingTotal = actualShippingTotal;
   const receivedSalesTotal = Number(order?.totalReceivedSet?.shopMoney?.amount || 0);
   const fallbackSalesTotal = totals.salesTotal + shippingTotal;
   const salesTotal = receivedSalesTotal || fallbackSalesTotal;
 
-  return { salesTotal, originalSubtotalTotal: originalOrderTotal, shippingTotal, recoveredCostTotal, taxesTotal, profitTotal };
+  return {
+    salesTotal,
+    originalSubtotalTotal: originalOrderTotal,
+    operatingCostTotal,
+    shippingTotal,
+    recoveredCostTotal,
+    taxesTotal,
+    profitTotal,
+  };
 }
 
-function extractRefundEventsFromOrders(orders, start, end) {
+function extractRefundEventsFromOrders(orders, start, end, settingsTimeline = []) {
   const rangeStartMs = start.getTime();
   const rangeEndMs = end.getTime();
   return orders.flatMap((order) => {
-    const orderFinance = calculateOrderFinanceTotals(order);
+    const settings = financePriceSettingsForDate(settingsTimeline, order?.createdAt);
+    const orderFinance = calculateOrderFinanceTotals(order, settingsTimeline);
     const originalOrderTotal = Number(orderFinance.originalSubtotalTotal || 0);
-    const profitMarginRate = getProfitMarginRateForOrderTotal(originalOrderTotal);
+    const profitMarginRate = getProfitMarginRateForOrderTotal(originalOrderTotal, settings);
     let hasAppliedOrderShippingRefund = false;
     return (order?.refunds || [])
       .map((refund) => {
@@ -1259,16 +1301,17 @@ function extractRefundEventsFromOrders(orders, start, end) {
         const refundedRecoveredCostTotal = refundLineItems.reduce((sum, refundLineItem) => {
           const quantity = Math.max(0, Number(refundLineItem?.quantity || 0));
           const unitPrice = Number(refundLineItem?.lineItem?.originalUnitPriceSet?.shopMoney?.amount || 0);
-          const recoveredUnitCost = Math.round(Math.max(0, calculateRecoveredUnitCost(unitPrice)));
+          const recoveredUnitCost = Math.round(Math.max(0, calculateRecoveredUnitCost(unitPrice, settings)));
           return sum + recoveredUnitCost * quantity;
         }, 0);
         const refundedItemCount = refundLineItems.reduce(
           (sum, refundLineItem) => sum + Math.max(0, Number(refundLineItem?.quantity || 0)),
           0,
         );
-        const refundOperatingCostTotal = refundedItemCount * OPERATING_COST_PER_ITEM;
+        const refundOperatingCostTotal = refundedItemCount * settings.operationalCost;
         const refundMarginTotal = refundedRecoveredCostTotal * profitMarginRate;
-        const refundTaxesTotal = refundMarginTotal * PROFIT_TAX_RATE;
+        const refundTaxesTotal =
+          refundMarginTotal * normalizeRate(settings.taxPercent, FINANCE_PRICE_SETTINGS_DEFAULTS.taxPercent);
         const refundProfitTotal = refundMarginTotal - refundTaxesTotal;
         return {
           createdAt: refund.createdAt,
@@ -1288,10 +1331,15 @@ function extractRefundEventsFromOrders(orders, start, end) {
   });
 }
 
-function calculateRecoveredUnitCost(unitPrice) {
-  const costRecoveryFactor = 1 + COST_RECOVERY_MARGIN_RATE + COST_RECOVERY_MARGIN_RATE * PROFIT_TAX_RATE;
+function calculateRecoveredUnitCost(unitPrice, settings) {
+  const profitRate = normalizeRate(settings?.profitPercent, FINANCE_PRICE_SETTINGS_DEFAULTS.profitPercent);
+  const taxRate = normalizeRate(settings?.taxPercent, FINANCE_PRICE_SETTINGS_DEFAULTS.taxPercent);
+  const transactionRate = normalizeRate(settings?.transactionPercent, FINANCE_PRICE_SETTINGS_DEFAULTS.transactionPercent);
+  const shopifyCommission = Number(settings?.shopifyCommission || 0);
+  const operationalCost = Number(settings?.operationalCost || 0);
+  const costRecoveryFactor = 1 + profitRate + profitRate * taxRate;
   return (
-    (Number(unitPrice || 0) * (1 - TRANSACTION_RATE) - SHOPIFY_FIXED_COMMISSION_PER_ITEM - OPERATING_COST_PER_ITEM) /
+    (Number(unitPrice || 0) * (1 - transactionRate) - shopifyCommission - operationalCost) /
     costRecoveryFactor
   );
 }
@@ -1349,13 +1397,29 @@ export async function loader({ request }) {
         error: "No se encontro una sesion offline valida para consultar ventas.",
       };
     }
-    const { orders, refundEvents } = await fetchFinanceRangeDataWithCache({ shop, sessions, start, end });
-    const week = period === "week" ? buildWeekBreakdown(start, end, orders, refundEvents) : { label: "", days: [] };
-    const historyMonths = period === "history" ? buildHistoryMonthBreakdowns(monthKey, orders, refundEvents) : [];
+    const financePriceSettingsTimeline = await loadFinancePriceSettingsTimeline({
+      shop,
+      end,
+    });
+    const { orders, refundEvents } = await fetchFinanceRangeDataWithCache({
+      shop,
+      sessions,
+      start,
+      end,
+      settingsTimeline: financePriceSettingsTimeline,
+    });
+    const week =
+      period === "week"
+        ? buildWeekBreakdown(start, end, orders, refundEvents, financePriceSettingsTimeline)
+        : { label: "", days: [] };
+    const historyMonths =
+      period === "history"
+        ? buildHistoryMonthBreakdowns(monthKey, orders, refundEvents, financePriceSettingsTimeline)
+        : [];
     const selectedHistoryMonth = historyMonths.find((month) => month.monthKey === monthKey) || null;
     const selectedMonthRange = getMonthRangeInMexico(monthKey || chartMonthKey);
     const fallbackHistoryMonth = {
-      ...buildMonthBreakdown(selectedMonthRange.start, selectedMonthRange.end, [], []),
+      ...buildMonthBreakdown(selectedMonthRange.start, selectedMonthRange.end, [], [], financePriceSettingsTimeline),
       ...buildChartNavigation(selectedMonthRange.monthKey),
       totals: emptyTotals,
     };
@@ -1367,8 +1431,14 @@ export async function loader({ request }) {
             ...buildChartNavigation(monthKey),
           }
         : emptyHistoryData(chartMonthKey);
-    const chart = period === "chart" ? buildChartBreakdown(start, end, orders, refundEvents, monthKey) : emptyChartData(chartMonthKey);
-    const financeTotals = period === "history" ? (selectedHistoryMonth || fallbackHistoryMonth).totals : calculateFinanceTotals(orders, refundEvents);
+    const chart =
+      period === "chart"
+        ? buildChartBreakdown(start, end, orders, refundEvents, monthKey, financePriceSettingsTimeline)
+        : emptyChartData(chartMonthKey);
+    const financeTotals =
+      period === "history"
+        ? (selectedHistoryMonth || fallbackHistoryMonth).totals
+        : calculateFinanceTotals(orders, refundEvents, financePriceSettingsTimeline);
     return {
       isLoggedIn: true,
       needsConfiguration: false,
