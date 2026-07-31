@@ -688,6 +688,21 @@ export const action = async ({ request }) => {
       branchHours: String(formData.get("branchHours") || ""),
       pickupInstructions: String(formData.get("pickupInstructions") || ""),
       pickupHours: String(formData.get("pickupHours") || ""),
+    };
+    await prisma.returnSettings.upsert({
+      where: { shop: session.shop },
+      update: nextSettings,
+      create: {
+        shop: session.shop,
+        ...nextSettings,
+      },
+    });
+    await syncReturnSettingsToNotifications(session.shop, nextSettings);
+    return { ok: true, intent, message: "Configuracion guardada." };
+  }
+
+  if (intent === "update_stock_price_settings") {
+    const nextSettings = {
       stockProfitPercent: normalizeStockPricePercent(
         formData.get("stockProfitPercent"),
         STOCK_PRICE_SETTINGS_DEFAULTS.profitPercent,
@@ -714,8 +729,7 @@ export const action = async ({ request }) => {
         ...nextSettings,
       },
     });
-    await syncReturnSettingsToNotifications(session.shop, nextSettings);
-    return { ok: true, intent, message: "Configuracion guardada." };
+    return { ok: true, intent, message: "Porcentajes del precio guardados." };
   }
 
   if (
@@ -814,12 +828,31 @@ export default function ReturnsAdmin() {
   const maintenanceInputs = maintenance?.inputs || initialMaintenance?.inputs || {};
   const maintenancePreview = maintenance?.preview || initialMaintenance?.preview || {};
   const maintenanceFeedback =
-    actionData?.intent && actionData.intent !== "update_settings" ? actionData?.message || actionData?.error || "" : "";
+    actionData?.intent && actionData.intent !== "update_settings" && actionData.intent !== "update_stock_price_settings"
+      ? actionData?.message || actionData?.error || ""
+      : "";
   const maintenanceFeedbackClassName = actionData?.ok ? styles.successMsg : styles.errorMsg;
   const settingsFeedback =
-    actionData?.intent === "update_settings" ? actionData?.message || actionData?.error || "" : "";
+    actionData?.intent === "update_settings" || actionData?.intent === "update_stock_price_settings"
+      ? actionData?.message || actionData?.error || ""
+      : "";
   const settingsFeedbackClassName = actionData?.ok ? styles.successMsg : styles.errorMsg;
+  const [activeAdminSection, setActiveAdminSection] = useState("returns");
   const [visibleSettingsFeedback, setVisibleSettingsFeedback] = useState("");
+
+  useEffect(() => {
+    if (actionData?.intent === "update_stock_price_settings") {
+      setActiveAdminSection("price");
+      return;
+    }
+    if (actionData?.intent === "update_settings") {
+      setActiveAdminSection("returns");
+      return;
+    }
+    if (actionData?.intent && actionData.intent !== "update_settings") {
+      setActiveAdminSection("maintenance");
+    }
+  }, [actionData?.intent]);
 
   useEffect(() => {
     if (!settingsFeedback) return;
@@ -830,6 +863,34 @@ export default function ReturnsAdmin() {
 
   return (
     <s-page heading="Panel admin de devoluciones">
+      <div className={styles.adminTabs} role="tablist" aria-label="Secciones del panel admin">
+        <button
+          className={`${styles.adminTab} ${activeAdminSection === "returns" ? styles.adminTabActive : ""}`}
+          type="button"
+          aria-selected={activeAdminSection === "returns"}
+          onClick={() => setActiveAdminSection("returns")}
+        >
+          Configuracion de devoluciones
+        </button>
+        <button
+          className={`${styles.adminTab} ${activeAdminSection === "price" ? styles.adminTabActive : ""}`}
+          type="button"
+          aria-selected={activeAdminSection === "price"}
+          onClick={() => setActiveAdminSection("price")}
+        >
+          Porcentajes del precio del producto
+        </button>
+        <button
+          className={`${styles.adminTab} ${activeAdminSection === "maintenance" ? styles.adminTabActive : ""}`}
+          type="button"
+          aria-selected={activeAdminSection === "maintenance"}
+          onClick={() => setActiveAdminSection("maintenance")}
+        >
+          Mantenimiento y limpieza
+        </button>
+      </div>
+
+      {activeAdminSection === "returns" ? (
       <s-section heading="Configuracion de devoluciones">
         <Form method="post">
           <input type="hidden" name="intent" value="update_settings" />
@@ -917,76 +978,6 @@ export default function ReturnsAdmin() {
                 </label>
               </div>
 
-              <div className={styles.grid}>
-                <p className={styles.help}>
-                  Estos valores calculan el precio final que vera el publicador cuando stock marque un producto como listo.
-                </p>
-                <div className={styles.grid2}>
-                  <label className={styles.label}>
-                    Ganancia (%)
-                    <span className={styles.help}>Porcentaje que se suma sobre el costo base.</span>
-                    <input
-                      className={styles.input}
-                      name="stockProfitPercent"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      defaultValue={stockPriceSettings.profitPercent}
-                    />
-                  </label>
-                  <label className={styles.label}>
-                    Impuestos (%)
-                    <span className={styles.help}>Porcentaje que se suma sobre la ganancia.</span>
-                    <input
-                      className={styles.input}
-                      name="stockTaxPercent"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      defaultValue={stockPriceSettings.taxPercent}
-                    />
-                  </label>
-                </div>
-                <div className={styles.grid2}>
-                  <label className={styles.label}>
-                    Comision de Shopify (MXN)
-                    <span className={styles.help}>Cantidad fija en pesos que se suma al subtotal.</span>
-                    <input
-                      className={styles.input}
-                      name="stockShopifyCommission"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      defaultValue={stockPriceSettings.shopifyCommission}
-                    />
-                  </label>
-                  <label className={styles.label}>
-                    Costo operativo (MXN)
-                    <span className={styles.help}>Cantidad fija en pesos que se suma al subtotal.</span>
-                    <input
-                      className={styles.input}
-                      name="stockOperationalCost"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      defaultValue={stockPriceSettings.operationalCost}
-                    />
-                  </label>
-                </div>
-                <label className={styles.label}>
-                  Transaccion (%)
-                  <span className={styles.help}>Porcentaje aplicado despues de sumar ganancia, impuestos y costos fijos.</span>
-                  <input
-                    className={styles.input}
-                    name="stockTransactionPercent"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    defaultValue={stockPriceSettings.transactionPercent}
-                  />
-                </label>
-              </div>
-
               <div className={styles.actions}>
                 <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
                   Guardar configuracion
@@ -1001,7 +992,98 @@ export default function ReturnsAdmin() {
           </div>
         </Form>
       </s-section>
+      ) : null}
 
+      {activeAdminSection === "price" ? (
+      <s-section heading="Porcentajes del precio del producto">
+        <Form method="post">
+          <input type="hidden" name="intent" value="update_stock_price_settings" />
+          <div className={styles.wrap}>
+            <div className={`${styles.card} ${styles.grid}`}>
+              <p className={styles.help}>
+                Estos valores calculan el precio final que vera el publicador cuando stock marque un producto como listo.
+              </p>
+              <div className={styles.grid2}>
+                <label className={styles.label}>
+                  Ganancia (%)
+                  <span className={styles.help}>Porcentaje que se suma sobre el costo base.</span>
+                  <input
+                    className={styles.input}
+                    name="stockProfitPercent"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={stockPriceSettings.profitPercent}
+                  />
+                </label>
+                <label className={styles.label}>
+                  Impuestos (%)
+                  <span className={styles.help}>Porcentaje que se suma sobre la ganancia.</span>
+                  <input
+                    className={styles.input}
+                    name="stockTaxPercent"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={stockPriceSettings.taxPercent}
+                  />
+                </label>
+              </div>
+              <div className={styles.grid2}>
+                <label className={styles.label}>
+                  Comision de Shopify (MXN)
+                  <span className={styles.help}>Cantidad fija en pesos que se suma al subtotal.</span>
+                  <input
+                    className={styles.input}
+                    name="stockShopifyCommission"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={stockPriceSettings.shopifyCommission}
+                  />
+                </label>
+                <label className={styles.label}>
+                  Costo operativo (MXN)
+                  <span className={styles.help}>Cantidad fija en pesos que se suma al subtotal.</span>
+                  <input
+                    className={styles.input}
+                    name="stockOperationalCost"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={stockPriceSettings.operationalCost}
+                  />
+                </label>
+              </div>
+              <label className={styles.label}>
+                Transaccion (%)
+                <span className={styles.help}>Porcentaje aplicado despues de sumar ganancia, impuestos y costos fijos.</span>
+                <input
+                  className={styles.input}
+                  name="stockTransactionPercent"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={stockPriceSettings.transactionPercent}
+                />
+              </label>
+              <div className={styles.actions}>
+                <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+                  Guardar porcentajes
+                </button>
+              </div>
+              {visibleSettingsFeedback ? (
+                <p className={settingsFeedbackClassName} role="status" aria-live="polite">
+                  {visibleSettingsFeedback}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </Form>
+      </s-section>
+      ) : null}
+
+      {activeAdminSection === "maintenance" ? (
       <s-section heading="Mantenimiento y limpieza">
         <div className={styles.wrap}>
           <div className={`${styles.card} ${styles.grid}`}>
@@ -1153,6 +1235,7 @@ export default function ReturnsAdmin() {
           </div>
         </div>
       </s-section>
+      ) : null}
     </s-page>
   );
 }
