@@ -1195,16 +1195,55 @@ function createFinancePdfBlob({ title, subtitle, totals, rows }) {
 }
 
 function getProfitMarginRateForOrderTotal(orderTotal, settings) {
-  const baseRate = normalizeRate(settings?.profitPercent, FINANCE_PRICE_SETTINGS_DEFAULTS.profitPercent);
-  if (orderTotal >= 1000) return Math.max(0, baseRate - 0.15);
-  if (orderTotal >= 750) return Math.max(0, baseRate - 0.1);
-  return baseRate;
+  let profitPercent = Number.isFinite(Number(settings?.profitPercent))
+    ? Number(settings.profitPercent)
+    : FINANCE_PRICE_SETTINGS_DEFAULTS.profitPercent;
+  const tiers = [
+    {
+      threshold: Number(settings?.highProfitThreshold),
+      profitPercent: Number(settings?.highProfitPercent),
+    },
+    {
+      threshold: Number(settings?.veryHighProfitThreshold),
+      profitPercent: Number(settings?.veryHighProfitPercent),
+    },
+  ]
+    .filter(
+      (tier) =>
+        Number.isFinite(tier.threshold) &&
+        tier.threshold > 0 &&
+        Number.isFinite(tier.profitPercent) &&
+        tier.profitPercent >= 0,
+    )
+    .sort((first, second) => first.threshold - second.threshold);
+  for (const tier of tiers) {
+    if (orderTotal >= tier.threshold) profitPercent = tier.profitPercent;
+  }
+  return normalizeRate(profitPercent, FINANCE_PRICE_SETTINGS_DEFAULTS.profitPercent);
 }
 
-function getDiscountRateForOrderTotal(orderTotal) {
-  if (orderTotal >= 1000) return VERY_HIGH_ORDER_DISCOUNT_RATE;
-  if (orderTotal >= 750) return HIGH_ORDER_DISCOUNT_RATE;
-  return 0;
+function getDiscountRateForOrderTotal(orderTotal, settings) {
+  const highThreshold = Number(settings?.highProfitThreshold);
+  const veryHighThreshold = Number(settings?.veryHighProfitThreshold);
+  const tiers = [
+    {
+      threshold: Number.isFinite(highThreshold) && highThreshold > 0
+        ? highThreshold
+        : FINANCE_PRICE_SETTINGS_DEFAULTS.highProfitThreshold,
+      discountRate: HIGH_ORDER_DISCOUNT_RATE,
+    },
+    {
+      threshold: Number.isFinite(veryHighThreshold) && veryHighThreshold > 0
+        ? veryHighThreshold
+        : FINANCE_PRICE_SETTINGS_DEFAULTS.veryHighProfitThreshold,
+      discountRate: VERY_HIGH_ORDER_DISCOUNT_RATE,
+    },
+  ].sort((first, second) => first.threshold - second.threshold);
+  let discountRate = 0;
+  for (const tier of tiers) {
+    if (orderTotal >= tier.threshold) discountRate = tier.discountRate;
+  }
+  return discountRate;
 }
 
 function normalizeRate(value, fallbackPercent = 0) {
@@ -1224,7 +1263,7 @@ function calculateOrderFinanceTotals(order, settingsTimeline = []) {
   }, 0);
   const originalOrderTotal = lineItemsOriginalTotal || Number(order?.subtotalPriceSet?.shopMoney?.amount || 0);
   const profitMarginRate = getProfitMarginRateForOrderTotal(originalOrderTotal, settings);
-  const discountRate = getDiscountRateForOrderTotal(originalOrderTotal);
+  const discountRate = getDiscountRateForOrderTotal(originalOrderTotal, settings);
   const totals = lineItems.reduce(
     (itemTotals, item) => {
       const quantity = Math.max(0, Number(item?.quantity || 0));

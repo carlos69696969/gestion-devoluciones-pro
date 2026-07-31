@@ -210,6 +210,10 @@ model ReturnSettings {
   financeShopifyCommission        Float    @default(3)
   financeOperationalCost          Float    @default(15)
   financeTransactionPercent       Float    @default(3)
+  financeHighProfitThreshold      Float    @default(750)
+  financeHighProfitPercent        Float    @default(40)
+  financeVeryHighProfitThreshold  Float    @default(1000)
+  financeVeryHighProfitPercent    Float    @default(35)
   updatedAt                       DateTime @updatedAt
   createdAt                       DateTime @default(now())
 }
@@ -335,15 +339,19 @@ model StockArchivedProduct {
 }
 
 model FinancePriceSettingsVersion {
-  id                 Int      @id @default(autoincrement())
-  shop               String
-  profitPercent      Float    @default(50)
-  taxPercent         Float    @default(10)
-  shopifyCommission  Float    @default(3)
-  operationalCost    Float    @default(15)
-  transactionPercent Float    @default(3)
-  effectiveAt        DateTime @default(now())
-  createdAt          DateTime @default(now())
+  id                      Int      @id @default(autoincrement())
+  shop                    String
+  profitPercent           Float    @default(50)
+  taxPercent              Float    @default(10)
+  shopifyCommission       Float    @default(3)
+  operationalCost         Float    @default(15)
+  transactionPercent      Float    @default(3)
+  highProfitThreshold     Float    @default(750)
+  highProfitPercent       Float    @default(40)
+  veryHighProfitThreshold Float    @default(1000)
+  veryHighProfitPercent   Float    @default(35)
+  effectiveAt             DateTime @default(now())
+  createdAt               DateTime @default(now())
 
   @@index([shop, effectiveAt])
 }

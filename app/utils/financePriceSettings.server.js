@@ -26,6 +26,18 @@ export async function ensureFinancePriceSettingsStorage() {
   await prisma.$executeRawUnsafe(
     `ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "financeTransactionPercent" DOUBLE PRECISION NOT NULL DEFAULT 3`,
   );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "financeHighProfitThreshold" DOUBLE PRECISION NOT NULL DEFAULT 750`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "financeHighProfitPercent" DOUBLE PRECISION NOT NULL DEFAULT 40`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "financeVeryHighProfitThreshold" DOUBLE PRECISION NOT NULL DEFAULT 1000`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ReturnSettings" ADD COLUMN IF NOT EXISTS "financeVeryHighProfitPercent" DOUBLE PRECISION NOT NULL DEFAULT 35`,
+  );
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "FinancePriceSettingsVersion" (
       "id" SERIAL PRIMARY KEY,
@@ -35,10 +47,26 @@ export async function ensureFinancePriceSettingsStorage() {
       "shopifyCommission" DOUBLE PRECISION NOT NULL DEFAULT 3,
       "operationalCost" DOUBLE PRECISION NOT NULL DEFAULT 15,
       "transactionPercent" DOUBLE PRECISION NOT NULL DEFAULT 3,
+      "highProfitThreshold" DOUBLE PRECISION NOT NULL DEFAULT 750,
+      "highProfitPercent" DOUBLE PRECISION NOT NULL DEFAULT 40,
+      "veryHighProfitThreshold" DOUBLE PRECISION NOT NULL DEFAULT 1000,
+      "veryHighProfitPercent" DOUBLE PRECISION NOT NULL DEFAULT 35,
       "effectiveAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "FinancePriceSettingsVersion" ADD COLUMN IF NOT EXISTS "highProfitThreshold" DOUBLE PRECISION NOT NULL DEFAULT 750`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "FinancePriceSettingsVersion" ADD COLUMN IF NOT EXISTS "highProfitPercent" DOUBLE PRECISION NOT NULL DEFAULT 40`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "FinancePriceSettingsVersion" ADD COLUMN IF NOT EXISTS "veryHighProfitThreshold" DOUBLE PRECISION NOT NULL DEFAULT 1000`,
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "FinancePriceSettingsVersion" ADD COLUMN IF NOT EXISTS "veryHighProfitPercent" DOUBLE PRECISION NOT NULL DEFAULT 35`,
+  );
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "FinancePriceSettingsVersion_shop_effectiveAt_idx"
     ON "FinancePriceSettingsVersion"("shop", "effectiveAt")
@@ -60,6 +88,10 @@ export async function saveFinancePriceSettingsVersion({ shop, settings }) {
       financeShopifyCommission: cleanSettings.shopifyCommission,
       financeOperationalCost: cleanSettings.operationalCost,
       financeTransactionPercent: cleanSettings.transactionPercent,
+      financeHighProfitThreshold: cleanSettings.highProfitThreshold,
+      financeHighProfitPercent: cleanSettings.highProfitPercent,
+      financeVeryHighProfitThreshold: cleanSettings.veryHighProfitThreshold,
+      financeVeryHighProfitPercent: cleanSettings.veryHighProfitPercent,
     },
     create: {
       shop: cleanShopDomain,
@@ -68,6 +100,10 @@ export async function saveFinancePriceSettingsVersion({ shop, settings }) {
       financeShopifyCommission: cleanSettings.shopifyCommission,
       financeOperationalCost: cleanSettings.operationalCost,
       financeTransactionPercent: cleanSettings.transactionPercent,
+      financeHighProfitThreshold: cleanSettings.highProfitThreshold,
+      financeHighProfitPercent: cleanSettings.highProfitPercent,
+      financeVeryHighProfitThreshold: cleanSettings.veryHighProfitThreshold,
+      financeVeryHighProfitPercent: cleanSettings.veryHighProfitPercent,
     },
   });
   return prisma.financePriceSettingsVersion.create({

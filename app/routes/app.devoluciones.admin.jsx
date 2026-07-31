@@ -766,6 +766,22 @@ export const action = async ({ request }) => {
         formData.get("financeTransactionPercent"),
         FINANCE_PRICE_SETTINGS_DEFAULTS.transactionPercent,
       ),
+      highProfitThreshold: normalizeFinancePriceAmount(
+        formData.get("financeHighProfitThreshold"),
+        FINANCE_PRICE_SETTINGS_DEFAULTS.highProfitThreshold,
+      ),
+      highProfitPercent: normalizeFinancePricePercent(
+        formData.get("financeHighProfitPercent"),
+        FINANCE_PRICE_SETTINGS_DEFAULTS.highProfitPercent,
+      ),
+      veryHighProfitThreshold: normalizeFinancePriceAmount(
+        formData.get("financeVeryHighProfitThreshold"),
+        FINANCE_PRICE_SETTINGS_DEFAULTS.veryHighProfitThreshold,
+      ),
+      veryHighProfitPercent: normalizeFinancePricePercent(
+        formData.get("financeVeryHighProfitPercent"),
+        FINANCE_PRICE_SETTINGS_DEFAULTS.veryHighProfitPercent,
+      ),
     };
     await saveFinancePriceSettingsVersion({
       shop: session.shop,
@@ -1167,6 +1183,58 @@ export default function ReturnsAdmin() {
                     min="0"
                     step="0.01"
                     defaultValue={financePriceSettings.profitPercent}
+                  />
+                </label>
+                <label className={styles.label}>
+                  Cantidad a llegar 1 (MXN)
+                  <span className={styles.help}>Desde este monto se usa la primera ganancia especial.</span>
+                  <input
+                    className={styles.input}
+                    name="financeHighProfitThreshold"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={financePriceSettings.highProfitThreshold}
+                  />
+                </label>
+              </div>
+              <div className={styles.grid2}>
+                <label className={styles.label}>
+                  Ganancia al llegar 1 (%)
+                  <span className={styles.help}>Porcentaje usado cuando el pedido llega a la cantidad 1.</span>
+                  <input
+                    className={styles.input}
+                    name="financeHighProfitPercent"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={financePriceSettings.highProfitPercent}
+                  />
+                </label>
+                <label className={styles.label}>
+                  Cantidad a llegar 2 (MXN)
+                  <span className={styles.help}>Desde este monto se usa la segunda ganancia especial.</span>
+                  <input
+                    className={styles.input}
+                    name="financeVeryHighProfitThreshold"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={financePriceSettings.veryHighProfitThreshold}
+                  />
+                </label>
+              </div>
+              <div className={styles.grid2}>
+                <label className={styles.label}>
+                  Ganancia al llegar 2 (%)
+                  <span className={styles.help}>Porcentaje usado cuando el pedido llega a la cantidad 2.</span>
+                  <input
+                    className={styles.input}
+                    name="financeVeryHighProfitPercent"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={financePriceSettings.veryHighProfitPercent}
                   />
                 </label>
                 <label className={styles.label}>

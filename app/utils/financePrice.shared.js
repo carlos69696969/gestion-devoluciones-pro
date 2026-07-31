@@ -4,6 +4,10 @@ export const FINANCE_PRICE_SETTINGS_DEFAULTS = {
   shopifyCommission: 3,
   operationalCost: 15,
   transactionPercent: 3,
+  highProfitThreshold: 750,
+  highProfitPercent: 40,
+  veryHighProfitThreshold: 1000,
+  veryHighProfitPercent: 35,
 };
 
 export function normalizeFinancePricePercent(value, fallback = 0) {
@@ -40,6 +44,22 @@ export function normalizeFinancePriceSettings(settings = {}) {
       settings.financeTransactionPercent ?? settings.transactionPercent,
       FINANCE_PRICE_SETTINGS_DEFAULTS.transactionPercent,
     ),
+    highProfitThreshold: normalizeFinancePriceAmount(
+      settings.financeHighProfitThreshold ?? settings.highProfitThreshold,
+      FINANCE_PRICE_SETTINGS_DEFAULTS.highProfitThreshold,
+    ),
+    highProfitPercent: normalizeFinancePricePercent(
+      settings.financeHighProfitPercent ?? settings.highProfitPercent,
+      FINANCE_PRICE_SETTINGS_DEFAULTS.highProfitPercent,
+    ),
+    veryHighProfitThreshold: normalizeFinancePriceAmount(
+      settings.financeVeryHighProfitThreshold ?? settings.veryHighProfitThreshold,
+      FINANCE_PRICE_SETTINGS_DEFAULTS.veryHighProfitThreshold,
+    ),
+    veryHighProfitPercent: normalizeFinancePricePercent(
+      settings.financeVeryHighProfitPercent ?? settings.veryHighProfitPercent,
+      FINANCE_PRICE_SETTINGS_DEFAULTS.veryHighProfitPercent,
+    ),
   };
 }
 
@@ -69,6 +89,10 @@ export function financePriceSettingsSignature(settingsTimeline = []) {
         settings.shopifyCommission,
         settings.operationalCost,
         settings.transactionPercent,
+        settings.highProfitThreshold,
+        settings.highProfitPercent,
+        settings.veryHighProfitThreshold,
+        settings.veryHighProfitPercent,
       ].join(":"),
     )
     .join("|");
