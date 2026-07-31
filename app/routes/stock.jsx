@@ -2910,7 +2910,11 @@ export default function StockPortal() {
               <Form
                 method="post"
                 className={styles.form}
-                onSubmit={() => {
+                onSubmit={(event) => {
+                  if (!window.confirm("¿Seguro que quieres marcar este producto como listo?")) {
+                    event.preventDefault();
+                    return;
+                  }
                   pendingStockSaveRef.current = true;
                 }}
               >
