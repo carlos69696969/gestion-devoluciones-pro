@@ -26,8 +26,8 @@
 }
 
 .adminTabs {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: max-content max-content;
   gap: 10px;
   margin: 0 0 14px;
 }
@@ -130,9 +130,16 @@
   border: 1px solid #e1e3e5;
   border-radius: 12px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
   min-width: 0;
   overflow: hidden;
+}
+
+.financeTierMoneyGroup {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.financeTierPercentGroup {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .financeTierInputGroup .input {
@@ -2322,6 +2329,10 @@
 }
 
 @media (max-width: 720px) {
+  .adminTabs {
+    grid-template-columns: 1fr;
+  }
+
   .grid2 { grid-template-columns: 1fr; }
   .financeTierRule {
     gap: 8px;

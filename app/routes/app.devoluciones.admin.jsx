@@ -953,20 +953,20 @@ export default function ReturnsAdmin() {
           Porcentajes del precio del producto
         </button>
         <button
-          className={`${styles.adminTab} ${activeAdminSection === "financePrice" ? styles.adminTabActive : ""}`}
-          type="button"
-          aria-selected={activeAdminSection === "financePrice"}
-          onClick={() => setActiveAdminSection("financePrice")}
-        >
-          Porcentaje de la app de finanzas
-        </button>
-        <button
           className={`${styles.adminTab} ${activeAdminSection === "maintenance" ? styles.adminTabActive : ""}`}
           type="button"
           aria-selected={activeAdminSection === "maintenance"}
           onClick={() => setActiveAdminSection("maintenance")}
         >
           Mantenimiento y limpieza
+        </button>
+        <button
+          className={`${styles.adminTab} ${activeAdminSection === "financePrice" ? styles.adminTabActive : ""}`}
+          type="button"
+          aria-selected={activeAdminSection === "financePrice"}
+          onClick={() => setActiveAdminSection("financePrice")}
+        >
+          Porcentaje de la app de finanzas
         </button>
       </div>
 
@@ -1240,7 +1240,7 @@ export default function ReturnsAdmin() {
                 <p className={styles.financeTierTitle}>Reglas de ganancia por monto</p>
                 <label className={styles.financeTierRule}>
                   <span>Cantidad a llegar 1</span>
-                  <span className={styles.financeTierInputGroup}>
+                  <span className={`${styles.financeTierInputGroup} ${styles.financeTierMoneyGroup}`}>
                     <span className={styles.financeTierAffix}>$</span>
                     <input
                       className={styles.input}
@@ -1252,7 +1252,7 @@ export default function ReturnsAdmin() {
                     />
                   </span>
                   <span className={styles.financeTierEquals}>=</span>
-                  <span className={styles.financeTierInputGroup}>
+                  <span className={`${styles.financeTierInputGroup} ${styles.financeTierPercentGroup}`}>
                     <input
                       className={styles.input}
                       name="financeHighProfitPercent"
@@ -1266,7 +1266,7 @@ export default function ReturnsAdmin() {
                 </label>
                 <label className={styles.financeTierRule}>
                   <span>Cantidad a llegar 2</span>
-                  <span className={styles.financeTierInputGroup}>
+                  <span className={`${styles.financeTierInputGroup} ${styles.financeTierMoneyGroup}`}>
                     <span className={styles.financeTierAffix}>$</span>
                     <input
                       className={styles.input}
@@ -1278,7 +1278,7 @@ export default function ReturnsAdmin() {
                     />
                   </span>
                   <span className={styles.financeTierEquals}>=</span>
-                  <span className={styles.financeTierInputGroup}>
+                  <span className={`${styles.financeTierInputGroup} ${styles.financeTierPercentGroup}`}>
                     <input
                       className={styles.input}
                       name="financeVeryHighProfitPercent"
