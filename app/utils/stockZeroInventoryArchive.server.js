@@ -8,6 +8,10 @@ const STOCK_WEBHOOKS = [
     path: "/webhooks/products/update",
   },
   {
+    topic: "PRODUCTS_DELETE",
+    path: "/webhooks/products/delete",
+  },
+  {
     topic: "INVENTORY_LEVELS_UPDATE",
     path: "/webhooks/inventory_levels/update",
   },
@@ -256,6 +260,114 @@ async function deleteStockHistoryForSkus(shop, skus) {
     },
   });
   return Number(result?.count || 0);
+}
+
+function stockSkuSearchTerm(sku) {
+  const cleanSku = String(sku || "").trim();
+  if (!cleanSku) return "";
+  if (/^[A-Za-z0-9_:-]+$/.test(cleanSku)) return `sku:${cleanSku}`;
+  return `sku:"${cleanSku.replace(/["\\]/g, "\\$&")}"`;
+}
+
+async function fetchExistingStockSkus(admin, skus) {
+  const cleanSkus = normalizeArchivedProductSkus(skus);
+  if (!admin || !cleanSkus.length) return new Set(cleanSkus.map((sku) => sku.toLowerCase()));
+
+  const foundSkus = new Set();
+  for (let index = 0; index < cleanSkus.length; index += 20) {
+    const chunk = cleanSkus.slice(index, index + 20);
+    const query = chunk.map(stockSkuSearchTerm).filter(Boolean).join(" OR ");
+    if (!query) continue;
+    const data = await adminGraphql(
+      admin,
+      `#graphql
+      query ExistingStockSkus($query: String!) {
+        productVariants(first: 250, query: $query) {
+          nodes {
+            sku
+          }
+        }
+      }`,
+      { query },
+    );
+    for (const variant of data?.productVariants?.nodes || []) {
+      const sku = String(variant?.sku || "").trim();
+      if (sku) foundSkus.add(sku.toLowerCase());
+    }
+  }
+  return foundSkus;
+}
+
+export async function deleteStockHistoryForDeletedProduct({
+  shop,
+  productId,
+  skus = [],
+}) {
+  const cleanShop = cleanShopDomain(shop);
+  const cleanProductId = String(productId || "").trim();
+  if (!cleanShop) return { deletedStockHistoryRecords: 0, skus: [] };
+  await ensureStockArchivedProductCleanupStorage();
+
+  const archivedProduct = cleanProductId
+    ? await prisma.stockArchivedProduct.findUnique({
+        where: { shop_productId: { shop: cleanShop, productId: cleanProductId } },
+        select: { id: true, skus: true },
+      })
+    : null;
+  const cleanSkus = normalizeArchivedProductSkus(
+    skus.length ? skus : archivedProduct?.skus,
+  );
+  const deletedStockHistoryRecords = await deleteStockHistoryForSkus(
+    cleanShop,
+    cleanSkus,
+  );
+
+  if (archivedProduct) {
+    await prisma.stockArchivedProduct.update({
+      where: { id: archivedProduct.id },
+      data: { skus: cleanSkus, deletedAt: new Date() },
+    });
+  }
+
+  return { deletedStockHistoryRecords, skus: cleanSkus };
+}
+
+export async function deleteMissingShopifyStockHistory({
+  admin,
+  shop,
+  drafts = [],
+}) {
+  const cleanShop = cleanShopDomain(shop);
+  const candidateSkus = normalizeArchivedProductSkus(
+    drafts
+      .filter((draft) => draft?.locationReleasedAt)
+      .map((draft) => draft?.sku),
+  );
+  if (!admin || !cleanShop || !candidateSkus.length) {
+    return { deletedStockHistoryRecords: 0, skus: [] };
+  }
+
+  let existingSkus;
+  try {
+    existingSkus = await fetchExistingStockSkus(admin, candidateSkus);
+  } catch (error) {
+    console.error("No se pudo verificar historial de stock contra Shopify", {
+      shop: cleanShop,
+      error,
+    });
+    return { deletedStockHistoryRecords: 0, skus: [] };
+  }
+
+  const missingSkus = candidateSkus.filter(
+    (sku) => !existingSkus.has(String(sku || "").trim().toLowerCase()),
+  );
+  if (!missingSkus.length) return { deletedStockHistoryRecords: 0, skus: [] };
+
+  const deletedStockHistoryRecords = await deleteStockHistoryForSkus(
+    cleanShop,
+    missingSkus,
+  );
+  return { deletedStockHistoryRecords, skus: missingSkus };
 }
 
 export async function deleteExpiredArchivedStockProducts({

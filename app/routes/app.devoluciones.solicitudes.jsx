@@ -20,7 +20,11 @@ import {
 } from "../utils/courier.shared";
 import { geocodeAddressWithCache, haversineDistanceMeters } from "../utils/googleMaps.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
-import { ensureStockInventoryArchiveWebhooks, recordArchivedStockProduct } from "../utils/stockZeroInventoryArchive.server";
+import {
+  deleteMissingShopifyStockHistory,
+  ensureStockInventoryArchiveWebhooks,
+  recordArchivedStockProduct,
+} from "../utils/stockZeroInventoryArchive.server";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -4308,7 +4312,7 @@ export const loader = async ({ request }) => {
       return [];
     });
   }
-  const [stockUsers, stockHistoryDrafts, stockSettings] =
+  let [stockUsers, stockHistoryDrafts, stockSettings] =
     viewMode === VIEW_MODE.STOCK
       ? await Promise.all([
           safeLoaderArray("No se pudieron cargar los usuarios de stock", async () => {
@@ -4338,6 +4342,31 @@ export const loader = async ({ request }) => {
           }),
         ])
       : [[], [], null];
+  if (viewMode === VIEW_MODE.STOCK && stockHistoryDrafts.length) {
+    const stockHistoryCleanup = await safeLoaderValue(
+      "No se pudo limpiar el historial de stock contra Shopify",
+      { deletedStockHistoryRecords: 0 },
+      () =>
+        deleteMissingShopifyStockHistory({
+          admin,
+          shop: session.shop,
+          drafts: stockHistoryDrafts,
+        }),
+    );
+    if (stockHistoryCleanup.deletedStockHistoryRecords) {
+      stockHistoryDrafts = await safeLoaderArray("No se pudo recargar el historial de stock", () =>
+        prisma.stockProductDraft.findMany({
+          where: { shop: session.shop, status: "listo" },
+          include: {
+            preparedByStockUser: { select: { name: true } },
+            publishedByStockUser: { select: { name: true } },
+          },
+          orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
+          take: 100,
+        }),
+      );
+    }
+  }
   if (
     (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryActivity) &&
     couriers.length
