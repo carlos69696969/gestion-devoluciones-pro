@@ -605,6 +605,7 @@ export async function runMaintenanceCleanupForAllShops({ logger = console } = {}
     purgedScheduledOrderMarkers: 0,
     deletedArchivedProducts: 0,
     skippedArchivedProducts: 0,
+    deletedStockHistoryRecords: 0,
   };
   const shops = [];
 
@@ -633,9 +634,9 @@ export async function runMaintenanceCleanupForAllShops({ logger = console } = {}
             shop,
             error: String(error?.message || error || "unknown"),
           });
-          return { deletedProducts: 0, skippedProducts: 0 };
+          return { deletedProducts: 0, skippedProducts: 0, deletedStockHistoryRecords: 0 };
         })
-      : { deletedProducts: 0, skippedProducts: 0 };
+      : { deletedProducts: 0, skippedProducts: 0, deletedStockHistoryRecords: 0 };
     const shopResult = {
       shop,
       inputs,
@@ -644,6 +645,7 @@ export async function runMaintenanceCleanupForAllShops({ logger = console } = {}
       deletedRequests: purgeResult.deletedRequests,
       deletedArchivedProducts: archivedProductCleanup.deletedProducts || 0,
       skippedArchivedProducts: archivedProductCleanup.skippedProducts || 0,
+      deletedStockHistoryRecords: archivedProductCleanup.deletedStockHistoryRecords || 0,
       ...purgeResult.courierHistory,
     };
     shops.push(shopResult);
@@ -659,6 +661,7 @@ export async function runMaintenanceCleanupForAllShops({ logger = console } = {}
     totals.purgedScheduledOrderMarkers += shopResult.purgedScheduledOrderMarkers;
     totals.deletedArchivedProducts += shopResult.deletedArchivedProducts;
     totals.skippedArchivedProducts += shopResult.skippedArchivedProducts;
+    totals.deletedStockHistoryRecords += shopResult.deletedStockHistoryRecords;
   }
 
   return { ...totals, shops };

@@ -1,0 +1,2 @@
+ALTER TABLE "StockArchivedProduct"
+ADD COLUMN IF NOT EXISTS "skus" JSONB NOT NULL DEFAULT '[]';

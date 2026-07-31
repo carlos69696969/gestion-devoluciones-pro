@@ -20,7 +20,7 @@ import {
 } from "../utils/courier.shared";
 import { geocodeAddressWithCache, haversineDistanceMeters } from "../utils/googleMaps.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
-import { ensureStockInventoryArchiveWebhooks } from "../utils/stockZeroInventoryArchive.server";
+import { ensureStockInventoryArchiveWebhooks, recordArchivedStockProduct } from "../utils/stockZeroInventoryArchive.server";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -921,6 +921,7 @@ async function fetchStockInventoryStateBySku(admin, sku) {
   if (!matchingVariants.length) return null;
   return {
     quantity: matchingVariants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0),
+    skus: [cleanSku],
     productIds: [
       ...new Set(
         matchingVariants
@@ -978,13 +979,26 @@ async function archiveStockProductInShopify(admin, productId) {
   return payload?.data?.productUpdate?.product?.id || productId;
 }
 
-async function archiveStockProductsIfInventoryIsEmpty(admin, stockState) {
+async function archiveStockProductsIfInventoryIsEmpty(admin, stockState, shop = "") {
   if (!stockState?.productIds?.length) return false;
+  const cleanShop = String(shop || stockState.shop || "").trim().toLowerCase();
   let archivedAnyProduct = false;
   for (const productId of stockState.productIds) {
     const productQuantity = await fetchStockProductTotalInventory(admin, productId);
     if (productQuantity === null || productQuantity > 0) continue;
     await archiveStockProductInShopify(admin, productId);
+    await recordArchivedStockProduct({
+      shop: cleanShop,
+      product: {
+        id: productId,
+        variants: { nodes: (stockState.skus || []).map((sku) => ({ sku })) },
+      },
+    }).catch((error) => {
+      console.error("No se pudo registrar producto archivado desde administrador de stock", {
+        productId,
+        error,
+      });
+    });
     archivedAnyProduct = true;
   }
   return archivedAnyProduct;
@@ -1036,6 +1050,13 @@ async function archiveZeroInventoryStockProductsInShopify(admin, shop) {
       return null;
     });
     if (!archivedProduct || !productSkus.length) continue;
+    await recordArchivedStockProduct({ shop, product }).catch((error) => {
+      console.error("No se pudo registrar producto archivado de Shopify", {
+        productId: product.id,
+        title: product.title,
+        error,
+      });
+    });
     await prisma.stockProductDraft.updateMany({
       where: {
         shop,
@@ -1067,7 +1088,7 @@ async function syncReleasedStockLocationsFromShopify(admin, shop) {
       return null;
     });
     if (!stockState || stockState.quantity > 0) continue;
-    const archivedProduct = await archiveStockProductsIfInventoryIsEmpty(admin, stockState).catch((error) => {
+    const archivedProduct = await archiveStockProductsIfInventoryIsEmpty(admin, stockState, shop).catch((error) => {
       console.error("No se pudo archivar producto agotado de Shopify", { sku: draft.sku, error });
       return false;
     });

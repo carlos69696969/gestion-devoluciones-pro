@@ -27,6 +27,23 @@ function productSkus(product) {
   ];
 }
 
+function normalizeArchivedProductSkus(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((sku) => String(sku || "").trim()).filter(Boolean))];
+  }
+  if (typeof value === "string") {
+    try {
+      return normalizeArchivedProductSkus(JSON.parse(value));
+    } catch (_error) {
+      return value
+        .split(/[\n,]/)
+        .map((sku) => sku.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
 function productIsActive(product) {
   const status = String(product?.status || "ACTIVE").trim().toUpperCase();
   return status === "ACTIVE";
@@ -65,11 +82,16 @@ export async function ensureStockArchivedProductCleanupStorage() {
       "shop" TEXT NOT NULL,
       "productId" TEXT NOT NULL,
       "title" TEXT,
+      "skus" JSONB NOT NULL DEFAULT '[]',
       "archivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "deletedAt" TIMESTAMP(3),
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "StockArchivedProduct"
+    ADD COLUMN IF NOT EXISTS "skus" JSONB NOT NULL DEFAULT '[]'
   `);
   await prisma.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "StockArchivedProduct_shop_productId_key"
@@ -130,12 +152,13 @@ export async function recordArchivedStockProduct({ shop, product }) {
     select: { id: true, deletedAt: true },
   });
   const title = String(product?.title || "").trim() || null;
+  const skus = productSkus(product);
   if (existing) {
     return prisma.stockArchivedProduct.update({
       where: { id: existing.id },
       data: existing.deletedAt
-        ? { title, archivedAt: new Date(), deletedAt: null }
-        : { title },
+        ? { title, skus, archivedAt: new Date(), deletedAt: null }
+        : { title, skus },
     });
   }
   return prisma.stockArchivedProduct.create({
@@ -143,6 +166,7 @@ export async function recordArchivedStockProduct({ shop, product }) {
       shop: cleanShop,
       productId,
       title,
+      skus,
     },
   });
 }
@@ -186,6 +210,11 @@ async function fetchArchivedProductForDeletion(graphqlRequest, productId) {
         title
         status
         totalInventory
+        variants(first: 100) {
+          nodes {
+            sku
+          }
+        }
       }
     }`,
     { id: productId },
@@ -214,6 +243,21 @@ async function deleteArchivedProductInShopify(graphqlRequest, productId) {
   return data?.productDelete?.deletedProductId || productId;
 }
 
+async function deleteStockHistoryForSkus(shop, skus) {
+  const cleanShop = cleanShopDomain(shop);
+  const cleanSkus = normalizeArchivedProductSkus(skus);
+  if (!cleanShop || !cleanSkus.length) return 0;
+  const result = await prisma.stockProductDraft.deleteMany({
+    where: {
+      shop: cleanShop,
+      status: STOCK_DRAFT_READY_STATUS,
+      locationReleasedAt: { not: null },
+      sku: { in: cleanSkus },
+    },
+  });
+  return Number(result?.count || 0);
+}
+
 export async function deleteExpiredArchivedStockProducts({
   shop,
   cleanupDays,
@@ -223,7 +267,7 @@ export async function deleteExpiredArchivedStockProducts({
   const cleanShop = cleanShopDomain(shop);
   const days = normalizeStockArchivedProductCleanupDays(cleanupDays);
   if (!cleanShop || !days) {
-    return { disabled: true, candidates: 0, deletedProducts: 0, skippedProducts: 0 };
+    return { disabled: true, candidates: 0, deletedProducts: 0, skippedProducts: 0, deletedStockHistoryRecords: 0 };
   }
   await ensureStockArchivedProductCleanupStorage();
   const cutoff = cutoffDateFromDays(days);
@@ -233,27 +277,30 @@ export async function deleteExpiredArchivedStockProducts({
       deletedAt: null,
       archivedAt: { lt: cutoff },
     },
-    select: { id: true, productId: true, title: true, archivedAt: true },
+    select: { id: true, productId: true, title: true, skus: true, archivedAt: true },
     orderBy: [{ archivedAt: "asc" }, { id: "asc" }],
     take: Math.max(1, Math.min(Number(batchSize) || 50, 500)),
   });
   if (!rows.length) {
-    return { disabled: false, candidates: 0, deletedProducts: 0, skippedProducts: 0 };
+    return { disabled: false, candidates: 0, deletedProducts: 0, skippedProducts: 0, deletedStockHistoryRecords: 0 };
   }
   if (typeof graphqlRequest !== "function") {
-    return { disabled: false, candidates: rows.length, deletedProducts: 0, skippedProducts: rows.length };
+    return { disabled: false, candidates: rows.length, deletedProducts: 0, skippedProducts: rows.length, deletedStockHistoryRecords: 0 };
   }
 
   let deletedProducts = 0;
   let skippedProducts = 0;
+  let deletedStockHistoryRecords = 0;
   for (const row of rows) {
     try {
       const product = await fetchArchivedProductForDeletion(graphqlRequest, row.productId);
+      const skus = product ? productSkus(product) : normalizeArchivedProductSkus(row.skus);
       if (!product) {
         await prisma.stockArchivedProduct.update({
           where: { id: row.id },
           data: { deletedAt: new Date() },
         });
+        deletedStockHistoryRecords += await deleteStockHistoryForSkus(cleanShop, skus);
         deletedProducts += 1;
         continue;
       }
@@ -266,8 +313,9 @@ export async function deleteExpiredArchivedStockProducts({
       await deleteArchivedProductInShopify(graphqlRequest, row.productId);
       await prisma.stockArchivedProduct.update({
         where: { id: row.id },
-        data: { deletedAt: new Date() },
+        data: { skus, deletedAt: new Date() },
       });
+      deletedStockHistoryRecords += await deleteStockHistoryForSkus(cleanShop, skus);
       deletedProducts += 1;
     } catch (error) {
       skippedProducts += 1;
@@ -279,7 +327,7 @@ export async function deleteExpiredArchivedStockProducts({
       });
     }
   }
-  return { disabled: false, candidates: rows.length, deletedProducts, skippedProducts };
+  return { disabled: false, candidates: rows.length, deletedProducts, skippedProducts, deletedStockHistoryRecords };
 }
 
 export async function deleteExpiredArchivedStockProductsFromAdmin({

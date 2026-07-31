@@ -182,6 +182,7 @@ async function fetchShopifyInventoryStateBySku({ sessions, sku }) {
       if (!matchingVariants.length) return null;
       return {
         quantity: matchingVariants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0),
+        skus: [cleanSku],
         productIds: [
           ...new Set(
             matchingVariants
@@ -260,7 +261,11 @@ async function archiveShopifyProductsIfInventoryIsEmpty(stockState) {
     await archiveShopifyProduct({ session: stockState.session, productId });
     await recordArchivedStockProduct({
       shop: stockState.session.shop,
-      product: { id: productId, title: stockState.productTitle || stockState.locationCode || "" },
+      product: {
+        id: productId,
+        title: stockState.productTitle || stockState.locationCode || "",
+        variants: { nodes: (stockState.skus || []).map((sku) => ({ sku })) },
+      },
     }).catch((error) => {
       console.error("No se pudo registrar producto archivado desde stock", {
         productId,

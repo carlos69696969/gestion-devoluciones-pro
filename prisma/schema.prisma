@@ -318,6 +318,7 @@ model StockArchivedProduct {
   shop       String
   productId  String
   title      String?
+  skus       Json      @default("[]")
   archivedAt DateTime  @default(now())
   deletedAt  DateTime?
   createdAt  DateTime  @default(now())
