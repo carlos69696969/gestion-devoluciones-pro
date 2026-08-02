@@ -13,6 +13,9 @@ const NOTIFICATIONS_API_KEY = String(
 ).trim();
 const SCHEDULER_FLAG = Symbol.for("cariana.courierBranchPickupExpirationScheduler.started");
 const SCHEDULER_TIMER = Symbol.for("cariana.courierBranchPickupExpirationScheduler.timer");
+const SCHEDULER_CATCHUP_TIMER = Symbol.for("cariana.courierBranchPickupExpirationScheduler.catchupTimer");
+const SCHEDULER_RUNNING = Symbol.for("cariana.courierBranchPickupExpirationScheduler.running");
+const CATCHUP_INTERVAL_MS = 15 * 60 * 1000;
 const COURIER_STATUS_TAGS = [
   "en ruta",
   "en ruta 2",
@@ -706,7 +709,12 @@ export function startCourierBranchPickupExpirationScheduler({ logger = console }
   if (globalThis[SCHEDULER_FLAG]) return;
   globalThis[SCHEDULER_FLAG] = true;
 
-  const runAndScheduleNext = async (reason) => {
+  const run = async (reason) => {
+    if (globalThis[SCHEDULER_RUNNING]) {
+      logger.info?.("Courier branch pickup expiration scheduler skipped overlapping run", { reason });
+      return;
+    }
+    globalThis[SCHEDULER_RUNNING] = true;
     try {
       const result = await refundExpiredBranchPickupOrdersForAllShops({ logger });
       logger.info?.("Courier branch pickup expiration scheduler completed", { reason, ...result });
@@ -716,16 +724,19 @@ export function startCourierBranchPickupExpirationScheduler({ logger = console }
         error: String(error?.message || error || "unknown"),
       });
     } finally {
-      scheduleNext();
+      globalThis[SCHEDULER_RUNNING] = false;
     }
   };
 
   const scheduleNext = () => {
     const delay = msUntilNextMexicoMidnight();
-    globalThis[SCHEDULER_TIMER] = setTimeout(() => runAndScheduleNext("mexico_midnight"), delay);
-    globalThis[SCHEDULER_TIMER]?.unref?.();
+    globalThis[SCHEDULER_TIMER] = setTimeout(async () => {
+      await run("mexico_midnight");
+      scheduleNext();
+    }, delay);
   };
 
-  globalThis[SCHEDULER_TIMER] = setTimeout(() => runAndScheduleNext("startup_catchup"), 5000);
-  globalThis[SCHEDULER_TIMER]?.unref?.();
+  scheduleNext();
+  globalThis[SCHEDULER_CATCHUP_TIMER] = setInterval(() => run("periodic_catchup"), CATCHUP_INTERVAL_MS);
+  setTimeout(() => run("startup_catchup"), 5000);
 }
