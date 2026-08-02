@@ -149,6 +149,66 @@
     input.value = value;
   }
 
+  function makeMeasurementField(kind) {
+    var field = document.createElement("textarea");
+    field.className = "cariana-size-field";
+    field.rows = 1;
+    field.setAttribute("autocomplete", "off");
+    field.setAttribute("placeholder", kind === "weight" ? "Peso kg" : "Altura cm");
+    field.setAttribute("inputmode", kind === "weight" ? "numeric" : "decimal");
+    field.setAttribute(kind === "weight" ? "data-cariana-weight" : "data-cariana-height", "");
+    return field;
+  }
+
+  function ensureMeasurementFields(root) {
+    var fields = qs(root, "[data-cariana-fields]");
+    var bodyButton = qs(root, "[data-cariana-body-button]");
+    if (!fields || !bodyButton) return;
+
+    var weight = qs(root, "[data-cariana-weight]");
+    var height = qs(root, "[data-cariana-height]");
+
+    if (!weight) {
+      weight = makeMeasurementField("weight");
+    }
+    if (!height) {
+      height = makeMeasurementField("height");
+    }
+
+    weight.style.display = "block";
+    weight.style.visibility = "visible";
+    weight.style.opacity = "1";
+    height.style.display = "block";
+    height.style.visibility = "visible";
+    height.style.opacity = "1";
+
+    if (weight.parentNode !== fields) {
+      fields.insertBefore(weight, bodyButton);
+    }
+    if (height.parentNode !== fields) {
+      fields.insertBefore(height, bodyButton);
+    }
+
+    if (height.nextElementSibling !== bodyButton) {
+      fields.insertBefore(weight, bodyButton);
+      fields.insertBefore(height, bodyButton);
+    }
+  }
+
+  function openGuide(root) {
+    if (typeof window.abrirGuia === "function") {
+      window.abrirGuia();
+      return;
+    }
+
+    var guideButtons = Array.prototype.slice.call(document.querySelectorAll("button, a"));
+    var guideButton = guideButtons.find(function (button) {
+      return button !== qs(root, "[data-cariana-size-guide]") && /ver guía de tallas|ver guia de tallas/i.test(button.textContent || "");
+    });
+
+    if (guideButton) guideButton.click();
+  }
+
   function openModal(root) {
     var mode = root.getAttribute("data-cariana-size-mode") || "pending";
     var modal = qs(root, "[data-cariana-size-modal]");
@@ -160,11 +220,13 @@
     if (mode === "woman_top") {
       title.textContent = "Encuentra tu talla ideal (Mujer)";
       extraText.textContent = "Tamaño de busto";
+      ensureMeasurementFields(root);
       setHidden(fields, false);
       setHidden(pending, true);
     } else if (mode === "woman_bottom") {
       title.textContent = "Encuentra tu talla ideal (Pantalón Mujer)";
       extraText.textContent = "Tipo de cadera";
+      ensureMeasurementFields(root);
       setHidden(fields, false);
       setHidden(pending, true);
     } else {
@@ -532,6 +594,12 @@
     var openButton = event.target.closest("[data-cariana-size-open]");
     if (openButton) {
       openModal(openButton.closest("[data-cariana-size-root]"));
+      return;
+    }
+
+    var guideOpen = event.target.closest("[data-cariana-size-guide]");
+    if (guideOpen) {
+      openGuide(guideOpen.closest("[data-cariana-size-root]"));
       return;
     }
 

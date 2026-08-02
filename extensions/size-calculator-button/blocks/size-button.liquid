@@ -9,6 +9,10 @@
   %}
 
   <div class="cariana-size-button-host" data-cariana-size-root data-cariana-size-mode="{{ cariana_size_mode }}">
+    <button type="button" class="cariana-size-guide-link" data-cariana-size-guide>
+      📏 Ver guía de tallas
+    </button>
+
     <div class="cariana-size-button-wrapper">
       <button type="button" class="cariana-size-button" data-cariana-size-open>
         ¿No sabes tu talla? Descúbrela aquí
@@ -21,8 +25,8 @@
           <h3 id="carianaSizeTitle" class="cariana-size-title" data-cariana-title>Encuentra tu talla ideal</h3>
 
           <div class="cariana-size-fields" data-cariana-fields>
-            <input class="cariana-size-field" data-cariana-weight type="text" inputmode="numeric" autocomplete="off" placeholder="Peso kg">
-            <input class="cariana-size-field" data-cariana-height type="text" inputmode="decimal" autocomplete="off" placeholder="Altura cm">
+            <textarea class="cariana-size-field" data-cariana-weight rows="1" inputmode="numeric" autocomplete="off" placeholder="Peso kg"></textarea>
+            <textarea class="cariana-size-field" data-cariana-height rows="1" inputmode="decimal" autocomplete="off" placeholder="Altura cm"></textarea>
 
             <button type="button" class="cariana-size-selector" data-cariana-body-button>
               Tipo de cuerpo <strong data-cariana-body-label></strong>
