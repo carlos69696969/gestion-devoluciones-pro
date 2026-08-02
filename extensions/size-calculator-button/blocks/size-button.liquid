@@ -1,9 +1,74 @@
 {% if product %}
-  <div class="cariana-size-button-wrapper">
-    <button type="button" class="cariana-size-button">
-      ¿No sabes tu talla? Descúbrela aquí
-    </button>
+  {% liquid
+    assign cariana_size_mode = 'pending'
+    if product.tags contains 'mujer' and product.tags contains 'superior'
+      assign cariana_size_mode = 'woman_top'
+    elsif product.tags contains 'mujer' and product.tags contains 'inferior'
+      assign cariana_size_mode = 'woman_bottom'
+    endif
+  %}
+
+  <div class="cariana-size-button-host" data-cariana-size-root data-cariana-size-mode="{{ cariana_size_mode }}">
+    <div class="cariana-size-button-wrapper">
+      <button type="button" class="cariana-size-button" data-cariana-size-open>
+        ¿No sabes tu talla? Descúbrela aquí
+      </button>
+    </div>
+
+    <div class="cariana-size-modal" data-cariana-size-modal hidden>
+      <div class="cariana-size-modal-card" role="dialog" aria-modal="true" aria-labelledby="carianaSizeTitle">
+        <div class="cariana-size-screen" data-cariana-main-screen>
+          <h3 id="carianaSizeTitle" class="cariana-size-title" data-cariana-title>Encuentra tu talla ideal</h3>
+
+          <div class="cariana-size-fields" data-cariana-fields>
+            <input class="cariana-size-field" data-cariana-weight type="text" inputmode="numeric" autocomplete="off" placeholder="Peso kg">
+            <input class="cariana-size-field" data-cariana-height type="text" inputmode="decimal" autocomplete="off" placeholder="Altura cm">
+
+            <button type="button" class="cariana-size-selector" data-cariana-body-button>
+              Tipo de cuerpo <strong data-cariana-body-label></strong>
+            </button>
+
+            <button type="button" class="cariana-size-selector" data-cariana-extra-button>
+              <span data-cariana-extra-text>Tamaño de busto</span> <strong data-cariana-extra-label></strong>
+            </button>
+
+            <button type="button" class="cariana-size-calculate" data-cariana-calculate>
+              Ver mi talla
+            </button>
+
+            <p class="cariana-size-result" data-cariana-result></p>
+          </div>
+
+          <p class="cariana-size-pending" data-cariana-pending hidden>
+            Esta calculadora todavia no esta configurada para este producto.
+          </p>
+
+          <button type="button" class="cariana-size-close-text" data-cariana-close>
+            Cerrar
+          </button>
+        </div>
+
+        <div class="cariana-size-screen cariana-size-screen-hidden" data-cariana-selector-screen>
+          <div class="cariana-size-topbar">
+            <button type="button" class="cariana-size-icon-btn" data-cariana-back aria-label="Volver">&larr;</button>
+            <strong>Selecciona</strong>
+            <button type="button" class="cariana-size-icon-btn cariana-size-icon-close" data-cariana-close aria-label="Cerrar">&times;</button>
+          </div>
+
+          <div class="cariana-size-selector-title" data-cariana-selector-title></div>
+          <div data-cariana-selector-content></div>
+
+          <div class="cariana-size-actions">
+            <button type="button" class="cariana-size-save" data-cariana-save>
+              Guardar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <script src="{{ 'size-button.js' | asset_url }}" defer></script>
 {% endif %}
 
 {% schema %}
