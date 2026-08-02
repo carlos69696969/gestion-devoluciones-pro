@@ -1,0 +1,25 @@
+.cariana-size-button-wrapper {
+  width: 100%;
+  margin: 12px 0;
+}
+
+.cariana-size-button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: #000000;
+  color: #ffffff;
+  padding: 14px 18px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+}
+
+.cariana-size-button:focus-visible {
+  outline: 2px solid #0b5cab;
+  outline-offset: 3px;
+}
