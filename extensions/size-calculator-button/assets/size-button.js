@@ -112,49 +112,61 @@
     return parseFloat(String(value || "").replace(/[^\d.]/g, "")) || 0;
   }
 
-  function formatWeight(input) {
-    input.value = String(input.value || "").replace(/[^\d]/g, "");
+  function getFieldValue(field) {
+    if (!field) return "";
+    return "value" in field ? field.value : field.textContent;
   }
 
-  function closeWeight(input) {
-    var value = String(input.value || "").replace(/[^\d]/g, "");
-    input.value = value ? value + " kg" : "";
+  function setFieldValue(field, value) {
+    if (!field) return;
+    if ("value" in field) field.value = value;
+    else field.textContent = value;
   }
 
-  function formatHeight(input) {
-    var value = String(input.value || "").replace(/[^\d]/g, "");
+  function formatWeight(field) {
+    setFieldValue(field, getFieldValue(field).replace(/[^\d]/g, ""));
+  }
+
+  function closeWeight(field) {
+    var value = getFieldValue(field).replace(/[^\d]/g, "");
+    setFieldValue(field, value ? value + " kg" : "");
+  }
+
+  function formatHeight(field) {
+    var value = getFieldValue(field).replace(/[^\d]/g, "");
     if (!value) {
-      input.value = "";
+      setFieldValue(field, "");
       return;
     }
     if (value.length === 1) {
-      input.value = value;
+      setFieldValue(field, value);
       return;
     }
     if (value.length === 2) {
-      input.value = value[0] + "." + value[1];
+      setFieldValue(field, value[0] + "." + value[1]);
       return;
     }
-    input.value = value[0] + "." + value.substring(1, 3);
+    setFieldValue(field, value[0] + "." + value.substring(1, 3));
   }
 
-  function closeHeight(input) {
-    var value = String(input.value || "").trim();
+  function closeHeight(field) {
+    var value = getFieldValue(field).trim();
     if (!value) {
-      input.value = "";
+      setFieldValue(field, "");
       return;
     }
     if (value.endsWith(".")) value = value.slice(0, -1);
     if (!value.toLowerCase().includes("cm")) value += " cm";
-    input.value = value;
+    setFieldValue(field, value);
   }
 
   function makeMeasurementField(kind) {
-    var field = document.createElement("textarea");
+    var field = document.createElement("div");
     field.className = "cariana-size-field";
-    field.rows = 1;
-    field.setAttribute("autocomplete", "off");
-    field.setAttribute("placeholder", kind === "weight" ? "Peso kg" : "Altura cm");
+    field.setAttribute("contenteditable", "true");
+    field.setAttribute("role", "textbox");
+    field.setAttribute("aria-label", kind === "weight" ? "Peso kg" : "Altura cm");
+    field.setAttribute("data-placeholder", kind === "weight" ? "Peso kg" : "Altura cm");
     field.setAttribute("inputmode", kind === "weight" ? "numeric" : "decimal");
     field.setAttribute(kind === "weight" ? "data-cariana-weight" : "data-cariana-height", "");
     return field;
@@ -206,7 +218,61 @@
       return button !== qs(root, "[data-cariana-size-guide]") && /ver guía de tallas|ver guia de tallas/i.test(button.textContent || "");
     });
 
-    if (guideButton) guideButton.click();
+    if (guideButton) {
+      guideButton.click();
+      return;
+    }
+
+    showBuiltInGuide(root);
+  }
+
+  function showBuiltInGuide(root) {
+    var mode = root.getAttribute("data-cariana-size-mode") || "pending";
+    var modal = document.createElement("div");
+    modal.className = "cariana-size-guide-modal";
+    modal.innerHTML =
+      '<div class="cariana-size-guide-card" role="dialog" aria-modal="true">' +
+        '<div class="cariana-size-guide-head">' +
+          '<div class="cariana-size-guide-handle"></div>' +
+          '<h3>' + (mode === "woman_bottom" ? "Guía de tallas Cariana (Pantalón Mujer)" : "Guía de tallas Cariana (Mujer)") + '</h3>' +
+        '</div>' +
+        '<div class="cariana-size-guide-scroll">' +
+          '<p class="cariana-size-guide-hint">Desliza la tabla ↕↔</p>' +
+          buildGuideTable(mode) +
+        '</div>' +
+        '<div class="cariana-size-guide-foot">' +
+          '<p>Si estás entre dos tallas, elige la más grande para mayor comodidad.</p>' +
+          '<button type="button" data-cariana-guide-close>Cerrar</button>' +
+        '</div>' +
+      '</div>';
+
+    modal.addEventListener("click", function (event) {
+      if (event.target === modal || event.target.matches("[data-cariana-guide-close]")) {
+        modal.remove();
+      }
+    });
+
+    document.body.appendChild(modal);
+  }
+
+  function buildGuideTable(mode) {
+    if (mode === "woman_bottom") {
+      return '<div class="cariana-size-guide-table-wrap"><table class="cariana-size-guide-table">' +
+        '<thead><tr><th>Talla MX</th><th>Altura</th><th>Peso<br><span>(kg)</span></th><th>Cintura<br><span>(cm)</span></th><th>Cadera<br><span>(cm)</span></th></tr></thead>' +
+        '<tbody>' +
+        bottomSizes.map(function (size) {
+          return '<tr><td>' + size.talla + '</td><td>' + size.alturaMin + '-' + size.alturaMax + ' cm</td><td>' + size.pesoMin + '-' + size.pesoMax + '</td><td>' + size.cinturaMin + '-' + size.cinturaMax + '</td><td>' + size.caderaMin + '-' + size.caderaMax + '</td></tr>';
+        }).join("") +
+        '</tbody></table></div>';
+    }
+
+    return '<div class="cariana-size-guide-table-wrap"><table class="cariana-size-guide-table">' +
+      '<thead><tr><th>Talla MX</th><th>Altura</th><th>Peso<br><span>(kg)</span></th><th>Cintura<br><span>(cm)</span></th><th>Pecho<br><span>(cm)</span></th></tr></thead>' +
+      '<tbody>' +
+      topSizes.map(function (size) {
+        return '<tr><td>' + size.talla + ' (' + size.alias + ')</td><td>' + size.alturaMin + '-' + size.alturaMax + ' cm</td><td>' + size.pesoMin + '-' + size.pesoMax + '</td><td>' + size.cinturaMin + '-' + size.cinturaMax + '</td><td>' + size.pechoMin + '-' + size.pechoMax + '</td></tr>';
+      }).join("") +
+      '</tbody></table></div>';
   }
 
   function openModal(root) {
@@ -400,8 +466,8 @@
 
   function calculateWomanTop(root) {
     var state = getState(root);
-    var weight = cleanNumber(qs(root, "[data-cariana-weight]").value);
-    var height = cleanNumber(qs(root, "[data-cariana-height]").value);
+    var weight = cleanNumber(getFieldValue(qs(root, "[data-cariana-weight]")));
+    var height = cleanNumber(getFieldValue(qs(root, "[data-cariana-height]")));
     var result = qs(root, "[data-cariana-result]");
 
     if (height && height < 3) height = height * 100;
@@ -508,8 +574,8 @@
 
   function calculateWomanBottom(root) {
     var state = getState(root);
-    var weight = cleanNumber(qs(root, "[data-cariana-weight]").value);
-    var height = cleanNumber(qs(root, "[data-cariana-height]").value);
+    var weight = cleanNumber(getFieldValue(qs(root, "[data-cariana-weight]")));
+    var height = cleanNumber(getFieldValue(qs(root, "[data-cariana-height]")));
     var result = qs(root, "[data-cariana-result]");
 
     if (height && height < 3) height = height * 100;
@@ -647,7 +713,7 @@
 
   document.addEventListener("focusin", function (event) {
     if (event.target.matches("[data-cariana-weight], [data-cariana-height]")) {
-      event.target.value = String(event.target.value || "").replace(/[^\d]/g, "");
+      setFieldValue(event.target, getFieldValue(event.target).replace(/[^\d]/g, ""));
     }
   });
 
@@ -657,6 +723,13 @@
     }
     if (event.target.matches("[data-cariana-height]")) {
       closeHeight(event.target);
+    }
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.target.matches("[data-cariana-weight], [data-cariana-height]") && event.key === "Enter") {
+      event.preventDefault();
+      event.target.blur();
     }
   });
 })();
