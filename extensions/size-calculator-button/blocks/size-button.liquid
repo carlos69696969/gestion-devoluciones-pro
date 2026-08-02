@@ -25,8 +25,12 @@
           <h3 id="carianaSizeTitle" class="cariana-size-title" data-cariana-title>Encuentra tu talla ideal</h3>
 
           <div class="cariana-size-fields" data-cariana-fields>
-            <div class="cariana-size-field" data-cariana-weight data-placeholder="Peso kg" contenteditable="true" role="textbox" inputmode="numeric" aria-label="Peso kg"></div>
-            <div class="cariana-size-field" data-cariana-height data-placeholder="Altura cm" contenteditable="true" role="textbox" inputmode="decimal" aria-label="Altura cm"></div>
+            <button type="button" class="cariana-size-field" data-cariana-weight data-placeholder="Peso kg">
+              Peso kg
+            </button>
+            <button type="button" class="cariana-size-field" data-cariana-height data-placeholder="Altura cm">
+              Altura cm
+            </button>
 
             <button type="button" class="cariana-size-selector" data-cariana-body-button>
               Tipo de cuerpo <strong data-cariana-body-label></strong>
@@ -72,14 +76,14 @@
     </div>
   </div>
 
-  <script src="{{ 'size-button.js' | asset_url }}" defer></script>
+  <script src="{{ 'size-button-v2.js' | asset_url }}" defer></script>
 {% endif %}
 
 {% schema %}
 {
   "name": "Boton talla ideal",
   "target": "section",
-  "stylesheet": "size-button.css",
+  "stylesheet": "size-button-v2.css",
   "settings": []
 }
 {% endschema %}
