@@ -114,13 +114,21 @@
 
   function getFieldValue(field) {
     if (!field) return "";
+    if (field.getAttribute("data-cariana-value")) {
+      return field.getAttribute("data-cariana-value");
+    }
     return "value" in field ? field.value : field.textContent;
   }
 
   function setFieldValue(field, value) {
     if (!field) return;
-    if ("value" in field) field.value = value;
-    else field.textContent = value;
+    var cleanValue = String(value || "");
+    field.setAttribute("data-cariana-value", cleanValue);
+    if ("value" in field) {
+      field.value = cleanValue;
+      return;
+    }
+    field.innerHTML = '<span class="cariana-size-field-value">' + cleanValue + "</span>";
   }
 
   function formatWeight(field) {
@@ -165,7 +173,7 @@
     field.type = "button";
     field.className = "cariana-size-field";
     field.setAttribute("data-placeholder", kind === "weight" ? "Peso kg" : "Altura cm");
-    field.textContent = kind === "weight" ? "Peso kg" : "Altura cm";
+    setFieldValue(field, kind === "weight" ? "Peso kg" : "Altura cm");
     field.setAttribute(kind === "weight" ? "data-cariana-weight" : "data-cariana-height", "");
     return field;
   }
@@ -240,9 +248,30 @@
       return;
     }
 
-    var numeric = parseFloat(cleaned);
-    if (numeric && numeric < 3) numeric = numeric * 100;
-    setFieldValue(field, Math.round(numeric || 0) + " cm");
+    var heightText = formatHeightLabel(cleaned);
+    setFieldValue(field, heightText || "Altura cm");
+  }
+
+  function formatHeightLabel(value) {
+    var cleaned = String(value || "").replace(/[^\d.]/g, "");
+    if (!cleaned) return "";
+
+    if (cleaned.indexOf(".") !== -1) {
+      var meters = parseFloat(cleaned);
+      if (!meters) return "";
+      if (meters >= 3) return (meters / 100).toFixed(2) + " cm";
+      return meters.toFixed(2) + " cm";
+    }
+
+    if (cleaned.length >= 3) {
+      return (Number(cleaned) / 100).toFixed(2) + " cm";
+    }
+
+    if (cleaned.length === 2) {
+      return "1." + cleaned.padStart(2, "0") + " cm";
+    }
+
+    return cleaned + " cm";
   }
 
   function ensureMeasurementFields(root) {

@@ -122,6 +122,13 @@
   color: #555555;
 }
 
+.cariana-size-field-value {
+  display: block;
+  width: 100%;
+  color: #111111;
+  pointer-events: none;
+}
+
 .cariana-size-selector {
   display: block;
   width: 88%;
