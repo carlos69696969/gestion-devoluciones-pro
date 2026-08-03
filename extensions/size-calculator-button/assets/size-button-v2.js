@@ -576,6 +576,7 @@
     if (type === "chest" && mode === "woman_top") {
       state.temp = state.bustCm;
       title.textContent = "PECHO";
+      buildChestGuide(content, root);
       buildMeasureRuler(content, state, "Pecho", 70, 145, state.temp, "chest");
     }
 
@@ -617,6 +618,21 @@
     });
 
     content.appendChild(tabs);
+  }
+
+  function buildChestGuide(content, root) {
+    var imageUrl = root.getAttribute("data-cariana-chest-guide-image");
+    var guide = document.createElement("div");
+    guide.className = "cariana-chest-guide";
+
+    guide.innerHTML =
+      (imageUrl ? '<img src="' + imageUrl + '" alt="Guía visual para medir el pecho" loading="lazy">' : "") +
+      '<div class="cariana-chest-guide-text">' +
+        '<p>Coloca la cinta alrededor de la parte más prominente del pecho (a la altura de los pezones).</p>' +
+        '<p>Verifica que la cinta quede completamente horizontal, tanto al frente como en la espalda.</p>' +
+      '</div>';
+
+    content.appendChild(guide);
   }
 
   function buildMeasureRuler(content, state, name, min, max, value, dataName) {
