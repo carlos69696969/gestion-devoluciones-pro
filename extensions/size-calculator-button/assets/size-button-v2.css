@@ -303,6 +303,111 @@
   cursor: pointer;
 }
 
+.cariana-number-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(2px);
+}
+
+.cariana-size-modal-card {
+  position: relative;
+}
+
+.cariana-number-card {
+  width: min(100%, 310px);
+  border: 1px solid #d9d9d9;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 18px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.2);
+  color: #111111;
+  font-family: Arial, sans-serif;
+}
+
+.cariana-number-label {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.cariana-number-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  border: 1px solid #cccccc;
+  border-radius: 10px;
+  background: #f8f8f8;
+  color: #111111;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.cariana-number-display:empty::before {
+  content: "0";
+  color: #aaaaaa;
+}
+
+.cariana-number-hint {
+  margin: 6px 0 12px;
+  color: #666666;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.cariana-number-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cariana-number-grid button {
+  min-height: 44px;
+  border: 1px solid #dddddd;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #111111;
+  font-size: 20px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cariana-number-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.cariana-number-actions button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 10px;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.cariana-number-cancel {
+  background: #f0f0f0;
+  color: #333333;
+}
+
+.cariana-number-accept {
+  background: #000000;
+  color: #ffffff;
+}
+
 .cariana-size-guide-modal {
   position: fixed;
   inset: 0;

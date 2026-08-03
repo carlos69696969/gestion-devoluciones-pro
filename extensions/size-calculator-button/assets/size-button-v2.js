@@ -172,12 +172,64 @@
 
   function requestMeasurement(field, kind) {
     var current = getFieldValue(field).replace(/[^\d.]/g, "");
-    var label = kind === "weight" ? "Escribe tu peso en kg" : "Escribe tu altura en cm";
-    var example = kind === "weight" ? "Ejemplo: 65" : "Ejemplo: 160";
-    var response = window.prompt(label + "\n" + example, current);
-    if (response === null) return;
+    var root = field.closest("[data-cariana-size-root]");
+    var modalCard = root ? qs(root, ".cariana-size-modal-card") : null;
+    if (!modalCard) return;
 
-    var cleaned = String(response || "").replace(/[^\d.]/g, "");
+    var oldPanel = qs(root, "[data-cariana-number-panel]");
+    if (oldPanel) oldPanel.remove();
+
+    var panel = document.createElement("div");
+    panel.className = "cariana-number-panel";
+    panel.setAttribute("data-cariana-number-panel", "");
+    panel.innerHTML =
+      '<div class="cariana-number-card">' +
+        '<p class="cariana-number-label">' + (kind === "weight" ? "Escribe tu peso" : "Escribe tu altura") + '</p>' +
+        '<div class="cariana-number-display" data-cariana-number-display>' + (current || "") + '</div>' +
+        '<div class="cariana-number-hint">' + (kind === "weight" ? "kg" : "cm") + '</div>' +
+        '<div class="cariana-number-grid">' +
+          ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"].map(function (key) {
+            return '<button type="button" data-cariana-number-key="' + key + '">' + key + '</button>';
+          }).join("") +
+        '</div>' +
+        '<div class="cariana-number-actions">' +
+          '<button type="button" class="cariana-number-cancel" data-cariana-number-cancel>Cancelar</button>' +
+          '<button type="button" class="cariana-number-accept" data-cariana-number-accept>Aceptar</button>' +
+        '</div>' +
+      '</div>';
+
+    panel.addEventListener("click", function (event) {
+      var display = qs(panel, "[data-cariana-number-display]");
+      var value = display.textContent || "";
+
+      if (event.target.matches("[data-cariana-number-key]")) {
+        var key = event.target.getAttribute("data-cariana-number-key");
+        if (key === "⌫") {
+          display.textContent = value.slice(0, -1);
+          return;
+        }
+        if (key === "." && (kind === "weight" || value.includes("."))) return;
+        if (value.length >= 5) return;
+        display.textContent = value + key;
+        return;
+      }
+
+      if (event.target.matches("[data-cariana-number-cancel]")) {
+        panel.remove();
+        return;
+      }
+
+      if (event.target.matches("[data-cariana-number-accept]")) {
+        applyMeasurementValue(field, kind, display.textContent);
+        panel.remove();
+      }
+    });
+
+    modalCard.appendChild(panel);
+  }
+
+  function applyMeasurementValue(field, kind, rawValue) {
+    var cleaned = String(rawValue || "").replace(/[^\d.]/g, "");
     if (!cleaned) {
       setFieldValue(field, kind === "weight" ? "Peso kg" : "Altura cm");
       return;
@@ -730,30 +782,6 @@
 
     if (event.target.matches("[data-cariana-calculate]")) {
       calculate(root);
-    }
-  });
-
-  document.addEventListener("input", function (event) {
-    if (event.target.matches("[data-cariana-weight]")) {
-      formatWeight(event.target);
-    }
-    if (event.target.matches("[data-cariana-height]")) {
-      formatHeight(event.target);
-    }
-  });
-
-  document.addEventListener("focusin", function (event) {
-    if (event.target.matches("[data-cariana-weight], [data-cariana-height]")) {
-      setFieldValue(event.target, getFieldValue(event.target).replace(/[^\d]/g, ""));
-    }
-  });
-
-  document.addEventListener("focusout", function (event) {
-    if (event.target.matches("[data-cariana-weight]")) {
-      closeWeight(event.target);
-    }
-    if (event.target.matches("[data-cariana-height]")) {
-      closeHeight(event.target);
     }
   });
 
