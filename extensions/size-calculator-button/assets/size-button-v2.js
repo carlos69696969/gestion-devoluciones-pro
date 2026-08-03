@@ -78,7 +78,9 @@
         body: "",
         bust: null,
         bustCm: 90,
+        chestSelected: false,
         waistCm: 74,
+        waistSelected: false,
         hip: "",
         selector: "",
         temp: null,
@@ -352,7 +354,9 @@
     button.type = "button";
     button.className = "cariana-size-selector cariana-top-measure";
     button.setAttribute("data-cariana-top-measure", dataName);
-    button.innerHTML = name + ' <strong data-cariana-' + dataName + '-field></strong>';
+    button.innerHTML =
+      '<span class="cariana-top-measure-name">' + name + '</span>' +
+      '<strong class="cariana-top-measure-value" data-cariana-' + dataName + '-field></strong>';
     return button;
   }
 
@@ -361,8 +365,8 @@
     var chestField = qs(root, "[data-cariana-chest-field]");
     var waistField = qs(root, "[data-cariana-waist-field]");
 
-    if (chestField) chestField.textContent = ": " + state.bustCm + " cm";
-    if (waistField) waistField.textContent = ": " + state.waistCm + " cm";
+    if (chestField) chestField.textContent = state.chestSelected ? state.bustCm + " cm" : "";
+    if (waistField) waistField.textContent = state.waistSelected ? state.waistCm + " cm" : "";
   }
 
   function hideFieldForTop(field) {
@@ -720,11 +724,13 @@
 
     if (state.selector === "chest" && mode === "woman_top") {
       state.bustCm = Number(state.temp);
+      state.chestSelected = true;
       updateTopMeasureLabels(root);
     }
 
     if (state.selector === "waist" && mode === "woman_top") {
       state.waistCm = Number(state.temp);
+      state.waistSelected = true;
       updateTopMeasureLabels(root);
     }
 
@@ -748,7 +754,7 @@
     var waist = state.waistCm;
     var result = qs(root, "[data-cariana-result]");
 
-    if (!chest || !waist) {
+    if (!state.chestSelected || !state.waistSelected || !chest || !waist) {
       result.textContent = "Completa todos los campos";
       return;
     }

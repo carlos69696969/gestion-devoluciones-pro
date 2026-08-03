@@ -272,6 +272,59 @@
   cursor: pointer;
 }
 
+.cariana-top-measure {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  width: 86%;
+  min-height: 54px;
+  margin: 11px auto;
+  padding: 12px 16px;
+  border: 1px solid #d7e0ef;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 7px 20px rgba(21, 41, 74, 0.08);
+  color: #111111;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.cariana-top-measure::after {
+  content: "›";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 10px;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #0b74ff;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.cariana-top-measure:hover,
+.cariana-top-measure:focus-visible {
+  border-color: #9fc9ff;
+  box-shadow: 0 10px 26px rgba(11, 116, 255, 0.13);
+  outline: 0;
+  transform: translateY(-1px);
+}
+
+.cariana-top-measure-name {
+  color: #1d2633;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.cariana-top-measure-value {
+  margin-left: auto;
+  color: #0b0f19;
+  font-size: 15px;
+  font-weight: 900;
+}
+
 .cariana-size-calculate {
   margin-top: 18px;
   border: 0;
