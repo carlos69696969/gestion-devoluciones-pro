@@ -626,12 +626,24 @@
     var guide = document.createElement("div");
     guide.className = "cariana-chest-guide";
 
-    guide.innerHTML =
-      (imageUrl ? '<img src="' + imageUrl + '" alt="Guía visual para medir el pecho" loading="lazy">' : "") +
-      '<div class="cariana-chest-guide-text">' +
-        '<p>Coloca la cinta alrededor de la parte más prominente del pecho (a la altura de los pezones).</p>' +
-        '<p>Verifica que la cinta quede completamente horizontal, tanto al frente como en la espalda.</p>' +
-      '</div>';
+    var img = document.createElement("img");
+    img.src = imageUrl;
+    img.alt = "Guía visual para medir el pecho";
+    img.loading = "eager";
+    img.decoding = "async";
+    img.addEventListener("error", function () {
+      if (img.src !== chestGuideFallbackImage) {
+        img.src = chestGuideFallbackImage;
+      }
+    });
+    guide.appendChild(img);
+
+    var text = document.createElement("div");
+    text.className = "cariana-chest-guide-text";
+    text.innerHTML =
+      '<p>Coloca la cinta alrededor de la parte más prominente del pecho (a la altura de los pezones).</p>' +
+      '<p>Verifica que la cinta quede completamente horizontal, tanto al frente como en la espalda.</p>';
+    guide.appendChild(text);
 
     content.appendChild(guide);
   }
