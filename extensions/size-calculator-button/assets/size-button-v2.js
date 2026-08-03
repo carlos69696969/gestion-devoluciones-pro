@@ -315,13 +315,29 @@
     var wrap = document.createElement("div");
     wrap.className = "cariana-size-ruler cariana-size-ruler-selector";
     wrap.setAttribute("data-cariana-" + dataName + "-ruler", "");
+
+    var marks = "";
+    for (var cm = min; cm <= max; cm += 1) {
+      var isMajor = cm === min || cm === max || cm % 10 === 0;
+      var isMiddle = cm === Math.round((min + max) / 2);
+      marks +=
+        '<span class="cariana-size-ruler-mark' + (isMajor ? " is-major" : "") + (isMiddle ? " is-middle" : "") + '" data-cariana-ruler-cm="' + cm + '">' +
+          (isMajor || isMiddle ? '<em>' + cm + '</em>' : "") +
+        '</span>';
+    }
+
     wrap.innerHTML =
       '<div class="cariana-size-ruler-head">' +
         '<span>' + name + '<sup>*</sup></span>' +
         '<strong data-cariana-' + dataName + '-value>' + value + ' cm</strong>' +
       '</div>' +
-      '<div class="cariana-size-ruler-track">' +
-        '<input type="range" min="' + min + '" max="' + max + '" step="1" value="' + value + '" data-cariana-' + dataName + '-range>' +
+      '<div class="cariana-size-ruler-window">' +
+        '<div class="cariana-size-ruler-pointer" aria-hidden="true"></div>' +
+        '<div class="cariana-size-ruler-track" data-cariana-' + dataName + '-range data-cariana-ruler-track data-min="' + min + '" data-max="' + max + '" data-step-px="10" tabindex="0">' +
+          '<span class="cariana-size-ruler-pad" aria-hidden="true"></span>' +
+          marks +
+          '<span class="cariana-size-ruler-pad" aria-hidden="true"></span>' +
+        '</div>' +
       '</div>' +
       '<div class="cariana-size-ruler-numbers">' +
         '<span>' + min + '</span>' +
@@ -601,16 +617,36 @@
 
   function buildMeasureRuler(content, state, name, min, max, value, dataName) {
     var ruler = makeRuler(name, min, max, value, dataName);
-    var range = qs(ruler, "[data-cariana-" + dataName + "-range]");
+    var track = qs(ruler, "[data-cariana-" + dataName + "-range]");
     var valueLabel = qs(ruler, "[data-cariana-" + dataName + "-value]");
 
     ruler.classList.add("cariana-size-ruler-open");
-    range.addEventListener("input", function () {
-      state.temp = Number(range.value);
+    track.addEventListener("scroll", function () {
+      state.temp = getScrollRulerValue(track);
       valueLabel.textContent = state.temp + " cm";
     });
 
     content.appendChild(ruler);
+
+    window.requestAnimationFrame(function () {
+      setScrollRulerValue(track, value);
+      state.temp = getScrollRulerValue(track);
+      valueLabel.textContent = state.temp + " cm";
+    });
+  }
+
+  function getScrollRulerValue(track) {
+    var min = Number(track.getAttribute("data-min"));
+    var max = Number(track.getAttribute("data-max"));
+    var stepPx = Number(track.getAttribute("data-step-px")) || 10;
+    var value = min + Math.round(track.scrollLeft / stepPx);
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function setScrollRulerValue(track, value) {
+    var min = Number(track.getAttribute("data-min"));
+    var stepPx = Number(track.getAttribute("data-step-px")) || 10;
+    track.scrollLeft = (Number(value) - min) * stepPx;
   }
 
   function buildBustTable(content, state) {
