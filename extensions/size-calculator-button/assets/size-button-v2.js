@@ -313,7 +313,7 @@
 
   function makeRuler(name, min, max, value, dataName) {
     var wrap = document.createElement("div");
-    wrap.className = "cariana-size-ruler";
+    wrap.className = "cariana-size-ruler cariana-size-ruler-selector";
     wrap.setAttribute("data-cariana-" + dataName + "-ruler", "");
     wrap.innerHTML =
       '<div class="cariana-size-ruler-head">' +
@@ -331,49 +331,84 @@
     return wrap;
   }
 
-  function ensureTopRulers(root) {
+  function makeTopMeasureButton(name, dataName) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "cariana-size-selector cariana-top-measure";
+    button.setAttribute("data-cariana-top-measure", dataName);
+    button.innerHTML = name + ' <strong data-cariana-' + dataName + '-field></strong>';
+    return button;
+  }
+
+  function updateTopMeasureLabels(root) {
+    var state = getState(root);
+    var chestField = qs(root, "[data-cariana-chest-field]");
+    var waistField = qs(root, "[data-cariana-waist-field]");
+
+    if (chestField) chestField.textContent = ": " + state.bustCm + " cm";
+    if (waistField) waistField.textContent = ": " + state.waistCm + " cm";
+  }
+
+  function hideFieldForTop(field) {
+    if (!field) return;
+    field.hidden = true;
+    field.style.setProperty("display", "none", "important");
+  }
+
+  function showFieldAgain(field) {
+    if (!field) return;
+    field.hidden = false;
+    field.style.removeProperty("display");
+  }
+
+  function ensureTopMeasureButtons(root) {
     var fields = qs(root, "[data-cariana-fields]");
     var bodyButton = qs(root, "[data-cariana-body-button]");
     var extraButton = qs(root, "[data-cariana-extra-button]");
     if (!fields || !bodyButton || !extraButton) return;
 
-    var state = getState(root);
-    bodyButton.hidden = true;
-    extraButton.hidden = true;
+    hideFieldForTop(qs(root, "[data-cariana-weight]"));
+    hideFieldForTop(qs(root, "[data-cariana-height]"));
+    hideFieldForTop(bodyButton);
+    hideFieldForTop(extraButton);
 
-    var bustRuler = qs(root, "[data-cariana-bust-ruler]");
-    var waistRuler = qs(root, "[data-cariana-waist-ruler]");
+    var chestButton = qs(root, "[data-cariana-top-measure='chest']");
+    var waistButton = qs(root, "[data-cariana-top-measure='waist']");
 
-    if (!bustRuler) {
-      bustRuler = makeRuler("Busto", 70, 145, state.bustCm, "bust");
+    if (!chestButton) {
+      chestButton = makeTopMeasureButton("Pecho", "chest");
     }
-    if (!waistRuler) {
-      waistRuler = makeRuler("Cintura", 55, 125, state.waistCm, "waist");
-    }
-
-    if (bustRuler.parentNode !== fields) {
-      fields.insertBefore(bustRuler, bodyButton);
-    }
-    if (waistRuler.parentNode !== fields) {
-      fields.insertBefore(waistRuler, bodyButton);
+    if (!waistButton) {
+      waistButton = makeTopMeasureButton("Cintura", "waist");
     }
 
-    qs(root, "[data-cariana-bust-range]").value = state.bustCm;
-    qs(root, "[data-cariana-waist-range]").value = state.waistCm;
-    qs(root, "[data-cariana-bust-value]").textContent = state.bustCm + " cm";
-    qs(root, "[data-cariana-waist-value]").textContent = state.waistCm + " cm";
+    if (chestButton.parentNode !== fields) {
+      fields.insertBefore(chestButton, bodyButton);
+    }
+    if (waistButton.parentNode !== fields) {
+      fields.insertBefore(waistButton, bodyButton);
+    }
+
+    if (chestButton.nextElementSibling !== waistButton) {
+      fields.insertBefore(chestButton, bodyButton);
+      fields.insertBefore(waistButton, bodyButton);
+    }
+
+    updateTopMeasureLabels(root);
   }
 
-  function removeTopRulers(root) {
-    var bustRuler = qs(root, "[data-cariana-bust-ruler]");
-    var waistRuler = qs(root, "[data-cariana-waist-ruler]");
+  function removeTopMeasureButtons(root) {
+    var chestButton = qs(root, "[data-cariana-top-measure='chest']");
+    var waistButton = qs(root, "[data-cariana-top-measure='waist']");
     var bodyButton = qs(root, "[data-cariana-body-button]");
     var extraButton = qs(root, "[data-cariana-extra-button]");
 
-    if (bustRuler) bustRuler.remove();
-    if (waistRuler) waistRuler.remove();
-    if (bodyButton) bodyButton.hidden = false;
-    if (extraButton) extraButton.hidden = false;
+    if (chestButton) chestButton.remove();
+    if (waistButton) waistButton.remove();
+    showFieldAgain(qs(root, "[data-cariana-weight]"));
+    showFieldAgain(qs(root, "[data-cariana-height]"));
+    showFieldAgain(bodyButton);
+    showFieldAgain(extraButton);
   }
 
   function openGuide(root) {
@@ -454,21 +489,20 @@
 
     if (mode === "woman_top") {
       title.textContent = "Encuentra tu talla ideal (Mujer)";
-      extraText.textContent = "Tamaño de busto";
       ensureMeasurementFields(root);
-      ensureTopRulers(root);
+      ensureTopMeasureButtons(root);
       setHidden(fields, false);
       setHidden(pending, true);
     } else if (mode === "woman_bottom") {
       title.textContent = "Encuentra tu talla ideal (Pantalón Mujer)";
       extraText.textContent = "Tipo de cadera";
       ensureMeasurementFields(root);
-      removeTopRulers(root);
+      removeTopMeasureButtons(root);
       setHidden(fields, false);
       setHidden(pending, true);
     } else {
       title.textContent = "Encuentra tu talla ideal";
-      removeTopRulers(root);
+      removeTopMeasureButtons(root);
       setHidden(fields, true);
       setHidden(pending, false);
     }
@@ -519,6 +553,18 @@
       buildImageTabs(content, state, hipLabels, hipImages, ["rectas", "promedio", "curvy_fit", "curvy"]);
     }
 
+    if (type === "chest" && mode === "woman_top") {
+      state.temp = state.bustCm;
+      title.textContent = "PECHO";
+      buildMeasureRuler(content, state, "Pecho", 70, 145, state.temp, "chest");
+    }
+
+    if (type === "waist" && mode === "woman_top") {
+      state.temp = state.waistCm;
+      title.textContent = "CINTURA";
+      buildMeasureRuler(content, state, "Cintura", 55, 125, state.temp, "waist");
+    }
+
     qs(root, "[data-cariana-main-screen]").classList.add("cariana-size-screen-hidden");
     qs(root, "[data-cariana-selector-screen]").classList.remove("cariana-size-screen-hidden");
   }
@@ -551,6 +597,20 @@
     });
 
     content.appendChild(tabs);
+  }
+
+  function buildMeasureRuler(content, state, name, min, max, value, dataName) {
+    var ruler = makeRuler(name, min, max, value, dataName);
+    var range = qs(ruler, "[data-cariana-" + dataName + "-range]");
+    var valueLabel = qs(ruler, "[data-cariana-" + dataName + "-value]");
+
+    ruler.classList.add("cariana-size-ruler-open");
+    range.addEventListener("input", function () {
+      state.temp = Number(range.value);
+      valueLabel.textContent = state.temp + " cm";
+    });
+
+    content.appendChild(ruler);
   }
 
   function buildBustTable(content, state) {
@@ -622,6 +682,16 @@
       qs(root, "[data-cariana-extra-label]").textContent = ": " + hipLabels[state.hip];
     }
 
+    if (state.selector === "chest" && mode === "woman_top") {
+      state.bustCm = Number(state.temp);
+      updateTopMeasureLabels(root);
+    }
+
+    if (state.selector === "waist" && mode === "woman_top") {
+      state.waistCm = Number(state.temp);
+      updateTopMeasureLabels(root);
+    }
+
     showMain(root);
   }
 
@@ -638,41 +708,18 @@
 
   function calculateWomanTop(root) {
     var state = getState(root);
-    var weight = cleanNumber(getFieldValue(qs(root, "[data-cariana-weight]")));
-    var height = cleanNumber(getFieldValue(qs(root, "[data-cariana-height]")));
-    var bust = state.bustCm;
+    var chest = state.bustCm;
     var waist = state.waistCm;
     var result = qs(root, "[data-cariana-result]");
 
-    if (height && height < 3) height = height * 100;
-
-    if (!weight || !height || !bust || !waist) {
+    if (!chest || !waist) {
       result.textContent = "Completa todos los campos";
       return;
     }
 
-    var baseIdx = topSizes.findIndex(function (size) {
-      return inRange(weight, size.pesoMin, size.pesoMax) && inRange(height, size.alturaMin, size.alturaMax);
-    });
-
-    if (baseIdx === -1) {
-      var bestIdx = 0;
-      var bestScore = Infinity;
-      topSizes.forEach(function (size, index) {
-        var weightDistance = Math.abs(weight - center(size.pesoMin, size.pesoMax));
-        var heightDistance = Math.abs(height - center(size.alturaMin, size.alturaMax));
-        var score = weightDistance * 2 + heightDistance;
-        if (score < bestScore) {
-          bestScore = score;
-          bestIdx = index;
-        }
-      });
-      baseIdx = bestIdx;
-    }
-
-    var bustIdx = indexByTopMetric(bust, "pechoMin", "pechoMax");
+    var chestIdx = indexByTopMetric(chest, "pechoMin", "pechoMax");
     var waistIdx = indexByTopMetric(waist, "cinturaMin", "cinturaMax");
-    var idxFinal = Math.max(baseIdx, bustIdx, waistIdx);
+    var idxFinal = Math.max(chestIdx, waistIdx);
 
     idxFinal = clampIndex(idxFinal, topSizes);
     renderResult(result, topSizes[idxFinal].talla);
@@ -873,7 +920,13 @@
       return;
     }
 
-    if (event.target.matches("[data-cariana-bust-range], [data-cariana-waist-range]")) {
+    var topMeasure = event.target.closest("[data-cariana-top-measure]");
+    if (topMeasure) {
+      showSelector(root, topMeasure.getAttribute("data-cariana-top-measure"));
+      return;
+    }
+
+    if (event.target.matches("[data-cariana-chest-range], [data-cariana-waist-range]")) {
       updateRulerValue(event.target);
       return;
     }
@@ -906,11 +959,15 @@
   function updateRulerValue(range) {
     var root = range.closest("[data-cariana-size-root]");
     var state = getState(root);
-    var isBust = range.matches("[data-cariana-bust-range]");
+    var isChest = range.matches("[data-cariana-chest-range]");
     var value = Number(range.value);
-    var label = qs(root, isBust ? "[data-cariana-bust-value]" : "[data-cariana-waist-value]");
+    var label = qs(root, isChest ? "[data-cariana-chest-value]" : "[data-cariana-waist-value]");
 
-    if (isBust) {
+    if (isChest && state.selector === "chest") {
+      state.temp = value;
+    } else if (!isChest && state.selector === "waist") {
+      state.temp = value;
+    } else if (isChest) {
       state.bustCm = value;
     } else {
       state.waistCm = value;
@@ -920,7 +977,7 @@
   }
 
   document.addEventListener("input", function (event) {
-    if (event.target.matches("[data-cariana-bust-range], [data-cariana-waist-range]")) {
+    if (event.target.matches("[data-cariana-chest-range], [data-cariana-waist-range]")) {
       updateRulerValue(event.target);
     }
   });
