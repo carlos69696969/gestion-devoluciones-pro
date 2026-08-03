@@ -124,7 +124,7 @@
     if (!field) return;
     var cleanValue = String(value || "");
     field.setAttribute("data-cariana-value", cleanValue);
-    if ("value" in field) {
+    if ("value" in field && field.tagName !== "BUTTON") {
       field.value = cleanValue;
       return;
     }
