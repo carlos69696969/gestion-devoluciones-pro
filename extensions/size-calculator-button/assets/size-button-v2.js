@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonVersion === "130") return;
-  window.carianaSizeButtonVersion = "130";
+  if (window.carianaSizeButtonVersion === "131") return;
+  window.carianaSizeButtonVersion = "131";
 
   var bodyLabels = {
     delgado: "Delgado",
@@ -1451,7 +1451,7 @@
 
   function renderResult(result, size) {
     result.innerHTML =
-      '<div class="cariana-size-result-label">Tu talla ideal es</div>' +
+      '<div class="cariana-size-result-label">Tu talla es</div>' +
       '<div class="cariana-size-result-size">' + size + "</div>";
   }
 
