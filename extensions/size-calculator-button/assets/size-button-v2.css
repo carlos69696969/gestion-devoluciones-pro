@@ -1,6 +1,6 @@
 .cariana-size-button-wrapper {
   width: 100%;
-  margin: 6px 0 8px;
+  margin: 6px 0 2px;
 }
 
 .cariana-size-guide-link {
@@ -40,6 +40,10 @@
 .cariana-size-button:focus-visible {
   outline: 2px solid #0b5cab;
   outline-offset: 3px;
+}
+
+.cariana-size-button-host + * {
+  margin-top: 8px !important;
 }
 
 .cariana-size-lock {
