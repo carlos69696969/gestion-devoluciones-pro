@@ -1,13 +1,16 @@
 {% if product %}
   {% liquid
-    assign cariana_size_mode = 'pending'
+    assign cariana_size_mode = ''
     if product.tags contains 'mujer' and product.tags contains 'superior'
       assign cariana_size_mode = 'woman_top'
     elsif product.tags contains 'mujer' and product.tags contains 'inferior'
       assign cariana_size_mode = 'woman_bottom'
+    elsif product.tags contains 'hombre' and product.tags contains 'superior'
+      assign cariana_size_mode = 'man_top'
     endif
   %}
 
+  {% if cariana_size_mode != blank %}
   <div
     class="cariana-size-button-host"
     data-cariana-size-root
@@ -115,7 +118,8 @@
     </div>
   </div>
 
-  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=124" defer></script>
+  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=125" defer></script>
+  {% endif %}
 {% endif %}
 
 {% schema %}

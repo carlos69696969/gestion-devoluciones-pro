@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonVersion === "124") return;
-  window.carianaSizeButtonVersion = "124";
+  if (window.carianaSizeButtonVersion === "125") return;
+  window.carianaSizeButtonVersion = "125";
 
   var bodyLabels = {
     delgado: "Delgado",
@@ -40,6 +40,18 @@
     { talla: "3XG", alias: "3XL", pesoMin: 95, pesoMax: 110, alturaMin: 165, alturaMax: 178, cinturaMin: 104, cinturaMax: 112, pechoMin: 120, pechoMax: 128 },
     { talla: "4XG", alias: "4XL", pesoMin: 110, pesoMax: 125, alturaMin: 165, alturaMax: 180, cinturaMin: 112, cinturaMax: 120, pechoMin: 128, pechoMax: 136 },
     { talla: "5XG", alias: "5XL", pesoMin: 125, pesoMax: 140, alturaMin: 165, alturaMax: 182, cinturaMin: 120, cinturaMax: 128, pechoMin: 136, pechoMax: 144 },
+  ];
+
+  var manTopSizes = [
+    { talla: "XCH", alias: "XS", pesoMin: 50, pesoMax: 60, alturaMin: 155, alturaMax: 165, pechoMin: 86, pechoMax: 92, cinturaMin: 70, cinturaMax: 76 },
+    { talla: "CH", alias: "S", pesoMin: 60, pesoMax: 70, alturaMin: 160, alturaMax: 170, pechoMin: 92, pechoMax: 98, cinturaMin: 76, cinturaMax: 82 },
+    { talla: "M", alias: "M", pesoMin: 70, pesoMax: 80, alturaMin: 165, alturaMax: 175, pechoMin: 98, pechoMax: 104, cinturaMin: 82, cinturaMax: 88 },
+    { talla: "G", alias: "L", pesoMin: 80, pesoMax: 90, alturaMin: 170, alturaMax: 180, pechoMin: 104, pechoMax: 110, cinturaMin: 88, cinturaMax: 94 },
+    { talla: "XG", alias: "XL", pesoMin: 90, pesoMax: 100, alturaMin: 175, alturaMax: 185, pechoMin: 110, pechoMax: 116, cinturaMin: 94, cinturaMax: 100 },
+    { talla: "XXG", alias: "XXL", pesoMin: 100, pesoMax: 115, alturaMin: 175, alturaMax: 190, pechoMin: 116, pechoMax: 124, cinturaMin: 100, cinturaMax: 108 },
+    { talla: "3XG", alias: "3XL", pesoMin: 115, pesoMax: 130, alturaMin: 175, alturaMax: 195, pechoMin: 124, pechoMax: 132, cinturaMin: 108, cinturaMax: 116 },
+    { talla: "4XG", alias: "4XL", pesoMin: 130, pesoMax: 145, alturaMin: 175, alturaMax: 200, pechoMin: 132, pechoMax: 140, cinturaMin: 116, cinturaMax: 124 },
+    { talla: "5XG", alias: "5XL", pesoMin: 145, pesoMax: 160, alturaMin: 175, alturaMax: 205, pechoMin: 140, pechoMax: 148, cinturaMin: 124, cinturaMax: 132 },
   ];
 
   var bustTable = [
@@ -433,6 +445,12 @@
   }
 
   function openGuide(root) {
+    var mode = root.getAttribute("data-cariana-size-mode") || "pending";
+    if (mode === "man_top") {
+      showBuiltInGuide(root);
+      return;
+    }
+
     if (typeof window.abrirGuia === "function") {
       window.abrirGuia();
       return;
@@ -453,13 +471,17 @@
 
   function showBuiltInGuide(root) {
     var mode = root.getAttribute("data-cariana-size-mode") || "pending";
+    var title = "Guía de tallas Cariana (Mujer)";
+    if (mode === "woman_bottom") title = "Guía de tallas Cariana (Pantalón Mujer)";
+    if (mode === "man_top") title = "Guía de tallas Cariana (Hombre)";
+
     var modal = document.createElement("div");
     modal.className = "cariana-size-guide-modal";
     modal.innerHTML =
       '<div class="cariana-size-guide-card" role="dialog" aria-modal="true">' +
         '<div class="cariana-size-guide-head">' +
           '<div class="cariana-size-guide-handle"></div>' +
-          '<h3>' + (mode === "woman_bottom" ? "Guía de tallas Cariana (Pantalón Mujer)" : "Guía de tallas Cariana (Mujer)") + '</h3>' +
+          '<h3>' + title + '</h3>' +
         '</div>' +
         '<div class="cariana-size-guide-scroll">' +
           '<p class="cariana-size-guide-hint">Desliza la tabla ↕↔</p>' +
@@ -481,6 +503,16 @@
   }
 
   function buildGuideTable(mode) {
+    if (mode === "man_top") {
+      return '<div class="cariana-size-guide-table-wrap"><table class="cariana-size-guide-table">' +
+        '<thead><tr><th>Talla MX</th><th>Peso<br><span>(kg)</span></th><th>Altura<br><span>(cm)</span></th><th>Pecho<br><span>(cm)</span></th><th>Cintura<br><span>(cm)</span></th></tr></thead>' +
+        '<tbody>' +
+        manTopSizes.map(function (size) {
+          return '<tr><td>' + size.talla + ' (' + size.alias + ')</td><td>' + size.pesoMin + '-' + size.pesoMax + '</td><td>' + size.alturaMin + '-' + size.alturaMax + '</td><td>' + size.pechoMin + '-' + size.pechoMax + '</td><td>' + size.cinturaMin + '-' + size.cinturaMax + '</td></tr>';
+        }).join("") +
+        '</tbody></table></div>';
+    }
+
     if (mode === "woman_bottom") {
       return '<div class="cariana-size-guide-table-wrap"><table class="cariana-size-guide-table">' +
         '<thead><tr><th>Talla MX</th><th>Altura</th><th>Peso<br><span>(kg)</span></th><th>Cintura<br><span>(cm)</span></th><th>Cadera<br><span>(cm)</span></th></tr></thead>' +
@@ -510,6 +542,12 @@
 
     if (mode === "woman_top") {
       title.textContent = "Encuentra tu talla ideal (Mujer)";
+      ensureMeasurementFields(root);
+      ensureTopMeasureButtons(root);
+      setHidden(fields, false);
+      setHidden(pending, true);
+    } else if (mode === "man_top") {
+      title.textContent = "Encuentra tu talla ideal (Hombre)";
       ensureMeasurementFields(root);
       ensureTopMeasureButtons(root);
       setHidden(fields, false);
@@ -574,21 +612,29 @@
       buildImageTabs(content, state, hipLabels, hipImages, ["rectas", "promedio", "curvy_fit", "curvy"]);
     }
 
-    if (type === "chest" && mode === "woman_top") {
+    if (type === "chest" && (mode === "woman_top" || mode === "man_top")) {
       state.temp = state.bustCm;
       title.textContent = "PECHO";
-      buildChestGuide(content, root);
-      buildMeasureRuler(content, state, "Pecho", 70, 145, state.temp, "chest");
-      keepChestGuideVisible(content, root);
+      if (mode === "woman_top") {
+        buildChestGuide(content, root);
+      }
+      buildMeasureRuler(content, state, "Pecho", mode === "man_top" ? 86 : 70, mode === "man_top" ? 148 : 145, state.temp, "chest");
+      if (mode === "woman_top") {
+        keepChestGuideVisible(content, root);
+      }
       keepSelectorScrolledToTop(root);
     }
 
-    if (type === "waist" && mode === "woman_top") {
+    if (type === "waist" && (mode === "woman_top" || mode === "man_top")) {
       state.temp = state.waistCm;
       title.textContent = "CINTURA";
-      buildWaistGuide(content, root);
-      buildMeasureRuler(content, state, "Cintura", 55, 125, state.temp, "waist");
-      keepWaistGuideVisible(content, root);
+      if (mode === "woman_top") {
+        buildWaistGuide(content, root);
+      }
+      buildMeasureRuler(content, state, "Cintura", mode === "man_top" ? 70 : 55, mode === "man_top" ? 132 : 125, state.temp, "waist");
+      if (mode === "woman_top") {
+        keepWaistGuideVisible(content, root);
+      }
       keepSelectorScrolledToTop(root);
     }
 
@@ -870,13 +916,13 @@
       qs(root, "[data-cariana-extra-label]").textContent = ": " + hipLabels[state.hip];
     }
 
-    if (state.selector === "chest" && mode === "woman_top") {
+    if (state.selector === "chest" && (mode === "woman_top" || mode === "man_top")) {
       state.bustCm = Number(state.temp);
       state.chestSelected = true;
       updateTopMeasureLabels(root);
     }
 
-    if (state.selector === "waist" && mode === "woman_top") {
+    if (state.selector === "waist" && (mode === "woman_top" || mode === "man_top")) {
       state.waistCm = Number(state.temp);
       state.waistSelected = true;
       updateTopMeasureLabels(root);
@@ -889,6 +935,10 @@
     var mode = root.getAttribute("data-cariana-size-mode");
     if (mode === "woman_top") {
       calculateWomanTop(root);
+      return;
+    }
+    if (mode === "man_top") {
+      calculateManTop(root);
       return;
     }
     if (mode === "woman_bottom") {
@@ -907,12 +957,31 @@
       return;
     }
 
-    var chestIdx = indexByTopMetric(chest, "pechoMin", "pechoMax");
-    var waistIdx = indexByTopMetric(waist, "cinturaMin", "cinturaMax");
+    var chestIdx = indexByTopMetric(chest, "pechoMin", "pechoMax", topSizes);
+    var waistIdx = indexByTopMetric(waist, "cinturaMin", "cinturaMax", topSizes);
     var idxFinal = Math.max(chestIdx, waistIdx);
 
     idxFinal = clampIndex(idxFinal, topSizes);
     renderResult(result, topSizes[idxFinal].talla);
+  }
+
+  function calculateManTop(root) {
+    var state = getState(root);
+    var chest = state.bustCm;
+    var waist = state.waistCm;
+    var result = qs(root, "[data-cariana-result]");
+
+    if (!state.chestSelected || !state.waistSelected || !chest || !waist) {
+      result.textContent = "Completa todos los campos";
+      return;
+    }
+
+    var chestIdx = indexByTopMetric(chest, "pechoMin", "pechoMax", manTopSizes);
+    var waistIdx = indexByTopMetric(waist, "cinturaMin", "cinturaMax", manTopSizes);
+    var idxFinal = Math.max(chestIdx, waistIdx);
+
+    idxFinal = clampIndex(idxFinal, manTopSizes);
+    renderResult(result, manTopSizes[idxFinal].talla);
   }
 
   function interpolate(x, points) {
@@ -976,17 +1045,18 @@
     return best;
   }
 
-  function indexByTopMetric(cm, minKey, maxKey) {
+  function indexByTopMetric(cm, minKey, maxKey, sizes) {
+    sizes = sizes || topSizes;
     var idx = -1;
-    for (var i = 0; i < topSizes.length; i += 1) {
-      if (inRange(cm, topSizes[i][minKey], topSizes[i][maxKey])) idx = i;
+    for (var i = 0; i < sizes.length; i += 1) {
+      if (inRange(cm, sizes[i][minKey], sizes[i][maxKey])) idx = i;
     }
     if (idx !== -1) return idx;
 
     var best = 0;
     var bestDiff = Infinity;
-    for (var j = 0; j < topSizes.length; j += 1) {
-      var diff = Math.abs(cm - center(topSizes[j][minKey], topSizes[j][maxKey]));
+    for (var j = 0; j < sizes.length; j += 1) {
+      var diff = Math.abs(cm - center(sizes[j][minKey], sizes[j][maxKey]));
       if (diff < bestDiff) {
         bestDiff = diff;
         best = j;
