@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonVersion === "117") return;
-  window.carianaSizeButtonVersion = "117";
+  if (window.carianaSizeButtonVersion === "118") return;
+  window.carianaSizeButtonVersion = "118";
 
   var bodyLabels = {
     delgado: "Delgado",
@@ -580,6 +580,7 @@
       buildChestGuide(content, root);
       buildMeasureRuler(content, state, "Pecho", 70, 145, state.temp, "chest");
       keepChestGuideVisible(content, root);
+      keepSelectorScrolledToTop(root);
     }
 
     if (type === "waist" && mode === "woman_top") {
@@ -628,24 +629,29 @@
     guide.className = "cariana-chest-guide";
     guide.setAttribute("data-cariana-chest-guide", "");
 
-    var image = document.createElement("div");
-    image.className = "cariana-chest-guide-image";
-    image.setAttribute("role", "img");
-    image.setAttribute("aria-label", "Guía visual para medir el pecho");
+    var imageWrap = document.createElement("div");
+    imageWrap.className = "cariana-chest-guide-image";
+    imageWrap.style.setProperty("display", "block", "important");
+    imageWrap.style.setProperty("width", "100%", "important");
+    imageWrap.style.setProperty("min-height", "178px", "important");
+    imageWrap.style.setProperty("background", "#ffffff", "important");
+
+    var image = document.createElement("img");
+    image.src = imageUrl || chestGuideFallbackImage;
+    image.alt = "Guía visual para medir el pecho";
+    image.loading = "eager";
+    image.decoding = "sync";
     image.style.setProperty("display", "block", "important");
     image.style.setProperty("width", "100%", "important");
     image.style.setProperty("height", "178px", "important");
     image.style.setProperty("min-height", "178px", "important");
-    image.style.setProperty("background-repeat", "no-repeat", "important");
-    image.style.setProperty("background-position", "center", "important");
-    image.style.setProperty("background-size", "contain", "important");
-    image.style.setProperty("background-color", "#ffffff", "important");
-    image.style.setProperty(
-      "background-image",
-      imageUrl ? 'url("' + imageUrl + '"), url("' + chestGuideFallbackImage + '")' : 'url("' + chestGuideFallbackImage + '")',
-      "important"
-    );
-    guide.appendChild(image);
+    image.style.setProperty("object-fit", "contain", "important");
+    image.style.setProperty("background", "#ffffff", "important");
+    image.onerror = function () {
+      if (image.src !== chestGuideFallbackImage) image.src = chestGuideFallbackImage;
+    };
+    imageWrap.appendChild(image);
+    guide.appendChild(imageWrap);
 
     var text = document.createElement("div");
     text.className = "cariana-chest-guide-text";
@@ -661,13 +667,26 @@
     [0, 80, 240, 600].forEach(function (delay) {
       window.setTimeout(function () {
         var currentGuide = content.querySelector("[data-cariana-chest-guide]");
-        if (!currentGuide || !currentGuide.querySelector(".cariana-chest-guide-image")) {
+        if (!currentGuide || !currentGuide.querySelector(".cariana-chest-guide-image img")) {
           content.querySelectorAll(".cariana-chest-guide").forEach(function (guide) {
             guide.remove();
           });
           buildChestGuide(content, root);
           content.insertBefore(content.lastElementChild, content.firstChild);
         }
+      }, delay);
+    });
+  }
+
+  function keepSelectorScrolledToTop(root) {
+    [0, 80, 240, 600, 1200].forEach(function (delay) {
+      window.setTimeout(function () {
+        var modal = qs(root, "[data-cariana-size-modal]");
+        var card = qs(root, ".cariana-size-modal-card");
+        var selectorScreen = qs(root, "[data-cariana-selector-screen]");
+        if (modal) modal.scrollTop = 0;
+        if (card) card.scrollTop = 0;
+        if (selectorScreen) selectorScreen.scrollTop = 0;
       }, delay);
     });
   }
