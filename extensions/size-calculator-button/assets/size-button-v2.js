@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonVersion === "128") return;
-  window.carianaSizeButtonVersion = "128";
+  if (window.carianaSizeButtonVersion === "129") return;
+  window.carianaSizeButtonVersion = "129";
 
   var bodyLabels = {
     delgado: "Delgado",
@@ -79,6 +79,21 @@
     { talla: "19", pesoMin: 85, pesoMax: 98, alturaMin: 160, alturaMax: 175, cinturaMin: 103, cinturaMax: 107, caderaMin: 124, caderaMax: 130 },
     { talla: "21", pesoMin: 90, pesoMax: 105, alturaMin: 160, alturaMax: 175, cinturaMin: 108, cinturaMax: 112, caderaMin: 130, caderaMax: 136 },
     { talla: "23", pesoMin: 95, pesoMax: 115, alturaMin: 160, alturaMax: 175, cinturaMin: 113, cinturaMax: 118, caderaMin: 136, caderaMax: 142 },
+  ];
+
+  var manBottomSizes = [
+    { talla: "26", pesoMin: 50, pesoMax: 58, alturaMin: 160, alturaMax: 168, cinturaMin: 70, cinturaMax: 74, caderaMin: 85, caderaMax: 90 },
+    { talla: "28", pesoMin: 55, pesoMax: 65, alturaMin: 160, alturaMax: 170, cinturaMin: 75, cinturaMax: 79, caderaMin: 90, caderaMax: 95 },
+    { talla: "30", pesoMin: 60, pesoMax: 70, alturaMin: 165, alturaMax: 175, cinturaMin: 80, cinturaMax: 84, caderaMin: 95, caderaMax: 100 },
+    { talla: "32", pesoMin: 65, pesoMax: 78, alturaMin: 165, alturaMax: 180, cinturaMin: 85, cinturaMax: 89, caderaMin: 100, caderaMax: 105 },
+    { talla: "34", pesoMin: 70, pesoMax: 85, alturaMin: 165, alturaMax: 180, cinturaMin: 90, cinturaMax: 94, caderaMin: 105, caderaMax: 110 },
+    { talla: "36", pesoMin: 80, pesoMax: 95, alturaMin: 165, alturaMax: 185, cinturaMin: 95, cinturaMax: 100, caderaMin: 110, caderaMax: 115 },
+    { talla: "38", pesoMin: 85, pesoMax: 105, alturaMin: 165, alturaMax: 185, cinturaMin: 101, cinturaMax: 105, caderaMin: 115, caderaMax: 120 },
+    { talla: "40", pesoMin: 95, pesoMax: 110, alturaMin: 165, alturaMax: 190, cinturaMin: 106, cinturaMax: 110, caderaMin: 120, caderaMax: 125 },
+    { talla: "42", pesoMin: 100, pesoMax: 120, alturaMin: 165, alturaMax: 190, cinturaMin: 111, cinturaMax: 115, caderaMin: 125, caderaMax: 130 },
+    { talla: "44", pesoMin: 110, pesoMax: 125, alturaMin: 165, alturaMax: 190, cinturaMin: 116, cinturaMax: 120, caderaMin: 130, caderaMax: 135 },
+    { talla: "46", pesoMin: 115, pesoMax: 135, alturaMin: 165, alturaMax: 190, cinturaMin: 121, cinturaMax: 125, caderaMin: 135, caderaMax: 140 },
+    { talla: "48", pesoMin: 120, pesoMax: 145, alturaMin: 165, alturaMax: 190, cinturaMin: 126, cinturaMax: 130, caderaMin: 140, caderaMax: 145 },
   ];
 
   var cups = ["A", "B", "C", "D", "DD"];
@@ -496,7 +511,7 @@
 
   function openGuide(root) {
     var mode = root.getAttribute("data-cariana-size-mode") || "pending";
-    if (mode === "man_top" || mode === "woman_bottom") {
+    if (mode === "man_top" || mode === "woman_bottom" || mode === "man_bottom") {
       showBuiltInGuide(root);
       return;
     }
@@ -522,7 +537,7 @@
   function showBuiltInGuide(root) {
     var mode = root.getAttribute("data-cariana-size-mode") || "pending";
     var title = "Guía de tallas Cariana (Mujer)";
-    if (mode === "man_top") title = "Guía de tallas Cariana (Hombre)";
+    if (mode === "man_top" || mode === "man_bottom") title = "Guía de tallas Cariana (Hombre)";
 
     var modal = document.createElement("div");
     modal.className = "cariana-size-guide-modal";
@@ -572,6 +587,16 @@
         '</tbody></table></div>';
     }
 
+    if (mode === "man_bottom") {
+      return '<div class="cariana-size-guide-table-wrap"><table class="cariana-size-guide-table">' +
+        '<thead><tr><th>Talla</th><th>Altura<br><span>(m)</span></th><th>Peso<br><span>(kg)</span></th><th>Cintura<br><span>(cm)</span></th><th>Cadera<br><span>(cm)</span></th></tr></thead>' +
+        '<tbody>' +
+        manBottomSizes.map(function (size) {
+          return '<tr><td>' + size.talla + '</td><td>' + formatMeters(size.alturaMin) + '-' + formatMeters(size.alturaMax) + '</td><td>' + size.pesoMin + '-' + size.pesoMax + '</td><td>' + size.cinturaMin + '-' + size.cinturaMax + '</td><td>' + size.caderaMin + '-' + size.caderaMax + '</td></tr>';
+        }).join("") +
+        '</tbody></table></div>';
+    }
+
     return '<div class="cariana-size-guide-table-wrap"><table class="cariana-size-guide-table">' +
       '<thead><tr><th>Talla MX</th><th>Altura</th><th>Peso<br><span>(kg)</span></th><th>Cintura<br><span>(cm)</span></th><th>Pecho<br><span>(cm)</span></th></tr></thead>' +
       '<tbody>' +
@@ -603,6 +628,13 @@
       setHidden(pending, true);
     } else if (mode === "woman_bottom") {
       title.textContent = "Encuentra tu talla ideal (Mujer)";
+      extraText.textContent = "Tipo de cadera";
+      ensureMeasurementFields(root);
+      ensureBottomMeasureButtons(root);
+      setHidden(fields, false);
+      setHidden(pending, true);
+    } else if (mode === "man_bottom") {
+      title.textContent = "Encuentra tu talla ideal (Hombre)";
       extraText.textContent = "Tipo de cadera";
       ensureMeasurementFields(root);
       ensureBottomMeasureButtons(root);
@@ -678,29 +710,37 @@
       keepSelectorScrolledToTop(root);
     }
 
-    if (type === "waist" && (mode === "woman_top" || mode === "man_top" || mode === "woman_bottom")) {
+    if (type === "waist" && (mode === "woman_top" || mode === "man_top" || mode === "woman_bottom" || mode === "man_bottom")) {
       state.temp = state.waistCm;
       title.textContent = "CINTURA";
       if (mode === "woman_top" || mode === "woman_bottom") {
         buildWaistGuide(content, root);
-      } else {
+      } else if (mode === "man_top" || mode === "man_bottom") {
         buildManWaistGuide(content, root);
       }
-      buildMeasureRuler(content, state, "Cintura", mode === "man_top" ? 70 : mode === "woman_bottom" ? 62 : 55, mode === "man_top" ? 132 : mode === "woman_bottom" ? 118 : 125, state.temp, "waist");
+      buildMeasureRuler(content, state, "Cintura", mode === "man_top" ? 70 : mode === "man_bottom" ? 70 : mode === "woman_bottom" ? 62 : 55, mode === "man_top" ? 132 : mode === "man_bottom" ? 130 : mode === "woman_bottom" ? 118 : 125, state.temp, "waist");
       if (mode === "woman_top" || mode === "woman_bottom") {
         keepWaistGuideVisible(content, root);
-      } else {
+      } else if (mode === "man_top" || mode === "man_bottom") {
         keepManWaistGuideVisible(content, root);
       }
       keepSelectorScrolledToTop(root);
     }
 
-    if (type === "hip" && mode === "woman_bottom") {
+    if (type === "hip" && (mode === "woman_bottom" || mode === "man_bottom")) {
       state.temp = state.hipCm;
       title.textContent = "CADERA";
-      buildHipGuide(content, root);
-      buildMeasureRuler(content, state, "Cadera", 86, 142, state.temp, "hip");
-      keepHipGuideVisible(content, root);
+      if (mode === "man_bottom") {
+        buildManHipGuide(content, root);
+      } else {
+        buildHipGuide(content, root);
+      }
+      buildMeasureRuler(content, state, "Cadera", mode === "man_bottom" ? 85 : 86, mode === "man_bottom" ? 145 : 142, state.temp, "hip");
+      if (mode === "man_bottom") {
+        keepManHipGuideVisible(content, root);
+      } else {
+        keepHipGuideVisible(content, root);
+      }
       keepSelectorScrolledToTop(root);
     }
 
@@ -777,6 +817,19 @@
     });
   }
 
+  function buildManHipGuide(content, root) {
+    buildMeasureGuideCard(content, root, {
+      imageAttribute: "data-cariana-man-hip-guide-image",
+      imageClass: "cariana-man-hip-guide-image",
+      dataAttribute: "data-cariana-man-hip-guide",
+      alt: "Guía visual para medir la cadera en hombre",
+      fallback: root.getAttribute("data-cariana-man-waist-guide-image") || chestGuideFallbackImage,
+      text:
+        '<p>Coloca la cinta sobre la parte más ancha de las caderas y los glúteos.</p>' +
+        '<p>Verifica que la cinta quede completamente recta y nivelada alrededor de tu cuerpo</p>',
+    });
+  }
+
   function buildMeasureGuideCard(content, root, options) {
     var imageUrl = root.getAttribute(options.imageAttribute) || "";
     var fallbackUrl = options.fallback || chestGuideFallbackImage;
@@ -835,6 +888,10 @@
 
   function keepHipGuideVisible(content, root) {
     keepMeasureGuideVisible(content, root, "[data-cariana-hip-guide]", ".cariana-hip-guide-image img", buildHipGuide);
+  }
+
+  function keepManHipGuideVisible(content, root) {
+    keepMeasureGuideVisible(content, root, "[data-cariana-man-hip-guide]", ".cariana-man-hip-guide-image img", buildManHipGuide);
   }
 
   function keepMeasureGuideVisible(content, root, guideSelector, imageSelector, builder) {
@@ -1102,13 +1159,13 @@
       updateTopMeasureLabels(root);
     }
 
-    if (state.selector === "waist" && (mode === "woman_top" || mode === "man_top" || mode === "woman_bottom")) {
+    if (state.selector === "waist" && (mode === "woman_top" || mode === "man_top" || mode === "woman_bottom" || mode === "man_bottom")) {
       state.waistCm = Number(state.temp);
       state.waistSelected = true;
       updateTopMeasureLabels(root);
     }
 
-    if (state.selector === "hip" && mode === "woman_bottom") {
+    if (state.selector === "hip" && (mode === "woman_bottom" || mode === "man_bottom")) {
       state.hipCm = Number(state.temp);
       state.hipSelected = true;
       updateTopMeasureLabels(root);
@@ -1129,6 +1186,10 @@
     }
     if (mode === "woman_bottom") {
       calculateWomanBottom(root);
+      return;
+    }
+    if (mode === "man_bottom") {
+      calculateManBottom(root);
     }
   }
 
@@ -1193,17 +1254,18 @@
     return p1[1] + ((x - p1[0]) * (p1[1] - p0[1])) / (p1[0] - p0[0]);
   }
 
-  function indexByWaist(cm) {
+  function indexByWaist(cm, sizes) {
+    sizes = sizes || bottomSizes;
     var idx = -1;
-    for (var i = 0; i < bottomSizes.length; i += 1) {
-      if (inRange(cm, bottomSizes[i].cinturaMin, bottomSizes[i].cinturaMax)) idx = i;
+    for (var i = 0; i < sizes.length; i += 1) {
+      if (inRange(cm, sizes[i].cinturaMin, sizes[i].cinturaMax)) idx = i;
     }
     if (idx !== -1) return idx;
 
     var best = 0;
     var bestDiff = Infinity;
-    for (var j = 0; j < bottomSizes.length; j += 1) {
-      var diff = Math.abs(cm - center(bottomSizes[j].cinturaMin, bottomSizes[j].cinturaMax));
+    for (var j = 0; j < sizes.length; j += 1) {
+      var diff = Math.abs(cm - center(sizes[j].cinturaMin, sizes[j].cinturaMax));
       if (diff < bestDiff) {
         bestDiff = diff;
         best = j;
@@ -1212,17 +1274,18 @@
     return best;
   }
 
-  function indexByHip(cm) {
+  function indexByHip(cm, sizes) {
+    sizes = sizes || bottomSizes;
     var idx = -1;
-    for (var i = 0; i < bottomSizes.length; i += 1) {
-      if (inRange(cm, bottomSizes[i].caderaMin, bottomSizes[i].caderaMax)) idx = i;
+    for (var i = 0; i < sizes.length; i += 1) {
+      if (inRange(cm, sizes[i].caderaMin, sizes[i].caderaMax)) idx = i;
     }
     if (idx !== -1) return idx;
 
     var best = 0;
     var bestDiff = Infinity;
-    for (var j = 0; j < bottomSizes.length; j += 1) {
-      var diff = Math.abs(cm - center(bottomSizes[j].caderaMin, bottomSizes[j].caderaMax));
+    for (var j = 0; j < sizes.length; j += 1) {
+      var diff = Math.abs(cm - center(sizes[j].caderaMin, sizes[j].caderaMax));
       if (diff < bestDiff) {
         bestDiff = diff;
         best = j;
@@ -1268,6 +1331,25 @@
 
     finalIdx = clampIndex(finalIdx, bottomSizes);
     renderResult(result, bottomSizes[finalIdx].talla);
+  }
+
+  function calculateManBottom(root) {
+    var state = getState(root);
+    var waist = state.waistCm;
+    var hip = state.hipCm;
+    var result = qs(root, "[data-cariana-result]");
+
+    if (!state.waistSelected || !state.hipSelected || !waist || !hip) {
+      result.textContent = "Completa todos los campos";
+      return;
+    }
+
+    var waistIdx = indexByWaist(waist, manBottomSizes);
+    var hipIdx = indexByHip(hip, manBottomSizes);
+    var finalIdx = Math.max(waistIdx, hipIdx);
+
+    finalIdx = clampIndex(finalIdx, manBottomSizes);
+    renderResult(result, manBottomSizes[finalIdx].talla);
   }
 
   function renderResult(result, size) {

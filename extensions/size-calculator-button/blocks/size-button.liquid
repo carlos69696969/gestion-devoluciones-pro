@@ -7,6 +7,8 @@
       assign cariana_size_mode = 'woman_bottom'
     elsif product.tags contains 'hombre' and product.tags contains 'superior'
       assign cariana_size_mode = 'man_top'
+    elsif product.tags contains 'hombre' and product.tags contains 'inferior'
+      assign cariana_size_mode = 'man_bottom'
     endif
   %}
 
@@ -20,6 +22,7 @@
     data-cariana-hip-guide-image="{{ 'hip-measure-guide.png' | asset_url }}"
     data-cariana-man-chest-guide-image="{{ 'man-chest-measure-guide.png' | asset_url }}"
     data-cariana-man-waist-guide-image="{{ 'man-waist-measure-guide.png' | asset_url }}"
+    data-cariana-man-hip-guide-image="{{ 'man-hip-measure-guide.png' | asset_url }}"
   >
     <style>
       .cariana-size-button-host[data-cariana-size-root] .cariana-chest-guide-image,
@@ -121,7 +124,7 @@
     </div>
   </div>
 
-  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=128" defer></script>
+  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=129" defer></script>
   {% endif %}
 {% endif %}
 
