@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonVersion === "122") return;
-  window.carianaSizeButtonVersion = "122";
+  if (window.carianaSizeButtonVersion === "123") return;
+  window.carianaSizeButtonVersion = "123";
 
   var bodyLabels = {
     delgado: "Delgado",
@@ -724,14 +724,14 @@
     var min = Number(track.getAttribute("data-min"));
     var max = Number(track.getAttribute("data-max"));
     var stepPx = Number(track.getAttribute("data-step-px")) || 10;
-    var value = min + Math.round(track.scrollLeft / stepPx);
+    var value = min + Math.round((track.scrollLeft - stepPx / 2) / stepPx);
     return Math.min(max, Math.max(min, value));
   }
 
   function setScrollRulerValue(track, value) {
     var min = Number(track.getAttribute("data-min"));
     var stepPx = Number(track.getAttribute("data-step-px")) || 10;
-    track.scrollLeft = (Number(value) - min) * stepPx;
+    track.scrollLeft = (Number(value) - min) * stepPx + stepPx / 2;
   }
 
   function buildBustTable(content, state) {
