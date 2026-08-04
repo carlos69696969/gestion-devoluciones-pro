@@ -1,7 +1,9 @@
 {% if product %}
   {% liquid
     assign cariana_size_mode = ''
-    if product.tags contains 'mujer' and product.tags contains 'superior'
+    if product.tags contains 'mujer' and product.tags contains 'vestido'
+      assign cariana_size_mode = 'woman_dress'
+    elsif product.tags contains 'mujer' and product.tags contains 'superior'
       assign cariana_size_mode = 'woman_top'
     elsif product.tags contains 'mujer' and product.tags contains 'inferior'
       assign cariana_size_mode = 'woman_bottom'
@@ -124,7 +126,7 @@
     </div>
   </div>
 
-  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=129" defer></script>
+  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=130" defer></script>
   {% endif %}
 {% endif %}
 
