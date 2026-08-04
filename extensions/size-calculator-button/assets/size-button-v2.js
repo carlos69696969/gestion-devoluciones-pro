@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonReady) return;
-  window.carianaSizeButtonReady = true;
+  if (window.carianaSizeButtonVersion === "117") return;
+  window.carianaSizeButtonVersion = "117";
 
   var bodyLabels = {
     delgado: "Delgado",
@@ -579,6 +579,7 @@
       title.textContent = "PECHO";
       buildChestGuide(content, root);
       buildMeasureRuler(content, state, "Pecho", 70, 145, state.temp, "chest");
+      keepChestGuideVisible(content, root);
     }
 
     if (type === "waist" && mode === "woman_top") {
@@ -622,13 +623,28 @@
   }
 
   function buildChestGuide(content, root) {
+    var imageUrl = root.getAttribute("data-cariana-chest-guide-image") || "";
     var guide = document.createElement("div");
     guide.className = "cariana-chest-guide";
+    guide.setAttribute("data-cariana-chest-guide", "");
 
     var image = document.createElement("div");
     image.className = "cariana-chest-guide-image";
     image.setAttribute("role", "img");
     image.setAttribute("aria-label", "Guía visual para medir el pecho");
+    image.style.setProperty("display", "block", "important");
+    image.style.setProperty("width", "100%", "important");
+    image.style.setProperty("height", "178px", "important");
+    image.style.setProperty("min-height", "178px", "important");
+    image.style.setProperty("background-repeat", "no-repeat", "important");
+    image.style.setProperty("background-position", "center", "important");
+    image.style.setProperty("background-size", "contain", "important");
+    image.style.setProperty("background-color", "#ffffff", "important");
+    image.style.setProperty(
+      "background-image",
+      imageUrl ? 'url("' + imageUrl + '"), url("' + chestGuideFallbackImage + '")' : 'url("' + chestGuideFallbackImage + '")',
+      "important"
+    );
     guide.appendChild(image);
 
     var text = document.createElement("div");
@@ -639,6 +655,21 @@
     guide.appendChild(text);
 
     content.appendChild(guide);
+  }
+
+  function keepChestGuideVisible(content, root) {
+    [0, 80, 240, 600].forEach(function (delay) {
+      window.setTimeout(function () {
+        var currentGuide = content.querySelector("[data-cariana-chest-guide]");
+        if (!currentGuide || !currentGuide.querySelector(".cariana-chest-guide-image")) {
+          content.querySelectorAll(".cariana-chest-guide").forEach(function (guide) {
+            guide.remove();
+          });
+          buildChestGuide(content, root);
+          content.insertBefore(content.lastElementChild, content.firstChild);
+        }
+      }, delay);
+    });
   }
 
   function buildMeasureRuler(content, state, name, min, max, value, dataName) {
