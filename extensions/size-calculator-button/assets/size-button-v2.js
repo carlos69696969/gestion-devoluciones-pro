@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonVersion === "119") return;
-  window.carianaSizeButtonVersion = "119";
+  if (window.carianaSizeButtonVersion === "120") return;
+  window.carianaSizeButtonVersion = "120";
 
   var bodyLabels = {
     delgado: "Delgado",
