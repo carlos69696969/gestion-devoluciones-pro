@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonVersion === "125") return;
-  window.carianaSizeButtonVersion = "125";
+  if (window.carianaSizeButtonVersion === "126") return;
+  window.carianaSizeButtonVersion = "126";
 
   var bodyLabels = {
     delgado: "Delgado",
@@ -617,10 +617,14 @@
       title.textContent = "PECHO";
       if (mode === "woman_top") {
         buildChestGuide(content, root);
+      } else {
+        buildManChestGuide(content, root);
       }
       buildMeasureRuler(content, state, "Pecho", mode === "man_top" ? 86 : 70, mode === "man_top" ? 148 : 145, state.temp, "chest");
       if (mode === "woman_top") {
         keepChestGuideVisible(content, root);
+      } else {
+        keepManChestGuideVisible(content, root);
       }
       keepSelectorScrolledToTop(root);
     }
@@ -630,10 +634,14 @@
       title.textContent = "CINTURA";
       if (mode === "woman_top") {
         buildWaistGuide(content, root);
+      } else {
+        buildManWaistGuide(content, root);
       }
       buildMeasureRuler(content, state, "Cintura", mode === "man_top" ? 70 : 55, mode === "man_top" ? 132 : 125, state.temp, "waist");
       if (mode === "woman_top") {
         keepWaistGuideVisible(content, root);
+      } else {
+        keepManWaistGuideVisible(content, root);
       }
       keepSelectorScrolledToTop(root);
     }
@@ -670,6 +678,103 @@
     });
 
     content.appendChild(tabs);
+  }
+
+  function buildManChestGuide(content, root) {
+    buildMeasureGuideCard(content, root, {
+      imageAttribute: "data-cariana-man-chest-guide-image",
+      imageClass: "cariana-man-chest-guide-image",
+      dataAttribute: "data-cariana-man-chest-guide",
+      alt: "Guía visual para medir el pecho en hombre",
+      fallback: root.getAttribute("data-cariana-chest-guide-image") || chestGuideFallbackImage,
+      text:
+        '<p>Coloca la cinta alrededor de la parte más prominente del pecho (a la altura de los pezones).</p>' +
+        '<p>Verifica que la cinta quede completamente horizontal, tanto al frente como en la espalda.</p>',
+    });
+  }
+
+  function buildManWaistGuide(content, root) {
+    buildMeasureGuideCard(content, root, {
+      imageAttribute: "data-cariana-man-waist-guide-image",
+      imageClass: "cariana-man-waist-guide-image",
+      dataAttribute: "data-cariana-man-waist-guide",
+      alt: "Guía visual para medir la cintura en hombre",
+      fallback: root.getAttribute("data-cariana-waist-guide-image") || chestGuideFallbackImage,
+      text:
+        '<p>Coloca la cinta en la parte más estrecha de tu cintura</p>' +
+        '<p>Asegúrate de que la cinta quede completamente horizontal</p>',
+    });
+  }
+
+  function buildMeasureGuideCard(content, root, options) {
+    var imageUrl = root.getAttribute(options.imageAttribute) || "";
+    var fallbackUrl = options.fallback || chestGuideFallbackImage;
+    var guide = document.createElement("div");
+    guide.className = "cariana-chest-guide";
+    guide.setAttribute(options.dataAttribute, "");
+
+    var imageWrap = document.createElement("div");
+    imageWrap.className = "cariana-chest-guide-image " + options.imageClass;
+    imageWrap.style.setProperty("display", "block", "important");
+    imageWrap.style.setProperty("width", "100%", "important");
+    imageWrap.style.setProperty("height", "178px", "important");
+    imageWrap.style.setProperty("min-height", "178px", "important");
+    imageWrap.style.setProperty("background-color", "#ffffff", "important");
+    imageWrap.style.setProperty("background-repeat", "no-repeat", "important");
+    imageWrap.style.setProperty("background-position", "center", "important");
+    imageWrap.style.setProperty("background-size", "contain", "important");
+    imageWrap.style.setProperty("background-image", 'url("' + (imageUrl || fallbackUrl) + '")', "important");
+
+    var image = document.createElement("img");
+    image.src = imageUrl || fallbackUrl;
+    image.alt = options.alt;
+    image.loading = "eager";
+    image.decoding = "sync";
+    image.style.setProperty("display", "block", "important");
+    image.style.setProperty("width", "100%", "important");
+    image.style.setProperty("height", "178px", "important");
+    image.style.setProperty("min-height", "178px", "important");
+    image.style.setProperty("object-fit", "contain", "important");
+    image.style.setProperty("background", "#ffffff", "important");
+    image.style.setProperty("opacity", "0", "important");
+    image.style.setProperty("visibility", "hidden", "important");
+    image.style.setProperty("position", "static", "important");
+    image.style.setProperty("transform", "none", "important");
+    image.onerror = function () {
+      if (image.src !== fallbackUrl) image.src = fallbackUrl;
+    };
+    imageWrap.appendChild(image);
+    guide.appendChild(imageWrap);
+
+    var text = document.createElement("div");
+    text.className = "cariana-chest-guide-text";
+    text.innerHTML = options.text;
+    guide.appendChild(text);
+
+    content.appendChild(guide);
+  }
+
+  function keepManChestGuideVisible(content, root) {
+    keepMeasureGuideVisible(content, root, "[data-cariana-man-chest-guide]", ".cariana-man-chest-guide-image img", buildManChestGuide);
+  }
+
+  function keepManWaistGuideVisible(content, root) {
+    keepMeasureGuideVisible(content, root, "[data-cariana-man-waist-guide]", ".cariana-man-waist-guide-image img", buildManWaistGuide);
+  }
+
+  function keepMeasureGuideVisible(content, root, guideSelector, imageSelector, builder) {
+    [0, 80, 240, 600].forEach(function (delay) {
+      window.setTimeout(function () {
+        var currentGuide = content.querySelector(guideSelector);
+        if (!currentGuide || !currentGuide.querySelector(imageSelector)) {
+          content.querySelectorAll(guideSelector).forEach(function (guide) {
+            guide.remove();
+          });
+          builder(content, root);
+          content.insertBefore(content.lastElementChild, content.firstChild);
+        }
+      }, delay);
+    });
   }
 
   function buildChestGuide(content, root) {
