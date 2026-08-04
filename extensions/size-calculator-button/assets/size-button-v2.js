@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonVersion === "121") return;
-  window.carianaSizeButtonVersion = "121";
+  if (window.carianaSizeButtonVersion === "122") return;
+  window.carianaSizeButtonVersion = "122";
 
   var bodyLabels = {
     delgado: "Delgado",
@@ -636,7 +636,10 @@
     imageWrap.style.setProperty("height", "178px", "important");
     imageWrap.style.setProperty("min-height", "178px", "important");
     imageWrap.style.setProperty("background-color", "#ffffff", "important");
-    imageWrap.style.setProperty("background-image", "none", "important");
+    imageWrap.style.setProperty("background-repeat", "no-repeat", "important");
+    imageWrap.style.setProperty("background-position", "center", "important");
+    imageWrap.style.setProperty("background-size", "contain", "important");
+    imageWrap.style.setProperty("background-image", 'url("' + (imageUrl || chestGuideFallbackImage) + '")', "important");
 
     var image = document.createElement("img");
     image.src = imageUrl || chestGuideFallbackImage;
@@ -649,8 +652,8 @@
     image.style.setProperty("min-height", "178px", "important");
     image.style.setProperty("object-fit", "contain", "important");
     image.style.setProperty("background", "#ffffff", "important");
-    image.style.setProperty("opacity", "1", "important");
-    image.style.setProperty("visibility", "visible", "important");
+    image.style.setProperty("opacity", "0", "important");
+    image.style.setProperty("visibility", "hidden", "important");
     image.style.setProperty("position", "static", "important");
     image.style.setProperty("transform", "none", "important");
     image.onerror = function () {

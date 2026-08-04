@@ -20,7 +20,10 @@
         width: 100% !important;
         height: 178px !important;
         min-height: 178px !important;
-        background-image: none !important;
+        background-image: url("{{ 'chest-measure-guide.png' | asset_url }}") !important;
+        background-repeat: no-repeat !important;
+        background-position: center !important;
+        background-size: contain !important;
         background-color: #ffffff !important;
       }
 
@@ -31,8 +34,8 @@
         min-height: 178px !important;
         object-fit: contain !important;
         background-color: #ffffff !important;
-        opacity: 1 !important;
-        visibility: visible !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
         position: static !important;
         transform: none !important;
       }
@@ -105,7 +108,7 @@
     </div>
   </div>
 
-  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=121" defer></script>
+  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=122" defer></script>
 {% endif %}
 
 {% schema %}
