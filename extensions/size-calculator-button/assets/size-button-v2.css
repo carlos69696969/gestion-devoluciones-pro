@@ -268,9 +268,11 @@
   text-align: left;
 }
 
+.cariana-chest-guide-image,
 .cariana-chest-guide img {
   display: block;
   width: 100%;
+  min-height: 178px;
   max-height: 230px;
   object-fit: contain;
   background: #ffffff;

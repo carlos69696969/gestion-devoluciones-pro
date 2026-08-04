@@ -622,21 +622,14 @@
   }
 
   function buildChestGuide(content, root) {
-    var imageUrl = root.getAttribute("data-cariana-chest-guide-image") || chestGuideFallbackImage;
     var guide = document.createElement("div");
     guide.className = "cariana-chest-guide";
 
-    var img = document.createElement("img");
-    img.src = imageUrl;
-    img.alt = "Guía visual para medir el pecho";
-    img.loading = "eager";
-    img.decoding = "async";
-    img.addEventListener("error", function () {
-      if (img.src !== chestGuideFallbackImage) {
-        img.src = chestGuideFallbackImage;
-      }
-    });
-    guide.appendChild(img);
+    var image = document.createElement("div");
+    image.className = "cariana-chest-guide-image";
+    image.setAttribute("role", "img");
+    image.setAttribute("aria-label", "Guía visual para medir el pecho");
+    guide.appendChild(image);
 
     var text = document.createElement("div");
     text.className = "cariana-chest-guide-text";
