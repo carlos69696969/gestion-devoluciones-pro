@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonVersion === "120") return;
-  window.carianaSizeButtonVersion = "120";
+  if (window.carianaSizeButtonVersion === "121") return;
+  window.carianaSizeButtonVersion = "121";
 
   var bodyLabels = {
     delgado: "Delgado",
@@ -636,14 +636,7 @@
     imageWrap.style.setProperty("height", "178px", "important");
     imageWrap.style.setProperty("min-height", "178px", "important");
     imageWrap.style.setProperty("background-color", "#ffffff", "important");
-    imageWrap.style.setProperty("background-repeat", "no-repeat", "important");
-    imageWrap.style.setProperty("background-position", "center", "important");
-    imageWrap.style.setProperty("background-size", "contain", "important");
-    imageWrap.style.setProperty(
-      "background-image",
-      imageUrl ? 'url("' + imageUrl + '"), url("' + chestGuideFallbackImage + '")' : 'url("' + chestGuideFallbackImage + '")',
-      "important"
-    );
+    imageWrap.style.setProperty("background-image", "none", "important");
 
     var image = document.createElement("img");
     image.src = imageUrl || chestGuideFallbackImage;
