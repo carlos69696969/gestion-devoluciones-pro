@@ -13,9 +13,11 @@
     data-cariana-size-root
     data-cariana-size-mode="{{ cariana_size_mode }}"
     data-cariana-chest-guide-image="{{ 'chest-measure-guide.png' | asset_url }}"
+    data-cariana-waist-guide-image="{{ 'waist-measure-guide.png' | asset_url }}"
   >
     <style>
-      .cariana-size-button-host[data-cariana-size-root] .cariana-chest-guide-image {
+      .cariana-size-button-host[data-cariana-size-root] .cariana-chest-guide-image,
+      .cariana-size-button-host[data-cariana-size-root] .cariana-waist-guide-image {
         display: block !important;
         width: 100% !important;
         height: 178px !important;
@@ -27,7 +29,12 @@
         background-color: #ffffff !important;
       }
 
-      .cariana-size-button-host[data-cariana-size-root] .cariana-chest-guide-image img {
+      .cariana-size-button-host[data-cariana-size-root] .cariana-waist-guide-image {
+        background-image: url("{{ 'waist-measure-guide.png' | asset_url }}") !important;
+      }
+
+      .cariana-size-button-host[data-cariana-size-root] .cariana-chest-guide-image img,
+      .cariana-size-button-host[data-cariana-size-root] .cariana-waist-guide-image img {
         display: block !important;
         width: 100% !important;
         height: 178px !important;
@@ -108,7 +115,7 @@
     </div>
   </div>
 
-  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=123" defer></script>
+  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=124" defer></script>
 {% endif %}
 
 {% schema %}

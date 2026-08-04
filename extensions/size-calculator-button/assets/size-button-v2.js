@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonVersion === "123") return;
-  window.carianaSizeButtonVersion = "123";
+  if (window.carianaSizeButtonVersion === "124") return;
+  window.carianaSizeButtonVersion = "124";
 
   var bodyLabels = {
     delgado: "Delgado",
@@ -586,7 +586,10 @@
     if (type === "waist" && mode === "woman_top") {
       state.temp = state.waistCm;
       title.textContent = "CINTURA";
+      buildWaistGuide(content, root);
       buildMeasureRuler(content, state, "Cintura", 55, 125, state.temp, "waist");
+      keepWaistGuideVisible(content, root);
+      keepSelectorScrolledToTop(root);
     }
 
     qs(root, "[data-cariana-main-screen]").classList.add("cariana-size-screen-hidden");
@@ -681,6 +684,70 @@
             guide.remove();
           });
           buildChestGuide(content, root);
+          content.insertBefore(content.lastElementChild, content.firstChild);
+        }
+      }, delay);
+    });
+  }
+
+  function buildWaistGuide(content, root) {
+    var imageUrl = root.getAttribute("data-cariana-waist-guide-image") || "";
+    var guide = document.createElement("div");
+    guide.className = "cariana-chest-guide cariana-waist-guide";
+    guide.setAttribute("data-cariana-waist-guide", "");
+
+    var imageWrap = document.createElement("div");
+    imageWrap.className = "cariana-chest-guide-image cariana-waist-guide-image";
+    imageWrap.style.setProperty("display", "block", "important");
+    imageWrap.style.setProperty("width", "100%", "important");
+    imageWrap.style.setProperty("height", "178px", "important");
+    imageWrap.style.setProperty("min-height", "178px", "important");
+    imageWrap.style.setProperty("background-color", "#ffffff", "important");
+    imageWrap.style.setProperty("background-repeat", "no-repeat", "important");
+    imageWrap.style.setProperty("background-position", "center", "important");
+    imageWrap.style.setProperty("background-size", "contain", "important");
+    imageWrap.style.setProperty("background-image", 'url("' + (imageUrl || chestGuideFallbackImage) + '")', "important");
+
+    var image = document.createElement("img");
+    image.src = imageUrl || chestGuideFallbackImage;
+    image.alt = "Guía visual para medir la cintura";
+    image.loading = "eager";
+    image.decoding = "sync";
+    image.style.setProperty("display", "block", "important");
+    image.style.setProperty("width", "100%", "important");
+    image.style.setProperty("height", "178px", "important");
+    image.style.setProperty("min-height", "178px", "important");
+    image.style.setProperty("object-fit", "contain", "important");
+    image.style.setProperty("background", "#ffffff", "important");
+    image.style.setProperty("opacity", "0", "important");
+    image.style.setProperty("visibility", "hidden", "important");
+    image.style.setProperty("position", "static", "important");
+    image.style.setProperty("transform", "none", "important");
+    image.onerror = function () {
+      if (image.src !== chestGuideFallbackImage) image.src = chestGuideFallbackImage;
+    };
+    imageWrap.appendChild(image);
+    guide.appendChild(imageWrap);
+
+    var text = document.createElement("div");
+    text.className = "cariana-chest-guide-text";
+    text.innerHTML =
+      '<p>Coloca la cinta en la parte más estrecha de tu cintura</p>' +
+      '<p>Asegúrate de que la cinta quede completamente horizontal</p>';
+    guide.appendChild(text);
+
+    content.appendChild(guide);
+  }
+
+  function keepWaistGuideVisible(content, root) {
+    [0, 80, 240, 600].forEach(function (delay) {
+      window.setTimeout(function () {
+        var currentGuide = content.querySelector("[data-cariana-waist-guide]");
+        if (!currentGuide || !currentGuide.querySelector(".cariana-waist-guide-image img")) {
+          content.querySelectorAll(".cariana-waist-guide").forEach(function (guide) {
+            guide.remove();
+          });
+          buildWaistGuide(content, root);
           content.insertBefore(content.lastElementChild, content.firstChild);
         }
       }, delay);
