@@ -277,6 +277,10 @@
   max-height: 230px;
   object-fit: contain;
   background: #ffffff;
+  opacity: 1;
+  visibility: visible;
+  position: static;
+  transform: none;
 }
 
 .cariana-chest-guide-text {

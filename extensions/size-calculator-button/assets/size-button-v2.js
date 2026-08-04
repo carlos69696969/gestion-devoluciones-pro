@@ -1,6 +1,6 @@
 (function () {
-  if (window.carianaSizeButtonVersion === "118") return;
-  window.carianaSizeButtonVersion = "118";
+  if (window.carianaSizeButtonVersion === "119") return;
+  window.carianaSizeButtonVersion = "119";
 
   var bodyLabels = {
     delgado: "Delgado",
@@ -633,8 +633,17 @@
     imageWrap.className = "cariana-chest-guide-image";
     imageWrap.style.setProperty("display", "block", "important");
     imageWrap.style.setProperty("width", "100%", "important");
+    imageWrap.style.setProperty("height", "178px", "important");
     imageWrap.style.setProperty("min-height", "178px", "important");
-    imageWrap.style.setProperty("background", "#ffffff", "important");
+    imageWrap.style.setProperty("background-color", "#ffffff", "important");
+    imageWrap.style.setProperty("background-repeat", "no-repeat", "important");
+    imageWrap.style.setProperty("background-position", "center", "important");
+    imageWrap.style.setProperty("background-size", "contain", "important");
+    imageWrap.style.setProperty(
+      "background-image",
+      imageUrl ? 'url("' + imageUrl + '"), url("' + chestGuideFallbackImage + '")' : 'url("' + chestGuideFallbackImage + '")',
+      "important"
+    );
 
     var image = document.createElement("img");
     image.src = imageUrl || chestGuideFallbackImage;
@@ -647,6 +656,10 @@
     image.style.setProperty("min-height", "178px", "important");
     image.style.setProperty("object-fit", "contain", "important");
     image.style.setProperty("background", "#ffffff", "important");
+    image.style.setProperty("opacity", "1", "important");
+    image.style.setProperty("visibility", "visible", "important");
+    image.style.setProperty("position", "static", "important");
+    image.style.setProperty("transform", "none", "important");
     image.onerror = function () {
       if (image.src !== chestGuideFallbackImage) image.src = chestGuideFallbackImage;
     };
