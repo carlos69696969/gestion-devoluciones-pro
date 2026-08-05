@@ -28,7 +28,11 @@
   >
     <style>
       .cariana-size-button-host[data-cariana-size-root] .cariana-chest-guide-image,
-      .cariana-size-button-host[data-cariana-size-root] .cariana-waist-guide-image {
+      .cariana-size-button-host[data-cariana-size-root] .cariana-waist-guide-image,
+      .cariana-size-button-host[data-cariana-size-root] .cariana-hip-guide-image,
+      .cariana-size-button-host[data-cariana-size-root] .cariana-man-chest-guide-image,
+      .cariana-size-button-host[data-cariana-size-root] .cariana-man-waist-guide-image,
+      .cariana-size-button-host[data-cariana-size-root] .cariana-man-hip-guide-image {
         display: block !important;
         width: 100% !important;
         height: 178px !important;
@@ -44,8 +48,28 @@
         background-image: url("{{ 'waist-measure-guide.png' | asset_url }}") !important;
       }
 
+      .cariana-size-button-host[data-cariana-size-root] .cariana-hip-guide-image {
+        background-image: url("{{ 'hip-measure-guide.png' | asset_url }}") !important;
+      }
+
+      .cariana-size-button-host[data-cariana-size-root] .cariana-man-chest-guide-image {
+        background-image: url("{{ 'man-chest-measure-guide.png' | asset_url }}") !important;
+      }
+
+      .cariana-size-button-host[data-cariana-size-root] .cariana-man-waist-guide-image {
+        background-image: url("{{ 'man-waist-measure-guide.png' | asset_url }}") !important;
+      }
+
+      .cariana-size-button-host[data-cariana-size-root] .cariana-man-hip-guide-image {
+        background-image: url("{{ 'man-hip-measure-guide.png' | asset_url }}") !important;
+      }
+
       .cariana-size-button-host[data-cariana-size-root] .cariana-chest-guide-image img,
-      .cariana-size-button-host[data-cariana-size-root] .cariana-waist-guide-image img {
+      .cariana-size-button-host[data-cariana-size-root] .cariana-waist-guide-image img,
+      .cariana-size-button-host[data-cariana-size-root] .cariana-hip-guide-image img,
+      .cariana-size-button-host[data-cariana-size-root] .cariana-man-chest-guide-image img,
+      .cariana-size-button-host[data-cariana-size-root] .cariana-man-waist-guide-image img,
+      .cariana-size-button-host[data-cariana-size-root] .cariana-man-hip-guide-image img {
         display: block !important;
         width: 100% !important;
         height: 178px !important;
@@ -126,7 +150,7 @@
     </div>
   </div>
 
-  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=132" defer></script>
+  <script src="{{ 'size-button-v2.js' | asset_url }}?cariana_v=133" defer></script>
   {% endif %}
 {% endif %}
 
