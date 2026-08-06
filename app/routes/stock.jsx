@@ -1075,6 +1075,7 @@ function serializeDraft(draft, currentStockUserId = 0) {
     locationCode: draft.locationCode || "",
     price: draft.price,
     notes: draft.notes || "",
+    preparedByName: draft.preparedByStockUser?.name || "",
     photos: Array.isArray(draft.photos) ? draft.photos : [],
     variants,
     status: draft.status,
@@ -1347,6 +1348,9 @@ export async function loader({ request }) {
                 },
               },
               orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+              include: {
+                preparedByStockUser: { select: { name: true } },
+              },
               take: 80,
             })
           : Promise.resolve([]),
@@ -4273,6 +4277,12 @@ export default function StockPortal() {
                     <dt>Precio</dt>
                     <dd>{money(selectedStockDetail.price)}</dd>
                   </div>
+                  {selectedStockDetail.preparedByName ? (
+                    <div>
+                      <dt>Preparador de stock</dt>
+                      <dd>{selectedStockDetail.preparedByName}</dd>
+                    </div>
+                  ) : null}
                   <publishStockFetcher.Form
                     method="post"
                     className={styles.stockPublishForm}
