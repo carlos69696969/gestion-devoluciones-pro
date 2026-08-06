@@ -2432,7 +2432,7 @@ export default function StockPortal() {
     } else {
       nextParams.delete("draftId");
     }
-    setSearchParams(nextParams, { replace: true });
+    setSearchParams(nextParams, { replace: true, preventScrollReset: true });
   }
 
   const rememberPublisherListScroll = useCallback(() => {
@@ -3069,6 +3069,7 @@ export default function StockPortal() {
       return;
     }
     setPublisherMessage("");
+    rememberPublisherListScroll();
     setSelectedDraftId(draft.id);
     setPendingSelectedDraftId(draft.id);
     setPublisherDraftUrl(draft.id);
