@@ -957,6 +957,14 @@ function stockAutoLogoutKey(shop, logoutTime, dateKey) {
   return `cariana-stock-auto-logout:${cleanShop(shop) || "portal-stock"}:${logoutTime}:${dateKey}`;
 }
 
+function didStockSessionStartBeforeLogoutCutoff(sessionStartedAt, logoutDateKey, logoutMinutes) {
+  const sessionParts = stockMexicoDateTimeParts(sessionStartedAt);
+  if (!sessionParts.dateKey || sessionParts.minutes < 0) return true;
+  if (sessionParts.dateKey < logoutDateKey) return true;
+  if (sessionParts.dateKey > logoutDateKey) return false;
+  return sessionParts.minutes < logoutMinutes;
+}
+
 function formatStockHistoryTime(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -1065,6 +1073,7 @@ function serializeStockUser(stockUser) {
     id: stockUser.id,
     name: stockUser.name,
     role: stockUser.role,
+    sessionStartedAt: stockUser.sessionStartedAt || null,
   };
 }
 
@@ -2589,7 +2598,8 @@ export default function StockPortal() {
         !dateKey ||
         minutes < 0 ||
         !Number.isFinite(targetMinutes) ||
-        minutes < targetMinutes
+        minutes < targetMinutes ||
+        !didStockSessionStartBeforeLogoutCutoff(stockUser.sessionStartedAt, dateKey, targetMinutes)
       )
         return;
       const storageKey = stockAutoLogoutKey(shop, stockLogoutTime, dateKey);
