@@ -3430,6 +3430,21 @@ export default function StockPortal() {
     setPhotoZoom({ scale: 1, x: 0, y: 0 });
   }
 
+  function adjustPhotoZoom(nextScale) {
+    const normalizedScale = Math.min(4, Math.max(1, Number(nextScale) || 1));
+    setPhotoZoom((current) => ({
+      scale: normalizedScale,
+      x: normalizedScale === 1 ? 0 : current.x,
+      y: normalizedScale === 1 ? 0 : current.y,
+    }));
+  }
+
+  function handlePreviewWheel(event) {
+    event.preventDefault();
+    const direction = event.deltaY > 0 ? -0.2 : 0.2;
+    adjustPhotoZoom(photoZoom.scale + direction);
+  }
+
   function touchDistance(touches) {
     if (!touches || touches.length < 2) return 0;
     const deltaX = touches[0].clientX - touches[1].clientX;
@@ -4403,16 +4418,35 @@ export default function StockPortal() {
             >
               Cerrar
             </button>
+            <div className={styles.photoViewerControls}>
+              <button
+                type="button"
+                onClick={() => adjustPhotoZoom(photoZoom.scale - 0.25)}
+              >
+                -
+              </button>
+              <button type="button" onClick={() => adjustPhotoZoom(1)}>
+                100%
+              </button>
+              <button
+                type="button"
+                onClick={() => adjustPhotoZoom(photoZoom.scale + 0.25)}
+              >
+                +
+              </button>
+            </div>
             <div
               className={styles.photoViewerStage}
               onTouchStart={handlePreviewTouchStart}
               onTouchMove={handlePreviewTouchMove}
               onTouchEnd={handlePreviewTouchEnd}
+              onWheel={handlePreviewWheel}
               onClick={(event) => {
                 if (event.currentTarget === event.target) closePhotoPreview();
               }}
             >
               <img
+                className={styles.photoViewerImage}
                 src={previewPhoto.dataUrl}
                 alt={previewPhoto.name || "Foto del producto"}
                 style={{
