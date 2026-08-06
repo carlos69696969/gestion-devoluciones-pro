@@ -1935,11 +1935,19 @@ export async function action({ request }) {
   const firstSize = firstVariant.sizes?.[0] || {};
   const price = Math.max(0, Number(firstVariant.price || 0) || 0);
   const editingDraftId = Number(formData.get("editingDraftId") || 0);
+  const editingExpected = String(formData.get("editingExpected") || "") === "1";
   const photos = formData
     .getAll("photos")
     .map(sanitizePhotoDataUrl)
     .filter(Boolean)
     .slice(0, MAX_STOCK_PHOTOS);
+  if (editingExpected && !editingDraftId) {
+    return {
+      ok: false,
+      error:
+        "No se pudo confirmar que orden estas editando. Vuelve al historial y abre la orden otra vez.",
+    };
+  }
   if (editingDraftId) {
     const currentDraft = await prisma.stockProductDraft.findFirst({
       where: { id: editingDraftId, shop, preparedByStockUserId: stockUser.id },
@@ -2178,6 +2186,47 @@ function formatStockSizes(sizes = []) {
     .join(", ");
 }
 
+function stockEditComparableVariants(
+  variants = [],
+  allowedSizes = STOCK_ALPHA_SIZES,
+) {
+  return (Array.isArray(variants) ? variants : [])
+    .map((variant) => ({
+      color: String(variant?.color || "").trim(),
+      price: Math.max(0, Number(variant?.price || 0) || 0),
+      sizes: (Array.isArray(variant?.sizes) ? variant.sizes : [])
+        .map((sizeRow) => ({
+          size: String(sizeRow?.size || "")
+            .trim()
+            .toUpperCase(),
+          quantity: Math.max(
+            1,
+            Math.min(9999, Number(sizeRow?.quantity || 0) || 0),
+          ),
+        }))
+        .filter(
+          (sizeRow) => allowedSizes.includes(sizeRow.size) && sizeRow.quantity,
+        ),
+    }))
+    .filter((variant) => variant.color && variant.sizes.length);
+}
+
+function stockEditSignature({ audience, garment, photos = [], variants = [] }) {
+  const normalizedAudience = normalizeAudience(audience);
+  const normalizedGarment = normalizeGarment(garment);
+  return JSON.stringify({
+    audience: normalizedAudience,
+    garment: normalizedGarment,
+    photos: (Array.isArray(photos) ? photos : []).map((photo) =>
+      String(photo?.dataUrl || photo || ""),
+    ),
+    variants: stockEditComparableVariants(
+      variants,
+      stockSizesFor(normalizedAudience, normalizedGarment),
+    ),
+  });
+}
+
 function stockPrintSizeBatches(variants = []) {
   return (Array.isArray(variants) ? variants : [])
     .flatMap((variant) =>
@@ -2338,6 +2387,8 @@ export default function StockPortal() {
   const [stockEditMode, setStockEditMode] = useState(false);
   const [editingDraftId, setEditingDraftId] = useState(0);
   const [editingDraftMeta, setEditingDraftMeta] = useState(null);
+  const [editingDraftBaselineSignature, setEditingDraftBaselineSignature] =
+    useState("");
   const [pendingEditDraftId, setPendingEditDraftId] = useState(0);
   const [stockDeviceId, setStockDeviceId] = useState("");
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
@@ -2498,6 +2549,7 @@ export default function StockPortal() {
     setStockEditMode(false);
     setEditingDraftId(0);
     setEditingDraftMeta(null);
+    setEditingDraftBaselineSignature("");
     setPendingEditDraftId(0);
     setPhotos([]);
     resetStockVariants();
@@ -2529,6 +2581,7 @@ export default function StockPortal() {
     setStockEditMode(false);
     setEditingDraftId(0);
     setEditingDraftMeta(null);
+    setEditingDraftBaselineSignature("");
     setPendingEditDraftId(0);
     const logoutForm = new FormData();
     logoutForm.set("intent", "stock_logout");
@@ -2669,6 +2722,15 @@ export default function StockPortal() {
           sku: String(draft.editingDraftMeta?.sku || ""),
           locationCode: String(draft.editingDraftMeta?.locationCode || ""),
         });
+        setEditingDraftBaselineSignature(
+          String(draft.editingDraftBaselineSignature || "") ||
+            stockEditSignature({
+              audience: restoredAudience,
+              garment: restoredGarment,
+              photos: restoredPhotos,
+              variants: restoredVariants,
+            }),
+        );
       }
     } catch (restoreError) {
       console.error("No se pudo restaurar el borrador de stock", restoreError);
@@ -2951,6 +3013,7 @@ export default function StockPortal() {
     } else {
       setEditingDraftId(0);
       setEditingDraftMeta(null);
+      setEditingDraftBaselineSignature("");
       setPhotos([]);
       resetStockVariants();
       setActiveTab("capturar");
@@ -3024,6 +3087,7 @@ export default function StockPortal() {
       selectedGarment,
       editingDraftId,
       editingDraftMeta,
+      editingDraftBaselineSignature,
       variantGroups,
       photos,
       updatedAt: new Date().toISOString(),
@@ -3051,6 +3115,7 @@ export default function StockPortal() {
     selectedGarment,
     editingDraftId,
     editingDraftMeta,
+    editingDraftBaselineSignature,
     variantGroups,
   ]);
 
@@ -3195,6 +3260,14 @@ export default function StockPortal() {
       sku: String(draft?.sku || ""),
       locationCode: String(draft?.locationCode || ""),
     });
+    setEditingDraftBaselineSignature(
+      stockEditSignature({
+        audience: restoredAudience,
+        garment: restoredGarment,
+        photos: restoredPhotos,
+        variants: restoredVariants,
+      }),
+    );
     setActiveTab("capturar");
     setCaptureStep("details");
     setShowPreparedHistory(false);
@@ -3255,29 +3328,29 @@ export default function StockPortal() {
   }
 
   const cleanVariantGroups = useMemo(
-    () =>
-      variantGroups
-        .map((variant) => ({
-          color: String(variant.color || "").trim(),
-          price: Math.max(0, Number(variant.price || 0) || 0),
-          sizes: (Array.isArray(variant.sizes) ? variant.sizes : [])
-            .map((sizeRow) => ({
-              size: String(sizeRow.size || "")
-                .trim()
-                .toUpperCase(),
-              quantity: Math.max(
-                1,
-                Math.min(9999, Number(sizeRow.quantity || 0) || 0),
-              ),
-            }))
-            .filter(
-              (sizeRow) =>
-                currentStockSizes.includes(sizeRow.size) && sizeRow.quantity,
-            ),
-        }))
-        .filter((variant) => variant.color && variant.sizes.length),
+    () => stockEditComparableVariants(variantGroups, currentStockSizes),
     [currentStockSizes, variantGroups],
   );
+
+  const stockEditCurrentSignature = useMemo(
+    () =>
+      stockEditSignature({
+        audience: selectedAudience,
+        garment: selectedGarment,
+        photos,
+        variants: cleanVariantGroups,
+      }),
+    [cleanVariantGroups, photos, selectedAudience, selectedGarment],
+  );
+  const isEditingStockDraft = Boolean(editingDraftId || editingDraftMeta);
+  const hasStockEditChanges = Boolean(
+    !isEditingStockDraft ||
+      (editingDraftId &&
+        editingDraftBaselineSignature &&
+        stockEditCurrentSignature !== editingDraftBaselineSignature),
+  );
+  const canSubmitStockForm =
+    stockFormComplete && (!isEditingStockDraft || hasStockEditChanges);
 
   function updateVariant(variantId, field, value) {
     setVariantGroups((currentGroups) =>
@@ -3859,6 +3932,20 @@ export default function StockPortal() {
                 method="post"
                 className={styles.form}
                 onSubmit={(event) => {
+                  if (isEditingStockDraft && !editingDraftId) {
+                    event.preventDefault();
+                    window.alert(
+                      "No se pudo confirmar que orden estas editando. Vuelve al historial y abre la orden otra vez.",
+                    );
+                    return;
+                  }
+                  if (editingDraftId && !hasStockEditChanges) {
+                    event.preventDefault();
+                    window.alert(
+                      "No hiciste cambios en esta orden. Usa el boton de reimprimir del historial si solo necesitas etiquetas.",
+                    );
+                    return;
+                  }
                   if (!window.confirm("¿Seguro que quieres marcar este producto como listo?")) {
                     event.preventDefault();
                     return;
@@ -3888,6 +3975,11 @@ export default function StockPortal() {
                   type="hidden"
                   name="editingDraftId"
                   value={editingDraftId ? String(editingDraftId) : ""}
+                />
+                <input
+                  type="hidden"
+                  name="editingExpected"
+                  value={isEditingStockDraft ? "1" : ""}
                 />
                 {photos.map((photo) => (
                   <input
@@ -4163,6 +4255,12 @@ export default function StockPortal() {
 
                 {!stockSizeMenuOpen ? (
                   <div className={styles.formActions}>
+                    {editingDraftId && !hasStockEditChanges ? (
+                      <p className={styles.empty}>
+                        Haz un cambio para guardar la edicion. Si solo necesitas
+                        etiquetas, usa reimprimir en el historial.
+                      </p>
+                    ) : null}
                     <button
                       className={styles.secondaryButton}
                       type="button"
@@ -4173,7 +4271,7 @@ export default function StockPortal() {
                     <button
                       className={styles.primaryButton}
                       type="submit"
-                      disabled={isSubmitting || !stockFormComplete}
+                      disabled={isSubmitting || !canSubmitStockForm}
                     >
                       {isSubmitting ? "Guardando..." : "Listo"}
                     </button>

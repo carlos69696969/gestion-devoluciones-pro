@@ -925,6 +925,11 @@
   gap: 10px;
 }
 
+.formActions .empty {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .pendingLayout {
   max-width: 980px;
   margin: 0 auto;
