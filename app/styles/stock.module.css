@@ -601,35 +601,41 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: #000;
+  background: rgba(15, 23, 42, 0.72);
   display: grid;
-  place-items: stretch;
+  place-items: center;
+  padding: 24px;
 }
 
 .photoViewer {
   position: relative;
-  width: 100%;
-  height: 100dvh;
-  min-height: 100vh;
+  width: min(92vw, 980px);
+  height: min(86dvh, 760px);
+  min-height: 420px;
+  border: 1px solid rgba(217, 222, 231, 0.9);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.32);
   display: grid;
   grid-template-rows: minmax(0, 1fr);
+  padding: 18px;
 }
 
 .photoViewerClose {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 14px;
+  right: 14px;
   z-index: 2;
   min-height: 42px;
   padding: 0 18px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid #d9dee7;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.96);
   color: #111827;
   font: inherit;
   font-size: 14px;
   font-weight: 900;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
 }
 
 .photoViewerStage {
@@ -637,13 +643,17 @@
   overflow: hidden;
   display: grid;
   place-items: center;
-  padding: 0;
+  padding: 18px;
+  border-radius: 10px;
+  background: #f8fafc;
   touch-action: none;
 }
 
 .photoViewerStage img {
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
   transform-origin: center center;
   transition: transform 0.08s linear;
@@ -1313,5 +1323,21 @@
   .photoGrid,
   .downloadGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .photoViewerBackdrop {
+    padding: 10px;
+  }
+
+  .photoViewer {
+    width: 100%;
+    height: 88dvh;
+    min-height: 0;
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .photoViewerStage {
+    padding: 10px;
   }
 }
