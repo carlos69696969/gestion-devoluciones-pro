@@ -2386,6 +2386,7 @@ export default function StockPortal() {
   const isPublisherLockingSelectedDraft = Boolean(
     selectedDraftId &&
       pendingSelectedDraftId === selectedDraftId &&
+      !lockStockFetcher.data?.ok &&
       lockStockFetcher.state !== "idle",
   );
   const currentStockSizes = useMemo(
@@ -2835,12 +2836,7 @@ export default function StockPortal() {
   ]);
 
   useEffect(() => {
-    if (
-      !pendingSelectedDraftId ||
-      lockStockFetcher.state !== "idle" ||
-      !lockStockFetcher.data
-    )
-      return;
+    if (!pendingSelectedDraftId || !lockStockFetcher.data) return;
     const responseDraftId = Number(lockStockFetcher.data.draftId || 0);
     if (responseDraftId && responseDraftId !== Number(pendingSelectedDraftId))
       return;
