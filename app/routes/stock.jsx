@@ -41,6 +41,15 @@ const STOCK_USER_ROLES = {
   PUBLISHER: "publicador_productos",
 };
 const STOCK_ALPHA_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
+const STOCK_ALPHA_SIZE_LABELS = {
+  XS: "XCH",
+  S: "CH",
+  M: "M",
+  L: "G",
+  XL: "XG",
+  XXL: "XXG",
+  XXXL: "XXXG",
+};
 const STOCK_WOMEN_BOTTOM_SIZES = [
   "1",
   "3",
@@ -860,6 +869,17 @@ function stockSizesFor(audience, garment) {
     return STOCK_MEN_SHOE_SIZES;
   }
   return STOCK_ALPHA_SIZES;
+}
+
+function stockSizeLabel(size) {
+  const cleanSize = String(size || "")
+    .trim()
+    .toUpperCase();
+  return STOCK_ALPHA_SIZE_LABELS[cleanSize] || cleanSize;
+}
+
+function formatStockSizeQuantity(size, quantity) {
+  return `${stockSizeLabel(size)}=(${quantity})`;
 }
 
 function stockSkuPrefix(audience, garment) {
@@ -2154,7 +2174,7 @@ function normalizeStockPhotoDraft(photo, index = 0) {
 
 function formatStockSizes(sizes = []) {
   return sizes
-    .map((sizeRow) => `${sizeRow.size}=(${sizeRow.quantity})`)
+    .map((sizeRow) => formatStockSizeQuantity(sizeRow.size, sizeRow.quantity))
     .join(", ");
 }
 
@@ -2170,7 +2190,7 @@ function stockPrintSizeBatches(variants = []) {
           1,
           Math.min(9999, Number(sizeRow?.quantity || 0) || 0),
         );
-        return size && quantity ? `${size}:${quantity}` : "";
+        return size && quantity ? `${stockSizeLabel(size)}:${quantity}` : "";
       }),
     )
     .filter(Boolean)
@@ -4019,8 +4039,11 @@ export default function StockPortal() {
                                   }
                                 >
                                   {selectedSizeRow
-                                    ? `${size}=(${selectedSizeRow.quantity})`
-                                    : size}
+                                    ? formatStockSizeQuantity(
+                                        size,
+                                        selectedSizeRow.quantity,
+                                      )
+                                    : stockSizeLabel(size)}
                                 </button>
                               );
                             })}
@@ -4047,7 +4070,10 @@ export default function StockPortal() {
                               role="dialog"
                               aria-modal="true"
                             >
-                              <h3>Cantidad para {variant.selectedSize}</h3>
+                              <h3>
+                                Cantidad para{" "}
+                                {stockSizeLabel(variant.selectedSize)}
+                              </h3>
                               <input
                                 autoFocus
                                 min="1"
@@ -4396,11 +4422,14 @@ export default function StockPortal() {
                                 key={`${selectedStockDetail.id}-${variantIndex}-${sizeRow.size}`}
                               >
                                 <span>
-                                  {sizeRow.size}=({sizeRow.quantity})
+                                  {formatStockSizeQuantity(
+                                    sizeRow.size,
+                                    sizeRow.quantity,
+                                  )}
                                 </span>
                                 <input
                                   type="checkbox"
-                                  aria-label={`Listo ${variant.color || "color"} ${sizeRow.size}`}
+                                  aria-label={`Listo ${variant.color || "color"} ${stockSizeLabel(sizeRow.size)}`}
                                   checked={Boolean(
                                     checkedStockItems[
                                       `draft:${selectedStockDetail.id}:variant:${variantIndex}:size:${sizeRow.size}`
