@@ -24,8 +24,9 @@ const MAX_STOCK_PHOTOS = 16;
 const MAX_STOCK_PHOTO_CHARS = 1_250_000;
 const ADMIN_API_VERSION = "2025-10";
 const STOCK_PUBLICATION_LOCK_MS = 2 * 60 * 1000;
-const STOCK_PUBLICATION_REFRESH_MS = 5000;
+const STOCK_PUBLICATION_REFRESH_MS = 10000;
 const STOCK_PUBLICATION_HEARTBEAT_MS = 30000;
+const STOCK_RELEASE_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const STOCK_CAPTURE_DRAFT_VERSION = 1;
 const STOCK_TIME_ZONE = "America/Mexico_City";
 const STOCK_DRAFT_STATUS = {
@@ -197,6 +198,10 @@ const STOCK_GARMENTS = [
     audiences: ["hombre", "mujer"],
   },
 ];
+
+const stockReleasedLocationSyncTimes =
+  globalThis.__carianaStockReleasedLocationSyncTimes ||
+  (globalThis.__carianaStockReleasedLocationSyncTimes = new Map());
 
 function cleanShop(value) {
   return String(value || "")
@@ -740,6 +745,26 @@ async function syncReleasedStockLocations(shop) {
     });
   }
   await archiveShopifyZeroInventoryProducts({ cleanShopDomain, sessions });
+}
+
+function queueReleasedStockLocationSync(shop) {
+  const cleanShopDomain = cleanShop(shop);
+  if (!cleanShopDomain) return;
+  const lastRunAt = Number(
+    stockReleasedLocationSyncTimes.get(cleanShopDomain) || 0,
+  );
+  if (Date.now() - lastRunAt < STOCK_RELEASE_SYNC_INTERVAL_MS) return;
+  stockReleasedLocationSyncTimes.set(cleanShopDomain, Date.now());
+  syncReleasedStockLocations(cleanShopDomain).catch((error) => {
+    stockReleasedLocationSyncTimes.set(
+      cleanShopDomain,
+      Date.now() - STOCK_RELEASE_SYNC_INTERVAL_MS + 60000,
+    );
+    console.error("No se pudo sincronizar ubicaciones liberadas de stock", {
+      shop: cleanShopDomain,
+      error,
+    });
+  });
 }
 
 async function clearExpiredStockPublicationLocks(shop) {
@@ -1303,7 +1328,7 @@ export async function loader({ request }) {
     }
 
     if (stockUser) {
-      await syncReleasedStockLocations(shop);
+      queueReleasedStockLocationSync(shop);
       await clearExpiredStockPublicationLocks(shop);
       [
         drafts,
@@ -1313,16 +1338,18 @@ export async function loader({ request }) {
         preparedHistoryRows,
         stockSettings,
       ] = await Promise.all([
-        prisma.stockProductDraft.findMany({
-          where: {
-            shop,
-            status: {
-              in: [STOCK_DRAFT_STATUS.PENDING, STOCK_DRAFT_STATUS.EDITING],
-            },
-          },
-          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          take: 80,
-        }),
+        stockUser.role === STOCK_USER_ROLES.PUBLISHER
+          ? prisma.stockProductDraft.findMany({
+              where: {
+                shop,
+                status: {
+                  in: [STOCK_DRAFT_STATUS.PENDING, STOCK_DRAFT_STATUS.EDITING],
+                },
+              },
+              orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+              take: 80,
+            })
+          : Promise.resolve([]),
         prisma.stockProductDraft.findMany({
           where: { shop },
           select: { sku: true },
@@ -2623,12 +2650,26 @@ export default function StockPortal() {
   }, [shop, stockLogoutTime, stockUser, captureDraftKey, publisherDraftKey]);
 
   useEffect(() => {
-    if (!stockUser || !isPreparerStock) return undefined;
+    if (
+      !stockUser ||
+      !isPreparerStock ||
+      editingDraftId ||
+      showPreparedHistory ||
+      captureStep !== "audience"
+    )
+      return undefined;
     const intervalId = window.setInterval(() => {
       if (revalidator.state === "idle") revalidator.revalidate();
     }, 30000);
     return () => window.clearInterval(intervalId);
-  }, [isPreparerStock, revalidator, stockUser]);
+  }, [
+    captureStep,
+    editingDraftId,
+    isPreparerStock,
+    revalidator,
+    showPreparedHistory,
+    stockUser,
+  ]);
 
   useEffect(() => {
     if (navigation.state !== "idle") return;
@@ -2839,6 +2880,15 @@ export default function StockPortal() {
       setStockReprintMode(false);
       revalidator.revalidate();
     } else {
+      setEditingDraftId(0);
+      setEditingDraftMeta(null);
+      setPhotos([]);
+      resetStockVariants();
+      setActiveTab("capturar");
+      setCaptureStep("audience");
+      setShowPreparedHistory(true);
+      setStockEditMode(true);
+      setStockReprintMode(false);
       window.alert(
         editStockFetcher.data.error ||
           "No se pudo abrir esta orden para editar.",
@@ -3094,6 +3144,7 @@ export default function StockPortal() {
       window.alert(STOCK_PUBLICATION_EDIT_BLOCKED_MESSAGE);
       return;
     }
+    loadStockDraftForEditing(item);
     setPendingEditDraftId(Number(item.id));
     editStockFetcher.submit(
       {
