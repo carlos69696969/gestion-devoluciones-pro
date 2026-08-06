@@ -3422,7 +3422,13 @@ export default function StockPortal() {
   function openPhotoPreview(photo) {
     setPreviewPhoto(photo);
     setPhotoZoom({ scale: 1, x: 0, y: 0 });
-    photoGestureRef.current = { distance: 0, scale: 1, startX: 0, startY: 0 };
+    photoGestureRef.current = {
+      dragging: false,
+      distance: 0,
+      scale: 1,
+      startX: 0,
+      startY: 0,
+    };
   }
 
   function closePhotoPreview() {
@@ -3443,6 +3449,34 @@ export default function StockPortal() {
     event.preventDefault();
     const direction = event.deltaY > 0 ? -0.2 : 0.2;
     adjustPhotoZoom(photoZoom.scale + direction);
+  }
+
+  function handlePreviewMouseDown(event) {
+    if (photoZoom.scale <= 1) return;
+    event.preventDefault();
+    photoGestureRef.current = {
+      ...photoGestureRef.current,
+      dragging: true,
+      startX: event.clientX - photoZoom.x,
+      startY: event.clientY - photoZoom.y,
+    };
+  }
+
+  function handlePreviewMouseMove(event) {
+    if (!photoGestureRef.current.dragging || photoZoom.scale <= 1) return;
+    event.preventDefault();
+    setPhotoZoom((current) => ({
+      ...current,
+      x: event.clientX - photoGestureRef.current.startX,
+      y: event.clientY - photoGestureRef.current.startY,
+    }));
+  }
+
+  function stopPreviewMouseDrag() {
+    photoGestureRef.current = {
+      ...photoGestureRef.current,
+      dragging: false,
+    };
   }
 
   function touchDistance(touches) {
@@ -4441,6 +4475,10 @@ export default function StockPortal() {
               onTouchMove={handlePreviewTouchMove}
               onTouchEnd={handlePreviewTouchEnd}
               onWheel={handlePreviewWheel}
+              onMouseDown={handlePreviewMouseDown}
+              onMouseMove={handlePreviewMouseMove}
+              onMouseUp={stopPreviewMouseDrag}
+              onMouseLeave={stopPreviewMouseDrag}
               onClick={(event) => {
                 if (event.currentTarget === event.target) closePhotoPreview();
               }}
