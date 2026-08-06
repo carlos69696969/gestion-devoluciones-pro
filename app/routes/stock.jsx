@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createCookie,
   Form,
@@ -2331,6 +2331,7 @@ export default function StockPortal() {
   const lastDraftCountRef = useRef(drafts.length);
   const restoredPublisherStateKeyRef = useRef("");
   const publishNoticeArmedRef = useRef(false);
+  const publisherListScrollRef = useRef({ pending: false, y: 0 });
   const isSubmitting = navigation.state !== "idle";
   const navigationIntent = navigation.formData?.get("intent");
   const isStockLoginSubmitting =
@@ -2429,6 +2430,36 @@ export default function StockPortal() {
     }
     setSearchParams(nextParams, { replace: true });
   }
+
+  const rememberPublisherListScroll = useCallback(() => {
+    if (!isProductPublisher || selectedDraftId) return;
+    publisherListScrollRef.current = {
+      pending: true,
+      y:
+        window.scrollY ||
+        document.documentElement.scrollTop ||
+        document.body.scrollTop ||
+        0,
+    };
+  }, [isProductPublisher, selectedDraftId]);
+
+  const restorePublisherListScroll = useCallback(() => {
+    const scrollState = publisherListScrollRef.current;
+    if (!scrollState.pending || !isProductPublisher || selectedDraftId) return;
+    const maxScrollY = Math.max(
+      0,
+      document.documentElement.scrollHeight - window.innerHeight,
+    );
+    const targetY = Math.min(scrollState.y, maxScrollY);
+    publisherListScrollRef.current = { pending: false, y: targetY };
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: targetY, left: 0, behavior: "auto" });
+      window.setTimeout(
+        () => window.scrollTo({ top: targetY, left: 0, behavior: "auto" }),
+        40,
+      );
+    });
+  }, [isProductPublisher, selectedDraftId]);
 
   function resetStockCaptureFlow(clearSavedFlag = false) {
     try {
@@ -2784,10 +2815,28 @@ export default function StockPortal() {
   useEffect(() => {
     if (!isProductPublisher) return undefined;
     const intervalId = window.setInterval(() => {
-      if (revalidator.state === "idle") revalidator.revalidate();
+      if (revalidator.state !== "idle") return;
+      rememberPublisherListScroll();
+      revalidator.revalidate();
     }, STOCK_PUBLICATION_REFRESH_MS);
     return () => window.clearInterval(intervalId);
-  }, [isProductPublisher, revalidator]);
+  }, [
+    isProductPublisher,
+    rememberPublisherListScroll,
+    revalidator,
+    selectedDraftId,
+  ]);
+
+  useEffect(() => {
+    if (revalidator.state !== "idle") return;
+    restorePublisherListScroll();
+  }, [
+    drafts,
+    isProductPublisher,
+    restorePublisherListScroll,
+    revalidator.state,
+    selectedDraftId,
+  ]);
 
   useEffect(() => {
     if (!isProductPublisher || !selectedDraftId) return undefined;
