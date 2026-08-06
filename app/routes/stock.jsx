@@ -2356,6 +2356,11 @@ export default function StockPortal() {
   const isSelectedDraftPublishReady =
     selectedDraftChecklistKeys.length > 0 &&
     selectedDraftChecklistKeys.every((key) => checkedStockItems[key]);
+  const isPublisherLockingSelectedDraft = Boolean(
+    selectedDraftId &&
+      pendingSelectedDraftId === selectedDraftId &&
+      lockStockFetcher.state !== "idle",
+  );
   const currentStockSizes = useMemo(
     () => stockSizesFor(selectedAudience, selectedGarment),
     [selectedAudience, selectedGarment],
@@ -2965,7 +2970,9 @@ export default function StockPortal() {
       return;
     }
     setPublisherMessage("");
+    setSelectedDraftId(draft.id);
     setPendingSelectedDraftId(draft.id);
+    setPublisherDraftUrl(draft.id);
     lockStockFetcher.submit(
       {
         intent: "lock_stock_draft",
@@ -4203,13 +4210,16 @@ export default function StockPortal() {
                       className={styles.primaryButton}
                       type="submit"
                       disabled={
+                        isPublisherLockingSelectedDraft ||
                         publishStockFetcher.state !== "idle" ||
                         !isSelectedDraftPublishReady
                       }
                     >
-                      {publishStockFetcher.state !== "idle"
-                        ? "Guardando..."
-                        : "Listo"}
+                      {isPublisherLockingSelectedDraft
+                        ? "Tomando..."
+                        : publishStockFetcher.state !== "idle"
+                          ? "Guardando..."
+                          : "Listo"}
                     </button>
                   </publishStockFetcher.Form>
                 </div>
