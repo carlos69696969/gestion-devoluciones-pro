@@ -55,6 +55,90 @@ const COURIER_ROUTE_SESSION_STARTED_ACTION = "courier_route_session_started";
 const COURIER_ROUTE_SESSION_ENDED_ACTION = "courier_route_session_ended";
 const COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION = "courier_route_order_not_located";
 const COURIER_ADMIN_NOT_LOCATED_REPROGRAM_NOTE = "admin_not_located_reprogram:1";
+const COURIER_OFFLINE_QUEUE_STORAGE_KEY = "cariana_courier_offline_queue_v1";
+const COURIER_OFFLINE_QUEUE_EVENT = "cariana:courier-offline-queue";
+const COURIER_OFFLINE_ACTION_INTENTS = new Set([
+  "courier_mark_en_route",
+  "courier_mark_not_delivered",
+  "courier_mark_delivered",
+  "courier_return_mark_received",
+  "courier_return_pickup_attempt_failed",
+  "courier_return_reject_after_failed_pickups",
+]);
+
+function getCourierOfflineActionLabel(intent) {
+  const normalizedIntent = String(intent || "").trim().toLowerCase();
+  if (normalizedIntent === "courier_mark_en_route") return "en ruta";
+  if (normalizedIntent === "courier_mark_delivered") return "entregado";
+  if (normalizedIntent === "courier_mark_not_delivered") return "no entregado";
+  if (normalizedIntent === "courier_return_mark_received") return "recibido";
+  if (normalizedIntent === "courier_return_pickup_attempt_failed") return "no recibido";
+  if (normalizedIntent === "courier_return_reject_after_failed_pickups") return "rechazado";
+  return "accion";
+}
+
+function getCourierOfflineField(fields, name) {
+  const match = (Array.isArray(fields) ? fields : []).find(([fieldName]) => fieldName === name);
+  return String(match?.[1] || "");
+}
+
+function serializeCourierOfflineFormData(formData) {
+  return Array.from(formData.entries()).map(([name, value]) => [name, String(value || "")]);
+}
+
+function readCourierOfflineQueue() {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(COURIER_OFFLINE_QUEUE_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((entry) => entry && entry.id && Array.isArray(entry.fields)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCourierOfflineQueue(queue) {
+  if (typeof window === "undefined") return;
+  const cleanQueue = Array.isArray(queue) ? queue.filter((entry) => entry && entry.id) : [];
+  window.localStorage.setItem(COURIER_OFFLINE_QUEUE_STORAGE_KEY, JSON.stringify(cleanQueue));
+  window.dispatchEvent(new Event(COURIER_OFFLINE_QUEUE_EVENT));
+}
+
+function createCourierOfflineActionId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function getCourierOfflineQueuedStatus(entry) {
+  const intent = getCourierOfflineField(entry?.fields, "intent");
+  const currentStatus = getCourierOfflineField(entry?.fields, "currentStatus").trim().toLowerCase();
+  const currentAttemptCount = Math.max(0, Number(getCourierOfflineField(entry?.fields, "currentAttemptCount") || "0"));
+  if (intent === "courier_mark_en_route") {
+    if (currentStatus.startsWith("en_ruta_")) return currentStatus;
+    return `en_ruta_${Math.min(Math.max(currentAttemptCount + 1, 1), 3)}`;
+  }
+  if (intent === "courier_mark_delivered") return "entregado";
+  if (intent === "courier_mark_not_delivered") return currentAttemptCount >= 3 ? "recoger_en_sucursal" : "no_entregado";
+  if (intent === "courier_return_mark_received") return "recibida";
+  if (intent === "courier_return_pickup_attempt_failed") {
+    const routeStep = Number(String(currentStatus).match(/en_ruta_(\d+)/)?.[1] || "0");
+    const nextAttempt = Math.min(Math.max(routeStep || currentAttemptCount || 1, 1), 3);
+    return `intento_fallido_${nextAttempt}`;
+  }
+  if (intent === "courier_return_reject_after_failed_pickups") return "rechazada";
+  return currentStatus || "pendiente";
+}
+
+function getCourierOfflineQueuedAttemptCount(entry) {
+  const intent = getCourierOfflineField(entry?.fields, "intent");
+  const currentAttemptCount = Math.max(0, Number(getCourierOfflineField(entry?.fields, "currentAttemptCount") || "0"));
+  const nextStatus = getCourierOfflineQueuedStatus(entry);
+  if (nextStatus.startsWith("en_ruta_")) return Number(nextStatus.replace("en_ruta_", "")) || currentAttemptCount;
+  if (nextStatus.startsWith("intento_fallido_")) return Number(nextStatus.replace("intento_fallido_", "")) || currentAttemptCount;
+  if (intent === "courier_mark_not_delivered") return Math.min(Math.max(currentAttemptCount, 1), 3);
+  return currentAttemptCount;
+}
 
 function getFailedPickupMessage(request, rejectionReason) {
   if (getReturnRetryAttemptLabel(request) !== "segundo intento") return rejectionReason;
@@ -1543,6 +1627,24 @@ export const action = async ({ request }) => {
       return { ok: false, error: "Accion no valida." };
     }
 
+    const offlineSync = String(formData.get("offlineSync") || "") === "1";
+    if (offlineSync) {
+      const existingActivityWhere = {
+        shop,
+        courierId: Number(dailyAccess.courierId),
+        requestId,
+        action: intent,
+      };
+      if (dailyAccess.routeId) existingActivityWhere.routeId = String(dailyAccess.routeId);
+      const existingActivity = await prisma.courierActivity.findFirst({
+        where: existingActivityWhere,
+        select: { id: true },
+      });
+      if (existingActivity) {
+        return { ok: true, offlineSync: true, duplicate: true, requestId };
+      }
+    }
+
     if (intent === "courier_mark_delivered") {
       const submittedDeliveryCode = String(formData.get("deliveryCode") || "")
         .replace(/\D/g, "")
@@ -1639,6 +1741,17 @@ export const action = async ({ request }) => {
       intent === "courier_return_reject_after_failed_pickups"
         ? "historial"
         : "en_ruta";
+
+    if (offlineSync) {
+      return {
+        ok: true,
+        offlineSync: true,
+        requestId,
+        nextStatus: nextOverrideStatus,
+        attemptCount: nextOverrideAttemptCount,
+        tab: nextTab,
+      };
+    }
 
     url.searchParams.set("tab", nextTab);
     url.searchParams.set("overrideRequestId", nextOverrideRequestId);
@@ -2210,6 +2323,119 @@ export default function RepartidorPublicPortal() {
   const [showBranchReturnConfirmation, setShowBranchReturnConfirmation] = useState(false);
   const [branchReturnConfirmationError, setBranchReturnConfirmationError] = useState("");
   const [customerNoteRequest, setCustomerNoteRequest] = useState(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [offlineQueue, setOfflineQueue] = useState([]);
+  const [offlineSyncing, setOfflineSyncing] = useState(false);
+  const [offlineSyncMessage, setOfflineSyncMessage] = useState("");
+  const offlineSyncInProgressRef = useRef(false);
+
+  const refreshOfflineQueue = () => setOfflineQueue(readCourierOfflineQueue());
+
+  const queueCourierOfflineForm = (form, requestRow) => {
+    const formData = new FormData(form);
+    const intent = String(formData.get("intent") || "").trim();
+    if (!COURIER_OFFLINE_ACTION_INTENTS.has(intent)) return false;
+    const actionId = String(formData.get("offlineActionId") || "").trim() || createCourierOfflineActionId();
+    formData.set("offlineActionId", actionId);
+    const fields = serializeCourierOfflineFormData(formData);
+    const currentQueue = readCourierOfflineQueue().filter((entry) => entry.id !== actionId);
+    const queuedAction = {
+      id: actionId,
+      actionUrl: form.getAttribute("action") || `${location.pathname}${location.search}`,
+      fields,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+      requestId: String(formData.get("requestId") || requestRow?.id || ""),
+      orderNumber: String(formData.get("orderNumber") || requestRow?.orderNumber || ""),
+      label: getCourierOfflineActionLabel(intent),
+    };
+    writeCourierOfflineQueue([...currentQueue, queuedAction]);
+    setOfflineSyncMessage(`Accion guardada sin conexion para el pedido #${queuedAction.orderNumber || "-"}.`);
+    return true;
+  };
+
+  const syncCourierOfflineQueue = async () => {
+    if (offlineSyncInProgressRef.current || typeof window === "undefined" || !window.navigator.onLine) return;
+    const pendingQueue = readCourierOfflineQueue();
+    if (!pendingQueue.some((entry) => entry.status !== "synced")) return;
+    offlineSyncInProgressRef.current = true;
+    setOfflineSyncing(true);
+    setOfflineSyncMessage("Sincronizando acciones pendientes...");
+    let nextQueue = pendingQueue.slice();
+    try {
+      for (const queuedAction of pendingQueue) {
+        if (queuedAction.status === "synced") continue;
+        const formData = new FormData();
+        for (const [name, value] of queuedAction.fields) formData.append(name, value);
+        formData.set("offlineSync", "1");
+        formData.set("offlineActionId", queuedAction.id);
+        const response = await fetch(queuedAction.actionUrl || `${location.pathname}${location.search}`, {
+          method: "POST",
+          body: formData,
+          credentials: "same-origin",
+        });
+        const contentType = response.headers.get("content-type") || "";
+        const result = contentType.includes("application/json") ? await response.json() : null;
+        if (!response.ok || result?.ok === false) {
+          const errorMessage = result?.error || "No se pudo sincronizar esta accion.";
+          nextQueue = nextQueue.map((entry) =>
+            entry.id === queuedAction.id ? { ...entry, status: "failed", error: errorMessage } : entry,
+          );
+          writeCourierOfflineQueue(nextQueue);
+          refreshOfflineQueue();
+          setOfflineSyncMessage(errorMessage);
+          break;
+        }
+        nextQueue = nextQueue.filter((entry) => entry.id !== queuedAction.id);
+        writeCourierOfflineQueue(nextQueue);
+        refreshOfflineQueue();
+      }
+      if (!nextQueue.length) {
+        setOfflineSyncMessage("Acciones sincronizadas.");
+        if (revalidator.state === "idle") revalidator.revalidate();
+      }
+    } catch {
+      setOfflineSyncMessage("Sin conexion estable. Se reintentara automaticamente.");
+    } finally {
+      offlineSyncInProgressRef.current = false;
+      setOfflineSyncing(false);
+    }
+  };
+
+  const handleCourierOfflineAwareSubmit = (event, requestRow, actionLabel, confirmNote) => {
+    if (!confirmCourierAction(requestRow, actionLabel, confirmNote)) {
+      event.preventDefault();
+      return false;
+    }
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      event.preventDefault();
+      queueCourierOfflineForm(event.currentTarget, requestRow);
+      return false;
+    }
+    event.currentTarget.querySelectorAll("button[type='submit']").forEach((button) => {
+      button.disabled = true;
+    });
+    return true;
+  };
+
+  useEffect(() => {
+    const refreshNetworkState = () => {
+      setIsOnline(window.navigator.onLine);
+      refreshOfflineQueue();
+    };
+    refreshNetworkState();
+    window.addEventListener("online", refreshNetworkState);
+    window.addEventListener("offline", refreshNetworkState);
+    window.addEventListener(COURIER_OFFLINE_QUEUE_EVENT, refreshOfflineQueue);
+    return () => {
+      window.removeEventListener("online", refreshNetworkState);
+      window.removeEventListener("offline", refreshNetworkState);
+      window.removeEventListener(COURIER_OFFLINE_QUEUE_EVENT, refreshOfflineQueue);
+    };
+  }, []);
+  useEffect(() => {
+    if (!requiresDailyAccess && !routeTransferred && isOnline && offlineQueue.length) syncCourierOfflineQueue();
+  }, [isOnline, offlineQueue.length, requiresDailyAccess, routeTransferred]);
   useEffect(() => {
     const submission = deliveryCodeSubmissionRef.current;
     if (!submission.requestId) return;
@@ -2506,7 +2732,31 @@ export default function RepartidorPublicPortal() {
   const overrideRequestId = String(searchParams.get("overrideRequestId") || "").trim();
   const overrideStatus = String(searchParams.get("overrideStatus") || "").trim().toLowerCase();
   const overrideAttemptCount = Math.max(0, Number(searchParams.get("overrideAttemptCount") || "0"));
-  const effectiveCourierOrders = courierOrders.map((request) =>
+  const offlineQueueByRequestId = new Map();
+  for (const queuedAction of offlineQueue) {
+    if (queuedAction.status === "synced") continue;
+    const queuedRequestId = String(queuedAction.requestId || getCourierOfflineField(queuedAction.fields, "requestId") || "");
+    if (queuedRequestId) offlineQueueByRequestId.set(queuedRequestId, queuedAction);
+  }
+  const pendingOfflineRequestIds = new Set(
+    Array.from(offlineQueueByRequestId.entries())
+      .filter(([, queuedAction]) => queuedAction.status !== "failed")
+      .map(([requestId]) => requestId),
+  );
+  const offlineAdjustedCourierOrders = courierOrders.map((request) => {
+    const queuedAction = offlineQueueByRequestId.get(String(request?.id || ""));
+    if (!queuedAction) return request;
+    const nextStatus = getCourierOfflineQueuedStatus(queuedAction);
+    const nextAttemptCount = getCourierOfflineQueuedAttemptCount(queuedAction);
+    return {
+      ...request,
+      status: nextStatus || request.status,
+      attemptCount: nextAttemptCount || Number(request?.attemptCount || 0),
+      offlinePending: queuedAction.status !== "failed",
+      offlineSyncFailed: queuedAction.status === "failed",
+    };
+  });
+  const effectiveCourierOrders = offlineAdjustedCourierOrders.map((request) =>
     (() => {
       const isOverrideTarget = overrideRequestId && String(request?.id || "").trim() === overrideRequestId;
       const persistedStatus = String(request?.status || "").trim().toLowerCase();
@@ -2651,15 +2901,7 @@ export default function RepartidorPublicPortal() {
       method="post"
       className={styles.inlineActionForm}
       onSubmit={(event) => {
-        if (!confirmCourierAction(request, actionLabel, confirmNote)) {
-          event.preventDefault();
-          return;
-        }
-        event.currentTarget
-          .querySelectorAll("button[type='submit']")
-          .forEach((button) => {
-            button.disabled = true;
-          });
+        handleCourierOfflineAwareSubmit(event, request, actionLabel, confirmNote);
       }}
     >
       <input type="hidden" name="shop" value={shop || ""} />
@@ -2672,7 +2914,11 @@ export default function RepartidorPublicPortal() {
       <input type="hidden" name="currentStatus" value={String(request.status || "")} />
       <input type="hidden" name="currentAttemptCount" value={String(request.attemptCount || 0)} />
       <input type="hidden" name="currentScheduledDate" value={String(request.pickupDate || "")} />
-      <button type="submit" className={buttonClassName} disabled={isSubmitting}>
+      <button
+        type="submit"
+        className={buttonClassName}
+        disabled={isSubmitting || pendingOfflineRequestIds.has(String(request.id || ""))}
+      >
         {buttonLabel}
       </button>
     </Form>
@@ -2689,10 +2935,7 @@ export default function RepartidorPublicPortal() {
       <Form
       method="post"
       onSubmit={(event) => {
-        if (!confirmCourierAction(request, "devolucion no entregada", "Se enviara la notificacion al cliente.")) {
-          event.preventDefault();
-          return;
-        }
+        handleCourierOfflineAwareSubmit(event, request, "devolucion no entregada", "Se enviara la notificacion al cliente.");
       }}
     >
       <input type="hidden" name="shop" value={shop || ""} />
@@ -2709,7 +2952,11 @@ export default function RepartidorPublicPortal() {
       <input type="hidden" name="currentStatus" value={String(request.status || "")} />
       <input type="hidden" name="currentAttemptCount" value={String(request.attemptCount || 0)} />
         <input type="hidden" name="rejectionReason" value={failedPickupMessage} />
-        <button type="submit" className={buttonClassName} disabled={isSubmitting}>
+        <button
+          type="submit"
+          className={buttonClassName}
+          disabled={isSubmitting || pendingOfflineRequestIds.has(String(request.id || ""))}
+        >
           {buttonLabel}
         </button>
       </Form>
@@ -2717,6 +2964,26 @@ export default function RepartidorPublicPortal() {
   };
   return (
     <main className={styles.page}>
+      {!isOnline || offlineQueue.length ? (
+        <div className={`${styles.offlineSyncBar} ${isOnline ? styles.offlineSyncBarOnline : ""}`} role="status" aria-live="polite">
+          <span>
+            {!isOnline
+              ? "Sin conexion"
+              : offlineSyncing
+                ? "Sincronizando"
+                : offlineQueue.some((entry) => entry.status === "failed")
+                  ? "Revisar pendientes"
+                  : "Pendiente por sincronizar"}
+          </span>
+          <strong>{offlineQueue.length} {offlineQueue.length === 1 ? "accion" : "acciones"}</strong>
+          {offlineSyncMessage ? <small>{offlineSyncMessage}</small> : null}
+          {isOnline && offlineQueue.length ? (
+            <button type="button" onClick={syncCourierOfflineQueue} disabled={offlineSyncing}>
+              {offlineSyncing ? "Enviando..." : "Sincronizar"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div
         className={`${styles.container} ${
           showBranchReturnConfirmation ? styles.confirmationContainer : ""
@@ -3008,6 +3275,11 @@ export default function RepartidorPublicPortal() {
                               ? "pendiente"
                               : getCourierStatusLabel(request.status)}
                           </span>
+                          {request.offlinePending || request.offlineSyncFailed ? (
+                            <span className={`${adminStyles.courierBadgeStatus} ${request.offlineSyncFailed ? styles.statusBadgeFailed : styles.statusBadgeOffline}`}>
+                              {request.offlineSyncFailed ? "sync pendiente" : "guardado offline"}
+                            </span>
+                          ) : null}
                         </>
                       )}
                     </div>
@@ -3118,7 +3390,7 @@ export default function RepartidorPublicPortal() {
                               <button
                                 type="button"
                                 className={`${styles.actionButton} ${styles.actionButtonSuccess}`}
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || pendingOfflineRequestIds.has(String(request.id || ""))}
                                 onClick={() => {
                                   setDeliveryCodeInput("");
                                   setDeliveryCodeError("");
@@ -3185,7 +3457,18 @@ export default function RepartidorPublicPortal() {
             <Form
               method="post"
               className={styles.deliveryCodeForm}
-              onSubmit={() => {
+              onSubmit={(event) => {
+                if (typeof window !== "undefined" && !window.navigator.onLine) {
+                  event.preventDefault();
+                  setDeliveryCodeError("");
+                  setDeliveryCodeSuccess("");
+                  if (queueCourierOfflineForm(event.currentTarget, deliveryCodeRequest)) {
+                    setDeliveryCodeRequest(null);
+                    setDeliveryCodeInput("");
+                    setDeliveryCodeSuccess("Entrega guardada sin conexion. Se sincronizara al volver internet.");
+                  }
+                  return;
+                }
                 setDeliveryCodeError("");
                 setDeliveryCodeSuccess("");
                 deliveryCodeSubmissionRef.current = {
@@ -3243,7 +3526,10 @@ export default function RepartidorPublicPortal() {
                 <button
                   type="submit"
                   className={`${styles.actionButton} ${styles.deliveryCodeConfirmButton}`}
-                  disabled={isSubmitting || deliveryCodeInput.length !== 6}
+                  disabled={
+                    isSubmitting || deliveryCodeInput.length !== 6 ||
+                    pendingOfflineRequestIds.has(String(deliveryCodeRequest.id || ""))
+                  }
                 >
                   Confirmar
                 </button>

@@ -14,7 +14,10 @@ import {
 import prisma from "../db.server";
 import { recordArchivedStockProduct } from "../utils/stockZeroInventoryArchive.server";
 import { ensureStockUserTable } from "../utils/stockUsers.server";
-import { applyStockStorePriceToVariants, normalizeStockPriceSettings } from "../utils/stockPrice.shared";
+import {
+  applyStockStorePriceToVariants,
+  normalizeStockPriceSettings,
+} from "../utils/stockPrice.shared";
 import styles from "../styles/stock.module.css";
 
 const MAX_STOCK_PHOTOS = 16;
@@ -37,7 +40,20 @@ const STOCK_USER_ROLES = {
   PUBLISHER: "publicador_productos",
 };
 const STOCK_ALPHA_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
-const STOCK_WOMEN_BOTTOM_SIZES = ["1", "3", "5", "7", "9", "11", "13", "15", "17", "19", "21", "23"];
+const STOCK_WOMEN_BOTTOM_SIZES = [
+  "1",
+  "3",
+  "5",
+  "7",
+  "9",
+  "11",
+  "13",
+  "15",
+  "17",
+  "19",
+  "21",
+  "23",
+];
 const STOCK_WOMEN_SHOE_SIZES = [
   "21.5",
   "22",
@@ -54,7 +70,20 @@ const STOCK_WOMEN_SHOE_SIZES = [
   "27.5",
   "28",
 ];
-const STOCK_MEN_BOTTOM_SIZES = ["26", "28", "30", "32", "34", "36", "38", "40", "42", "44", "46", "48"];
+const STOCK_MEN_BOTTOM_SIZES = [
+  "26",
+  "28",
+  "30",
+  "32",
+  "34",
+  "36",
+  "38",
+  "40",
+  "42",
+  "44",
+  "46",
+  "48",
+];
 const STOCK_MEN_SHOE_SIZES = [
   "24.5",
   "25",
@@ -76,43 +105,139 @@ const STOCK_AUDIENCES = [
   { value: "mujer", label: "Mujer", code: "M" },
 ];
 const STOCK_GARMENTS = [
-  { value: "playera", label: "Playera", code: "PL", section: "Parte superior", audiences: ["hombre", "mujer"] },
-  { value: "camisa", label: "Camisa", code: "CA", section: "Parte superior", audiences: ["hombre", "mujer"] },
-  { value: "chamarra", label: "Chamarra", code: "CH", section: "Parte superior", audiences: ["hombre", "mujer"] },
-  { value: "sudadera", label: "Sudadera", code: "SU", section: "Parte superior", audiences: ["mujer"] },
-  { value: "chaleco", label: "Chaleco", code: "CL", section: "Parte superior", audiences: ["mujer"] },
-  { value: "sueter", label: "Sueter", code: "ST", section: "Parte superior", audiences: ["hombre", "mujer"] },
-  { value: "blusa", label: "Blusa", code: "BL", section: "Parte superior", audiences: ["mujer"] },
-  { value: "pantalon", label: "Pantalon", code: "PA", section: "Parte inferior", audiences: ["hombre", "mujer"] },
-  { value: "short", label: "Short", code: "SH", section: "Parte inferior", audiences: ["hombre", "mujer"] },
-  { value: "falda", label: "Falda", code: "FA", section: "Parte inferior", audiences: ["mujer"] },
-  { value: "vestido", label: "Vestido", code: "VE", section: "Parte superior e inferior", audiences: ["mujer"] },
-  { value: "conjunto", label: "Conjunto", code: "CO", section: "Parte superior e inferior", audiences: ["hombre", "mujer"] },
-  { value: "tenis", label: "Tenis", code: "TE", section: "Calzado", audiences: ["hombre", "mujer"] },
+  {
+    value: "playera",
+    label: "Playera",
+    code: "PL",
+    section: "Parte superior",
+    audiences: ["hombre", "mujer"],
+  },
+  {
+    value: "camisa",
+    label: "Camisa",
+    code: "CA",
+    section: "Parte superior",
+    audiences: ["hombre", "mujer"],
+  },
+  {
+    value: "chamarra",
+    label: "Chamarra",
+    code: "CH",
+    section: "Parte superior",
+    audiences: ["hombre", "mujer"],
+  },
+  {
+    value: "sudadera",
+    label: "Sudadera",
+    code: "SU",
+    section: "Parte superior",
+    audiences: ["mujer"],
+  },
+  {
+    value: "chaleco",
+    label: "Chaleco",
+    code: "CL",
+    section: "Parte superior",
+    audiences: ["mujer"],
+  },
+  {
+    value: "sueter",
+    label: "Sueter",
+    code: "ST",
+    section: "Parte superior",
+    audiences: ["hombre", "mujer"],
+  },
+  {
+    value: "blusa",
+    label: "Blusa",
+    code: "BL",
+    section: "Parte superior",
+    audiences: ["mujer"],
+  },
+  {
+    value: "pantalon",
+    label: "Pantalon",
+    code: "PA",
+    section: "Parte inferior",
+    audiences: ["hombre", "mujer"],
+  },
+  {
+    value: "short",
+    label: "Short",
+    code: "SH",
+    section: "Parte inferior",
+    audiences: ["hombre", "mujer"],
+  },
+  {
+    value: "falda",
+    label: "Falda",
+    code: "FA",
+    section: "Parte inferior",
+    audiences: ["mujer"],
+  },
+  {
+    value: "vestido",
+    label: "Vestido",
+    code: "VE",
+    section: "Parte superior e inferior",
+    audiences: ["mujer"],
+  },
+  {
+    value: "conjunto",
+    label: "Conjunto",
+    code: "CO",
+    section: "Parte superior e inferior",
+    audiences: ["hombre", "mujer"],
+  },
+  {
+    value: "tenis",
+    label: "Tenis",
+    code: "TE",
+    section: "Calzado",
+    audiences: ["hombre", "mujer"],
+  },
 ];
 
 function cleanShop(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function isMyShopifyDomain(value) {
-  return /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(String(value || "").trim());
+  return /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(
+    String(value || "").trim(),
+  );
 }
 
 function portalShopFromRequest(request) {
   const url = new URL(request.url);
-  return cleanShop(url.searchParams.get("shop")) || cleanShop(process.env.SHOPIFY_SHOP_DOMAIN) || "portal-stock";
+  return (
+    cleanShop(url.searchParams.get("shop")) ||
+    cleanShop(process.env.SHOPIFY_SHOP_DOMAIN) ||
+    "portal-stock"
+  );
 }
 
 async function resolveStockShopSessions(shop) {
   const requestedShop = cleanShop(shop);
   const configuredShop = cleanShop(process.env.SHOPIFY_SHOP_DOMAIN);
   const allSessions = await prisma.session.findMany({
-    select: { id: true, shop: true, isOnline: true, accessToken: true, scope: true },
+    select: {
+      id: true,
+      shop: true,
+      isOnline: true,
+      accessToken: true,
+      scope: true,
+    },
   });
   const candidateShops = Array.from(
     new Set(
-      [requestedShop, configuredShop, ...allSessions.map((session) => cleanShop(session.shop))]
+      [
+        requestedShop,
+        configuredShop,
+        ...allSessions.map((session) => cleanShop(session.shop)),
+      ]
         .filter(Boolean)
         .filter(isMyShopifyDomain),
     ),
@@ -121,7 +246,10 @@ async function resolveStockShopSessions(shop) {
   for (const candidateShop of candidateShops) {
     const canonicalOfflineId = `offline_${candidateShop}`;
     const matches = allSessions
-      .filter((session) => cleanShop(session.shop) === candidateShop && session.accessToken)
+      .filter(
+        (session) =>
+          cleanShop(session.shop) === candidateShop && session.accessToken,
+      )
       .sort((first, second) => {
         if (first.id === canonicalOfflineId) return -1;
         if (second.id === canonicalOfflineId) return 1;
@@ -130,24 +258,33 @@ async function resolveStockShopSessions(shop) {
         return 0;
       });
     for (const session of matches) {
-      sessions.push({ shop: candidateShop, accessToken: String(session.accessToken || "").trim() });
+      sessions.push({
+        shop: candidateShop,
+        accessToken: String(session.accessToken || "").trim(),
+      });
     }
   }
   return sessions.filter((session) => session.shop && session.accessToken);
 }
 
 async function shopifyStockGraphql({ shop, accessToken, query, variables }) {
-  const response = await fetch(`https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": accessToken,
+  const response = await fetch(
+    `https://${shop}/admin/api/${ADMIN_API_VERSION}/graphql.json`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": accessToken,
+      },
+      body: JSON.stringify({ query, variables }),
     },
-    body: JSON.stringify({ query, variables }),
-  });
+  );
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.errors?.length) {
-    throw new Error(payload?.errors?.[0]?.message || `No se pudo consultar inventario (${response.status}).`);
+    throw new Error(
+      payload?.errors?.[0]?.message ||
+        `No se pudo consultar inventario (${response.status}).`,
+    );
   }
   return payload.data;
 }
@@ -177,11 +314,17 @@ async function fetchShopifyInventoryStateBySku({ sessions, sku }) {
       });
       const variants = data?.productVariants?.nodes || [];
       const matchingVariants = variants.filter(
-        (variant) => String(variant?.sku || "").trim().toLowerCase() === cleanSku.toLowerCase(),
+        (variant) =>
+          String(variant?.sku || "")
+            .trim()
+            .toLowerCase() === cleanSku.toLowerCase(),
       );
       if (!matchingVariants.length) return null;
       return {
-        quantity: matchingVariants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0),
+        quantity: matchingVariants.reduce(
+          (sum, variant) => sum + (Number(variant.inventoryQuantity) || 0),
+          0,
+        ),
         skus: [cleanSku],
         productIds: [
           ...new Set(
@@ -220,7 +363,10 @@ async function fetchShopifyProductTotalInventory({ session, productId }) {
   const product = data?.product;
   if (!product) return null;
   const variants = product?.variants?.nodes || [];
-  return variants.reduce((sum, variant) => sum + (Number(variant.inventoryQuantity) || 0), 0);
+  return variants.reduce(
+    (sum, variant) => sum + (Number(variant.inventoryQuantity) || 0),
+    0,
+  );
 }
 
 async function archiveShopifyProduct({ session, productId }) {
@@ -244,7 +390,12 @@ async function archiveShopifyProduct({ session, productId }) {
   });
   const errors = data?.productUpdate?.userErrors || [];
   if (errors.length) {
-    throw new Error(errors.map((error) => error.message).filter(Boolean).join(", ") || "No se pudo archivar el producto.");
+    throw new Error(
+      errors
+        .map((error) => error.message)
+        .filter(Boolean)
+        .join(", ") || "No se pudo archivar el producto.",
+    );
   }
   return data?.productUpdate?.product?.id || productId;
 }
@@ -302,7 +453,10 @@ async function fetchShopifyZeroInventoryProducts({ session }) {
 }
 
 function normalizeStockLookupText(value) {
-  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
 async function fetchShopifyDuplicateSkuProducts(shop) {
@@ -388,7 +542,8 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
 
   const occurrencesBySku = new Map();
   for (const occurrence of skuOccurrences) {
-    if (!occurrencesBySku.has(occurrence.skuKey)) occurrencesBySku.set(occurrence.skuKey, []);
+    if (!occurrencesBySku.has(occurrence.skuKey))
+      occurrencesBySku.set(occurrence.skuKey, []);
     occurrencesBySku.get(occurrence.skuKey).push(occurrence);
   }
 
@@ -423,7 +578,10 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
       const firstTime = skuTouchTime(first);
       const secondTime = skuTouchTime(second);
       if (firstTime !== secondTime) return firstTime - secondTime;
-      return first.productId.localeCompare(second.productId) || first.variantId.localeCompare(second.variantId);
+      return (
+        first.productId.localeCompare(second.productId) ||
+        first.variantId.localeCompare(second.variantId)
+      );
     });
     duplicateProducts.push(...sortedGroup.slice(1));
   }
@@ -447,7 +605,9 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
   });
   const publisherByProductName = new Map();
   for (const draft of publishedDrafts) {
-    const publisherName = String(draft?.publishedByStockUser?.name || "").trim();
+    const publisherName = String(
+      draft?.publishedByStockUser?.name || "",
+    ).trim();
     if (!publisherName) continue;
     const productNameKey = normalizeStockLookupText(draft.productName);
     if (productNameKey && !publisherByProductName.has(productNameKey)) {
@@ -469,18 +629,27 @@ async function fetchShopifyDuplicateSkuProducts(shop) {
         productId: product.productId,
         productName: product.productName,
         imageUrl: product.imageUrl,
-        publisherName: publisherByProductName.get(productNameKey) || "No identificado",
+        publisherName:
+          publisherByProductName.get(productNameKey) || "No identificado",
       };
     });
 }
 
-async function archiveShopifyZeroInventoryProducts({ cleanShopDomain, sessions }) {
+async function archiveShopifyZeroInventoryProducts({
+  cleanShopDomain,
+  sessions,
+}) {
   if (!sessions.length) return;
   for (const session of sessions) {
-    const products = await fetchShopifyZeroInventoryProducts({ session }).catch((error) => {
-      console.error("No se pudieron consultar productos agotados de Shopify", { error });
-      return [];
-    });
+    const products = await fetchShopifyZeroInventoryProducts({ session }).catch(
+      (error) => {
+        console.error(
+          "No se pudieron consultar productos agotados de Shopify",
+          { error },
+        );
+        return [];
+      },
+    );
     for (const product of products) {
       if (!product?.id || Number(product.totalInventory) > 0) continue;
       const productSkus = [
@@ -490,7 +659,10 @@ async function archiveShopifyZeroInventoryProducts({ cleanShopDomain, sessions }
             .filter(Boolean),
         ),
       ];
-      const archivedProduct = await archiveShopifyProduct({ session, productId: product.id }).catch((error) => {
+      const archivedProduct = await archiveShopifyProduct({
+        session,
+        productId: product.id,
+      }).catch((error) => {
         console.error("No se pudo archivar producto agotado de Shopify", {
           productId: product.id,
           title: product.title,
@@ -541,13 +713,24 @@ async function syncReleasedStockLocations(shop) {
   const sessions = await resolveStockShopSessions(cleanShopDomain);
   if (!sessions.length) return;
   for (const draft of publishedDrafts) {
-    const stockState = await fetchShopifyInventoryStateBySku({ sessions, sku: draft.sku }).catch((error) => {
-      console.error("No se pudo consultar inventario de stock", { sku: draft.sku, error });
+    const stockState = await fetchShopifyInventoryStateBySku({
+      sessions,
+      sku: draft.sku,
+    }).catch((error) => {
+      console.error("No se pudo consultar inventario de stock", {
+        sku: draft.sku,
+        error,
+      });
       return null;
     });
     if (!stockState || stockState.quantity > 0) continue;
-    const archivedProduct = await archiveShopifyProductsIfInventoryIsEmpty(stockState).catch((error) => {
-      console.error("No se pudo archivar producto agotado de Shopify", { sku: draft.sku, error });
+    const archivedProduct = await archiveShopifyProductsIfInventoryIsEmpty(
+      stockState,
+    ).catch((error) => {
+      console.error("No se pudo archivar producto agotado de Shopify", {
+        sku: draft.sku,
+        error,
+      });
       return false;
     });
     if (!archivedProduct) continue;
@@ -591,37 +774,61 @@ async function clearExpiredStockPublicationLocks(shop) {
 }
 
 function sanitizeText(value, maxLength = 180) {
-  return String(value || "").trim().slice(0, maxLength);
+  return String(value || "")
+    .trim()
+    .slice(0, maxLength);
 }
 
 function normalizeAudience(value) {
-  const cleanValue = String(value || "").trim().toLowerCase();
-  return STOCK_AUDIENCES.some((audience) => audience.value === cleanValue) ? cleanValue : STOCK_AUDIENCES[0].value;
+  const cleanValue = String(value || "")
+    .trim()
+    .toLowerCase();
+  return STOCK_AUDIENCES.some((audience) => audience.value === cleanValue)
+    ? cleanValue
+    : STOCK_AUDIENCES[0].value;
 }
 
 function normalizeGarment(value) {
-  const cleanValue = String(value || "").trim().toLowerCase();
-  return STOCK_GARMENTS.some((garment) => garment.value === cleanValue) ? cleanValue : STOCK_GARMENTS[0].value;
+  const cleanValue = String(value || "")
+    .trim()
+    .toLowerCase();
+  return STOCK_GARMENTS.some((garment) => garment.value === cleanValue)
+    ? cleanValue
+    : STOCK_GARMENTS[0].value;
 }
 
 function audienceConfig(value) {
-  return STOCK_AUDIENCES.find((audience) => audience.value === normalizeAudience(value)) || STOCK_AUDIENCES[0];
+  return (
+    STOCK_AUDIENCES.find(
+      (audience) => audience.value === normalizeAudience(value),
+    ) || STOCK_AUDIENCES[0]
+  );
 }
 
 function garmentConfig(value) {
-  return STOCK_GARMENTS.find((garment) => garment.value === normalizeGarment(value)) || STOCK_GARMENTS[0];
+  return (
+    STOCK_GARMENTS.find(
+      (garment) => garment.value === normalizeGarment(value),
+    ) || STOCK_GARMENTS[0]
+  );
 }
 
 function stockSizesFor(audience, garment) {
   const currentAudience = normalizeAudience(audience);
   const currentGarment = garmentConfig(garment);
-  if (currentAudience === "mujer" && currentGarment.section === "Parte inferior") {
+  if (
+    currentAudience === "mujer" &&
+    currentGarment.section === "Parte inferior"
+  ) {
     return STOCK_WOMEN_BOTTOM_SIZES;
   }
   if (currentAudience === "mujer" && currentGarment.section === "Calzado") {
     return STOCK_WOMEN_SHOE_SIZES;
   }
-  if (currentAudience === "hombre" && currentGarment.section === "Parte inferior") {
+  if (
+    currentAudience === "hombre" &&
+    currentGarment.section === "Parte inferior"
+  ) {
     return STOCK_MEN_BOTTOM_SIZES;
   }
   if (currentAudience === "hombre" && currentGarment.section === "Calzado") {
@@ -635,20 +842,27 @@ function stockSkuPrefix(audience, garment) {
 }
 
 function nextStockSkuForPrefix(prefix, existingSkus = []) {
-  const matcher = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)$`, "i");
+  const matcher = new RegExp(
+    `^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)$`,
+    "i",
+  );
   const usedNumbers = new Set();
   const highestNumber = existingSkus.reduce((highest, sku) => {
-    const match = String(sku || "").trim().match(matcher);
+    const match = String(sku || "")
+      .trim()
+      .match(matcher);
     const number = match ? Number(match[1] || 0) : 0;
     if (number >= 1 && number <= 10000) usedNumbers.add(number);
     return number ? Math.max(highest, number) : highest;
   }, 0);
   const nextNumber = highestNumber < 10000 ? highestNumber + 1 : 1;
   for (let number = nextNumber; number <= 10000; number += 1) {
-    if (!usedNumbers.has(number)) return `${prefix}-${String(number).padStart(2, "0")}`;
+    if (!usedNumbers.has(number))
+      return `${prefix}-${String(number).padStart(2, "0")}`;
   }
   for (let number = 1; number < nextNumber; number += 1) {
-    if (!usedNumbers.has(number)) return `${prefix}-${String(number).padStart(2, "0")}`;
+    if (!usedNumbers.has(number))
+      return `${prefix}-${String(number).padStart(2, "0")}`;
   }
   return `${prefix}-10000`;
 }
@@ -659,7 +873,10 @@ function defaultStockLocation(audience, garment) {
 
 function nextStockLocation(currentLocation, audience, garment) {
   const defaultLocation = defaultStockLocation(audience, garment);
-  const match = String(currentLocation || "").trim().toUpperCase().match(/-([A-Z])(\d+)$/);
+  const match = String(currentLocation || "")
+    .trim()
+    .toUpperCase()
+    .match(/-([A-Z])(\d+)$/);
   const currentLetter = match?.[1] || "A";
   const currentRound = Math.max(1, Number(match?.[2] || 1));
   if (currentLetter === "Z") {
@@ -671,13 +888,19 @@ function nextStockLocation(currentLocation, audience, garment) {
 
 function stockLabels() {
   return {
-    audiences: Object.fromEntries(STOCK_AUDIENCES.map((audience) => [audience.value, audience.label])),
-    garments: Object.fromEntries(STOCK_GARMENTS.map((garment) => [garment.value, garment.label])),
+    audiences: Object.fromEntries(
+      STOCK_AUDIENCES.map((audience) => [audience.value, audience.label]),
+    ),
+    garments: Object.fromEntries(
+      STOCK_GARMENTS.map((garment) => [garment.value, garment.label]),
+    ),
   };
 }
 
 function stockUserRoleLabel(role) {
-  return role === STOCK_USER_ROLES.PUBLISHER ? "Publicador de productos" : "Preparador de stock";
+  return role === STOCK_USER_ROLES.PUBLISHER
+    ? "Publicador de productos"
+    : "Preparador de stock";
 }
 
 function stockMexicoDateKey(value) {
@@ -689,7 +912,9 @@ function stockMexicoDateKey(value) {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(date);
-  const partMap = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const partMap = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
   return `${partMap.year}-${partMap.month}-${partMap.day}`;
 }
 
@@ -705,7 +930,11 @@ function stockMexicoDateTimeParts(value = new Date()) {
     minute: "2-digit",
     hourCycle: "h23",
   }).formatToParts(date);
-  const partMap = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  const partMap = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
   const hour = Number(partMap.hour || 0);
   const minute = Number(partMap.minute || 0);
   return {
@@ -760,10 +989,17 @@ function sanitizeStockVariants(value, allowedSizes = STOCK_ALPHA_SIZES) {
       const basePrice = Math.max(0, Number(variant?.basePrice ?? price) || 0);
       const sizes = (Array.isArray(variant?.sizes) ? variant.sizes : [])
         .map((sizeRow) => ({
-          size: allowedSizes.includes(String(sizeRow?.size || "").trim().toUpperCase())
+          size: allowedSizes.includes(
+            String(sizeRow?.size || "")
+              .trim()
+              .toUpperCase(),
+          )
             ? String(sizeRow.size).trim().toUpperCase()
             : "",
-          quantity: Math.max(1, Math.min(9999, Number(sizeRow?.quantity || 0) || 0)),
+          quantity: Math.max(
+            1,
+            Math.min(9999, Number(sizeRow?.quantity || 0) || 0),
+          ),
         }))
         .filter((sizeRow) => sizeRow.size && sizeRow.quantity);
       return { color, price, basePrice, sizes };
@@ -788,7 +1024,9 @@ async function loadStockPriceSettings(shop) {
 function serializeDraft(draft, currentStockUserId = 0) {
   const variants = Array.isArray(draft.variants) ? draft.variants : [];
   const lockedByUserId = Number(draft.publishingLockedByStockUserId || 0);
-  const isLockedByCurrentUser = Boolean(lockedByUserId && lockedByUserId === Number(currentStockUserId || 0));
+  const isLockedByCurrentUser = Boolean(
+    lockedByUserId && lockedByUserId === Number(currentStockUserId || 0),
+  );
   const isBeingEdited = draft.status === STOCK_DRAFT_STATUS.EDITING;
   return {
     id: draft.id,
@@ -809,9 +1047,13 @@ function serializeDraft(draft, currentStockUserId = 0) {
     status: draft.status,
     isBeingEdited,
     publishingLockedByStockUserId: lockedByUserId,
-    publishingLockedAt: draft.publishingLockedAt ? draft.publishingLockedAt.toISOString() : "",
+    publishingLockedAt: draft.publishingLockedAt
+      ? draft.publishingLockedAt.toISOString()
+      : "",
     isLockedByCurrentUser,
-    isLockedByOther: Boolean(isBeingEdited || (lockedByUserId && !isLockedByCurrentUser)),
+    isLockedByOther: Boolean(
+      isBeingEdited || (lockedByUserId && !isLockedByCurrentUser),
+    ),
     createdAt: draft.createdAt.toISOString(),
     updatedAt: draft.updatedAt.toISOString(),
   };
@@ -827,7 +1069,10 @@ function serializeStockUser(stockUser) {
 }
 
 function generateStockSessionToken() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
@@ -848,7 +1093,10 @@ function stockPortalSessionCookie() {
 }
 
 async function readStockPortalSessionCookie(request) {
-  return (await stockPortalSessionCookie().parse(request.headers.get("Cookie"))) || {};
+  return (
+    (await stockPortalSessionCookie().parse(request.headers.get("Cookie"))) ||
+    {}
+  );
 }
 
 function stockSessionBelongsToDevice(cookieAccess, sessionToken, stockUser) {
@@ -857,11 +1105,11 @@ function stockSessionBelongsToDevice(cookieAccess, sessionToken, stockUser) {
   const userDeviceId = String(stockUser?.sessionDeviceId || "").trim();
   return Boolean(
     sessionToken &&
-      stockUser &&
-      cookieSessionToken === sessionToken &&
-      userDeviceId &&
-      cookieDeviceId &&
-      cookieDeviceId === userDeviceId,
+    stockUser &&
+    cookieSessionToken === sessionToken &&
+    userDeviceId &&
+    cookieDeviceId &&
+    cookieDeviceId === userDeviceId,
   );
 }
 
@@ -913,7 +1161,9 @@ function serializePreparedStockHistory(draft) {
     status: draft.status,
     isBeingEdited: draft.status === STOCK_DRAFT_STATUS.EDITING,
     publishingLockedByStockUserId: lockedByUserId,
-    publishingLockedAt: draft.publishingLockedAt ? draft.publishingLockedAt.toISOString() : "",
+    publishingLockedAt: draft.publishingLockedAt
+      ? draft.publishingLockedAt.toISOString()
+      : "",
     createdAt: draft.createdAt.toISOString(),
     time: formatStockHistoryTime(draft.createdAt),
   };
@@ -928,10 +1178,19 @@ export async function loader({ request }) {
   const url = new URL(request.url);
   const shop = portalShopFromRequest(request);
   const stockCookieAccess = await readStockPortalSessionCookie(request);
-  const cookieSessionToken = String(stockCookieAccess?.sessionToken || "").trim();
-  const accessCode = String(url.searchParams.get("codigo") || url.searchParams.get("code") || "").trim();
-  const sessionToken = String(url.searchParams.get("sesion") || url.searchParams.get("session") || "").trim();
-  const sessionDeviceId = sanitizeText(url.searchParams.get("dispositivo") || url.searchParams.get("device"), 220);
+  const cookieSessionToken = String(
+    stockCookieAccess?.sessionToken || "",
+  ).trim();
+  const accessCode = String(
+    url.searchParams.get("codigo") || url.searchParams.get("code") || "",
+  ).trim();
+  const sessionToken = String(
+    url.searchParams.get("sesion") || url.searchParams.get("session") || "",
+  ).trim();
+  const sessionDeviceId = sanitizeText(
+    url.searchParams.get("dispositivo") || url.searchParams.get("device"),
+    220,
+  );
   let drafts = [];
   let skuRows = [];
   let locationRows = [];
@@ -942,30 +1201,50 @@ export async function loader({ request }) {
   let error = "";
   let stockUser = null;
   try {
-    if (!accessCode && !sessionToken && !sessionDeviceId && cookieSessionToken) {
-      return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(cookieSessionToken)}`);
+    if (
+      !accessCode &&
+      !sessionToken &&
+      !sessionDeviceId &&
+      cookieSessionToken
+    ) {
+      return redirect(
+        `/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(cookieSessionToken)}`,
+      );
     }
-    if (accessCode || sessionToken || sessionDeviceId) await ensureStockUserTable(prisma);
+    if (accessCode || sessionToken || sessionDeviceId)
+      await ensureStockUserTable(prisma);
     if (sessionToken) {
       stockUser = await prisma.stockUser.findFirst({
         where: { shop, sessionToken, active: true },
       });
       if (stockUser) {
-        if (stockSessionBelongsToDevice(stockCookieAccess, sessionToken, stockUser)) {
+        if (
+          stockSessionBelongsToDevice(
+            stockCookieAccess,
+            sessionToken,
+            stockUser,
+          )
+        ) {
           await prisma.stockUser.update({
             where: { id: stockUser.id },
             data: { sessionLastSeenAt: new Date() },
           });
         } else {
           stockUser = null;
-          error = "Esta sesion pertenece a otro dispositivo. Ingresa tu codigo.";
+          error =
+            "Esta sesion pertenece a otro dispositivo. Ingresa tu codigo.";
         }
       } else {
         error = "Tu sesion ya no esta activa. Ingresa tu codigo nuevamente.";
       }
     } else if (sessionDeviceId) {
       stockUser = await prisma.stockUser.findFirst({
-        where: { shop, sessionDeviceId, active: true, sessionToken: { not: null } },
+        where: {
+          shop,
+          sessionDeviceId,
+          active: true,
+          sessionToken: { not: null },
+        },
       });
       if (stockUser?.sessionToken) {
         await prisma.stockUser.update({
@@ -999,14 +1278,17 @@ export async function loader({ request }) {
             sessionLastSeenAt: new Date(),
           },
         });
-        return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(nextSessionToken)}`, {
-          headers: {
-            "Set-Cookie": await stockSessionSetCookieHeader({
-              sessionToken: nextSessionToken,
-              deviceId: sessionDeviceId,
-            }),
+        return redirect(
+          `/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(nextSessionToken)}`,
+          {
+            headers: {
+              "Set-Cookie": await stockSessionSetCookieHeader({
+                sessionToken: nextSessionToken,
+                deviceId: sessionDeviceId,
+              }),
+            },
           },
-        });
+        );
       }
       error = "Codigo invalido o la cuenta ya inicio sesion.";
     }
@@ -1014,11 +1296,20 @@ export async function loader({ request }) {
     if (stockUser) {
       await syncReleasedStockLocations(shop);
       await clearExpiredStockPublicationLocks(shop);
-      [drafts, skuRows, locationRows, releasedLocationRows, preparedHistoryRows, stockSettings] = await Promise.all([
+      [
+        drafts,
+        skuRows,
+        locationRows,
+        releasedLocationRows,
+        preparedHistoryRows,
+        stockSettings,
+      ] = await Promise.all([
         prisma.stockProductDraft.findMany({
           where: {
             shop,
-            status: { in: [STOCK_DRAFT_STATUS.PENDING, STOCK_DRAFT_STATUS.EDITING] },
+            status: {
+              in: [STOCK_DRAFT_STATUS.PENDING, STOCK_DRAFT_STATUS.EDITING],
+            },
           },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           take: 80,
@@ -1076,22 +1367,31 @@ export async function loader({ request }) {
         }),
       ]);
       if (stockUser.role === STOCK_USER_ROLES.PUBLISHER) {
-        duplicateSkuProducts = await fetchShopifyDuplicateSkuProducts(shop).catch((duplicateSkuError) => {
-          console.error("No se pudieron revisar SKUs duplicados de Shopify", duplicateSkuError);
+        duplicateSkuProducts = await fetchShopifyDuplicateSkuProducts(
+          shop,
+        ).catch((duplicateSkuError) => {
+          console.error(
+            "No se pudieron revisar SKUs duplicados de Shopify",
+            duplicateSkuError,
+          );
           return [];
         });
       }
     }
   } catch (loadError) {
     console.error("No se pudo cargar portal stock", loadError);
-    error = "El almacenamiento de stock se esta preparando. Actualiza la pagina en un momento.";
+    error =
+      "El almacenamiento de stock se esta preparando. Actualiza la pagina en un momento.";
   }
   const existingSkus = skuRows.map((row) => row.sku).filter(Boolean);
   const nextSkuByCategory = Object.fromEntries(
     STOCK_AUDIENCES.flatMap((audience) =>
       STOCK_GARMENTS.map((garment) => {
         const prefix = stockSkuPrefix(audience.value, garment.value);
-        return [`${audience.value}:${garment.value}`, nextStockSkuForPrefix(prefix, existingSkus)];
+        return [
+          `${audience.value}:${garment.value}`,
+          nextStockSkuForPrefix(prefix, existingSkus),
+        ];
       }),
     ),
   );
@@ -1099,14 +1399,20 @@ export async function loader({ request }) {
     STOCK_AUDIENCES.flatMap((audience) =>
       STOCK_GARMENTS.map((garment) => {
         const releasedLocation = releasedLocationRows.find(
-          (row) => row.audience === audience.value && row.garmentType === garment.value,
+          (row) =>
+            row.audience === audience.value &&
+            row.garmentType === garment.value,
         )?.locationCode;
         const location = locationRows.find(
-          (row) => row.audience === audience.value && row.garmentType === garment.value,
+          (row) =>
+            row.audience === audience.value &&
+            row.garmentType === garment.value,
         )?.currentLocation;
         return [
           `${audience.value}:${garment.value}`,
-          releasedLocation || location || defaultStockLocation(audience.value, garment.value),
+          releasedLocation ||
+            location ||
+            defaultStockLocation(audience.value, garment.value),
         ];
       }),
     ),
@@ -1116,7 +1422,11 @@ export async function loader({ request }) {
     shop,
     drafts: drafts.map((draft) => serializeDraft(draft, stockUser?.id)),
     preparedHistory: preparedHistoryRows
-      .filter((draft) => stockMexicoDateKey(draft.createdAt) === stockMexicoDateKey(new Date()))
+      .filter(
+        (draft) =>
+          stockMexicoDateKey(draft.createdAt) ===
+          stockMexicoDateKey(new Date()),
+      )
       .map(serializePreparedStockHistory),
     stockUser: serializeStockUser(stockUser),
     accessCode: stockUser ? sessionToken || accessCode : "",
@@ -1134,7 +1444,8 @@ export async function loader({ request }) {
 export async function action({ request }) {
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "").trim();
-  const shop = cleanShop(formData.get("shop")) || portalShopFromRequest(request);
+  const shop =
+    cleanShop(formData.get("shop")) || portalShopFromRequest(request);
   const stockCode = String(formData.get("stockCode") || "").trim();
   const stockCookieAccess = await readStockPortalSessionCookie(request);
   const stockPortalHref = (params = "") =>
@@ -1145,14 +1456,23 @@ export async function action({ request }) {
       await ensureStockUserTable(prisma);
       const code = String(formData.get("code") || "").trim();
       const stockDeviceId = String(formData.get("stockDeviceId") || "").trim();
-      if (!/^\d{6}$/.test(code)) return { ok: false, error: "Escribe tu codigo de 6 digitos." };
+      if (!/^\d{6}$/.test(code))
+        return { ok: false, error: "Escribe tu codigo de 6 digitos." };
       const stockUser = await prisma.stockUser.findFirst({
         where: { shop, code, active: true },
         select: { id: true, sessionToken: true, sessionDeviceId: true },
       });
-      if (!stockUser) return { ok: false, error: "Codigo invalido. Revisa el codigo con el administrador." };
+      if (!stockUser)
+        return {
+          ok: false,
+          error: "Codigo invalido. Revisa el codigo con el administrador.",
+        };
       if (stockUser.sessionToken) {
-        if (stockDeviceId && (!stockUser.sessionDeviceId || stockDeviceId === stockUser.sessionDeviceId)) {
+        if (
+          stockDeviceId &&
+          (!stockUser.sessionDeviceId ||
+            stockDeviceId === stockUser.sessionDeviceId)
+        ) {
           await prisma.stockUser.update({
             where: { id: stockUser.id },
             data: {
@@ -1160,14 +1480,17 @@ export async function action({ request }) {
               sessionLastSeenAt: new Date(),
             },
           });
-          return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(stockUser.sessionToken)}`, {
-            headers: {
-              "Set-Cookie": await stockSessionSetCookieHeader({
-                sessionToken: stockUser.sessionToken,
-                deviceId: stockUser.sessionDeviceId || stockDeviceId,
-              }),
+          return redirect(
+            `/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(stockUser.sessionToken)}`,
+            {
+              headers: {
+                "Set-Cookie": await stockSessionSetCookieHeader({
+                  sessionToken: stockUser.sessionToken,
+                  deviceId: stockUser.sessionDeviceId || stockDeviceId,
+                }),
+              },
             },
-          });
+          );
         }
         return { ok: false, error: "Esta cuenta ya inicio sesion." };
       }
@@ -1181,17 +1504,23 @@ export async function action({ request }) {
           sessionLastSeenAt: new Date(),
         },
       });
-      return redirect(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(sessionToken)}`, {
-        headers: {
-          "Set-Cookie": await stockSessionSetCookieHeader({
-            sessionToken,
-            deviceId: stockDeviceId,
-          }),
+      return redirect(
+        `/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(sessionToken)}`,
+        {
+          headers: {
+            "Set-Cookie": await stockSessionSetCookieHeader({
+              sessionToken,
+              deviceId: stockDeviceId,
+            }),
+          },
         },
-      });
+      );
     } catch (stockLoginError) {
       console.error("No se pudo validar el codigo de stock", stockLoginError);
-      return { ok: false, error: "No se pudo validar el codigo. Intenta nuevamente." };
+      return {
+        ok: false,
+        error: "No se pudo validar el codigo. Intenta nuevamente.",
+      };
     }
   }
 
@@ -1199,10 +1528,19 @@ export async function action({ request }) {
   const sessionStockUser = stockCode
     ? await prisma.stockUser.findFirst({
         where: { shop, sessionToken: stockCode, active: true },
-        select: { id: true, role: true, sessionDeviceId: true, sessionToken: true },
+        select: {
+          id: true,
+          role: true,
+          sessionDeviceId: true,
+          sessionToken: true,
+        },
       })
     : null;
-  const activeStockUser = stockSessionBelongsToDevice(stockCookieAccess, stockCode, sessionStockUser)
+  const activeStockUser = stockSessionBelongsToDevice(
+    stockCookieAccess,
+    stockCode,
+    sessionStockUser,
+  )
     ? sessionStockUser
     : null;
 
@@ -1233,7 +1571,10 @@ export async function action({ request }) {
   }
 
   if (stockCode && !activeStockUser) {
-    return { ok: false, error: "Esta sesion pertenece a otro dispositivo. Ingresa tu codigo." };
+    return {
+      ok: false,
+      error: "Esta sesion pertenece a otro dispositivo. Ingresa tu codigo.",
+    };
   }
 
   const stockUser = activeStockUser;
@@ -1242,13 +1583,21 @@ export async function action({ request }) {
 
   if (intent === "advance_stock_location") {
     if (stockUser?.role !== STOCK_USER_ROLES.PREPARER) {
-      return { ok: false, error: "Solo un preparador de stock puede avanzar ubicaciones." };
+      return {
+        ok: false,
+        error: "Solo un preparador de stock puede avanzar ubicaciones.",
+      };
     }
     const audience = normalizeAudience(formData.get("audience"));
     const garmentType = normalizeGarment(formData.get("garmentType"));
     const currentLocation =
-      sanitizeText(formData.get("currentLocation"), 80) || defaultStockLocation(audience, garmentType);
-    const nextLocation = nextStockLocation(currentLocation, audience, garmentType);
+      sanitizeText(formData.get("currentLocation"), 80) ||
+      defaultStockLocation(audience, garmentType);
+    const nextLocation = nextStockLocation(
+      currentLocation,
+      audience,
+      garmentType,
+    );
     await prisma.stockLocationState.upsert({
       where: { shop_audience_garmentType: { shop, audience, garmentType } },
       create: { shop, audience, garmentType, currentLocation: nextLocation },
@@ -1259,7 +1608,10 @@ export async function action({ request }) {
 
   if (intent === "lock_stock_draft") {
     if (stockUser?.role !== STOCK_USER_ROLES.PUBLISHER) {
-      return { ok: false, error: "Solo un publicador de productos puede tomar productos." };
+      return {
+        ok: false,
+        error: "Solo un publicador de productos puede tomar productos.",
+      };
     }
     const draftId = Number(formData.get("draftId") || 0);
     if (!draftId) return { ok: false, error: "Producto de stock invalido." };
@@ -1295,7 +1647,10 @@ export async function action({ request }) {
 
   if (intent === "release_stock_draft") {
     if (stockUser?.role !== STOCK_USER_ROLES.PUBLISHER) {
-      return { ok: false, error: "Solo un publicador de productos puede soltar productos." };
+      return {
+        ok: false,
+        error: "Solo un publicador de productos puede soltar productos.",
+      };
     }
     const draftId = Number(formData.get("draftId") || 0);
     if (!draftId) return { ok: false, error: "Producto de stock invalido." };
@@ -1316,7 +1671,11 @@ export async function action({ request }) {
 
   if (intent === "publish_stock_draft") {
     if (stockUser?.role !== STOCK_USER_ROLES.PUBLISHER) {
-      return { ok: false, error: "Solo un publicador de productos puede marcar productos como listos." };
+      return {
+        ok: false,
+        error:
+          "Solo un publicador de productos puede marcar productos como listos.",
+      };
     }
     const draftId = Number(formData.get("draftId") || 0);
     if (!draftId) return { ok: false, error: "Producto de stock invalido." };
@@ -1330,23 +1689,38 @@ export async function action({ request }) {
       select: { sku: true },
     });
     if (!draft) {
-      return { ok: false, error: "Toma este producto antes de marcarlo como listo." };
+      return {
+        ok: false,
+        error: "Toma este producto antes de marcarlo como listo.",
+      };
     }
     const expectedSku = String(draft.sku || "").trim();
-    if (!expectedSku) return { ok: false, error: "Este producto no tiene SKU para validar." };
+    if (!expectedSku)
+      return { ok: false, error: "Este producto no tiene SKU para validar." };
     try {
       const sessions = await resolveStockShopSessions(shop);
-      const stockState = await fetchShopifyInventoryStateBySku({ sessions, sku: expectedSku });
+      const stockState = await fetchShopifyInventoryStateBySku({
+        sessions,
+        sku: expectedSku,
+      });
       if (!stockState) {
         return {
           ok: false,
           intent: "publish_stock_draft",
-          error: "Ese SKU aun no existe en ningun producto. Revisa si escribiste correctamente el SKU en el producto.",
+          error:
+            "Ese SKU aun no existe en ningun producto. Revisa si escribiste correctamente el SKU en el producto.",
         };
       }
     } catch (skuValidationError) {
-      console.error("No se pudo validar el SKU en Shopify", { sku: expectedSku, error: skuValidationError });
-      return { ok: false, intent: "publish_stock_draft", error: "No se pudo validar el SKU en Shopify. Intenta nuevamente." };
+      console.error("No se pudo validar el SKU en Shopify", {
+        sku: expectedSku,
+        error: skuValidationError,
+      });
+      return {
+        ok: false,
+        intent: "publish_stock_draft",
+        error: "No se pudo validar el SKU en Shopify. Intenta nuevamente.",
+      };
     }
     const updatedDraft = await prisma.stockProductDraft.updateMany({
       where: {
@@ -1364,14 +1738,24 @@ export async function action({ request }) {
       },
     });
     if (!updatedDraft.count) {
-      return { ok: false, error: "Toma este producto antes de marcarlo como listo." };
+      return {
+        ok: false,
+        error: "Toma este producto antes de marcarlo como listo.",
+      };
     }
-    return { ok: true, intent: "publish_stock_draft", message: "Producto publicado correctamente." };
+    return {
+      ok: true,
+      intent: "publish_stock_draft",
+      message: "Producto publicado correctamente.",
+    };
   }
 
   if (intent === "begin_stock_edit_draft") {
     if (stockUser?.role !== STOCK_USER_ROLES.PREPARER) {
-      return { ok: false, error: "Solo un preparador de stock puede editar productos." };
+      return {
+        ok: false,
+        error: "Solo un preparador de stock puede editar productos.",
+      };
     }
     const draftId = Number(formData.get("draftId") || 0);
     if (!draftId) return { ok: false, error: "Producto de stock invalido." };
@@ -1381,7 +1765,9 @@ export async function action({ request }) {
         id: draftId,
         shop,
         preparedByStockUserId: stockUser.id,
-        status: { in: [STOCK_DRAFT_STATUS.PENDING, STOCK_DRAFT_STATUS.EDITING] },
+        status: {
+          in: [STOCK_DRAFT_STATUS.PENDING, STOCK_DRAFT_STATUS.EDITING],
+        },
         OR: [
           { publishingLockedByStockUserId: null },
           { publishingLockedByStockUserId: stockUser.id },
@@ -1402,7 +1788,8 @@ export async function action({ request }) {
       if (currentDraft?.status === STOCK_DRAFT_STATUS.READY) {
         return {
           ok: false,
-          error: "No se puede editar esta orden porque ya fue marcada como lista. Notificale a tu supervisor de esta orden.",
+          error:
+            "No se puede editar esta orden porque ya fue marcada como lista. Notificale a tu supervisor de esta orden.",
         };
       }
       if (currentDraft?.status === STOCK_DRAFT_STATUS.EDITING) {
@@ -1413,13 +1800,21 @@ export async function action({ request }) {
       }
       return { ok: false, error: "No se pudo tomar esta orden para editar." };
     }
-    const draft = await prisma.stockProductDraft.findFirst({ where: { id: draftId, shop } });
-    return { ok: true, draft: draft ? serializePreparedStockHistory(draft) : null };
+    const draft = await prisma.stockProductDraft.findFirst({
+      where: { id: draftId, shop },
+    });
+    return {
+      ok: true,
+      draft: draft ? serializePreparedStockHistory(draft) : null,
+    };
   }
 
   if (intent === "cancel_stock_edit_draft") {
     if (stockUser?.role !== STOCK_USER_ROLES.PREPARER) {
-      return { ok: false, error: "Solo un preparador de stock puede cancelar ediciones." };
+      return {
+        ok: false,
+        error: "Solo un preparador de stock puede cancelar ediciones.",
+      };
     }
     const draftId = Number(formData.get("draftId") || 0);
     if (!draftId) return { ok: true };
@@ -1445,18 +1840,35 @@ export async function action({ request }) {
   }
 
   if (stockUser?.role !== STOCK_USER_ROLES.PREPARER) {
-    return { ok: false, error: "Solo un preparador de stock puede guardar productos." };
+    return {
+      ok: false,
+      error: "Solo un preparador de stock puede guardar productos.",
+    };
   }
 
   const audience = normalizeAudience(formData.get("audience"));
   const garmentType = normalizeGarment(formData.get("garmentType"));
-  const productName = sanitizeText(formData.get("productName")) || garmentConfig(garmentType).label;
-  const baseVariants = sanitizeStockVariants(formData.get("variants"), stockSizesFor(audience, garmentType));
-  if (!baseVariants.length) return { ok: false, error: "Agrega color y al menos una talla con cantidad." };
+  const productName =
+    sanitizeText(formData.get("productName")) ||
+    garmentConfig(garmentType).label;
+  const baseVariants = sanitizeStockVariants(
+    formData.get("variants"),
+    stockSizesFor(audience, garmentType),
+  );
+  if (!baseVariants.length)
+    return {
+      ok: false,
+      error: "Agrega color y al menos una talla con cantidad.",
+    };
   const stockPriceSettings = await loadStockPriceSettings(shop);
-  const variants = applyStockStorePriceToVariants(baseVariants, stockPriceSettings);
+  const variants = applyStockStorePriceToVariants(
+    baseVariants,
+    stockPriceSettings,
+  );
   const quantity = variants.reduce(
-    (sum, variant) => sum + variant.sizes.reduce((sizeSum, sizeRow) => sizeSum + sizeRow.quantity, 0),
+    (sum, variant) =>
+      sum +
+      variant.sizes.reduce((sizeSum, sizeRow) => sizeSum + sizeRow.quantity, 0),
     0,
   );
   const firstVariant = variants[0] || {};
@@ -1471,13 +1883,21 @@ export async function action({ request }) {
   if (editingDraftId) {
     const currentDraft = await prisma.stockProductDraft.findFirst({
       where: { id: editingDraftId, shop, preparedByStockUserId: stockUser.id },
-      select: { id: true, sku: true, locationCode: true, status: true, publishingLockedByStockUserId: true },
+      select: {
+        id: true,
+        sku: true,
+        locationCode: true,
+        status: true,
+        publishingLockedByStockUserId: true,
+      },
     });
-    if (!currentDraft) return { ok: false, error: "No se encontro la orden para editar." };
+    if (!currentDraft)
+      return { ok: false, error: "No se encontro la orden para editar." };
     if (currentDraft.status === STOCK_DRAFT_STATUS.READY) {
       return {
         ok: false,
-        error: "No se puede editar esta orden porque ya fue marcada como lista. Notificale a tu supervisor de esta orden.",
+        error:
+          "No se puede editar esta orden porque ya fue marcada como lista. Notificale a tu supervisor de esta orden.",
       };
     }
     const updatedDraft = await prisma.stockProductDraft.updateMany({
@@ -1503,7 +1923,11 @@ export async function action({ request }) {
       },
     });
     if (!updatedDraft.count) {
-      return { ok: false, error: "No se pudo guardar la edicion. Intenta abrir la orden otra vez." };
+      return {
+        ok: false,
+        error:
+          "No se pudo guardar la edicion. Intenta abrir la orden otra vez.",
+      };
     }
     return redirect(
       stockPortalHref(
@@ -1521,7 +1945,10 @@ export async function action({ request }) {
   )
     .map((row) => row.sku)
     .filter(Boolean);
-  const sku = nextStockSkuForPrefix(stockSkuPrefix(audience, garmentType), existingSkus);
+  const sku = nextStockSkuForPrefix(
+    stockSkuPrefix(audience, garmentType),
+    existingSkus,
+  );
   await syncReleasedStockLocations(shop);
   const releasedLocationDraft = await prisma.stockProductDraft.findFirst({
     where: {
@@ -1539,7 +1966,9 @@ export async function action({ request }) {
     where: { shop_audience_garmentType: { shop, audience, garmentType } },
   });
   const locationCode =
-    releasedLocationDraft?.locationCode || locationState?.currentLocation || defaultStockLocation(audience, garmentType);
+    releasedLocationDraft?.locationCode ||
+    locationState?.currentLocation ||
+    defaultStockLocation(audience, garmentType);
   const nextLocation = nextStockLocation(locationCode, audience, garmentType);
 
   const stockWriteOperations = [
@@ -1627,14 +2056,25 @@ function stockPublisherDraftKey(shop, accessCode) {
   return `cariana-stock-publisher-draft:${cleanShop(shop) || "portal-stock"}:${String(accessCode || "").trim()}`;
 }
 
-function normalizeStockVariantDraft(variant, index = 0, allowedSizes = STOCK_ALPHA_SIZES) {
+function normalizeStockVariantDraft(
+  variant,
+  index = 0,
+  allowedSizes = STOCK_ALPHA_SIZES,
+) {
   const base = blankStockVariant(`variant-${index + 1}`);
   const sizes = (Array.isArray(variant?.sizes) ? variant.sizes : [])
     .map((sizeRow) => ({
-      size: allowedSizes.includes(String(sizeRow?.size || "").trim().toUpperCase())
+      size: allowedSizes.includes(
+        String(sizeRow?.size || "")
+          .trim()
+          .toUpperCase(),
+      )
         ? String(sizeRow.size).trim().toUpperCase()
         : "",
-      quantity: Math.max(1, Math.min(9999, Number(sizeRow?.quantity || 0) || 0)),
+      quantity: Math.max(
+        1,
+        Math.min(9999, Number(sizeRow?.quantity || 0) || 0),
+      ),
     }))
     .filter((sizeRow) => sizeRow.size && sizeRow.quantity);
   return {
@@ -1644,11 +2084,19 @@ function normalizeStockVariantDraft(variant, index = 0, allowedSizes = STOCK_ALP
     price: String(variant?.basePrice ?? variant?.price ?? ""),
     sizes,
     sizeMenuOpen: Boolean(variant?.sizeMenuOpen),
-    selectedSize: allowedSizes.includes(String(variant?.selectedSize || "").trim().toUpperCase())
+    selectedSize: allowedSizes.includes(
+      String(variant?.selectedSize || "")
+        .trim()
+        .toUpperCase(),
+    )
       ? String(variant.selectedSize).trim().toUpperCase()
       : "",
     quantityDraft: String(variant?.quantityDraft || ""),
-    pendingDeleteSize: allowedSizes.includes(String(variant?.pendingDeleteSize || "").trim().toUpperCase())
+    pendingDeleteSize: allowedSizes.includes(
+      String(variant?.pendingDeleteSize || "")
+        .trim()
+        .toUpperCase(),
+    )
       ? String(variant.pendingDeleteSize).trim().toUpperCase()
       : "",
   };
@@ -1665,15 +2113,23 @@ function normalizeStockPhotoDraft(photo, index = 0) {
 }
 
 function formatStockSizes(sizes = []) {
-  return sizes.map((sizeRow) => `${sizeRow.size}=(${sizeRow.quantity})`).join(", ");
+  return sizes
+    .map((sizeRow) => `${sizeRow.size}=(${sizeRow.quantity})`)
+    .join(", ");
 }
 
 function stockPrintSizeBatches(variants = []) {
   return (Array.isArray(variants) ? variants : [])
     .flatMap((variant) =>
       (Array.isArray(variant?.sizes) ? variant.sizes : []).map((sizeRow) => {
-        const size = String(sizeRow?.size || "").trim().toUpperCase().replace(/[^0-9A-Z.]/g, "");
-        const quantity = Math.max(1, Math.min(9999, Number(sizeRow?.quantity || 0) || 0));
+        const size = String(sizeRow?.size || "")
+          .trim()
+          .toUpperCase()
+          .replace(/[^0-9A-Z.]/g, "");
+        const quantity = Math.max(
+          1,
+          Math.min(9999, Number(sizeRow?.quantity || 0) || 0),
+        );
         return size && quantity ? `${size}:${quantity}` : "";
       }),
     )
@@ -1686,11 +2142,20 @@ function printStockLabels({ sku, locationCode, quantity, sizeBatches }) {
     const labelCount = Math.max(1, Math.min(9999, Number(quantity || 0) || 0));
     if (!sku || !locationCode || !window.Android) return;
     if (typeof window.Android.printStockLabelsBySize === "function") {
-      window.Android.printStockLabelsBySize(String(sku), String(locationCode), String(labelCount), String(sizeBatches || ""));
+      window.Android.printStockLabelsBySize(
+        String(sku),
+        String(locationCode),
+        String(labelCount),
+        String(sizeBatches || ""),
+      );
       return;
     }
     if (typeof window.Android.printStockLabels === "function") {
-      window.Android.printStockLabels(String(sku), String(locationCode), String(labelCount));
+      window.Android.printStockLabels(
+        String(sku),
+        String(locationCode),
+        String(labelCount),
+      );
     }
   } catch (_error) {
     // La impresion es una mejora nativa de Android; el guardado debe continuar si no esta disponible.
@@ -1707,7 +2172,9 @@ function stockDisplayVariants(draft) {
       sizes: Array.isArray(variant?.sizes)
         ? variant.sizes
             .map((sizeRow) => ({
-              size: String(sizeRow?.size || "").trim().toUpperCase(),
+              size: String(sizeRow?.size || "")
+                .trim()
+                .toUpperCase(),
               quantity: Math.max(1, Number(sizeRow?.quantity || 0) || 0),
             }))
             .filter((sizeRow) => sizeRow.size && sizeRow.quantity)
@@ -1715,7 +2182,9 @@ function stockDisplayVariants(draft) {
     }))
     .filter((variant) => variant.color || variant.sizes.length);
   if (normalizedVariants.length) return normalizedVariants;
-  const size = String(draft.size || "").trim().toUpperCase();
+  const size = String(draft.size || "")
+    .trim()
+    .toUpperCase();
   const quantity = Math.max(1, Number(draft.quantity || 0) || 0);
   return [
     {
@@ -1744,7 +2213,10 @@ async function compressImageFile(file) {
     img.src = originalDataUrl;
   });
   const maxSide = 1400;
-  const scale = Math.min(1, maxSide / Math.max(image.width || maxSide, image.height || maxSide));
+  const scale = Math.min(
+    1,
+    maxSide / Math.max(image.width || maxSide, image.height || maxSide),
+  );
   const width = Math.max(1, Math.round((image.width || maxSide) * scale));
   const height = Math.max(1, Math.round((image.height || maxSide) * scale));
   const canvas = document.createElement("canvas");
@@ -1787,13 +2259,19 @@ export default function StockPortal() {
   const requestedPublisherDraftId = Number(searchParams.get("draftId") || 0);
   const [activeTab, setActiveTab] = useState("capturar");
   const [photos, setPhotos] = useState([]);
-  const [selectedDraftId, setSelectedDraftId] = useState(requestedPublisherDraftId);
+  const [selectedDraftId, setSelectedDraftId] = useState(
+    requestedPublisherDraftId,
+  );
   const [pendingSelectedDraftId, setPendingSelectedDraftId] = useState(0);
   const [publisherMessage, setPublisherMessage] = useState("");
   const [stockToast, setStockToast] = useState(null);
   const [publisherStateLoaded, setPublisherStateLoaded] = useState(false);
-  const [selectedAudience, setSelectedAudience] = useState(audiences?.[0]?.value || "hombre");
-  const [selectedGarment, setSelectedGarment] = useState(garments?.[0]?.value || "playera");
+  const [selectedAudience, setSelectedAudience] = useState(
+    audiences?.[0]?.value || "hombre",
+  );
+  const [selectedGarment, setSelectedGarment] = useState(
+    garments?.[0]?.value || "playera",
+  );
   const [captureStep, setCaptureStep] = useState("audience");
   const [showPreparedHistory, setShowPreparedHistory] = useState(false);
   const [stockReprintMode, setStockReprintMode] = useState(false);
@@ -1807,41 +2285,64 @@ export default function StockPortal() {
   const [previewPhoto, setPreviewPhoto] = useState(null);
   const [photoZoom, setPhotoZoom] = useState({ scale: 1, x: 0, y: 0 });
   const [checkedStockItems, setCheckedStockItems] = useState({});
-  const photoGestureRef = useRef({ distance: 0, scale: 1, startX: 0, startY: 0 });
+  const photoGestureRef = useRef({
+    distance: 0,
+    scale: 1,
+    startX: 0,
+    startY: 0,
+  });
   const pendingStockSaveRef = useRef(false);
   const lastDraftCountRef = useRef(drafts.length);
   const restoredPublisherStateKeyRef = useRef("");
   const publishNoticeArmedRef = useRef(false);
   const isSubmitting = navigation.state !== "idle";
   const navigationIntent = navigation.formData?.get("intent");
-  const isStockLoginSubmitting = navigation.state !== "idle" && navigationIntent === "stock_login";
-  const isStockLogoutSubmitting = navigation.state !== "idle" && navigationIntent === "stock_logout";
+  const isStockLoginSubmitting =
+    navigation.state !== "idle" && navigationIntent === "stock_login";
+  const isStockLogoutSubmitting =
+    navigation.state !== "idle" && navigationIntent === "stock_logout";
   const isPreparerStock = stockUser?.role === STOCK_USER_ROLES.PREPARER;
   const isProductPublisher = stockUser?.role === STOCK_USER_ROLES.PUBLISHER;
   const captureDraftKey = useMemo(() => stockCaptureDraftKey(shop), [shop]);
   const stockSessionKey = useMemo(() => stockSessionStorageKey(shop), [shop]);
   const stockDeviceKey = useMemo(() => stockDeviceStorageKey(shop), [shop]);
-  const urlStockDeviceId = String(searchParams.get("dispositivo") || searchParams.get("device") || "").trim();
-  const publisherDraftKey = useMemo(() => stockPublisherDraftKey(shop, accessCode), [accessCode, shop]);
+  const urlStockDeviceId = String(
+    searchParams.get("dispositivo") || searchParams.get("device") || "",
+  ).trim();
+  const publisherDraftKey = useMemo(
+    () => stockPublisherDraftKey(shop, accessCode),
+    [accessCode, shop],
+  );
   const suggestedSku =
     editingDraftMeta?.sku ||
     nextSkuByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
-    nextStockSkuForPrefix(stockSkuPrefix(selectedAudience, selectedGarment), []);
+    nextStockSkuForPrefix(
+      stockSkuPrefix(selectedAudience, selectedGarment),
+      [],
+    );
   const suggestedLocation =
     editingDraftMeta?.locationCode ||
     locationByCategory?.[`${selectedAudience}:${selectedGarment}`] ||
     defaultStockLocation(selectedAudience, selectedGarment);
   const selectedDraft = useMemo(
-    () => drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) || null,
+    () =>
+      drafts.find((draft) => Number(draft.id) === Number(selectedDraftId)) ||
+      null,
     [drafts, selectedDraftId],
   );
   const selectedStockDetail = selectedDraft;
-  const selectedDraftVariants = useMemo(() => stockDisplayVariants(selectedStockDetail), [selectedStockDetail]);
+  const selectedDraftVariants = useMemo(
+    () => stockDisplayVariants(selectedStockDetail),
+    [selectedStockDetail],
+  );
   const selectedDraftChecklistKeys = useMemo(() => {
     if (!selectedDraft) return [];
     return selectedDraftVariants.flatMap((variant, variantIndex) =>
-        variant.sizes.map((sizeRow) => `draft:${selectedDraft.id}:variant:${variantIndex}:size:${sizeRow.size}`),
-      );
+      variant.sizes.map(
+        (sizeRow) =>
+          `draft:${selectedDraft.id}:variant:${variantIndex}:size:${sizeRow.size}`,
+      ),
+    );
   }, [selectedDraft, selectedDraftVariants]);
   const isSelectedDraftPublishReady =
     selectedDraftChecklistKeys.length > 0 &&
@@ -1850,7 +2351,9 @@ export default function StockPortal() {
     () => stockSizesFor(selectedAudience, selectedGarment),
     [selectedAudience, selectedGarment],
   );
-  const stockSizeMenuOpen = variantGroups.some((variant) => variant.sizeMenuOpen);
+  const stockSizeMenuOpen = variantGroups.some(
+    (variant) => variant.sizeMenuOpen,
+  );
   const stockFormComplete =
     photos.length > 0 &&
     variantGroups.length > 0 &&
@@ -1926,10 +2429,10 @@ export default function StockPortal() {
     setCheckedStockItems({});
     setShowPreparedHistory(false);
     setStockReprintMode(false);
-      setStockEditMode(false);
-      setEditingDraftId(0);
-      setEditingDraftMeta(null);
-      setPendingEditDraftId(0);
+    setStockEditMode(false);
+    setEditingDraftId(0);
+    setEditingDraftMeta(null);
+    setPendingEditDraftId(0);
     const logoutForm = new FormData();
     logoutForm.set("intent", "stock_logout");
     logoutForm.set("shop", shop);
@@ -1949,7 +2452,9 @@ export default function StockPortal() {
         setStockDeviceId(urlStockDeviceId);
         return;
       }
-      const savedDeviceId = String(window.localStorage.getItem(stockDeviceKey) || "").trim();
+      const savedDeviceId = String(
+        window.localStorage.getItem(stockDeviceKey) || "",
+      ).trim();
       if (savedDeviceId) {
         setStockDeviceId(savedDeviceId);
         return;
@@ -1963,17 +2468,23 @@ export default function StockPortal() {
   }, [stockDeviceKey, urlStockDeviceId]);
 
   useEffect(() => {
-    const urlSessionToken = String(searchParams.get("sesion") || searchParams.get("session") || "").trim();
+    const urlSessionToken = String(
+      searchParams.get("sesion") || searchParams.get("session") || "",
+    ).trim();
     const activeSessionToken = String(sessionToken || accessCode || "").trim();
     try {
-      const storedToken = String(window.localStorage.getItem(stockSessionKey) || "").trim();
+      const storedToken = String(
+        window.localStorage.getItem(stockSessionKey) || "",
+      ).trim();
       if (stockUser && activeSessionToken) {
         window.localStorage.setItem(stockSessionKey, activeSessionToken);
         return;
       }
       if (!stockUser && urlSessionToken) {
         if (storedToken && storedToken !== urlSessionToken) {
-          window.location.replace(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(storedToken)}`);
+          window.location.replace(
+            `/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(storedToken)}`,
+          );
           return;
         }
         window.localStorage.removeItem(stockSessionKey);
@@ -1981,13 +2492,22 @@ export default function StockPortal() {
       }
       if (!stockUser && !urlSessionToken) {
         if (storedToken) {
-          window.location.replace(`/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(storedToken)}`);
+          window.location.replace(
+            `/stock?shop=${encodeURIComponent(shop)}&sesion=${encodeURIComponent(storedToken)}`,
+          );
         }
       }
     } catch (_error) {
       // Si localStorage no esta disponible, el usuario puede entrar con su codigo.
     }
-  }, [accessCode, searchParams, sessionToken, shop, stockSessionKey, stockUser]);
+  }, [
+    accessCode,
+    searchParams,
+    sessionToken,
+    shop,
+    stockSessionKey,
+    stockUser,
+  ]);
 
   useEffect(() => {
     if (savedFlag) {
@@ -2016,9 +2536,16 @@ export default function StockPortal() {
       }
       const restoredAudience = normalizeAudience(draft.selectedAudience);
       const restoredGarment = normalizeGarment(draft.selectedGarment);
-      const restoredStockSizes = stockSizesFor(restoredAudience, restoredGarment);
-      const restoredVariants = (Array.isArray(draft.variantGroups) ? draft.variantGroups : [])
-        .map((variant, index) => normalizeStockVariantDraft(variant, index, restoredStockSizes))
+      const restoredStockSizes = stockSizesFor(
+        restoredAudience,
+        restoredGarment,
+      );
+      const restoredVariants = (
+        Array.isArray(draft.variantGroups) ? draft.variantGroups : []
+      )
+        .map((variant, index) =>
+          normalizeStockVariantDraft(variant, index, restoredStockSizes),
+        )
         .filter(Boolean);
       const restoredPhotos = (Array.isArray(draft.photos) ? draft.photos : [])
         .map(normalizeStockPhotoDraft)
@@ -2026,10 +2553,16 @@ export default function StockPortal() {
         .slice(0, MAX_STOCK_PHOTOS);
 
       setActiveTab("capturar");
-      setCaptureStep(["audience", "product", "details"].includes(draft.captureStep) ? draft.captureStep : "audience");
+      setCaptureStep(
+        ["audience", "product", "details"].includes(draft.captureStep)
+          ? draft.captureStep
+          : "audience",
+      );
       setSelectedAudience(restoredAudience);
       setSelectedGarment(restoredGarment);
-      setVariantGroups(restoredVariants.length ? restoredVariants : [blankStockVariant()]);
+      setVariantGroups(
+        restoredVariants.length ? restoredVariants : [blankStockVariant()],
+      );
       setPhotos(restoredPhotos);
       const restoredEditingDraftId = Number(draft.editingDraftId || 0);
       if (restoredEditingDraftId) {
@@ -2052,7 +2585,13 @@ export default function StockPortal() {
     const checkStockLogoutTime = () => {
       const { dateKey, minutes } = stockMexicoDateTimeParts();
       const targetMinutes = stockLogoutMinutes(stockLogoutTime);
-      if (!dateKey || minutes < 0 || !Number.isFinite(targetMinutes) || minutes < targetMinutes) return;
+      if (
+        !dateKey ||
+        minutes < 0 ||
+        !Number.isFinite(targetMinutes) ||
+        minutes < targetMinutes
+      )
+        return;
       const storageKey = stockAutoLogoutKey(shop, stockLogoutTime, dateKey);
       try {
         if (window.localStorage.getItem(storageKey)) return;
@@ -2078,7 +2617,10 @@ export default function StockPortal() {
 
   useEffect(() => {
     if (navigation.state !== "idle") return;
-    if (pendingStockSaveRef.current && drafts.length > lastDraftCountRef.current) {
+    if (
+      pendingStockSaveRef.current &&
+      drafts.length > lastDraftCountRef.current
+    ) {
       pendingStockSaveRef.current = false;
       resetStockCaptureFlow();
     }
@@ -2105,15 +2647,19 @@ export default function StockPortal() {
     try {
       const rawState = window.localStorage.getItem(publisherDraftKey);
       const savedState = rawState ? JSON.parse(rawState) : {};
-      const draftId = requestedPublisherDraftId || Number(savedState?.selectedDraftId || 0);
-      const restoredDraft = drafts.find((draft) => Number(draft.id) === draftId);
+      const draftId =
+        requestedPublisherDraftId || Number(savedState?.selectedDraftId || 0);
+      const restoredDraft = drafts.find(
+        (draft) => Number(draft.id) === draftId,
+      );
       if (!draftId || !restoredDraft || restoredDraft.isLockedByOther) {
         window.localStorage.removeItem(publisherDraftKey);
         if (requestedPublisherDraftId) setPublisherDraftUrl(0);
         return;
       }
       const savedChecks =
-        savedState?.checkedStockItems && typeof savedState.checkedStockItems === "object"
+        savedState?.checkedStockItems &&
+        typeof savedState.checkedStockItems === "object"
           ? savedState.checkedStockItems
           : {};
       setSelectedDraftId(draftId);
@@ -2131,11 +2677,22 @@ export default function StockPortal() {
         );
       }
     } catch (restoreError) {
-      console.error("No se pudo restaurar el publicador de stock", restoreError);
+      console.error(
+        "No se pudo restaurar el publicador de stock",
+        restoreError,
+      );
     } finally {
       setPublisherStateLoaded(true);
     }
-  }, [accessCode, drafts, isProductPublisher, lockStockFetcher, publisherDraftKey, requestedPublisherDraftId, shop]);
+  }, [
+    accessCode,
+    drafts,
+    isProductPublisher,
+    lockStockFetcher,
+    publisherDraftKey,
+    requestedPublisherDraftId,
+    shop,
+  ]);
 
   useEffect(() => {
     if (!isProductPublisher || !publisherStateLoaded) return;
@@ -2154,9 +2711,18 @@ export default function StockPortal() {
         }),
       );
     } catch (saveError) {
-      console.error("No se pudo guardar el avance del publicador de stock", saveError);
+      console.error(
+        "No se pudo guardar el avance del publicador de stock",
+        saveError,
+      );
     }
-  }, [checkedStockItems, isProductPublisher, publisherDraftKey, publisherStateLoaded, selectedDraftId]);
+  }, [
+    checkedStockItems,
+    isProductPublisher,
+    publisherDraftKey,
+    publisherStateLoaded,
+    selectedDraftId,
+  ]);
 
   useEffect(() => {
     if (!isProductPublisher) return undefined;
@@ -2181,7 +2747,13 @@ export default function StockPortal() {
       );
     }, STOCK_PUBLICATION_HEARTBEAT_MS);
     return () => window.clearInterval(intervalId);
-  }, [accessCode, heartbeatStockFetcher, isProductPublisher, selectedDraftId, shop]);
+  }, [
+    accessCode,
+    heartbeatStockFetcher,
+    isProductPublisher,
+    selectedDraftId,
+    shop,
+  ]);
 
   useEffect(() => {
     if (!isPreparerStock || !editingDraftId) return undefined;
@@ -2198,19 +2770,33 @@ export default function StockPortal() {
       );
     }, STOCK_PUBLICATION_HEARTBEAT_MS);
     return () => window.clearInterval(intervalId);
-  }, [accessCode, editHeartbeatStockFetcher, editingDraftId, isPreparerStock, shop]);
+  }, [
+    accessCode,
+    editHeartbeatStockFetcher,
+    editingDraftId,
+    isPreparerStock,
+    shop,
+  ]);
 
   useEffect(() => {
-    if (!pendingSelectedDraftId || lockStockFetcher.state !== "idle" || !lockStockFetcher.data) return;
+    if (
+      !pendingSelectedDraftId ||
+      lockStockFetcher.state !== "idle" ||
+      !lockStockFetcher.data
+    )
+      return;
     const responseDraftId = Number(lockStockFetcher.data.draftId || 0);
-    if (responseDraftId && responseDraftId !== Number(pendingSelectedDraftId)) return;
+    if (responseDraftId && responseDraftId !== Number(pendingSelectedDraftId))
+      return;
     if (lockStockFetcher.data.ok) {
       setSelectedDraftId(responseDraftId || Number(pendingSelectedDraftId));
       setPublisherDraftUrl(responseDraftId || Number(pendingSelectedDraftId));
       setPublisherMessage("");
       revalidator.revalidate();
     } else {
-      setPublisherMessage(lockStockFetcher.data.error || "Esta orden ya esta siendo trabajada.");
+      setPublisherMessage(
+        lockStockFetcher.data.error || "Esta orden ya esta siendo trabajada.",
+      );
       setSelectedDraftId(0);
       setCheckedStockItems({});
       clearPublisherDraftState();
@@ -2218,21 +2804,39 @@ export default function StockPortal() {
       revalidator.revalidate();
     }
     setPendingSelectedDraftId(0);
-  }, [lockStockFetcher.data, lockStockFetcher.state, pendingSelectedDraftId, revalidator]);
+  }, [
+    lockStockFetcher.data,
+    lockStockFetcher.state,
+    pendingSelectedDraftId,
+    revalidator,
+  ]);
 
   useEffect(() => {
-    if (!pendingEditDraftId || editStockFetcher.state !== "idle" || !editStockFetcher.data) return;
+    if (
+      !pendingEditDraftId ||
+      editStockFetcher.state !== "idle" ||
+      !editStockFetcher.data
+    )
+      return;
     if (editStockFetcher.data.ok && editStockFetcher.data.draft) {
       loadStockDraftForEditing(editStockFetcher.data.draft);
       setStockEditMode(false);
       setStockReprintMode(false);
       revalidator.revalidate();
     } else {
-      window.alert(editStockFetcher.data.error || "No se pudo abrir esta orden para editar.");
+      window.alert(
+        editStockFetcher.data.error ||
+          "No se pudo abrir esta orden para editar.",
+      );
       revalidator.revalidate();
     }
     setPendingEditDraftId(0);
-  }, [editStockFetcher.data, editStockFetcher.state, pendingEditDraftId, revalidator]);
+  }, [
+    editStockFetcher.data,
+    editStockFetcher.state,
+    pendingEditDraftId,
+    revalidator,
+  ]);
 
   useEffect(() => {
     if (publishStockFetcher.state !== "idle") {
@@ -2243,7 +2847,12 @@ export default function StockPortal() {
     publishNoticeArmedRef.current = false;
     if (publishStockFetcher.data.intent !== "publish_stock_draft") return;
     if (publishStockFetcher.data.ok) {
-      setStockToast({ tone: "success", message: publishStockFetcher.data.message || "Producto publicado correctamente." });
+      setStockToast({
+        tone: "success",
+        message:
+          publishStockFetcher.data.message ||
+          "Producto publicado correctamente.",
+      });
       setSelectedDraftId(0);
       setCheckedStockItems({});
       clearPublisherDraftState();
@@ -2289,7 +2898,10 @@ export default function StockPortal() {
       window.localStorage.setItem(captureDraftKey, JSON.stringify(draft));
     } catch (saveError) {
       try {
-        window.localStorage.setItem(captureDraftKey, JSON.stringify({ ...draft, photos: [] }));
+        window.localStorage.setItem(
+          captureDraftKey,
+          JSON.stringify({ ...draft, photos: [] }),
+        );
       } catch (_retryError) {
         console.error("No se pudo guardar el borrador de stock", saveError);
       }
@@ -2309,7 +2921,10 @@ export default function StockPortal() {
   ]);
 
   async function handlePhotoFiles(event) {
-    const files = Array.from(event.target.files || []).slice(0, MAX_STOCK_PHOTOS - photos.length);
+    const files = Array.from(event.target.files || []).slice(
+      0,
+      MAX_STOCK_PHOTOS - photos.length,
+    );
     if (!files.length) return;
     const compressed = [];
     for (const file of files) {
@@ -2323,14 +2938,20 @@ export default function StockPortal() {
         console.error("No se pudo procesar la foto de stock", error);
       }
     }
-    setPhotos((current) => [...current, ...compressed].slice(0, MAX_STOCK_PHOTOS));
+    setPhotos((current) =>
+      [...current, ...compressed].slice(0, MAX_STOCK_PHOTOS),
+    );
     event.target.value = "";
   }
 
   function openPublisherDraft(draft) {
     if (!draft) return;
     if (draft.isLockedByOther) {
-      setPublisherMessage(draft.isBeingEdited ? "Esta orden esta siendo editada." : "Esta orden ya esta siendo trabajada.");
+      setPublisherMessage(
+        draft.isBeingEdited
+          ? "Esta orden esta siendo editada."
+          : "Esta orden ya esta siendo trabajada.",
+      );
       return;
     }
     setPublisherMessage("");
@@ -2383,10 +3004,14 @@ export default function StockPortal() {
     const sku = String(item?.sku || "").trim();
     const locationCode = String(item?.locationCode || "").trim();
     if (!sku || !locationCode) {
-      window.alert("No se puede reimprimir esta orden porque falta SKU o ubicacion.");
+      window.alert(
+        "No se puede reimprimir esta orden porque falta SKU o ubicacion.",
+      );
       return;
     }
-    const confirmed = window.confirm(`¿Seguro que quieres reimprimir las etiquetas de ${sku}?`);
+    const confirmed = window.confirm(
+      `¿Seguro que quieres reimprimir las etiquetas de ${sku}?`,
+    );
     if (!confirmed) return;
     printStockLabels({
       sku,
@@ -2401,8 +3026,12 @@ export default function StockPortal() {
     const restoredAudience = normalizeAudience(draft?.audience);
     const restoredGarment = normalizeGarment(draft?.garmentType);
     const allowedSizes = stockSizesFor(restoredAudience, restoredGarment);
-    const restoredVariants = (Array.isArray(draft?.variants) ? draft.variants : [])
-      .map((variant, index) => normalizeStockVariantDraft(variant, index, allowedSizes))
+    const restoredVariants = (
+      Array.isArray(draft?.variants) ? draft.variants : []
+    )
+      .map((variant, index) =>
+        normalizeStockVariantDraft(variant, index, allowedSizes),
+      )
       .filter(Boolean);
     const restoredPhotos = (Array.isArray(draft?.photos) ? draft.photos : [])
       .map((photo, index) =>
@@ -2419,7 +3048,9 @@ export default function StockPortal() {
     const draftId = Number(draft?.id || 0);
     setSelectedAudience(restoredAudience);
     setSelectedGarment(restoredGarment);
-    setVariantGroups(restoredVariants.length ? restoredVariants : [blankStockVariant()]);
+    setVariantGroups(
+      restoredVariants.length ? restoredVariants : [blankStockVariant()],
+    );
     setPhotos(restoredPhotos);
     setEditingDraftId(draftId);
     setEditingDraftMeta({
@@ -2493,10 +3124,18 @@ export default function StockPortal() {
           price: Math.max(0, Number(variant.price || 0) || 0),
           sizes: (Array.isArray(variant.sizes) ? variant.sizes : [])
             .map((sizeRow) => ({
-              size: String(sizeRow.size || "").trim().toUpperCase(),
-              quantity: Math.max(1, Math.min(9999, Number(sizeRow.quantity || 0) || 0)),
+              size: String(sizeRow.size || "")
+                .trim()
+                .toUpperCase(),
+              quantity: Math.max(
+                1,
+                Math.min(9999, Number(sizeRow.quantity || 0) || 0),
+              ),
             }))
-            .filter((sizeRow) => currentStockSizes.includes(sizeRow.size) && sizeRow.quantity),
+            .filter(
+              (sizeRow) =>
+                currentStockSizes.includes(sizeRow.size) && sizeRow.quantity,
+            ),
         }))
         .filter((variant) => variant.color && variant.sizes.length),
     [currentStockSizes, variantGroups],
@@ -2520,7 +3159,13 @@ export default function StockPortal() {
       setVariantGroups((currentGroups) =>
         currentGroups.map((variant) =>
           variant.id === variantId
-            ? { ...variant, sizeMenuOpen: false, selectedSize: "", quantityDraft: "", pendingDeleteSize: "" }
+            ? {
+                ...variant,
+                sizeMenuOpen: false,
+                selectedSize: "",
+                quantityDraft: "",
+                pendingDeleteSize: "",
+              }
             : variant,
         ),
       );
@@ -2530,10 +3175,25 @@ export default function StockPortal() {
     setVariantGroups((currentGroups) =>
       currentGroups.map((variant) => {
         if (variant.id !== variantId) return variant;
-        const exists = variant.sizes.some((sizeRow) => String(sizeRow.size || "").trim().toUpperCase() === value);
+        const exists = variant.sizes.some(
+          (sizeRow) =>
+            String(sizeRow.size || "")
+              .trim()
+              .toUpperCase() === value,
+        );
         return exists
-          ? { ...variant, selectedSize: "", quantityDraft: "", pendingDeleteSize: value }
-          : { ...variant, selectedSize: value, quantityDraft: "", pendingDeleteSize: "" };
+          ? {
+              ...variant,
+              selectedSize: "",
+              quantityDraft: "",
+              pendingDeleteSize: value,
+            }
+          : {
+              ...variant,
+              selectedSize: value,
+              quantityDraft: "",
+              pendingDeleteSize: "",
+            };
       }),
     );
   }
@@ -2542,14 +3202,30 @@ export default function StockPortal() {
     setVariantGroups((currentGroups) =>
       currentGroups.map((variant) => {
         if (variant.id !== variantId) return variant;
-        const cleanSize = String(variant.selectedSize || "").trim().toUpperCase();
-        const quantity = Math.max(1, Math.min(9999, Number(variant.quantityDraft || 0) || 0));
+        const cleanSize = String(variant.selectedSize || "")
+          .trim()
+          .toUpperCase();
+        const quantity = Math.max(
+          1,
+          Math.min(9999, Number(variant.quantityDraft || 0) || 0),
+        );
         if (!cleanSize || !quantity) return variant;
         const nextSizes = [
-          ...variant.sizes.filter((sizeRow) => String(sizeRow.size || "").trim().toUpperCase() !== cleanSize),
+          ...variant.sizes.filter(
+            (sizeRow) =>
+              String(sizeRow.size || "")
+                .trim()
+                .toUpperCase() !== cleanSize,
+          ),
           { size: cleanSize, quantity },
         ];
-        return { ...variant, sizes: nextSizes, selectedSize: "", quantityDraft: "", pendingDeleteSize: "" };
+        return {
+          ...variant,
+          sizes: nextSizes,
+          selectedSize: "",
+          quantityDraft: "",
+          pendingDeleteSize: "",
+        };
       }),
     );
   }
@@ -2557,18 +3233,25 @@ export default function StockPortal() {
   function cancelVariantSizeQuantity(variantId) {
     setVariantGroups((currentGroups) =>
       currentGroups.map((variant) =>
-        variant.id === variantId ? { ...variant, selectedSize: "", quantityDraft: "" } : variant,
+        variant.id === variantId
+          ? { ...variant, selectedSize: "", quantityDraft: "" }
+          : variant,
       ),
     );
   }
 
   function removeSizeFromVariant(variantId, size) {
-    const cleanSize = String(size || "").trim().toUpperCase();
+    const cleanSize = String(size || "")
+      .trim()
+      .toUpperCase();
     setVariantGroups((currentGroups) =>
       currentGroups.map((variant) => {
         if (variant.id !== variantId) return variant;
         const nextSizes = variant.sizes.filter(
-          (sizeRow) => String(sizeRow.size || "").trim().toUpperCase() !== cleanSize,
+          (sizeRow) =>
+            String(sizeRow.size || "")
+              .trim()
+              .toUpperCase() !== cleanSize,
         );
         return {
           ...variant,
@@ -2603,12 +3286,17 @@ export default function StockPortal() {
 
   function addVariantGroup() {
     const nextId = `variant-${Date.now()}`;
-    setVariantGroups((currentGroups) => [...currentGroups, blankStockVariant(nextId)]);
+    setVariantGroups((currentGroups) => [
+      ...currentGroups,
+      blankStockVariant(nextId),
+    ]);
   }
 
   function removeVariantGroup(variantId) {
     setVariantGroups((currentGroups) => {
-      const nextGroups = currentGroups.filter((variant) => variant.id !== variantId);
+      const nextGroups = currentGroups.filter(
+        (variant) => variant.id !== variantId,
+      );
       return nextGroups.length ? nextGroups : [blankStockVariant()];
     });
   }
@@ -2652,10 +3340,15 @@ export default function StockPortal() {
   function handlePreviewTouchMove(event) {
     if (event.touches.length === 2) {
       event.preventDefault();
-      const initialDistance = photoGestureRef.current.distance || touchDistance(event.touches);
+      const initialDistance =
+        photoGestureRef.current.distance || touchDistance(event.touches);
       const nextScale = Math.min(
         4,
-        Math.max(1, photoGestureRef.current.scale * (touchDistance(event.touches) / initialDistance)),
+        Math.max(
+          1,
+          photoGestureRef.current.scale *
+            (touchDistance(event.touches) / initialDistance),
+        ),
       );
       setPhotoZoom((current) => ({
         ...current,
@@ -2683,7 +3376,10 @@ export default function StockPortal() {
 
   const garmentGroups = useMemo(() => {
     return (garments || STOCK_GARMENTS)
-      .filter((garment) => !garment.audiences || garment.audiences.includes(selectedAudience))
+      .filter(
+        (garment) =>
+          !garment.audiences || garment.audiences.includes(selectedAudience),
+      )
       .reduce((groups, garment) => {
         const section = garment.section || "Productos";
         return {
@@ -2700,7 +3396,9 @@ export default function StockPortal() {
           <section className={`${styles.card} ${styles.loginCard}`}>
             <p className={styles.loginEyebrow}>Portal stock</p>
             <h1 className={styles.loginTitle}>Ingresa tu codigo</h1>
-            <p className={styles.loginSubtitle}>Tu codigo es necesario para acceder al portal de stock.</p>
+            <p className={styles.loginSubtitle}>
+              Tu codigo es necesario para acceder al portal de stock.
+            </p>
             <Form method="post" className={styles.loginForm}>
               <input type="hidden" name="intent" value="stock_login" />
               <input type="hidden" name="shop" value={shop} />
@@ -2715,19 +3413,25 @@ export default function StockPortal() {
                 placeholder="000000"
                 required
               />
-            <button className={styles.primaryButton} type="submit" disabled={isStockLoginSubmitting || !stockDeviceId}>
-              {isStockLoginSubmitting ? (
-                <span className={styles.loadingButtonContent}>
-                  <span className={styles.buttonSpinner} aria-hidden="true" />
-                  Cargando
-                </span>
-              ) : (
-                "Entrar"
-              )}
-            </button>
+              <button
+                className={styles.primaryButton}
+                type="submit"
+                disabled={isStockLoginSubmitting || !stockDeviceId}
+              >
+                {isStockLoginSubmitting ? (
+                  <span className={styles.loadingButtonContent}>
+                    <span className={styles.buttonSpinner} aria-hidden="true" />
+                    Cargando
+                  </span>
+                ) : (
+                  "Entrar"
+                )}
+              </button>
             </Form>
             {error ? <p className={styles.error}>{error}</p> : null}
-            {actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
+            {actionData?.error ? (
+              <p className={styles.error}>{actionData.error}</p>
+            ) : null}
           </section>
         </div>
       ) : null}
@@ -2745,7 +3449,9 @@ export default function StockPortal() {
       ) : null}
 
       {stockUser && error ? <p className={styles.error}>{error}</p> : null}
-      {stockUser && actionData?.error ? <p className={styles.error}>{actionData.error}</p> : null}
+      {stockUser && actionData?.error ? (
+        <p className={styles.error}>{actionData.error}</p>
+      ) : null}
 
       {isPreparerStock && activeTab === "capturar" ? (
         <section className={styles.card}>
@@ -2766,7 +3472,11 @@ export default function StockPortal() {
                   "Cerrar sesión"
                 )}
               </button>
-              <button className={styles.slimHistoryButton} type="button" onClick={() => setShowPreparedHistory(true)}>
+              <button
+                className={styles.slimHistoryButton}
+                type="button"
+                onClick={() => setShowPreparedHistory(true)}
+              >
                 Historial
               </button>
             </div>
@@ -2774,9 +3484,15 @@ export default function StockPortal() {
 
           {captureStep === "audience" && showPreparedHistory ? (
             <div className={styles.preparedHistoryPanel}>
-              <div className={`${styles.stepHeader} ${styles.preparedHistoryHeader}`}>
+              <div
+                className={`${styles.stepHeader} ${styles.preparedHistoryHeader}`}
+              >
                 <h2>Historial del dia</h2>
-                <button className={styles.textButton} type="button" onClick={closePreparedHistory}>
+                <button
+                  className={styles.textButton}
+                  type="button"
+                  onClick={closePreparedHistory}
+                >
                   Regresar
                 </button>
                 <button
@@ -2793,11 +3509,19 @@ export default function StockPortal() {
                   Editar
                 </button>
                 <button
-                  aria-label={stockReprintMode ? "Cancelar reimpresion" : "Reimprimir etiquetas"}
+                  aria-label={
+                    stockReprintMode
+                      ? "Cancelar reimpresion"
+                      : "Reimprimir etiquetas"
+                  }
                   className={`${styles.stockReprintButton} ${
                     stockReprintMode ? styles.stockReprintButtonActive : ""
                   }`}
-                  title={stockReprintMode ? "Cancelar reimpresion" : "Reimprimir etiquetas"}
+                  title={
+                    stockReprintMode
+                      ? "Cancelar reimpresion"
+                      : "Reimprimir etiquetas"
+                  }
                   type="button"
                   onClick={() => {
                     setStockReprintMode((current) => !current);
@@ -2807,23 +3531,37 @@ export default function StockPortal() {
                   🖨️
                 </button>
               </div>
-              {stockEditMode ? <p className={styles.reprintHint}>Presiona la orden que quieres editar.</p> : null}
+              {stockEditMode ? (
+                <p className={styles.reprintHint}>
+                  Presiona la orden que quieres editar.
+                </p>
+              ) : null}
               {stockReprintMode ? (
-                <p className={styles.reprintHint}>Presiona la orden que quieres reimprimir.</p>
+                <p className={styles.reprintHint}>
+                  Presiona la orden que quieres reimprimir.
+                </p>
               ) : null}
               {preparedHistory.length ? (
                 <div className={styles.preparedHistoryList}>
                   {preparedHistory.map((item) => {
-                    const lockedBy = Number(item.publishingLockedByStockUserId || 0);
+                    const lockedBy = Number(
+                      item.publishingLockedByStockUserId || 0,
+                    );
                     const blockedForEdit =
-                      stockEditMode && lockedBy && lockedBy !== Number(stockUser?.id || 0);
+                      stockEditMode &&
+                      lockedBy &&
+                      lockedBy !== Number(stockUser?.id || 0);
                     return (
                       <button
                         aria-disabled={!stockReprintMode && !stockEditMode}
                         className={`${styles.preparedHistoryRow} ${
-                          stockReprintMode || stockEditMode ? styles.preparedHistoryRowSelectable : ""
+                          stockReprintMode || stockEditMode
+                            ? styles.preparedHistoryRowSelectable
+                            : ""
                         } ${blockedForEdit ? styles.preparedHistoryRowBlocked : ""} ${
-                          pendingEditDraftId === item.id ? styles.draftButtonPending : ""
+                          pendingEditDraftId === item.id
+                            ? styles.draftButtonPending
+                            : ""
                         }`}
                         key={item.id}
                         type="button"
@@ -2842,19 +3580,25 @@ export default function StockPortal() {
                   })}
                 </div>
               ) : (
-                <p className={styles.empty}>Todavia no hay productos guardados hoy.</p>
+                <p className={styles.empty}>
+                  Todavia no hay productos guardados hoy.
+                </p>
               )}
             </div>
           ) : null}
 
           {captureStep === "audience" && !showPreparedHistory ? (
             <div className={styles.choicePanel}>
-              <h2 className={styles.audienceTitle}>Para quién es este producto</h2>
+              <h2 className={styles.audienceTitle}>
+                Para quién es este producto
+              </h2>
               <div className={styles.choiceGrid}>
                 {(audiences || STOCK_AUDIENCES).map((audience) => (
                   <button
                     className={`${styles.choiceButton} ${
-                      selectedAudience === audience.value ? styles.choiceButtonActive : ""
+                      selectedAudience === audience.value
+                        ? styles.choiceButtonActive
+                        : ""
                     }`}
                     key={audience.value}
                     type="button"
@@ -2874,29 +3618,37 @@ export default function StockPortal() {
                   <span>{audienceConfig(selectedAudience).label}</span>
                   <h2>Qué producto vas a agregar</h2>
                 </div>
-                <button className={styles.textButton} type="button" onClick={() => setCaptureStep("audience")}>
+                <button
+                  className={styles.textButton}
+                  type="button"
+                  onClick={() => setCaptureStep("audience")}
+                >
                   Regresar
                 </button>
               </div>
-              {Object.entries(garmentGroups).map(([section, sectionGarments]) => (
-                <div className={styles.productGroup} key={section}>
-                  <h3>{section}</h3>
-                  <div className={styles.productGrid}>
-                    {sectionGarments.map((garment) => (
-                      <button
-                        className={`${styles.choiceButton} ${
-                          selectedGarment === garment.value ? styles.choiceButtonActive : ""
-                        }`}
-                        key={garment.value}
-                        type="button"
-                        onClick={() => chooseGarment(garment.value)}
-                      >
-                        {garment.label}
-                      </button>
-                    ))}
+              {Object.entries(garmentGroups).map(
+                ([section, sectionGarments]) => (
+                  <div className={styles.productGroup} key={section}>
+                    <h3>{section}</h3>
+                    <div className={styles.productGrid}>
+                      {sectionGarments.map((garment) => (
+                        <button
+                          className={`${styles.choiceButton} ${
+                            selectedGarment === garment.value
+                              ? styles.choiceButtonActive
+                              : ""
+                          }`}
+                          key={garment.value}
+                          type="button"
+                          onClick={() => chooseGarment(garment.value)}
+                        >
+                          {garment.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ),
+              )}
             </div>
           ) : null}
 
@@ -2906,7 +3658,11 @@ export default function StockPortal() {
                 <button
                   className={styles.textButton}
                   type="button"
-                  onClick={editingDraftId ? cancelStockEdit : () => setCaptureStep("product")}
+                  onClick={
+                    editingDraftId
+                      ? cancelStockEdit
+                      : () => setCaptureStep("product")
+                  }
                 >
                   {editingDraftId ? "Cancelar edicion" : "Cambiar producto"}
                 </button>
@@ -2925,13 +3681,34 @@ export default function StockPortal() {
               >
                 <input type="hidden" name="intent" value="create_stock_draft" />
                 <input type="hidden" name="shop" value={shop} />
-                <input type="hidden" name="stockCode" value={accessCode || ""} />
+                <input
+                  type="hidden"
+                  name="stockCode"
+                  value={accessCode || ""}
+                />
                 <input type="hidden" name="audience" value={selectedAudience} />
-                <input type="hidden" name="garmentType" value={selectedGarment} />
-                <input type="hidden" name="variants" value={JSON.stringify(cleanVariantGroups)} />
-                <input type="hidden" name="editingDraftId" value={editingDraftId ? String(editingDraftId) : ""} />
+                <input
+                  type="hidden"
+                  name="garmentType"
+                  value={selectedGarment}
+                />
+                <input
+                  type="hidden"
+                  name="variants"
+                  value={JSON.stringify(cleanVariantGroups)}
+                />
+                <input
+                  type="hidden"
+                  name="editingDraftId"
+                  value={editingDraftId ? String(editingDraftId) : ""}
+                />
                 {photos.map((photo) => (
-                  <input key={photo.id} type="hidden" name="photos" value={photo.dataUrl} />
+                  <input
+                    key={photo.id}
+                    type="hidden"
+                    name="photos"
+                    value={photo.dataUrl}
+                  />
                 ))}
 
                 <div className={styles.generatedPanel}>
@@ -2946,9 +3723,13 @@ export default function StockPortal() {
                 </div>
 
                 <div>
-                  <label className={`${styles.photoPicker} ${photos.length >= MAX_STOCK_PHOTOS ? styles.photoPickerDisabled : ""}`}>
+                  <label
+                    className={`${styles.photoPicker} ${photos.length >= MAX_STOCK_PHOTOS ? styles.photoPickerDisabled : ""}`}
+                  >
                     <span>Agregar fotos</span>
-                    <strong>{photos.length}/{MAX_STOCK_PHOTOS}</strong>
+                    <strong>
+                      {photos.length}/{MAX_STOCK_PHOTOS}
+                    </strong>
                     <input
                       accept="image/*"
                       className={styles.photoInput}
@@ -2974,7 +3755,11 @@ export default function StockPortal() {
                           aria-label={`Quitar foto ${photo.name || ""}`}
                           className={styles.removePhotoButton}
                           type="button"
-                          onClick={() => setPhotos((current) => current.filter((item) => item.id !== photo.id))}
+                          onClick={() =>
+                            setPhotos((current) =>
+                              current.filter((item) => item.id !== photo.id),
+                            )
+                          }
                         >
                           X
                         </button>
@@ -3005,7 +3790,13 @@ export default function StockPortal() {
                           <input
                             name={`colorDraft-${variant.id}`}
                             value={variant.color || ""}
-                            onChange={(event) => updateVariant(variant.id, "color", event.currentTarget.value)}
+                            onChange={(event) =>
+                              updateVariant(
+                                variant.id,
+                                "color",
+                                event.currentTarget.value,
+                              )
+                            }
                           />
                         </label>
                         <label>
@@ -3017,7 +3808,13 @@ export default function StockPortal() {
                             step="0.01"
                             type="number"
                             value={variant.price ?? ""}
-                            onChange={(event) => updateVariant(variant.id, "price", event.currentTarget.value)}
+                            onChange={(event) =>
+                              updateVariant(
+                                variant.id,
+                                "price",
+                                event.currentTarget.value,
+                              )
+                            }
                           />
                         </label>
                       </div>
@@ -3030,24 +3827,33 @@ export default function StockPortal() {
                             type="button"
                             onClick={() => toggleVariantSizeMenu(variant.id)}
                           >
-                            {formatStockSizes(variant.sizes) || "Seleccionar tallas"}
+                            {formatStockSizes(variant.sizes) ||
+                              "Seleccionar tallas"}
                           </button>
                         </label>
 
                         {variant.sizeMenuOpen ? (
                           <div className={styles.sizeDropdownPanel}>
                             {currentStockSizes.map((size) => {
-                              const selectedSizeRow = variant.sizes.find((sizeRow) => sizeRow.size === size);
+                              const selectedSizeRow = variant.sizes.find(
+                                (sizeRow) => sizeRow.size === size,
+                              );
                               return (
                                 <button
                                   className={`${styles.sizeOptionButton} ${
-                                    selectedSizeRow ? styles.sizeOptionSelected : ""
+                                    selectedSizeRow
+                                      ? styles.sizeOptionSelected
+                                      : ""
                                   }`}
                                   key={`${variant.id}-option-${size}`}
                                   type="button"
-                                  onClick={() => selectVariantSize(variant.id, size)}
+                                  onClick={() =>
+                                    selectVariantSize(variant.id, size)
+                                  }
                                 >
-                                  {selectedSizeRow ? `${size}=(${selectedSizeRow.quantity})` : size}
+                                  {selectedSizeRow
+                                    ? `${size}=(${selectedSizeRow.quantity})`
+                                    : size}
                                 </button>
                               );
                             })}
@@ -3055,7 +3861,9 @@ export default function StockPortal() {
                             <button
                               className={styles.sizeDoneButton}
                               type="button"
-                              onClick={() => selectVariantSize(variant.id, "__done")}
+                              onClick={() =>
+                                selectVariantSize(variant.id, "__done")
+                              }
                             >
                               Listo
                             </button>
@@ -3063,8 +3871,15 @@ export default function StockPortal() {
                         ) : null}
 
                         {variant.selectedSize ? (
-                          <div className={styles.stockModalBackdrop} role="presentation">
-                            <div className={styles.stockModal} role="dialog" aria-modal="true">
+                          <div
+                            className={styles.stockModalBackdrop}
+                            role="presentation"
+                          >
+                            <div
+                              className={styles.stockModal}
+                              role="dialog"
+                              aria-modal="true"
+                            >
                               <h3>Cantidad para {variant.selectedSize}</h3>
                               <input
                                 autoFocus
@@ -3074,7 +3889,11 @@ export default function StockPortal() {
                                 type="number"
                                 value={variant.quantityDraft || ""}
                                 onChange={(event) =>
-                                  updateVariant(variant.id, "quantityDraft", event.currentTarget.value)
+                                  updateVariant(
+                                    variant.id,
+                                    "quantityDraft",
+                                    event.currentTarget.value,
+                                  )
                                 }
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter") {
@@ -3087,7 +3906,9 @@ export default function StockPortal() {
                                 <button
                                   className={styles.secondaryButton}
                                   type="button"
-                                  onClick={() => cancelVariantSizeQuantity(variant.id)}
+                                  onClick={() =>
+                                    cancelVariantSizeQuantity(variant.id)
+                                  }
                                 >
                                   Cancelar
                                 </button>
@@ -3105,22 +3926,36 @@ export default function StockPortal() {
                         ) : null}
 
                         {variant.pendingDeleteSize ? (
-                          <div className={styles.stockModalBackdrop} role="presentation">
-                            <div className={styles.stockModal} role="dialog" aria-modal="true">
+                          <div
+                            className={styles.stockModalBackdrop}
+                            role="presentation"
+                          >
+                            <div
+                              className={styles.stockModal}
+                              role="dialog"
+                              aria-modal="true"
+                            >
                               <h3>¿Eliminar {variant.pendingDeleteSize}?</h3>
                               <p>Se borrara la cantidad de esta talla.</p>
                               <div className={styles.stockModalActions}>
                                 <button
                                   className={styles.secondaryButton}
                                   type="button"
-                                  onClick={() => cancelVariantSizeDelete(variant.id)}
+                                  onClick={() =>
+                                    cancelVariantSizeDelete(variant.id)
+                                  }
                                 >
                                   No
                                 </button>
                                 <button
                                   className={styles.primaryButton}
                                   type="button"
-                                  onClick={() => removeSizeFromVariant(variant.id, variant.pendingDeleteSize)}
+                                  onClick={() =>
+                                    removeSizeFromVariant(
+                                      variant.id,
+                                      variant.pendingDeleteSize,
+                                    )
+                                  }
                                 >
                                   Si
                                 </button>
@@ -3135,7 +3970,11 @@ export default function StockPortal() {
 
                 {!stockSizeMenuOpen ? (
                   <div className={styles.formActions}>
-                    <button className={styles.secondaryButton} type="button" onClick={addVariantGroup}>
+                    <button
+                      className={styles.secondaryButton}
+                      type="button"
+                      onClick={addVariantGroup}
+                    >
                       + Agregar
                     </button>
                     <button
@@ -3154,38 +3993,53 @@ export default function StockPortal() {
       ) : isProductPublisher ? (
         <section
           className={`${styles.pendingLayout} ${
-            selectedStockDetail ? styles.publisherDetailLayout : styles.publisherListLayout
+            selectedStockDetail
+              ? styles.publisherDetailLayout
+              : styles.publisherListLayout
           }`}
         >
           {!selectedStockDetail ? (
-          <div className={styles.listCard}>
-            {duplicateSkuProducts.length ? (
-              <div className={styles.duplicateSkuPanel}>
-                <h3>SKU duplicado</h3>
-                <p>Este SKU ya existe en otro producto. Corrige el SKU en Shopify para evitar errores de inventario.</p>
-                <div className={styles.duplicateSkuList}>
-                  {duplicateSkuProducts.map((product) => (
-                    <div className={styles.duplicateSkuItem} key={`${product.productId}-${product.sku}`}>
-                      {product.imageUrl ? (
-                        <img
-                          className={styles.duplicateSkuImage}
-                          src={product.imageUrl}
-                          alt={product.productName || product.sku}
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className={styles.duplicateSkuPlaceholder}>Sin foto</div>
-                      )}
-                      <div className={styles.duplicateSkuBody}>
-                        <strong>{product.productName || "Producto sin nombre"}</strong>
-                        <span>SKU duplicado: {product.sku}</span>
-                        <span>Publicador: {product.publisherName || "No identificado"}</span>
+            <div className={styles.listCard}>
+              {duplicateSkuProducts.length ? (
+                <div className={styles.duplicateSkuPanel}>
+                  <h3>SKU duplicado</h3>
+                  <p>
+                    Este SKU ya existe en otro producto. Corrige el SKU en
+                    Shopify para evitar errores de inventario.
+                  </p>
+                  <div className={styles.duplicateSkuList}>
+                    {duplicateSkuProducts.map((product) => (
+                      <div
+                        className={styles.duplicateSkuItem}
+                        key={`${product.productId}-${product.sku}`}
+                      >
+                        {product.imageUrl ? (
+                          <img
+                            className={styles.duplicateSkuImage}
+                            src={product.imageUrl}
+                            alt={product.productName || product.sku}
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className={styles.duplicateSkuPlaceholder}>
+                            Sin foto
+                          </div>
+                        )}
+                        <div className={styles.duplicateSkuBody}>
+                          <strong>
+                            {product.productName || "Producto sin nombre"}
+                          </strong>
+                          <span>SKU duplicado: {product.sku}</span>
+                          <span>
+                            Publicador:{" "}
+                            {product.publisherName || "No identificado"}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ) : null}
+              ) : null}
               <div className={styles.publisherListHeader}>
                 <h2>Productos listos</h2>
                 <button
@@ -3196,7 +4050,10 @@ export default function StockPortal() {
                 >
                   {isStockLogoutSubmitting ? (
                     <span className={styles.loadingButtonContent}>
-                      <span className={styles.buttonSpinner} aria-hidden="true" />
+                      <span
+                        className={styles.buttonSpinner}
+                        aria-hidden="true"
+                      />
                       Cargando
                     </span>
                   ) : (
@@ -3204,43 +4061,58 @@ export default function StockPortal() {
                   )}
                 </button>
               </div>
-            {publisherMessage ? <p className={styles.error}>{publisherMessage}</p> : null}
-            {drafts.length ? (
-              <div className={styles.draftList}>
-                {drafts.map((draft) => (
-                  <button
-                    aria-disabled={draft.isLockedByOther}
-                    className={`${styles.draftButton} ${draft.isLockedByOther ? styles.draftButtonLocked : ""} ${
-                      pendingSelectedDraftId === draft.id ? styles.draftButtonPending : ""
-                    }`}
-                    key={draft.id}
-                    type="button"
-                    onClick={() => openPublisherDraft(draft)}
+              {publisherMessage ? (
+                <p className={styles.error}>{publisherMessage}</p>
+              ) : null}
+              {drafts.length ? (
+                <div className={styles.draftList}>
+                  {drafts.map((draft) => (
+                    <button
+                      aria-disabled={draft.isLockedByOther}
+                      className={`${styles.draftButton} ${draft.isLockedByOther ? styles.draftButtonLocked : ""} ${
+                        pendingSelectedDraftId === draft.id
+                          ? styles.draftButtonPending
+                          : ""
+                      }`}
+                      key={draft.id}
+                      type="button"
+                      onClick={() => openPublisherDraft(draft)}
                     >
                       <strong>{draft.locationCode || draft.productName}</strong>
-                    {draft.isLockedByOther ? (
-                      <small>{draft.isBeingEdited ? "Esta orden esta siendo editada" : "Ya esta siendo trabajada"}</small>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className={styles.empty}>Todavia no hay productos listos.</p>
-            )}
-          </div>
+                      {draft.isLockedByOther ? (
+                        <small>
+                          {draft.isBeingEdited
+                            ? "Esta orden esta siendo editada"
+                            : "Ya esta siendo trabajada"}
+                        </small>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className={styles.empty}>Todavia no hay productos listos.</p>
+              )}
+            </div>
           ) : null}
 
           {selectedStockDetail ? (
             <article className={styles.detailCard}>
               <div className={styles.publisherDetailActions}>
-                <button className={styles.secondaryButton} type="button" onClick={returnToPublisherList}>
+                <button
+                  className={styles.secondaryButton}
+                  type="button"
+                  onClick={returnToPublisherList}
+                >
                   Regresar
                 </button>
               </div>
               {selectedStockDetail.photos?.length ? (
                 <div className={styles.downloadGrid}>
                   {selectedStockDetail.photos.map((photo, index) => (
-                    <figure className={styles.downloadPhoto} key={`${selectedStockDetail.id}-${index}`}>
+                    <figure
+                      className={styles.downloadPhoto}
+                      key={`${selectedStockDetail.id}-${index}`}
+                    >
                       <button
                         className={styles.photoPreviewButton}
                         type="button"
@@ -3251,9 +4123,15 @@ export default function StockPortal() {
                           })
                         }
                       >
-                        <img src={photo} alt={`${selectedStockDetail.productName} ${index + 1}`} />
+                        <img
+                          src={photo}
+                          alt={`${selectedStockDetail.productName} ${index + 1}`}
+                        />
                       </button>
-                      <a href={photo} download={`${selectedStockDetail.sku || selectedStockDetail.productName}-foto-${index + 1}.jpg`}>
+                      <a
+                        href={photo}
+                        download={`${selectedStockDetail.sku || selectedStockDetail.productName}-foto-${index + 1}.jpg`}
+                      >
                         Descargar foto
                       </a>
                     </figure>
@@ -3286,21 +4164,42 @@ export default function StockPortal() {
                     method="post"
                     className={styles.stockPublishForm}
                     onSubmit={(event) => {
-                      if (!window.confirm(`¿Marcar ${selectedStockDetail.sku || selectedStockDetail.locationCode} como listo?`)) {
+                      if (
+                        !window.confirm(
+                          `¿Marcar ${selectedStockDetail.sku || selectedStockDetail.locationCode} como listo?`,
+                        )
+                      ) {
                         event.preventDefault();
                       }
                     }}
                   >
-                    <input type="hidden" name="intent" value="publish_stock_draft" />
+                    <input
+                      type="hidden"
+                      name="intent"
+                      value="publish_stock_draft"
+                    />
                     <input type="hidden" name="shop" value={shop} />
-                    <input type="hidden" name="stockCode" value={accessCode || ""} />
-                    <input type="hidden" name="draftId" value={selectedStockDetail.id} />
+                    <input
+                      type="hidden"
+                      name="stockCode"
+                      value={accessCode || ""}
+                    />
+                    <input
+                      type="hidden"
+                      name="draftId"
+                      value={selectedStockDetail.id}
+                    />
                     <button
                       className={styles.primaryButton}
                       type="submit"
-                      disabled={publishStockFetcher.state !== "idle" || !isSelectedDraftPublishReady}
+                      disabled={
+                        publishStockFetcher.state !== "idle" ||
+                        !isSelectedDraftPublishReady
+                      }
                     >
-                      {publishStockFetcher.state !== "idle" ? "Guardando..." : "Listo"}
+                      {publishStockFetcher.state !== "idle"
+                        ? "Guardando..."
+                        : "Listo"}
                     </button>
                   </publishStockFetcher.Form>
                 </div>
@@ -3308,7 +4207,10 @@ export default function StockPortal() {
                   <dt>Color</dt>
                   <dd>
                     {selectedDraftVariants.map((variant, variantIndex) => (
-                      <div className={styles.detailColorRow} key={`${selectedStockDetail.id}-color-${variantIndex}`}>
+                      <div
+                        className={styles.detailColorRow}
+                        key={`${selectedStockDetail.id}-color-${variantIndex}`}
+                      >
                         <strong>{variant.color || "-"}</strong>
                         {variant.sizes.length ? (
                           <div className={styles.detailSizeChecks}>
@@ -3343,7 +4245,9 @@ export default function StockPortal() {
                   </dd>
                 </div>
               </dl>
-              {selectedStockDetail.notes ? <p className={styles.notes}>{selectedStockDetail.notes}</p> : null}
+              {selectedStockDetail.notes ? (
+                <p className={styles.notes}>{selectedStockDetail.notes}</p>
+              ) : null}
             </article>
           ) : null}
         </section>
@@ -3352,7 +4256,9 @@ export default function StockPortal() {
         <div className={styles.stockToastLayer} role="presentation">
           <div
             className={`${styles.stockToast} ${
-              stockToast.tone === "success" ? styles.stockToastSuccess : styles.stockToastError
+              stockToast.tone === "success"
+                ? styles.stockToastSuccess
+                : styles.stockToastError
             }`}
             role={stockToast.tone === "success" ? "status" : "alert"}
           >
@@ -3363,7 +4269,11 @@ export default function StockPortal() {
       {previewPhoto ? (
         <div className={styles.photoViewerBackdrop} role="presentation">
           <div className={styles.photoViewer} role="dialog" aria-modal="true">
-            <button className={styles.photoViewerClose} type="button" onClick={closePhotoPreview}>
+            <button
+              className={styles.photoViewerClose}
+              type="button"
+              onClick={closePhotoPreview}
+            >
               Cerrar
             </button>
             <div

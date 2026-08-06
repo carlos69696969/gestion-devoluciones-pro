@@ -1100,6 +1100,55 @@
   border-color: #d9364f;
 }
 
+.offlineSyncBar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #f7c566;
+  background: #fff7e6;
+  color: #4a3200;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.offlineSyncBarOnline {
+  border-bottom-color: #a7f3d0;
+  background: #ecfdf3;
+  color: #064e3b;
+}
+
+.offlineSyncBar small {
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.88;
+}
+
+.offlineSyncBar button {
+  appearance: none;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.statusBadgeOffline {
+  background: #fff7e6;
+  color: #7a4b00;
+}
+
 .actionButtonRetry {
   background: #f3f3f3;
   border-color: #8c9196;
@@ -1231,6 +1280,12 @@
   .courierPortalCard {
     padding: 12px 12px 10px;
     overflow: hidden;
+  }
+
+  .offlineSyncBar {
+    align-items: flex-start;
+    flex-direction: column;
+    text-align: left;
   }
 
   .courierPortalCardHeader {

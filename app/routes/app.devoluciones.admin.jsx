@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
+import {
+  Form,
+  useActionData,
+  useLoaderData,
+  useNavigation,
+} from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -25,7 +30,13 @@ import {
   STOCK_PRICE_SETTINGS_DEFAULTS,
 } from "../utils/stockPrice.shared";
 
-const HISTORY_STATUSES = ["reembolsada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"];
+const HISTORY_STATUSES = [
+  "reembolsada",
+  "rechazada",
+  "denegada",
+  "reembolso_denegado",
+  "no_devuelto",
+];
 const COURIER_HISTORY_FINAL_ACTIONS = [
   "courier_mark_delivered",
   "courier_mark_not_delivered",
@@ -58,7 +69,8 @@ const BRANCH_PICKUP_STATUSES = new Set([
   "denegada",
 ]);
 const NOTIFICATIONS_API_BASE_URL = String(
-  process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
+  process.env.NOTIFICATIONS_API_URL ||
+    "https://centro-de-notificaciones-cariana.onrender.com",
 ).replace(/\/+$/, "");
 const NOTIFICATIONS_API_KEYS = Array.from(
   new Set(
@@ -86,7 +98,12 @@ async function ensureStockPriceSettingsStorage() {
   );
 }
 
-function parsePositiveInt(value, fallback, min = 1, max = Number.MAX_SAFE_INTEGER) {
+function parsePositiveInt(
+  value,
+  fallback,
+  min = 1,
+  max = Number.MAX_SAFE_INTEGER,
+) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   const rounded = Math.floor(parsed);
@@ -110,9 +127,15 @@ function normalizeCourierAttrKey(value) {
 }
 
 function getCourierCustomAttribute(orderNode, candidateKeys) {
-  const attributes = Array.isArray(orderNode?.customAttributes) ? orderNode.customAttributes : [];
-  const normalizedKeys = new Set((candidateKeys || []).map((key) => normalizeCourierAttrKey(key)));
-  const match = attributes.find((attribute) => normalizedKeys.has(normalizeCourierAttrKey(attribute?.key)));
+  const attributes = Array.isArray(orderNode?.customAttributes)
+    ? orderNode.customAttributes
+    : [];
+  const normalizedKeys = new Set(
+    (candidateKeys || []).map((key) => normalizeCourierAttrKey(key)),
+  );
+  const match = attributes.find((attribute) =>
+    normalizedKeys.has(normalizeCourierAttrKey(attribute?.key)),
+  );
   return String(match?.value || "").trim();
 }
 
@@ -133,19 +156,26 @@ function getInitialCourierScheduledDate(orderNode) {
   const configuredDate = getCourierScheduledDate(orderNode);
   if (configuredDate) return configuredDate;
   const createdAt = new Date(orderNode?.createdAt);
-  if (!Number.isFinite(createdAt.getTime())) return String(orderNode?.createdAt || "");
+  if (!Number.isFinite(createdAt.getTime()))
+    return String(orderNode?.createdAt || "");
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Mexico_City",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(createdAt);
-  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return new Date(Date.UTC(
-    Number(lookup.year),
-    Number(lookup.month) - 1,
-    Number(lookup.day) + 1,
-  )).toISOString().slice(0, 10);
+  const lookup = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  return new Date(
+    Date.UTC(
+      Number(lookup.year),
+      Number(lookup.month) - 1,
+      Number(lookup.day) + 1,
+    ),
+  )
+    .toISOString()
+    .slice(0, 10);
 }
 
 function parseCourierDate(value) {
@@ -161,22 +191,31 @@ function courierScheduledDateIsBeforeCutoff(value, cutoff) {
 }
 
 function isCourierLocalDeliveryOrder(orderNode) {
-  const shippingLines = Array.isArray(orderNode?.shippingLines?.nodes) ? orderNode.shippingLines.nodes : [];
+  const shippingLines = Array.isArray(orderNode?.shippingLines?.nodes)
+    ? orderNode.shippingLines.nodes
+    : [];
   return shippingLines.some((line) => {
     const title = String(line?.title || "").toLowerCase();
     const code = String(line?.code || "").toLowerCase();
     const category = String(line?.deliveryCategory || "").toLowerCase();
-    return title.includes("local") || code.includes("local") || category.includes("local");
+    return (
+      title.includes("local") ||
+      code.includes("local") ||
+      category.includes("local")
+    );
   });
 }
 
 function getCourierRouteStatusFromTags(tags = []) {
   const normalizedTags = (Array.isArray(tags) ? tags : []).map((tag) =>
-    String(tag || "").trim().toLowerCase(),
+    String(tag || "")
+      .trim()
+      .toLowerCase(),
   );
   if (normalizedTags.includes("reembolsada")) return "reembolsada";
   if (normalizedTags.includes("entregado")) return "entregado";
-  if (normalizedTags.includes("recoger en sucursal")) return "recoger_en_sucursal";
+  if (normalizedTags.includes("recoger en sucursal"))
+    return "recoger_en_sucursal";
   return "";
 }
 
@@ -199,10 +238,15 @@ function normalizeMaintenanceInputs(formDataLike) {
     25,
     MAX_BATCH_SIZE,
   );
-  const archivedProductCleanupRaw = String(formDataLike?.get?.("archivedProductCleanupDays") || "").trim();
-  const archivedProductCleanupDays = /^no\s+eliminar/i.test(archivedProductCleanupRaw)
+  const archivedProductCleanupRaw = String(
+    formDataLike?.get?.("archivedProductCleanupDays") || "",
+  ).trim();
+  const archivedProductCleanupDays = /^no\s+eliminar/i.test(
+    archivedProductCleanupRaw,
+  )
     ? 0
-    : normalizeStockArchivedProductCleanupDays(archivedProductCleanupRaw) || DEFAULT_ARCHIVED_PRODUCT_CLEANUP_DAYS;
+    : normalizeStockArchivedProductCleanupDays(archivedProductCleanupRaw) ||
+      DEFAULT_ARCHIVED_PRODUCT_CLEANUP_DAYS;
   return { evidenceDays, purgeDays, batchSize, archivedProductCleanupDays };
 }
 
@@ -213,7 +257,9 @@ function maintenanceInputsFromSettings(settings) {
       if (name === "purgeDays") return settings?.maintenancePurgeDays;
       if (name === "batchSize") return settings?.maintenanceBatchSize;
       if (name === "archivedProductCleanupDays") {
-        return normalizeStockArchivedProductCleanupDays(settings?.stockArchivedProductCleanupDays)
+        return normalizeStockArchivedProductCleanupDays(
+          settings?.stockArchivedProductCleanupDays,
+        )
           ? settings?.stockArchivedProductCleanupDays
           : "No eliminar automaticamente";
       }
@@ -291,8 +337,12 @@ async function getMaintenancePreview(shop, inputs) {
     prisma.courierActivity.count({ where: { shop } }),
     prisma.courierEvent.count({ where: { shop } }),
     prisma.courierRouteSnapshot.count({ where: { shop } }),
-    purgedCourierWhere ? prisma.courierActivity.count({ where: purgedCourierWhere }) : Promise.resolve(0),
-    purgedCourierWhere ? prisma.courierEvent.count({ where: purgedCourierWhere }) : Promise.resolve(0),
+    purgedCourierWhere
+      ? prisma.courierActivity.count({ where: purgedCourierWhere })
+      : Promise.resolve(0),
+    purgedCourierWhere
+      ? prisma.courierEvent.count({ where: purgedCourierWhere })
+      : Promise.resolve(0),
     Promise.resolve(0),
     prisma.courierActivity.findFirst({
       where: { shop },
@@ -340,19 +390,28 @@ async function getMaintenancePreview(shop, inputs) {
     historyTotal,
     purgeCandidates,
     evidenceItemCandidates,
-    oldestHistoryAt: oldestHistory?.updatedAt ? oldestHistory.updatedAt.toISOString() : "",
-    courierHistoryTotal: courierActivityTotal + courierEventTotal + courierSnapshotTotal,
-    courierHistoryCandidates: courierActivityCandidates + courierEventCandidates + courierSnapshotCandidates,
+    oldestHistoryAt: oldestHistory?.updatedAt
+      ? oldestHistory.updatedAt.toISOString()
+      : "",
+    courierHistoryTotal:
+      courierActivityTotal + courierEventTotal + courierSnapshotTotal,
+    courierHistoryCandidates:
+      courierActivityCandidates +
+      courierEventCandidates +
+      courierSnapshotCandidates,
     courierActivityCandidates,
     courierEventCandidates,
     courierSnapshotCandidates,
     oldestCourierHistoryAt: oldestCourierHistoryDates[0]?.toISOString?.() || "",
     evidenceCutoff: evidenceCutoff.toISOString(),
     purgeCutoff: purgeCutoff.toISOString(),
-    archivedProductCleanupCutoff: archivedProductCleanupCutoff?.toISOString?.() || "",
+    archivedProductCleanupCutoff:
+      archivedProductCleanupCutoff?.toISOString?.() || "",
     archivedProductTotal,
     archivedProductCandidates,
-    oldestArchivedProductAt: oldestArchivedProduct?.archivedAt ? oldestArchivedProduct.archivedAt.toISOString() : "",
+    oldestArchivedProductAt: oldestArchivedProduct?.archivedAt
+      ? oldestArchivedProduct.archivedAt.toISOString()
+      : "",
   };
 }
 async function cleanupEvidenceBatch(shop, inputs) {
@@ -397,14 +456,21 @@ async function cleanupEvidenceBatch(shop, inputs) {
 
 function isPurgeableCourierRequestId(value) {
   const requestId = String(value || "").trim();
-  return Boolean(requestId && !requestId.startsWith("route:") && !requestId.startsWith("session:"));
+  return Boolean(
+    requestId &&
+    !requestId.startsWith("route:") &&
+    !requestId.startsWith("session:"),
+  );
 }
 
 function snapshotOrderEntries(snapshot) {
   return (Array.isArray(snapshot?.orders) ? snapshot.orders : [])
     .map((order) => ({
       requestId: String(order?.id || "").trim(),
-      orderNumber: String(order?.orderNumber || "").replace(/^#/, "").trim() || null,
+      orderNumber:
+        String(order?.orderNumber || "")
+          .replace(/^#/, "")
+          .trim() || null,
     }))
     .filter((entry) => isPurgeableCourierRequestId(entry.requestId));
 }
@@ -440,20 +506,35 @@ async function fetchScheduledCourierHistoryOrderNodes(admin) {
   const payload = await response.json();
   const errors = payload?.errors || [];
   if (errors.length) {
-    throw new Error(errors[0]?.message || "No se pudo cargar el historial programado repartidor.");
+    throw new Error(
+      errors[0]?.message ||
+        "No se pudo cargar el historial programado repartidor.",
+    );
   }
-  return payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || [];
+  return (
+    payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) ||
+    []
+  );
 }
 
-async function collectScheduledCourierHistoryPurgeEntries(admin, shop, purgeCutoff, batchSize) {
+async function collectScheduledCourierHistoryPurgeEntries(
+  admin,
+  shop,
+  purgeCutoff,
+  batchSize,
+) {
   const entriesByRequestId = new Map();
 
   try {
-    for (const orderNode of await fetchScheduledCourierHistoryOrderNodes(admin)) {
+    for (const orderNode of await fetchScheduledCourierHistoryOrderNodes(
+      admin,
+    )) {
       const requestId = String(orderNode?.id || "").trim();
       if (!isPurgeableCourierRequestId(requestId)) continue;
       const status = getCourierRouteStatusFromTags(orderNode?.tags);
-      const updatedAt = new Date(orderNode?.updatedAt || orderNode?.createdAt || 0);
+      const updatedAt = new Date(
+        orderNode?.updatedAt || orderNode?.createdAt || 0,
+      );
       if (
         !isCourierLocalDeliveryOrder(orderNode) ||
         !["entregado", "reembolsada"].includes(status) ||
@@ -463,17 +544,24 @@ async function collectScheduledCourierHistoryPurgeEntries(admin, shop, purgeCuto
         continue;
       }
       const scheduledDate = getInitialCourierScheduledDate(orderNode);
-      if (!courierScheduledDateIsBeforeCutoff(scheduledDate, purgeCutoff)) continue;
+      if (!courierScheduledDateIsBeforeCutoff(scheduledDate, purgeCutoff))
+        continue;
       entriesByRequestId.set(requestId, {
         shop,
         requestId,
-        orderNumber: String(orderNode?.name || "").replace(/^#/, "").trim() || null,
+        orderNumber:
+          String(orderNode?.name || "")
+            .replace(/^#/, "")
+            .trim() || null,
         cutoffAt: purgeCutoff,
       });
       if (entriesByRequestId.size >= batchSize) break;
     }
   } catch (error) {
-    console.error("No se pudieron marcar ordenes Shopify programadas para purga", error);
+    console.error(
+      "No se pudieron marcar ordenes Shopify programadas para purga",
+      error,
+    );
   }
 
   if (entriesByRequestId.size < batchSize) {
@@ -492,18 +580,29 @@ async function collectScheduledCourierHistoryPurgeEntries(admin, shop, purgeCuto
           },
         ],
       },
-      select: { id: true, orderNumber: true, pickupDate: true, createdAt: true },
+      select: {
+        id: true,
+        orderNumber: true,
+        pickupDate: true,
+        createdAt: true,
+      },
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
       take: batchSize,
     });
     for (const requestRow of pickupRows) {
       const requestId = `pickup-${requestRow.id}`;
-      const scheduledDate = String(requestRow.pickupDate || requestRow.createdAt || "").trim();
-      if (!courierScheduledDateIsBeforeCutoff(scheduledDate, purgeCutoff)) continue;
+      const scheduledDate = String(
+        requestRow.pickupDate || requestRow.createdAt || "",
+      ).trim();
+      if (!courierScheduledDateIsBeforeCutoff(scheduledDate, purgeCutoff))
+        continue;
       entriesByRequestId.set(requestId, {
         shop,
         requestId,
-        orderNumber: String(requestRow.orderNumber || "").replace(/^#/, "").trim() || null,
+        orderNumber:
+          String(requestRow.orderNumber || "")
+            .replace(/^#/, "")
+            .trim() || null,
         cutoffAt: purgeCutoff,
       });
       if (entriesByRequestId.size >= batchSize) break;
@@ -513,7 +612,11 @@ async function collectScheduledCourierHistoryPurgeEntries(admin, shop, purgeCuto
   return Array.from(entriesByRequestId.values());
 }
 
-async function deleteCourierRouteSnapshotsForPurgedOrders(shop, purgedRequestIds, batchSize) {
+async function deleteCourierRouteSnapshotsForPurgedOrders(
+  shop,
+  purgedRequestIds,
+  batchSize,
+) {
   const purgedRequestIdSet = new Set(
     (Array.isArray(purgedRequestIds) ? purgedRequestIds : [])
       .map((requestId) => String(requestId || "").trim())
@@ -530,7 +633,10 @@ async function deleteCourierRouteSnapshotsForPurgedOrders(shop, purgedRequestIds
   const removableIds = snapshots
     .filter((snapshot) => {
       const entries = snapshotOrderEntries(snapshot);
-      return entries.length > 0 && entries.every((entry) => purgedRequestIdSet.has(entry.requestId));
+      return (
+        entries.length > 0 &&
+        entries.every((entry) => purgedRequestIdSet.has(entry.requestId))
+      );
     })
     .map((snapshot) => snapshot.id);
   if (!removableIds.length) return 0;
@@ -550,12 +656,13 @@ async function purgeCourierHistoryBatch(admin, shop, inputs) {
   let deletedSnapshots = 0;
   let deletedDeliveryCodes = 0;
 
-  const scheduledPurgeEntries = await collectScheduledCourierHistoryPurgeEntries(
-    admin,
-    shop,
-    purgeCutoff,
-    inputs.batchSize,
-  );
+  const scheduledPurgeEntries =
+    await collectScheduledCourierHistoryPurgeEntries(
+      admin,
+      shop,
+      purgeCutoff,
+      inputs.batchSize,
+    );
   if (scheduledPurgeEntries.length) {
     const scheduledResult = await prisma.courierHistoryPurge.createMany({
       data: scheduledPurgeEntries,
@@ -568,25 +675,31 @@ async function purgeCourierHistoryBatch(admin, shop, inputs) {
     .map((entry) => String(entry.requestId || "").trim())
     .filter(Boolean);
   if (purgedRequestIds.length) {
-    const [activityResult, eventResult, deliveryCodeResult] = await Promise.all([
-      prisma.courierActivity.deleteMany({
-        where: { shop, requestId: { in: purgedRequestIds } },
-      }),
-      prisma.courierEvent.deleteMany({
-        where: { shop, requestId: { in: purgedRequestIds } },
-      }),
-      prisma.deliveryCodeAssignment.deleteMany({
-        where: {
-          shop,
-          active: false,
-          releasedAt: { lt: purgeCutoff },
-        },
-      }),
-    ]);
+    const [activityResult, eventResult, deliveryCodeResult] = await Promise.all(
+      [
+        prisma.courierActivity.deleteMany({
+          where: { shop, requestId: { in: purgedRequestIds } },
+        }),
+        prisma.courierEvent.deleteMany({
+          where: { shop, requestId: { in: purgedRequestIds } },
+        }),
+        prisma.deliveryCodeAssignment.deleteMany({
+          where: {
+            shop,
+            active: false,
+            releasedAt: { lt: purgeCutoff },
+          },
+        }),
+      ],
+    );
     deletedActivities += Number(activityResult.count || 0);
     deletedEvents += Number(eventResult.count || 0);
     deletedDeliveryCodes += Number(deliveryCodeResult.count || 0);
-    deletedSnapshots += await deleteCourierRouteSnapshotsForPurgedOrders(shop, purgedRequestIds, inputs.batchSize);
+    deletedSnapshots += await deleteCourierRouteSnapshotsForPurgedOrders(
+      shop,
+      purgedRequestIds,
+      inputs.batchSize,
+    );
   }
 
   return {
@@ -636,36 +749,50 @@ async function getOrCreateSettings(shop) {
 }
 
 async function syncReturnSettingsToNotifications(shopDomain, settings) {
-  if (!shopDomain || !NOTIFICATIONS_API_BASE_URL || !NOTIFICATIONS_API_KEYS.length) return;
+  if (
+    !shopDomain ||
+    !NOTIFICATIONS_API_BASE_URL ||
+    !NOTIFICATIONS_API_KEYS.length
+  )
+    return;
 
   for (const apiKey of NOTIFICATIONS_API_KEYS) {
     try {
-      const response = await fetch(`${NOTIFICATIONS_API_BASE_URL}/api/return-settings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-shop-domain": shopDomain,
-          "x-api-key": apiKey,
+      const response = await fetch(
+        `${NOTIFICATIONS_API_BASE_URL}/api/return-settings`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-shop-domain": shopDomain,
+            "x-api-key": apiKey,
+          },
+          body: JSON.stringify({
+            shopDomain,
+            branchAddress: settings.branchAddress,
+            branchHours: settings.branchHours,
+            pickupHours: settings.pickupHours,
+          }),
         },
-        body: JSON.stringify({
-          shopDomain,
-          branchAddress: settings.branchAddress,
-          branchHours: settings.branchHours,
-          pickupHours: settings.pickupHours,
-        }),
-      });
+      );
       if (response.ok) return;
       const detail = await response.text().catch(() => "");
-      console.error("No se pudo sincronizar la configuracion con notificaciones", {
-        shopDomain,
-        status: response.status,
-        detail: String(detail || "").slice(0, 300),
-      });
+      console.error(
+        "No se pudo sincronizar la configuracion con notificaciones",
+        {
+          shopDomain,
+          status: response.status,
+          detail: String(detail || "").slice(0, 300),
+        },
+      );
     } catch (error) {
-      console.error("No se pudo sincronizar la configuracion con notificaciones", {
-        shopDomain,
-        error: String(error?.message || error || "unknown"),
-      });
+      console.error(
+        "No se pudo sincronizar la configuracion con notificaciones",
+        {
+          shopDomain,
+          error: String(error?.message || error || "unknown"),
+        },
+      );
     }
   }
 }
@@ -727,7 +854,10 @@ export const action = async ({ request }) => {
         formData.get("stockShopifyCommission"),
         STOCK_PRICE_SETTINGS_DEFAULTS.shopifyCommission,
       ),
-      stockOperationalCost: normalizeStockPriceAmount(formData.get("stockOperationalCost"), STOCK_PRICE_SETTINGS_DEFAULTS.operationalCost),
+      stockOperationalCost: normalizeStockPriceAmount(
+        formData.get("stockOperationalCost"),
+        STOCK_PRICE_SETTINGS_DEFAULTS.operationalCost,
+      ),
       stockTransactionPercent: normalizeStockPricePercent(
         formData.get("stockTransactionPercent"),
         STOCK_PRICE_SETTINGS_DEFAULTS.transactionPercent,
@@ -852,7 +982,9 @@ export const action = async ({ request }) => {
     };
   }
 
-  const confirmPhrase = String(formData.get("confirmPhrase") || "").trim().toUpperCase();
+  const confirmPhrase = String(formData.get("confirmPhrase") || "")
+    .trim()
+    .toUpperCase();
   if (confirmPhrase !== "BORRAR") {
     const preview = await getMaintenancePreview(session.shop, inputs);
     return {
@@ -888,8 +1020,10 @@ export default function ReturnsAdmin() {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const maintenance = actionData?.maintenance || initialMaintenance;
-  const maintenanceInputs = maintenance?.inputs || initialMaintenance?.inputs || {};
-  const maintenancePreview = maintenance?.preview || initialMaintenance?.preview || {};
+  const maintenanceInputs =
+    maintenance?.inputs || initialMaintenance?.inputs || {};
+  const maintenancePreview =
+    maintenance?.preview || initialMaintenance?.preview || {};
   const maintenanceFeedback =
     actionData?.intent &&
     actionData.intent !== "update_settings" &&
@@ -897,14 +1031,18 @@ export default function ReturnsAdmin() {
     actionData.intent !== "update_finance_price_settings"
       ? actionData?.message || actionData?.error || ""
       : "";
-  const maintenanceFeedbackClassName = actionData?.ok ? styles.successMsg : styles.errorMsg;
+  const maintenanceFeedbackClassName = actionData?.ok
+    ? styles.successMsg
+    : styles.errorMsg;
   const settingsFeedback =
     actionData?.intent === "update_settings" ||
     actionData?.intent === "update_stock_price_settings" ||
     actionData?.intent === "update_finance_price_settings"
       ? actionData?.message || actionData?.error || ""
       : "";
-  const settingsFeedbackClassName = actionData?.ok ? styles.successMsg : styles.errorMsg;
+  const settingsFeedbackClassName = actionData?.ok
+    ? styles.successMsg
+    : styles.errorMsg;
   const [activeAdminSection, setActiveAdminSection] = useState("returns");
   const [visibleSettingsFeedback, setVisibleSettingsFeedback] = useState("");
 
@@ -929,7 +1067,10 @@ export default function ReturnsAdmin() {
   useEffect(() => {
     if (!settingsFeedback) return;
     setVisibleSettingsFeedback(settingsFeedback);
-    const timeoutId = window.setTimeout(() => setVisibleSettingsFeedback(""), 4000);
+    const timeoutId = window.setTimeout(
+      () => setVisibleSettingsFeedback(""),
+      4000,
+    );
     return () => window.clearTimeout(timeoutId);
   }, [settingsFeedback]);
 
@@ -979,7 +1120,9 @@ export default function ReturnsAdmin() {
               <div className={styles.grid2}>
                 <label className={styles.label}>
                   Costo de recoleccion (MXN)
-                  <span className={styles.help}>Costo que vera el cliente si elige recoleccion.</span>
+                  <span className={styles.help}>
+                    Costo que vera el cliente si elige recoleccion.
+                  </span>
                   <input
                     className={styles.input}
                     name="pickupCost"
@@ -990,7 +1133,9 @@ export default function ReturnsAdmin() {
                 </label>
                 <label className={styles.label}>
                   Dias limite para devolucion
-                  <span className={styles.help}>Cuantos dias despues de la compra permites devolucion.</span>
+                  <span className={styles.help}>
+                    Cuantos dias despues de la compra permites devolucion.
+                  </span>
                   <input
                     className={styles.input}
                     name="returnWindowDays"
@@ -1002,7 +1147,11 @@ export default function ReturnsAdmin() {
 
               <label className={styles.label}>
                 Direccion de sucursal
-                <input className={styles.input} name="branchAddress" defaultValue={settings.branchAddress} />
+                <input
+                  className={styles.input}
+                  name="branchAddress"
+                  defaultValue={settings.branchAddress}
+                />
               </label>
 
               <div className={styles.grid2}>
@@ -1016,7 +1165,11 @@ export default function ReturnsAdmin() {
                 </label>
                 <label className={styles.label}>
                   Horarios entrega en sucursal
-                  <input className={styles.input} name="branchHours" defaultValue={settings.branchHours} />
+                  <input
+                    className={styles.input}
+                    name="branchHours"
+                    defaultValue={settings.branchHours}
+                  />
                 </label>
               </div>
 
@@ -1031,24 +1184,36 @@ export default function ReturnsAdmin() {
                 </label>
                 <label className={styles.label}>
                   Horarios de recoleccion
-                  <input className={styles.input} name="pickupHours" defaultValue={settings.pickupHours} />
+                  <input
+                    className={styles.input}
+                    name="pickupHours"
+                    defaultValue={settings.pickupHours}
+                  />
                 </label>
               </div>
 
               <div className={styles.grid2}>
                 <label className={styles.label}>
                   Motivos de devolucion (uno por linea)
-                  <span className={styles.help}>Estos son los motivos que veran tus clientes al solicitar devolucion.</span>
+                  <span className={styles.help}>
+                    Estos son los motivos que veran tus clientes al solicitar
+                    devolucion.
+                  </span>
                   <textarea
                     className={styles.textarea}
                     name="returnReasons"
                     defaultValue={settings.returnReasons || ""}
-                    placeholder={"Me quedo grande\nMe quedo chico\nNo era lo que pedi\nLlego danado\nOtro"}
+                    placeholder={
+                      "Me quedo grande\nMe quedo chico\nNo era lo que pedi\nLlego danado\nOtro"
+                    }
                   />
                 </label>
                 <label className={styles.label}>
                   Motivos que requieren evidencia (uno por linea)
-                  <span className={styles.help}>Si un motivo esta aqui, pediremos descripcion y al menos 1 foto.</span>
+                  <span className={styles.help}>
+                    Si un motivo esta aqui, pediremos descripcion y al menos 1
+                    foto.
+                  </span>
                   <textarea
                     className={styles.textarea}
                     name="evidenceReasons"
@@ -1058,13 +1223,22 @@ export default function ReturnsAdmin() {
                 </label>
               </div>
 
+
               <div className={styles.actions}>
-                <button className={`${styles.btn} ${styles.btnPrimary}`} type="submit" disabled={isSubmitting}>
+                <button
+                  className={`${styles.btn} ${styles.btnPrimary}`}
+                  type="submit"
+                  disabled={isSubmitting}
+                >
                   Guardar configuracion
                 </button>
               </div>
               {visibleSettingsFeedback ? (
-                <p className={settingsFeedbackClassName} role="status" aria-live="polite">
+                <p
+                  className={settingsFeedbackClassName}
+                  role="status"
+                  aria-live="polite"
+                >
                   {visibleSettingsFeedback}
                 </p>
               ) : null}
@@ -1312,14 +1486,17 @@ export default function ReturnsAdmin() {
         <div className={styles.wrap}>
           <div className={`${styles.card} ${styles.grid}`}>
             <p className={styles.help}>
-              Esta seccion elimina peso del historial sin tocar ordenes activas. Se ejecuta en lotes para evitar que la app se congele.
-              La limpieza automatica usa los valores guardados aqui y corre cada madrugada.
+              Esta seccion elimina peso del historial sin tocar ordenes activas.
+              Se ejecuta en lotes para evitar que la app se congele. La limpieza
+              automatica usa los valores guardados aqui y corre cada madrugada.
             </p>
 
             <Form method="post" className={styles.grid}>
               <label className={styles.label}>
                 Dias para eliminar despues de archivarse productos
-                <span className={styles.help}>Puedes poner el tiempo que necesites.</span>
+                <span className={styles.help}>
+                  Puedes poner el tiempo que necesites.
+                </span>
                 <input
                   className={styles.input}
                   name="archivedProductCleanupDays"
@@ -1345,53 +1522,95 @@ export default function ReturnsAdmin() {
               <div className={styles.grid2}>
                 <label className={styles.label}>
                   Dias para limpiar evidencias
-                  <span className={styles.help}>Se borran solo fotos antiguas en historial (no elimina la orden).</span>
+                  <span className={styles.help}>
+                    Se borran solo fotos antiguas en historial (no elimina la
+                    orden).
+                  </span>
                   <input
                     className={styles.input}
                     name="evidenceDays"
                     type="number"
                     min="1"
-                    defaultValue={maintenanceInputs.evidenceDays || DEFAULT_EVIDENCE_DAYS}
+                    defaultValue={
+                      maintenanceInputs.evidenceDays || DEFAULT_EVIDENCE_DAYS
+                    }
                   />
                 </label>
                 <label className={styles.label}>
                   Dias para purga definitiva
-                  <span className={styles.help}>Elimina por completo ordenes antiguas de historial y registros antiguos del historial repartidor.</span>
+                  <span className={styles.help}>
+                    Elimina por completo ordenes antiguas de historial y
+                    registros antiguos del historial repartidor.
+                  </span>
                   <input
                     className={styles.input}
                     name="purgeDays"
                     type="number"
                     min="2"
-                    defaultValue={maintenanceInputs.purgeDays || DEFAULT_PURGE_DAYS}
+                    defaultValue={
+                      maintenanceInputs.purgeDays || DEFAULT_PURGE_DAYS
+                    }
                   />
                 </label>
               </div>
 
               <label className={styles.label}>
                 Tamano de lote
-                <span className={styles.help}>Recomendado: 100 a 300 para mantener buena velocidad.</span>
+                <span className={styles.help}>
+                  Recomendado: 100 a 300 para mantener buena velocidad.
+                </span>
                 <input
                   className={styles.input}
                   name="batchSize"
                   type="number"
                   min="25"
                   max={MAX_BATCH_SIZE}
-                  defaultValue={maintenanceInputs.batchSize || DEFAULT_BATCH_SIZE}
+                  defaultValue={
+                    maintenanceInputs.batchSize || DEFAULT_BATCH_SIZE
+                  }
                 />
               </label>
 
               <div className={styles.maintenanceStats}>
-                <p className={styles.statRow}>Total de ordenes en historial: {maintenancePreview.historyTotal || 0}</p>
-                <p className={styles.statRow}>Fotos de evidencia candidatas a limpieza: {maintenancePreview.evidenceItemCandidates || 0}</p>
-                <p className={styles.statRow}>Ordenes candidatas a purga definitiva: {maintenancePreview.purgeCandidates || 0}</p>
-                <p className={styles.statRow}>Registros en historial repartidor: {maintenancePreview.courierHistoryTotal || 0}</p>
-                <p className={styles.statRow}>Registros de historial repartidor candidatos a purga: {maintenancePreview.courierHistoryCandidates || 0}</p>
-                <p className={styles.statRow}>Actividades repartidor candidatas: {maintenancePreview.courierActivityCandidates || 0}</p>
-                <p className={styles.statRow}>Eventos repartidor candidatos: {maintenancePreview.courierEventCandidates || 0}</p>
-                <p className={styles.statRow}>Cierres de ruta candidatos: {maintenancePreview.courierSnapshotCandidates || 0}</p>
-                <p className={styles.statRow}>Productos archivados rastreados: {maintenancePreview.archivedProductTotal || 0}</p>
                 <p className={styles.statRow}>
-                  Productos archivados candidatos a eliminacion: {maintenancePreview.archivedProductCandidates || 0}
+                  Total de ordenes en historial:{" "}
+                  {maintenancePreview.historyTotal || 0}
+                </p>
+                <p className={styles.statRow}>
+                  Fotos de evidencia candidatas a limpieza:{" "}
+                  {maintenancePreview.evidenceItemCandidates || 0}
+                </p>
+                <p className={styles.statRow}>
+                  Ordenes candidatas a purga definitiva:{" "}
+                  {maintenancePreview.purgeCandidates || 0}
+                </p>
+                <p className={styles.statRow}>
+                  Registros en historial repartidor:{" "}
+                  {maintenancePreview.courierHistoryTotal || 0}
+                </p>
+                <p className={styles.statRow}>
+                  Registros de historial repartidor candidatos a purga:{" "}
+                  {maintenancePreview.courierHistoryCandidates || 0}
+                </p>
+                <p className={styles.statRow}>
+                  Actividades repartidor candidatas:{" "}
+                  {maintenancePreview.courierActivityCandidates || 0}
+                </p>
+                <p className={styles.statRow}>
+                  Eventos repartidor candidatos:{" "}
+                  {maintenancePreview.courierEventCandidates || 0}
+                </p>
+                <p className={styles.statRow}>
+                  Cierres de ruta candidatos:{" "}
+                  {maintenancePreview.courierSnapshotCandidates || 0}
+                </p>
+                <p className={styles.statRow}>
+                  Productos archivados rastreados:{" "}
+                  {maintenancePreview.archivedProductTotal || 0}
+                </p>
+                <p className={styles.statRow}>
+                  Productos archivados candidatos a eliminacion:{" "}
+                  {maintenancePreview.archivedProductCandidates || 0}
                 </p>
                 <p className={styles.statRow}>
                   Limpieza de productos archivados:{" "}
@@ -1399,20 +1618,42 @@ export default function ReturnsAdmin() {
                     ? `${maintenanceInputs.archivedProductCleanupDays} dias`
                     : "No eliminar automaticamente"}
                 </p>
-                <p className={styles.statRow}>Corte de limpieza: {formatDateLabel(maintenancePreview.evidenceCutoff)}</p>
-                <p className={styles.statRow}>Corte de purga: {formatDateLabel(maintenancePreview.purgeCutoff)}</p>
                 <p className={styles.statRow}>
-                  Corte de productos archivados: {formatDateLabel(maintenancePreview.archivedProductCleanupCutoff)}
+                  Corte de limpieza:{" "}
+                  {formatDateLabel(maintenancePreview.evidenceCutoff)}
                 </p>
-                <p className={styles.statRow}>Orden historica mas antigua: {formatDateLabel(maintenancePreview.oldestHistoryAt)}</p>
-                <p className={styles.statRow}>Historial repartidor mas antiguo: {formatDateLabel(maintenancePreview.oldestCourierHistoryAt)}</p>
                 <p className={styles.statRow}>
-                  Producto archivado mas antiguo: {formatDateLabel(maintenancePreview.oldestArchivedProductAt)}
+                  Corte de purga:{" "}
+                  {formatDateLabel(maintenancePreview.purgeCutoff)}
+                </p>
+                <p className={styles.statRow}>
+                  Corte de productos archivados:{" "}
+                  {formatDateLabel(
+                    maintenancePreview.archivedProductCleanupCutoff,
+                  )}
+                </p>
+                <p className={styles.statRow}>
+                  Orden historica mas antigua:{" "}
+                  {formatDateLabel(maintenancePreview.oldestHistoryAt)}
+                </p>
+                <p className={styles.statRow}>
+                  Historial repartidor mas antiguo:{" "}
+                  {formatDateLabel(maintenancePreview.oldestCourierHistoryAt)}
+                </p>
+                <p className={styles.statRow}>
+                  Producto archivado mas antiguo:{" "}
+                  {formatDateLabel(maintenancePreview.oldestArchivedProductAt)}
                 </p>
               </div>
 
               <div className={styles.actions}>
-                <button className={styles.btn} type="submit" name="intent" value="maintenance_preview" disabled={isSubmitting}>
+                <button
+                  className={styles.btn}
+                  type="submit"
+                  name="intent"
+                  value="maintenance_preview"
+                  disabled={isSubmitting}
+                >
                   Actualizar vista previa
                 </button>
                 <button
@@ -1438,9 +1679,14 @@ export default function ReturnsAdmin() {
               <label className={styles.label}>
                 Confirmacion de seguridad
                 <span className={styles.help}>
-                  Escribe BORRAR para confirmar la purga definitiva. Esta accion no se puede deshacer.
+                  Escribe BORRAR para confirmar la purga definitiva. Esta accion
+                  no se puede deshacer.
                 </span>
-                <input className={styles.input} name="confirmPhrase" placeholder="BORRAR" />
+                <input
+                  className={styles.input}
+                  name="confirmPhrase"
+                  placeholder="BORRAR"
+                />
               </label>
               <div className={styles.actions}>
                 <button
@@ -1455,7 +1701,11 @@ export default function ReturnsAdmin() {
               </div>
             </Form>
 
-            {maintenanceFeedback ? <p className={maintenanceFeedbackClassName}>{maintenanceFeedback}</p> : null}
+            {maintenanceFeedback ? (
+              <p className={maintenanceFeedbackClassName}>
+                {maintenanceFeedback}
+              </p>
+            ) : null}
           </div>
         </div>
       </s-section>

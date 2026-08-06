@@ -41,6 +41,7 @@ public class MainActivity extends Activity {
     private View offlineView;
     private ConnectivityManager.NetworkCallback networkCallback;
     private boolean offlineVisible;
+    private boolean portalLoaded;
     private float pullRefreshStartY = -1f;
     private boolean pullRefreshReady;
 
@@ -132,6 +133,7 @@ public class MainActivity extends Activity {
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
             if (isNetworkAvailable()) {
+                portalLoaded = true;
                 hideOfflineView();
             }
         }
@@ -140,14 +142,22 @@ public class MainActivity extends Activity {
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             super.onReceivedError(view, request, error);
             if (request != null && request.isForMainFrame()) {
-                showOfflineView();
+                if (portalLoaded) {
+                    keepPortalVisibleOffline();
+                } else {
+                    showOfflineView();
+                }
             }
         }
 
         @Override
         public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
             super.onReceivedError(view, errorCode, description, failingUrl);
-            showOfflineView();
+            if (portalLoaded) {
+                keepPortalVisibleOffline();
+            } else {
+                showOfflineView();
+            }
         }
     }
 
@@ -215,7 +225,13 @@ public class MainActivity extends Activity {
 
             @Override
             public void onLost(Network network) {
-                runOnUiThread(() -> showOfflineView());
+                runOnUiThread(() -> {
+                    if (portalLoaded) {
+                        keepPortalVisibleOffline();
+                    } else {
+                        showOfflineView();
+                    }
+                });
             }
         };
         try {
@@ -242,6 +258,12 @@ public class MainActivity extends Activity {
     }
 
     private void hideOfflineView() {
+        offlineVisible = false;
+        if (offlineView != null) offlineView.setVisibility(View.GONE);
+        if (webView != null) webView.setVisibility(View.VISIBLE);
+    }
+
+    private void keepPortalVisibleOffline() {
         offlineVisible = false;
         if (offlineView != null) offlineView.setVisibility(View.GONE);
         if (webView != null) webView.setVisibility(View.VISIBLE);
@@ -341,7 +363,7 @@ public class MainActivity extends Activity {
         super.onResume();
         if (offlineVisible && isNetworkAvailable()) {
             retryConnection();
-        } else if (!isNetworkAvailable()) {
+        } else if (!isNetworkAvailable() && !portalLoaded) {
             showOfflineView();
         }
     }
