@@ -55,7 +55,9 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import com.google.zxing.BarcodeFormat;
@@ -72,6 +74,13 @@ public class MainActivity extends Activity {
     private static final int SAFE_MIN = 24;
     private static final int SAFE_MAX = 792;
     private final Object printerSocketLock = new Object();
+    private final Object labelCacheLock = new Object();
+    private final LinkedHashMap<String, byte[]> preparedLabelCache = new LinkedHashMap<String, byte[]>(8, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, byte[]> eldest) {
+            return size() > 6;
+        }
+    };
     private BluetoothSocket cachedPrinterSocket;
     private FrameLayout rootLayout;
     private WebView webView;
@@ -396,11 +405,45 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void preparePrepLabel(String orderNumber, String routeNumber, String customerName, String address) {
+            final String cleanOrderNumber = normalizeLabelText(orderNumber, "SIN ORDEN");
+            final String cleanRouteNumber = normalizeLabelText(routeNumber, "-");
+            final String cleanCustomerName = normalizeLabelText(customerName, "Cliente");
+            final String cleanAddress = normalizeLabelText(address, "");
+            final String cacheKey = prepLabelCacheKey(cleanOrderNumber, cleanRouteNumber, cleanCustomerName, cleanAddress);
+
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        synchronized (labelCacheLock) {
+                            if (preparedLabelCache.containsKey(cacheKey)) {
+                                return;
+                            }
+                        }
+                        byte[] labelBytes = buildPrepLabelTspl(
+                            cleanOrderNumber,
+                            cleanRouteNumber,
+                            cleanCustomerName,
+                            cleanAddress,
+                            false
+                        );
+                        synchronized (labelCacheLock) {
+                            preparedLabelCache.put(cacheKey, labelBytes);
+                        }
+                        warmUpPrinterConnection();
+                    } catch (Exception ignored) {}
+                }
+            }).start();
+        }
+
+        @JavascriptInterface
         public void printPrepLabel(String orderNumber, String routeNumber, String customerName, String address) {
             final String cleanOrderNumber = normalizeLabelText(orderNumber, "SIN ORDEN");
             final String cleanRouteNumber = normalizeLabelText(routeNumber, "-");
             final String cleanCustomerName = normalizeLabelText(customerName, "Cliente");
             final String cleanAddress = normalizeLabelText(address, "");
+            final String cacheKey = prepLabelCacheKey(cleanOrderNumber, cleanRouteNumber, cleanCustomerName, cleanAddress);
 
             new Thread(new Runnable() {
                 @Override
@@ -430,7 +473,18 @@ public class MainActivity extends Activity {
 
                         BluetoothSocket socket = getPrinterSocket(printer);
                         OutputStream outputStream = socket.getOutputStream();
-                        outputStream.write(buildPrepLabelTspl(cleanOrderNumber, cleanRouteNumber, cleanCustomerName, cleanAddress));
+                        byte[] labelBytes = preparedLabelBytes(cacheKey);
+                        if (labelBytes == null) {
+                            labelBytes = buildPrepLabelTspl(
+                                cleanOrderNumber,
+                                cleanRouteNumber,
+                                cleanCustomerName,
+                                cleanAddress,
+                                false
+                            );
+                            rememberPreparedLabel(cacheKey, labelBytes);
+                        }
+                        outputStream.write(labelBytes);
                         outputStream.flush();
                         showToast("Etiqueta enviada a la impresora.");
                     } catch (SecurityException error) {
@@ -548,6 +602,28 @@ public class MainActivity extends Activity {
         cachedPrinterSocket = null;
     }
 
+    private String prepLabelCacheKey(String orderNumber, String routeNumber, String customerName, String address) {
+        return String.valueOf(orderNumber) + "\u001F" +
+            String.valueOf(routeNumber) + "\u001F" +
+            String.valueOf(customerName) + "\u001F" +
+            String.valueOf(address);
+    }
+
+    private byte[] preparedLabelBytes(String cacheKey) {
+        synchronized (labelCacheLock) {
+            return preparedLabelCache.get(cacheKey);
+        }
+    }
+
+    private void rememberPreparedLabel(String cacheKey, byte[] labelBytes) {
+        if (labelBytes == null || labelBytes.length == 0) {
+            return;
+        }
+        synchronized (labelCacheLock) {
+            preparedLabelCache.put(cacheKey, labelBytes);
+        }
+    }
+
     private boolean hasBluetoothConnectPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return true;
@@ -628,6 +704,10 @@ public class MainActivity extends Activity {
     }
 
     private byte[] buildPrepLabelTspl(String orderNumber, String routeNumber, String customerName, String address) {
+        return buildPrepLabelTspl(orderNumber, routeNumber, customerName, address, true);
+    }
+
+    private byte[] buildPrepLabelTspl(String orderNumber, String routeNumber, String customerName, String address, boolean savePreview) {
         String cleanOrderNumber = tsplText(orderNumber).replaceAll("[^0-9A-Za-z-]", "");
         String displayOrderNumber = cleanOrderNumber.length() > 0 ? cleanOrderNumber : tsplText(orderNumber);
         String displayRouteNumber = truncateForLabel(tsplText(routeNumber), 3);
@@ -637,7 +717,9 @@ public class MainActivity extends Activity {
             tsplText(customerName).toUpperCase(),
             tsplText(address).toUpperCase()
         );
-        saveLabelPreview(labelBitmap, displayOrderNumber);
+        if (savePreview) {
+            saveLabelPreview(labelBitmap, displayOrderNumber);
+        }
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         appendCommand(output,
             "SIZE 102 mm,102 mm\r\n" +
@@ -1003,6 +1085,7 @@ public class MainActivity extends Activity {
         } else if (!isNetworkAvailable()) {
             showOfflineView();
         }
+        warmUpPrinterConnection();
     }
 
     @Override

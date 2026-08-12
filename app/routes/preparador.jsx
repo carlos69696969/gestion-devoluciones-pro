@@ -1210,6 +1210,20 @@ function printPreparerLabel({ orderNumber, routeNumber, customerName, address })
   }
 }
 
+function preparePreparerLabel({ orderNumber, routeNumber, customerName, address }) {
+  try {
+    if (!window.Android || typeof window.Android.preparePrepLabel !== "function") return;
+    window.Android.preparePrepLabel(
+      String(orderNumber || ""),
+      String(routeNumber || ""),
+      String(customerName || ""),
+      String(address || ""),
+    );
+  } catch (_error) {
+    // La preparacion anticipada de etiquetas solo aplica dentro del APK Android.
+  }
+}
+
 function preparerLabelPayload(assignment, routeNumber = "") {
   const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
   return {
@@ -1301,6 +1315,14 @@ export default function PreparerPortal() {
     ]),
   );
   const dispatchAssignment = pendingAssignments[0] || null;
+  const preparerLabelWarmupKey = pendingAssignments
+    .slice(0, 3)
+    .map((assignment) => {
+      const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+      const sequence = displaySequenceByAssignmentId.get(String(assignment?.id || "")) || "";
+      return `${assignment?.id || ""}:${sequence}:${order.orderNumber || assignment?.orderNumber || ""}`;
+    })
+    .join("|");
 
   const submitPreparerReadyOptimistically = async (formData, assignment) => {
     const assignmentId = String(assignment?.id || formData.get("assignmentId") || "").trim();
@@ -1400,6 +1422,14 @@ export default function PreparerPortal() {
       image.src = url;
     });
   }, [isLoggedIn, pendingAssignments]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isLoggedIn) return;
+    pendingAssignments.slice(0, 3).forEach((assignment) => {
+      const sequence = displaySequenceByAssignmentId.get(String(assignment.id)) || "";
+      preparePreparerLabel(preparerLabelPayload(assignment, sequence));
+    });
+  }, [isLoggedIn, preparerLabelWarmupKey]);
 
   useEffect(() => {
     if (!isLoggedIn) return undefined;
