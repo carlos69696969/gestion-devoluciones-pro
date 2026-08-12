@@ -57,6 +57,7 @@ const COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION = "courier_route_order_not_located"
 const COURIER_ADMIN_NOT_LOCATED_REPROGRAM_NOTE = "admin_not_located_reprogram:1";
 const COURIER_OFFLINE_QUEUE_STORAGE_KEY = "cariana_courier_offline_queue_v1";
 const COURIER_OFFLINE_QUEUE_EVENT = "cariana:courier-offline-queue";
+const COURIER_PORTAL_SESSION_STORAGE_PREFIX = "cariana_courier_portal_session_v1:";
 const COURIER_OFFLINE_ACTION_INTENTS = new Set([
   "courier_mark_en_route",
   "courier_mark_not_delivered",
@@ -108,6 +109,20 @@ function createCourierOfflineActionId() {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createCourierPortalClientSessionId() {
+  const rawId =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return String(rawId).trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 48);
+}
+
+function courierPortalSessionStorageKey(shop) {
+  return `${COURIER_PORTAL_SESSION_STORAGE_PREFIX}${String(shop || "default")
+    .trim()
+    .toLowerCase()}`;
 }
 
 function getCourierOfflineQueuedStatus(entry) {
@@ -2328,6 +2343,7 @@ export default function RepartidorPublicPortal() {
   const [offlineSyncing, setOfflineSyncing] = useState(false);
   const [offlineSyncMessage, setOfflineSyncMessage] = useState("");
   const offlineSyncInProgressRef = useRef(false);
+  const courierSessionKey = courierPortalSessionStorageKey(shop);
 
   const refreshOfflineQueue = () => setOfflineQueue(readCourierOfflineQueue());
 
@@ -2353,6 +2369,40 @@ export default function RepartidorPublicPortal() {
     setOfflineSyncMessage(`Accion guardada sin conexion para el pedido #${queuedAction.orderNumber || "-"}.`);
     return true;
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const urlSessionId = String(
+      searchParams.get("sesion") || searchParams.get("session") || "",
+    )
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "")
+      .slice(0, 48);
+    try {
+      if (urlSessionId && urlSessionId !== "default") {
+        window.localStorage.setItem(courierSessionKey, urlSessionId);
+        return;
+      }
+
+      const storedSessionId = String(
+        window.localStorage.getItem(courierSessionKey) || "",
+      )
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "")
+        .slice(0, 48);
+      const nextSessionId = storedSessionId || createCourierPortalClientSessionId();
+      if (!nextSessionId) return;
+      window.localStorage.setItem(courierSessionKey, nextSessionId);
+      const nextParams = new URLSearchParams(window.location.search);
+      nextParams.set("sesion", nextSessionId);
+      if (shop) nextParams.set("shop", shop);
+      window.location.replace(`${window.location.pathname}?${nextParams.toString()}`);
+    } catch (_error) {
+      // Si localStorage no esta disponible, el repartidor puede entrar con su codigo.
+    }
+  }, [courierSessionKey, searchParams, shop]);
 
   const syncCourierOfflineQueue = async () => {
     if (offlineSyncInProgressRef.current || typeof window === "undefined" || !window.navigator.onLine) return;
