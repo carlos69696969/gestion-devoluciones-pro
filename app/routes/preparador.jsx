@@ -1020,6 +1020,7 @@ export async function action({ request }) {
   }
 
   if (intent === "preparer_mark_ready") {
+    const optimisticSubmit = String(formData.get("optimisticSubmit") || "").trim() === "1";
     const access = await getPreparerAccess(request, shop);
     if (!access) return { ok: false, error: "Inicia sesion nuevamente." };
     const assignmentId = Number(formData.get("assignmentId") || 0);
@@ -1079,6 +1080,13 @@ export async function action({ request }) {
           ]
         : []),
     ]);
+    if (optimisticSubmit) {
+      return {
+        ok: true,
+        assignmentId: String(assignment.id),
+        status: nextStatus,
+      };
+    }
     return redirect(`/preparador?shop=${encodeURIComponent(access.shop)}${accessSearchParam(access.accessId)}&tab=despachar`);
   }
 
@@ -1212,6 +1220,18 @@ function preparerLabelPayload(assignment, routeNumber = "") {
   };
 }
 
+function preparerAssignmentImageUrls(assignment) {
+  const order = assignment?.orderData && typeof assignment.orderData === "object" ? assignment.orderData : {};
+  const items = Array.isArray(order.items) ? order.items : [];
+  return [
+    ...new Set(
+      items
+        .map((item) => String(item?.imageUrl || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 function preparerOrderMark(status) {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "ready") return "✓";
@@ -1245,6 +1265,9 @@ export default function PreparerPortal() {
   const [reprintMode, setReprintMode] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
+  const [optimisticCompletedAssignmentIds, setOptimisticCompletedAssignmentIds] = useState([]);
+  const [savingPreparerAssignmentIds, setSavingPreparerAssignmentIds] = useState([]);
+  const [preparerSaveError, setPreparerSaveError] = useState("");
   const isSubmitting = navigation.state === "submitting";
   const isLoginSubmitting = isSubmitting && !activeSubmitIntent;
   const isLoggingOut = isSubmitting && activeSubmitIntent === "logout";
@@ -1259,8 +1282,18 @@ export default function PreparerPortal() {
       preparerOrderNumberValue(firstAssignment) - preparerOrderNumberValue(secondAssignment) ||
       Number(firstAssignment.id || 0) - Number(secondAssignment.id || 0),
   );
+  const optimisticCompletedAssignmentIdSet = new Set(
+    optimisticCompletedAssignmentIds.map((assignmentId) => String(assignmentId)),
+  );
+  const savingPreparerAssignmentIdSet = new Set(
+    savingPreparerAssignmentIds.map((assignmentId) => String(assignmentId)),
+  );
   const visibleAssignments = sortedAssignments;
-  const pendingAssignments = sortedAssignments.filter((assignment) => !isPreparerAssignmentDone(assignment?.status));
+  const pendingAssignments = sortedAssignments.filter(
+    (assignment) =>
+      !isPreparerAssignmentDone(assignment?.status) &&
+      !optimisticCompletedAssignmentIdSet.has(String(assignment?.id || "")),
+  );
   const displaySequenceByAssignmentId = new Map(
     visibleAssignments.map((assignment, index) => [
       String(assignment.id),
@@ -1268,6 +1301,43 @@ export default function PreparerPortal() {
     ]),
   );
   const dispatchAssignment = pendingAssignments[0] || null;
+
+  const submitPreparerReadyOptimistically = async (formData, assignment) => {
+    const assignmentId = String(assignment?.id || formData.get("assignmentId") || "").trim();
+    if (!assignmentId) return;
+    formData.set("optimisticSubmit", "1");
+    setPreparerSaveError("");
+    setOptimisticCompletedAssignmentIds((currentIds) =>
+      currentIds.includes(assignmentId) ? currentIds : [...currentIds, assignmentId],
+    );
+    setSavingPreparerAssignmentIds((currentIds) =>
+      currentIds.includes(assignmentId) ? currentIds : [...currentIds, assignmentId],
+    );
+    try {
+      const response = await fetch(`${window.location.pathname}${window.location.search}`, {
+        method: "POST",
+        body: formData,
+        credentials: "same-origin",
+      });
+      const contentType = response.headers.get("content-type") || "";
+      const result = contentType.includes("application/json") ? await response.json() : {};
+      if (!response.ok || result?.ok === false) {
+        throw new Error(result?.error || "No se pudo guardar la orden.");
+      }
+      if (revalidator.state === "idle") {
+        revalidator.revalidate();
+      }
+    } catch (error) {
+      setOptimisticCompletedAssignmentIds((currentIds) =>
+        currentIds.filter((currentId) => currentId !== assignmentId),
+      );
+      setPreparerSaveError(String(error?.message || "No se pudo guardar la orden."));
+    } finally {
+      setSavingPreparerAssignmentIds((currentIds) =>
+        currentIds.filter((currentId) => currentId !== assignmentId),
+      );
+    }
+  };
 
   useEffect(() => {
     const accessId = String(searchParams.get("access") || "").trim();
@@ -1290,10 +1360,46 @@ export default function PreparerPortal() {
   }, [actionData?.error, isLoggedIn, pendingLogoutOrders.length]);
 
   useEffect(() => {
+    const activePendingIds = new Set(
+      assignments
+        .filter((assignment) => !isPreparerAssignmentDone(assignment?.status))
+        .map((assignment) => String(assignment?.id || ""))
+        .filter(Boolean),
+    );
+    setOptimisticCompletedAssignmentIds((currentIds) => {
+      const nextIds = currentIds.filter((assignmentId) =>
+        activePendingIds.has(String(assignmentId)),
+      );
+      return nextIds.length === currentIds.length ? currentIds : nextIds;
+    });
+    setSavingPreparerAssignmentIds((currentIds) => {
+      const nextIds = currentIds.filter((assignmentId) =>
+        activePendingIds.has(String(assignmentId)),
+      );
+      return nextIds.length === currentIds.length ? currentIds : nextIds;
+    });
+  }, [assignments]);
+
+  useEffect(() => {
     setReadyUnitKeys([]);
     setMissingReviewOpen(false);
     setReviewUnitKeys([]);
   }, [dispatchAssignment?.id]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isLoggedIn) return;
+    const urls = [
+      ...new Set(
+        pendingAssignments
+          .slice(0, 3)
+          .flatMap((assignment) => preparerAssignmentImageUrls(assignment)),
+      ),
+    ];
+    urls.forEach((url) => {
+      const image = new Image();
+      image.src = url;
+    });
+  }, [isLoggedIn, pendingAssignments]);
 
   useEffect(() => {
     if (!isLoggedIn) return undefined;
@@ -1341,6 +1447,9 @@ export default function PreparerPortal() {
     const dispatchSequence = dispatchAssignment
       ? displaySequenceByAssignmentId.get(String(dispatchAssignment.id)) || ""
       : "";
+    const isDispatchSaving = dispatchAssignment
+      ? savingPreparerAssignmentIdSet.has(String(dispatchAssignment.id))
+      : false;
     const dispatchUnitKeys = dispatchItems.flatMap((item) => itemUnitKeys(item));
     const readyUnitKeySet = new Set(readyUnitKeys);
     const uncheckedUnitKeys = dispatchUnitKeys.filter((unitKey) => !readyUnitKeySet.has(unitKey));
@@ -1398,7 +1507,11 @@ export default function PreparerPortal() {
                   >
                     <input type="hidden" name="intent" value="logout" />
                     <input type="hidden" name="shop" value={shop || ""} />
-                    <button className={styles.accessButton} type="submit" disabled={isLogoutLoading}>
+                    <button
+                      className={styles.accessButton}
+                      type="submit"
+                      disabled={isLogoutLoading || savingPreparerAssignmentIds.length > 0}
+                    >
                       {isLogoutLoading ? (
                         <>
                           <span className={styles.buttonSpinner} aria-hidden="true" />
@@ -1433,6 +1546,17 @@ export default function PreparerPortal() {
               ) : null}
             </div>
           </header>
+
+          {savingPreparerAssignmentIds.length ? (
+            <p className={styles.preparerSaveStatus} role="status" aria-live="polite">
+              Guardando {savingPreparerAssignmentIds.length === 1 ? "orden" : "ordenes"}...
+            </p>
+          ) : null}
+          {preparerSaveError ? (
+            <p className={styles.error} role="alert" aria-live="polite">
+              {preparerSaveError}
+            </p>
+          ) : null}
 
           {visibleAssignments.length ? (
             <section className={styles.card}>
@@ -1522,8 +1646,20 @@ export default function PreparerPortal() {
                       <Form
                         method="post"
                         onSubmit={(event) => {
-                          if (isDispatchCompleted) return;
-                          const submitAction = event.nativeEvent?.submitter?.value || "";
+                          if (isDispatchCompleted) {
+                            event.preventDefault();
+                            return;
+                          }
+                          const submitter = event.nativeEvent?.submitter;
+                          const submitAction = submitter?.value || "";
+                          const submitOptimistically = () => {
+                            const formData = new FormData(event.currentTarget);
+                            if (submitter?.name) {
+                              formData.set(submitter.name, submitter.value || "");
+                            }
+                            event.preventDefault();
+                            submitPreparerReadyOptimistically(formData, dispatchAssignment);
+                          };
                           if (submitAction === "not_located") {
                             const message = isDispatchReprogrammed
                               ? "Confirmas que esta orden no fue localizada?"
@@ -1535,6 +1671,7 @@ export default function PreparerPortal() {
                             if (!isDispatchReprogrammed && readyUnitKeys.length > 0) {
                               printPreparerLabel(preparerLabelPayload(dispatchAssignment, dispatchSequence));
                             }
+                            submitOptimistically();
                             return;
                           }
                           if (isDispatchReprogrammed) {
@@ -1543,6 +1680,7 @@ export default function PreparerPortal() {
                               return;
                             }
                             printPreparerLabel(preparerLabelPayload(dispatchAssignment, dispatchSequence));
+                            submitOptimistically();
                             return;
                           }
                           if (uncheckedUnitKeys.length) {
@@ -1559,6 +1697,7 @@ export default function PreparerPortal() {
                             return;
                           }
                           printPreparerLabel(preparerLabelPayload(dispatchAssignment, dispatchSequence));
+                          submitOptimistically();
                         }}
                       >
                         <input type="hidden" name="intent" value="preparer_mark_ready" />
@@ -1645,7 +1784,7 @@ export default function PreparerPortal() {
                         ) : null}
 
                         <div className={styles.preparerActions}>
-                          <button className={styles.accessButton} type="submit" disabled={isSubmitting || isDispatchCompleted}>
+                          <button className={styles.accessButton} type="submit" disabled={isSubmitting || isDispatchCompleted || isDispatchSaving}>
                             Listo
                           </button>
                           {isDispatchReprogrammed ? (
@@ -1654,7 +1793,7 @@ export default function PreparerPortal() {
                               type="submit"
                               name="preparerSubmitAction"
                               value="not_located"
-                              disabled={isSubmitting || isDispatchCompleted}
+                              disabled={isSubmitting || isDispatchCompleted || isDispatchSaving}
                             >
                               No localizado
                             </button>
@@ -1665,14 +1804,14 @@ export default function PreparerPortal() {
                                 type="submit"
                                 name="preparerSubmitAction"
                                 value="not_located"
-                                disabled={isSubmitting || isDispatchCompleted}
+                                disabled={isSubmitting || isDispatchCompleted || isDispatchSaving}
                               >
                                 No localizado
                               </button>
                               <button
                                 className={styles.accessButton}
                                 type="button"
-                                disabled={isSubmitting || isDispatchCompleted}
+                                disabled={isSubmitting || isDispatchCompleted || isDispatchSaving}
                                 onClick={() => {
                                   setMissingReviewOpen(false);
                                   setReviewUnitKeys([]);
