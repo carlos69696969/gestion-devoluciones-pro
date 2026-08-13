@@ -101,6 +101,11 @@ public class MainActivity extends Activity {
                 case MotionEvent.ACTION_MOVE:
                     if (pullRefreshReady && webView.getScrollY() <= 0 && event.getY() - pullRefreshStartY > 150f) {
                         pullRefreshReady = false;
+                        if (!isNetworkAvailable()) {
+                            keepPortalVisibleOffline();
+                            Toast.makeText(this, "Sin conexion a internet", Toast.LENGTH_SHORT).show();
+                            return true;
+                        }
                         CookieManager.getInstance().flush();
                         webView.reload();
                         Toast.makeText(this, "Actualizando...", Toast.LENGTH_SHORT).show();
