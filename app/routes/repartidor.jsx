@@ -1643,6 +1643,11 @@ export const action = async ({ request }) => {
     }
 
     const offlineSync = String(formData.get("offlineSync") || "") === "1";
+    const offlineActionId = String(formData.get("offlineActionId") || "").trim();
+    const actionIdempotencyKey =
+      offlineSync && offlineActionId
+        ? `courier-action:${shop}:${requestId}:${intent}:${offlineActionId}`
+        : "";
     if (offlineSync) {
       const existingActivityWhere = {
         shop,
@@ -1717,8 +1722,23 @@ export const action = async ({ request }) => {
       currentAttemptCount: String(formData.get("currentAttemptCount") || "").trim(),
       currentScheduledDate: String(formData.get("currentScheduledDate") || "").trim(),
       rejectionReason: String(formData.get("rejectionReason") || "").trim(),
+      idempotencyKey: actionIdempotencyKey,
     });
     if (!result.ok) {
+      return result;
+    }
+    if (result.duplicate || result.stale) {
+      if (offlineSync) {
+        return {
+          ok: true,
+          offlineSync: true,
+          duplicate: Boolean(result.duplicate),
+          stale: Boolean(result.stale),
+          requestId,
+          nextStatus: result.nextStatus || String(formData.get("currentStatus") || "").trim(),
+          attemptCount: result.attemptCount || formData.get("currentAttemptCount") || "0",
+        };
+      }
       return result;
     }
 

@@ -919,13 +919,14 @@ export async function emitCourierReturnRouteNotification({ shopDomain, requestRo
   };
 }
 
-async function emitCourierReturnActionNotification({ shopDomain, requestRow, intent, note = "" }) {
+async function emitCourierReturnActionNotification({ shopDomain, requestRow, intent, note = "", idempotencyKey = "" }) {
   if (!shopDomain || !requestRow || !NOTIFICATIONS_API_BASE_URL) {
     return { ok: true };
   }
 
   const mappedStatus = RETURN_EVENT_BY_INTENT[intent];
   if (!mappedStatus) return { ok: true };
+  const cleanIdempotencyKey = String(idempotencyKey || "").trim();
 
   const eventPayload = {
     status: mappedStatus,
@@ -945,6 +946,12 @@ async function emitCourierReturnActionNotification({ shopDomain, requestRow, int
     source: "portal_repartidor",
     return_method: requestRow.returnMethod || null,
     courier_label: "Devolucion",
+    ...(cleanIdempotencyKey
+      ? {
+          event_dedupe_key: cleanIdempotencyKey,
+          idempotency_key: cleanIdempotencyKey,
+        }
+      : {}),
   };
 
   const endpoints = NOTIFICATIONS_API_KEY
@@ -2115,12 +2122,27 @@ export async function markCourierReturnAsReceived({ requestId }) {
   return { ok: true, requestRow, nextStatus: "recibida", attemptCount: 0 };
 }
 
-export async function markCourierReturnPickupAttemptFailed({ requestId, rejectionReason: selectedRejectionReason }) {
+export async function markCourierReturnPickupAttemptFailed({
+  requestId,
+  rejectionReason: selectedRejectionReason,
+  currentStatus: expectedCurrentStatus = "",
+  idempotencyKey = "",
+}) {
   const lookup = await getCourierReturnRequestForAction(requestId);
   if (!lookup.ok) return lookup;
 
   const requestRow = lookup.requestRow;
   const currentStatus = String(requestRow.status || "").trim().toLowerCase();
+  const normalizedExpectedStatus = String(expectedCurrentStatus || "").trim().toLowerCase();
+  if (normalizedExpectedStatus && normalizedExpectedStatus !== currentStatus) {
+    return {
+      ok: true,
+      requestRow,
+      stale: true,
+      nextStatus: currentStatus,
+      attemptCount: getReturnFailedAttemptCount(requestRow.rejectionReason),
+    };
+  }
   const nextStatus = getCourierReturnFailedAttemptStatus(currentStatus, requestRow.rejectionReason);
   if (!nextStatus) {
     return { ok: false, error: "Ya no puedes registrar mas intentos fallidos para esta devolucion." };
@@ -2135,24 +2157,35 @@ export async function markCourierReturnPickupAttemptFailed({ requestId, rejectio
   if (attemptCount >= 3) {
     const finalRejectionReason = PICKUP_REJECTED_AFTER_THIRD_ATTEMPT_REASON;
     const hasRejectedEntry = hasRecentReasonEntry(requestRow.rejectionReason, "rejected_after_attempts");
-    if (!hasRejectedEntry) {
-      await prisma.returnRequest.update({
-        where: { id: requestRow.id },
-        data: {
-          status: "rechazada",
-          rejectionReason: appendReasonEntry(
-            appendReasonEntry(requestRow.rejectionReason, {
-              kind: failedEntryKind,
-              reason: finalRejectionReason,
-            }),
-            {
-              kind: "rejected_after_attempts",
-              reason: finalRejectionReason,
-            },
-          ),
-          refundError: null,
-        },
-      });
+    const rejectionDedupeKey =
+      String(idempotencyKey || "").trim() || `courier-return:${requestRow.id}:rejected_after_attempts`;
+    if (hasRejectedEntry) {
+      return { ok: true, requestRow, nextStatus: "rechazada", attemptCount: 3, duplicate: true };
+    }
+
+    const updated = await prisma.returnRequest.updateMany({
+      where: {
+        id: requestRow.id,
+        status: requestRow.status,
+        rejectionReason: requestRow.rejectionReason,
+      },
+      data: {
+        status: "rechazada",
+        rejectionReason: appendReasonEntry(
+          appendReasonEntry(requestRow.rejectionReason, {
+            kind: failedEntryKind,
+            reason: finalRejectionReason,
+          }),
+          {
+            kind: "rejected_after_attempts",
+            reason: finalRejectionReason,
+          },
+        ),
+        refundError: null,
+      },
+    });
+    if (!updated.count) {
+      return { ok: true, requestRow, nextStatus: "rechazada", attemptCount: 3, duplicate: true };
     }
 
     await emitCourierReturnActionNotification({
@@ -2160,6 +2193,7 @@ export async function markCourierReturnPickupAttemptFailed({ requestId, rejectio
       requestRow,
       intent: "courier_return_reject_after_failed_pickups",
       note: finalRejectionReason,
+      idempotencyKey: rejectionDedupeKey,
     });
 
     return { ok: true, requestRow, nextStatus: "rechazada", attemptCount: 3 };
@@ -2168,12 +2202,19 @@ export async function markCourierReturnPickupAttemptFailed({ requestId, rejectio
   const nextPickupDate = getNextPickupDate(requestRow.pickupDate);
   const reprogrammedReason = `Reprogramado para el ${formatPickupDateForMessage(nextPickupDate)}.\n\n${rejectionReason}`;
 
+  const attemptDedupeKey =
+    String(idempotencyKey || "").trim() || `courier-return:${requestRow.id}:${failedEntryKind}`;
+
   if (hasRecentReasonEntry(requestRow.rejectionReason, failedEntryKind)) {
-    return { ok: true, requestRow, nextStatus, attemptCount };
+    return { ok: true, requestRow, nextStatus, attemptCount, duplicate: true };
   }
 
-  await prisma.returnRequest.update({
-    where: { id: requestRow.id },
+  const updated = await prisma.returnRequest.updateMany({
+    where: {
+      id: requestRow.id,
+      status: requestRow.status,
+      rejectionReason: requestRow.rejectionReason,
+    },
     data: {
       status: nextStatus,
       pickupDate: nextPickupDate,
@@ -2183,12 +2224,16 @@ export async function markCourierReturnPickupAttemptFailed({ requestId, rejectio
       }),
     },
   });
+  if (!updated.count) {
+    return { ok: true, requestRow, nextStatus, attemptCount, duplicate: true };
+  }
 
   await emitCourierReturnActionNotification({
     shopDomain: requestRow.shop,
     requestRow,
     intent: "courier_return_pickup_attempt_failed",
     note: reprogrammedReason,
+    idempotencyKey: attemptDedupeKey,
   });
 
   return { ok: true, requestRow, nextStatus, attemptCount };
