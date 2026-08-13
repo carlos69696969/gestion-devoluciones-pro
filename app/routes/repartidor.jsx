@@ -1801,7 +1801,9 @@ export const loader = async ({ request }) => {
   const overrideAttemptCount = Math.max(0, Number(url.searchParams.get("overrideAttemptCount") || "0"));
 
   if (freshAccess) {
-    url.searchParams.set("sesion", crypto.randomUUID());
+    if (courierPortalSessionId(request) === "default") {
+      url.searchParams.set("sesion", crypto.randomUUID());
+    }
     url.searchParams.delete("acceso");
     url.searchParams.delete("tab");
     url.searchParams.delete("updated");
@@ -2516,7 +2518,11 @@ export default function RepartidorPublicPortal() {
   useEffect(() => {
     if (requiresDailyAccess || routeTransferred) return undefined;
     const refreshTransferStatus = () => {
-      if (document.visibilityState === "visible" && revalidator.state === "idle") {
+      if (
+        isOnline &&
+        document.visibilityState === "visible" &&
+        revalidator.state === "idle"
+      ) {
         revalidator.revalidate();
       }
     };
@@ -2526,7 +2532,7 @@ export default function RepartidorPublicPortal() {
       window.clearInterval(intervalId);
       window.removeEventListener("focus", refreshTransferStatus);
     };
-  }, [requiresDailyAccess, revalidator, routeTransferred]);
+  }, [isOnline, requiresDailyAccess, revalidator, routeTransferred]);
   if (routeTransferred) {
     return (
       <main className={styles.page}>
