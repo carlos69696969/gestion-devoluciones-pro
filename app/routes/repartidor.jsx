@@ -2416,8 +2416,7 @@ export default function RepartidorPublicPortal() {
       <main className={`${styles.page} ${styles.loginPage} ${styles.repartidorLoginPage}`}>
         {!isOnline ? (
           <div className={styles.offlineSyncBar} role="status" aria-live="polite">
-            <span>Sin conexion a internet</span>
-            <strong>Botones bloqueados</strong>
+            <span>Sin conexión a internet</span>
           </div>
         ) : null}
         <div className={styles.accessContainer}>
@@ -2877,11 +2876,7 @@ export default function RepartidorPublicPortal() {
     <main className={styles.page}>
       {!isOnline ? (
         <div className={styles.offlineSyncBar} role="status" aria-live="polite">
-          <span>
-            Sin conexion a internet
-          </span>
-          <strong>Botones bloqueados</strong>
-          {offlineSyncMessage ? <small>{offlineSyncMessage}</small> : null}
+          <span>Sin conexión a internet</span>
         </div>
       ) : null}
       <div
@@ -3066,7 +3061,6 @@ export default function RepartidorPublicPortal() {
             <button
               type="button"
               className={`${styles.tabButton} ${activeTab === "pedidos" ? styles.tabButtonActive : ""}`}
-              disabled={!isOnline}
               onClick={() => handleTabChange("pedidos")}
             >
               Pedidos
@@ -3074,7 +3068,6 @@ export default function RepartidorPublicPortal() {
             <button
               type="button"
               className={`${styles.tabButton} ${activeTab === "en_ruta" ? styles.tabButtonActive : ""}`}
-              disabled={!isOnline}
               onClick={() => handleTabChange("en_ruta")}
             >
               En ruta
@@ -3082,7 +3075,6 @@ export default function RepartidorPublicPortal() {
             <button
               type="button"
               className={`${styles.tabButton} ${activeTab === "historial" ? styles.tabButtonActive : ""}`}
-              disabled={!isOnline}
               onClick={() => handleTabChange("historial")}
             >
               Historial
@@ -3247,22 +3239,12 @@ export default function RepartidorPublicPortal() {
                             </button>
                           )}
                           {buildPhoneUrl(request) ? (
-                            isOnline ? (
-                              <a
-                                className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
-                                href={buildPhoneUrl(request)}
-                              >
-                                Telefono
-                              </a>
-                            ) : (
-                              <button
-                                type="button"
-                                className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
-                                disabled
-                              >
-                                Telefono
-                              </button>
-                            )
+                            <a
+                              className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
+                              href={buildPhoneUrl(request)}
+                            >
+                              Telefono
+                            </a>
                           ) : (
                             <button
                               type="button"
@@ -3307,22 +3289,12 @@ export default function RepartidorPublicPortal() {
                             </button>
                           )}
                           {buildPhoneUrl(request) ? (
-                            isOnline ? (
-                              <a
-                                className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
-                                href={buildPhoneUrl(request)}
-                              >
-                                Telefono
-                              </a>
-                            ) : (
-                              <button
-                                type="button"
-                                className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
-                                disabled
-                              >
-                                Telefono
-                              </button>
-                            )
+                            <a
+                              className={`${styles.actionButton} ${styles.actionButtonSecondary}`}
+                              href={buildPhoneUrl(request)}
+                            >
+                              Telefono
+                            </a>
                           ) : (
                             <button
                               type="button"
