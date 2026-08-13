@@ -3050,11 +3050,19 @@ export default function RepartidorPublicPortal() {
           <div>
             <h1 className={styles.title}>Cariana repartidores</h1>
             <p className={styles.subtitle}>
-              {courierName ? `Repartidor: ${courierName}` : "Ordenes pendientes de entrega y devolucion."}
+              {courierName ? (
+                <>
+                  <span className={styles.headerMetaLabel}>Repartidor:</span>{" "}
+                  <span className={styles.headerMetaName}>{courierName}</span>
+                </>
+              ) : (
+                "Ordenes pendientes de entrega y devolucion."
+              )}
             </p>
             {transferredFromName ? (
               <p className={styles.subtitle}>
-                Ruta transferida a: {transferredToName}
+                <span className={styles.headerMetaLabel}>Ruta transferida a:</span>{" "}
+                <span className={styles.headerMetaName}>{transferredToName}</span>
               </p>
             ) : null}
           </div>

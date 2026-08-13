@@ -813,6 +813,16 @@
   line-height: 1.45;
 }
 
+.headerMetaLabel {
+  color: #202223;
+  font-weight: 500;
+}
+
+.headerMetaName {
+  color: #005bd3;
+  font-weight: 700;
+}
+
 .subtitle.confirmationWarning {
   color: #d72c0d;
 }
