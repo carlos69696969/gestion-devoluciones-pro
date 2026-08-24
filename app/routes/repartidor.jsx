@@ -2172,10 +2172,11 @@ export const loader = async ({ request }) => {
     const requestId = String(requestRow?.id || "").trim();
     if (currentRouteRequestIds.has(requestId)) {
       const routeAction = currentRouteActionByRequestId.get(requestId);
+      const normalizedRequestStatus = String(requestRow?.status || "").trim().toLowerCase();
       if (routeAction === COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION) {
         return null;
       }
-      if (shouldResetAssignedOrderForCurrentRoute(routeAction)) {
+      if (shouldResetAssignedOrderForCurrentRoute(routeAction) && !isCourierRouteStatus(normalizedRequestStatus)) {
         return {
           ...requestRow,
           status: "pendiente",
