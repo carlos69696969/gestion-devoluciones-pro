@@ -79,10 +79,10 @@ function normalizeNavCounts(counts = {}) {
   };
 }
 
-function cachedNavCounts(shop) {
+function cachedNavCounts(shop, { allowStale = false } = {}) {
   const cached = navCountsCacheByShop.get(shop);
   if (!cached) return null;
-  if (Date.now() - Number(cached.updatedAt || 0) > NAV_COUNTS_CACHE_TTL_MS) return null;
+  if (!allowStale && Date.now() - Number(cached.updatedAt || 0) > NAV_COUNTS_CACHE_TTL_MS) return null;
   return normalizeNavCounts(cached.counts);
 }
 
@@ -323,16 +323,25 @@ async function loadReturnNavCounts(shop) {
   return normalizeNavCounts(navCounts);
 }
 
-async function loadNavCounts(admin, session) {
+async function loadNavCounts(admin, session, fallbackCounts = NAV_COUNTS_EMPTY) {
+  const fallback = normalizeNavCounts(fallbackCounts);
+  let returnCountsFailed = false;
+  let deliveryOrdersFailed = false;
+  let branchPickupFailed = false;
+  let adminDeliveryCountFailed = false;
+  let plannedDeliveryCountFailed = false;
+
   const [returnCounts, deliveryCourierOrders, branchPickupCourierOrders] = await Promise.all([
     loadReturnNavCounts(session.shop).catch((error) => {
+      returnCountsFailed = true;
       console.error("No se pudieron contar las devoluciones del menu", error);
-      return NAV_COUNTS_EMPTY;
+      return fallback;
     }),
     fetchCourierOrdersForShop({
       shop: session.shop,
       sessionCandidates: [session],
     }).catch((error) => {
+      deliveryOrdersFailed = true;
       console.error("No se pudieron contar las entregas del repartidor", error);
       return [];
     }),
@@ -340,6 +349,7 @@ async function loadNavCounts(admin, session) {
       shop: session.shop,
       sessionCandidates: [session],
     }).catch((error) => {
+      branchPickupFailed = true;
       console.error("No se pudieron contar las ordenes para recoger en sucursal", error);
       return [];
     }),
@@ -348,17 +358,32 @@ async function loadNavCounts(admin, session) {
   const adminDeliveryCount = deliveryCourierOrders.length
     ? 0
     : await fetchCourierDeliveryCount(admin).catch((error) => {
+        adminDeliveryCountFailed = true;
         console.error("No se pudieron contar las entregas del repartidor desde admin", error);
         return 0;
       });
   const plannedDeliveryCount = deliveryCourierOrders.length || adminDeliveryCount
     ? 0
     : await activePlannedCourierDeliveryCount(session.shop, [session]).catch((error) => {
+        plannedDeliveryCountFailed = true;
         console.error("No se pudieron contar las rutas activas del repartidor", error);
         return 0;
       });
-  navCounts.courier = deliveryCourierOrders.length || adminDeliveryCount || plannedDeliveryCount;
-  navCounts.branchPickup = branchPickupCourierOrders.length;
+  const courierCount = deliveryCourierOrders.length || adminDeliveryCount || plannedDeliveryCount;
+  const courierCountFailed =
+    !courierCount &&
+    deliveryOrdersFailed &&
+    adminDeliveryCountFailed &&
+    plannedDeliveryCountFailed;
+  navCounts.courier = courierCountFailed ? fallback.courier : courierCount;
+  navCounts.branchPickup = branchPickupFailed ? fallback.branchPickup : branchPickupCourierOrders.length;
+  if (returnCountsFailed) {
+    navCounts.pickup = fallback.pickup;
+    navCounts.branch = fallback.branch;
+    navCounts.review = fallback.review;
+    navCounts.refunds = fallback.refunds;
+    navCounts.toReturn = fallback.toReturn;
+  }
   return navCounts;
 }
 
@@ -367,7 +392,8 @@ function refreshNavCounts(admin, session) {
   if (!shop) return Promise.resolve(NAV_COUNTS_EMPTY);
   const existingRefresh = navCountsRefreshByShop.get(shop);
   if (existingRefresh) return existingRefresh;
-  const refreshPromise = loadNavCounts(admin, session)
+  const fallbackCounts = cachedNavCounts(shop, { allowStale: true }) || NAV_COUNTS_EMPTY;
+  const refreshPromise = loadNavCounts(admin, session, fallbackCounts)
     .then((counts) => {
       const navCounts = normalizeNavCounts(counts);
       navCountsCacheByShop.set(shop, { counts: navCounts, updatedAt: Date.now() });
@@ -375,7 +401,7 @@ function refreshNavCounts(admin, session) {
     })
     .catch((error) => {
       console.error("No se pudieron refrescar los contadores del menu", error);
-      return cachedNavCounts(shop) || NAV_COUNTS_EMPTY;
+      return cachedNavCounts(shop, { allowStale: true }) || NAV_COUNTS_EMPTY;
     })
     .finally(() => {
       navCountsRefreshByShop.delete(shop);
@@ -389,10 +415,11 @@ export const loader = async ({ request }) => {
   syncZeroInventoryArchiveFromAdmin(admin, session.shop);
 
   const cachedCounts = cachedNavCounts(session.shop);
+  const staleCounts = cachedNavCounts(session.shop, { allowStale: true });
   const refreshPromise = refreshNavCounts(admin, session);
   const navCounts = cachedCounts || await Promise.race([
     refreshPromise,
-    wait(900).then(() => NAV_COUNTS_EMPTY),
+    wait(900).then(() => staleCounts || NAV_COUNTS_EMPTY),
   ]);
 
   // eslint-disable-next-line no-undef
