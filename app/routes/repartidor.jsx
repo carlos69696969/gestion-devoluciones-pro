@@ -2346,6 +2346,11 @@ export default function RepartidorPublicPortal() {
   const courierSessionKey = courierPortalSessionStorageKey(shop);
 
   useEffect(() => {
+    const nextTab = initialActiveTab || "pedidos";
+    setActiveTab((currentTab) => (currentTab === nextTab ? currentTab : nextTab));
+  }, [initialActiveTab]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const urlSessionId = String(
       searchParams.get("sesion") || searchParams.get("session") || "",
