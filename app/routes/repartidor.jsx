@@ -45,6 +45,11 @@ function courierPortalCookies(request) {
   };
 }
 
+function timestampParamToIso(value) {
+  const timestamp = Number(value || 0);
+  return Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp).toISOString() : "";
+}
+
 const DEFAULT_PICKUP_FAILED_REASON =
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨";
 const SECOND_PICKUP_FAILED_WARNING =
@@ -1693,6 +1698,7 @@ export const action = async ({ request }) => {
     );
     let nextOverrideAttemptCount = String(result?.attemptCount || formData.get("currentAttemptCount") || "0");
     const nextTab =
+      intent === "courier_mark_not_delivered" ||
       intent === "courier_return_mark_received" ||
       intent === "courier_return_pickup_attempt_failed" ||
       intent === "courier_return_reject_after_failed_pickups"
@@ -1741,6 +1747,7 @@ export const loader = async ({ request }) => {
   const overrideRequestId = String(url.searchParams.get("overrideRequestId") || "").trim();
   const overrideStatus = String(url.searchParams.get("overrideStatus") || "").trim().toLowerCase();
   const overrideAttemptCount = Math.max(0, Number(url.searchParams.get("overrideAttemptCount") || "0"));
+  const overrideHistoryAt = timestampParamToIso(url.searchParams.get("updated"));
 
   if (freshAccess) {
     if (courierPortalSessionId(request) === "default") {
@@ -1952,11 +1959,18 @@ export const loader = async ({ request }) => {
         return requestRow;
       }
 
-      return {
+      const nextRequest = {
         ...requestRow,
         status: overrideStatus,
         attemptCount: overrideAttemptCount || Number(requestRow?.attemptCount || 0),
       };
+      if (
+        overrideStatus === "no_entregado" &&
+        String(requestRow?.courierLabel || "").trim().toLowerCase() === "entrega"
+      ) {
+        nextRequest.courierHistoryAt = overrideHistoryAt || requestRow?.courierHistoryAt || "";
+      }
+      return nextRequest;
     });
   }
 
@@ -2176,7 +2190,11 @@ export const loader = async ({ request }) => {
       if (routeAction === COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION) {
         return null;
       }
-      if (shouldResetAssignedOrderForCurrentRoute(routeAction) && !isCourierRouteStatus(normalizedRequestStatus)) {
+      if (
+        shouldResetAssignedOrderForCurrentRoute(routeAction) &&
+        !isCourierRouteStatus(normalizedRequestStatus) &&
+        !isCourierHistoryStatus(normalizedRequestStatus)
+      ) {
         return {
           ...requestRow,
           status: "pendiente",
@@ -2667,6 +2685,7 @@ export default function RepartidorPublicPortal() {
   const overrideRequestId = String(searchParams.get("overrideRequestId") || "").trim();
   const overrideStatus = String(searchParams.get("overrideStatus") || "").trim().toLowerCase();
   const overrideAttemptCount = Math.max(0, Number(searchParams.get("overrideAttemptCount") || "0"));
+  const overrideHistoryAt = timestampParamToIso(searchParams.get("updated"));
   const effectiveCourierOrders = courierOrders.map((request) =>
     (() => {
       const isOverrideTarget = overrideRequestId && String(request?.id || "").trim() === overrideRequestId;
@@ -2679,11 +2698,19 @@ export default function RepartidorPublicPortal() {
         ? overrideAttemptCount || Number(request?.attemptCount || 0)
         : Number(request?.attemptCount || 0);
       const status = canApplyOverride ? overrideStatus || request?.status || "pendiente" : request?.status;
-      return {
+      const nextRequest = {
         ...request,
         status: status === "no_entregado" && attemptCount >= 3 ? "recoger_en_sucursal" : status,
         attemptCount,
       };
+      if (
+        canApplyOverride &&
+        status === "no_entregado" &&
+        String(request?.courierLabel || "").trim().toLowerCase() === "entrega"
+      ) {
+        nextRequest.courierHistoryAt = overrideHistoryAt || request?.courierHistoryAt || "";
+      }
+      return nextRequest;
     })(),
   );
   const historyOrders = effectiveCourierOrders
@@ -2731,7 +2758,8 @@ export default function RepartidorPublicPortal() {
   const activeOrdersCount = pendingOrders.length + routeOrders.length;
   const dailyOrdersCount = activeOrdersCount + historyOrders.length;
   const routeOrder = routeOrders[0] || null;
-  const pendingPreviewOrder = pendingOrders[0] || null;
+  const pendingPreviewOrder =
+    pendingOrders.find((request) => !isCourierFinalRouteAction(request?.currentRouteAction)) || null;
   const visibleOrders =
     activeTab === "en_ruta"
       ? routeOrder
