@@ -6626,13 +6626,8 @@ function formatCourierDateFilterLabel(dateKey) {
   });
 }
 
-function effectiveCourierScheduleDate(request) {
-  if (isReturnCourierLabel(request?.courierLabel)) return request?.pickupDate;
-  return buildAdminCourierPresentation(request).scheduledDate || request?.pickupDate;
-}
-
 function courierDateKey(request) {
-  return mexicoDateKey(effectiveCourierScheduleDate(request));
+  return mexicoDateKey(request?.pickupDate);
 }
 
 function branchPickupDeadlineSourceDate(request, displayedScheduledDate) {
@@ -6766,7 +6761,7 @@ export default function ReturnsRequests() {
   const [selectedCourierRefundUnitKeys, setSelectedCourierRefundUnitKeys] = useState([]);
   const [showOnlyNotLocatedCourierOrders, setShowOnlyNotLocatedCourierOrders] = useState(false);
   const [courierDateScope, setCourierDateScope] = useState("today");
-  const [includeTomorrowCourierOrdersInToday, setIncludeTomorrowCourierOrdersInToday] = useState(false);
+  const [includeAllCourierDatesInToday, setIncludeAllCourierDatesInToday] = useState(false);
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
@@ -6781,11 +6776,12 @@ export default function ReturnsRequests() {
     { value: "today", title: "Hoy", dateKey: todayCourierDateKey },
     { value: "tomorrow", title: "Mañana", dateKey: tomorrowCourierDateKey },
   ];
-  const courierTodayDateLimitKey = includeTomorrowCourierOrdersInToday ? tomorrowCourierDateKey : todayCourierDateKey;
   const courierDateFilteredOrders = courierOrders.filter((order) => {
     const orderDateKey = courierDateKey(order);
     if (!orderDateKey) return false;
-    return isCourierTomorrowScope ? orderDateKey === selectedCourierDateKey : orderDateKey <= courierTodayDateLimitKey;
+    if (isCourierTomorrowScope) return orderDateKey === selectedCourierDateKey;
+    if (includeAllCourierDatesInToday) return true;
+    return orderDateKey <= selectedCourierDateKey;
   });
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
   const selectedCourierBulkOrderIdSet = new Set(selectedCourierBulkOrderIds.map((orderId) => String(orderId)));
@@ -7560,9 +7556,9 @@ export default function ReturnsRequests() {
                   <label className={`${styles.branchPickupTestSwitch} ${styles.courierDateTestSwitch}`}>
                     <input
                       type="checkbox"
-                      checked={includeTomorrowCourierOrdersInToday}
+                      checked={includeAllCourierDatesInToday}
                       onChange={(event) => {
-                        setIncludeTomorrowCourierOrdersInToday(event.target.checked);
+                        setIncludeAllCourierDatesInToday(event.target.checked);
                         setShowOnlyNotLocatedCourierOrders(false);
                         setCourierBulkMode("");
                         setSelectedCourierBulkOrderIds([]);
@@ -7571,7 +7567,7 @@ export default function ReturnsRequests() {
                       }}
                     />
                     <span className={styles.branchPickupTestSlider} aria-hidden="true" />
-                    Modo prueba: incluir mañana en Hoy
+                    Modo prueba: incluir todas las fechas en Hoy
                   </label>
                   <div
                     className={`${styles.courierOrdersCountGroup} ${

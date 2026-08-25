@@ -1172,6 +1172,10 @@
   transform: translateX(18px);
 }
 
+.courierDateTestSwitch {
+  margin: 0 0 10px;
+}
+
 .branchPickupTestCheckbox {
   display: inline-flex;
   align-items: center;
@@ -1285,10 +1289,6 @@
   border-color: #005bd3;
   background: #eaf2ff;
   color: #005bd3;
-}
-
-.courierDateTestSwitch {
-  margin: 0 0 10px;
 }
 
 .courierOrdersActions {
