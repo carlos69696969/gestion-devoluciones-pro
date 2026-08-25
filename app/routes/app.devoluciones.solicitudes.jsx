@@ -6775,9 +6775,11 @@ export default function ReturnsRequests() {
     { value: "today", title: "Hoy", dateKey: todayCourierDateKey },
     { value: "tomorrow", title: "Mañana", dateKey: tomorrowCourierDateKey },
   ];
-  const courierDateFilteredOrders = courierOrders.filter(
-    (order) => courierDateKey(order) === selectedCourierDateKey,
-  );
+  const courierDateFilteredOrders = courierOrders.filter((order) => {
+    const orderDateKey = courierDateKey(order);
+    if (!orderDateKey) return false;
+    return isCourierTomorrowScope ? orderDateKey === selectedCourierDateKey : orderDateKey <= selectedCourierDateKey;
+  });
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
   const selectedCourierBulkOrderIdSet = new Set(selectedCourierBulkOrderIds.map((orderId) => String(orderId)));
   const selectedCourierBulkOrders = courierDateFilteredOrders.filter((order) =>
