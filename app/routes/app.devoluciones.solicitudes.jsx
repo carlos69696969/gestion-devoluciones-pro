@@ -3739,6 +3739,78 @@ async function safeLoaderValue(label, fallback, callback, warnings = null) {
   return fallback;
 }
 
+function loaderWarningLabelIncludes(warning, fragments) {
+  const label = String(warning?.label || "").trim().toLowerCase();
+  return fragments.some((fragment) => label.includes(fragment));
+}
+
+function visibleLoaderWarningsForView({
+  warnings,
+  viewMode,
+  visibleCourierOrders,
+  couriers,
+  preparers,
+  stockUsers,
+  stockHistoryDrafts,
+}) {
+  const warningList = Array.isArray(warnings) ? warnings : [];
+  if (!warningList.length) return [];
+
+  const hasVisibleCourierOrders = Array.isArray(visibleCourierOrders) && visibleCourierOrders.length > 0;
+  if (
+    hasVisibleCourierOrders &&
+    [VIEW_MODE.COURIER, VIEW_MODE.PREPARERS, VIEW_MODE.BRANCH_PICKUP, VIEW_MODE.COURIER_HISTORY].includes(viewMode)
+  ) {
+    return [];
+  }
+  if (viewMode === VIEW_MODE.COURIERS && Array.isArray(couriers) && couriers.length > 0) return [];
+  if (viewMode === VIEW_MODE.PREPARERS && Array.isArray(preparers) && preparers.length > 0) return [];
+  if (
+    viewMode === VIEW_MODE.STOCK &&
+    ((Array.isArray(stockUsers) && stockUsers.length > 0) ||
+      (Array.isArray(stockHistoryDrafts) && stockHistoryDrafts.length > 0))
+  ) {
+    return [];
+  }
+
+  const criticalFragmentsByView = {
+    [VIEW_MODE.COURIER]: [
+      "ordenes de rutas activas",
+      "ordenes de entrega para repartidor/preparador",
+      "ordenes de entrega compartidas",
+      "devoluciones de recoleccion para repartidor/preparador",
+      "recargar las ordenes de rutas activas",
+      "recargar las ordenes de entrega",
+    ],
+    [VIEW_MODE.PREPARERS]: [
+      "ordenes de rutas activas",
+      "ordenes de entrega para repartidor/preparador",
+      "ordenes de entrega compartidas",
+      "devoluciones de recoleccion para repartidor/preparador",
+      "preparadores",
+      "asignaciones de preparadores",
+    ],
+    [VIEW_MODE.BRANCH_PICKUP]: ["ordenes para recoger en sucursal"],
+    [VIEW_MODE.COURIER_HISTORY]: [
+      "ordenes purgadas del historial repartidor",
+      "ordenes activas para historial repartidor",
+      "devoluciones activas para historial repartidor",
+      "historial de entregas repartidor",
+      "historial de recoger en sucursal",
+      "historial de recolecciones repartidor",
+      "actividades del historial repartidor",
+      "cierres de rutas del historial",
+      "repartidores",
+    ],
+    [VIEW_MODE.COURIERS]: ["repartidores"],
+    [VIEW_MODE.STOCK]: ["usuarios de stock", "historial de stock", "configuracion de stock"],
+  };
+
+  const criticalFragments = criticalFragmentsByView[viewMode] || [];
+  if (!criticalFragments.length) return [];
+  return warningList.filter((warning) => loaderWarningLabelIncludes(warning, criticalFragments));
+}
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -4473,6 +4545,15 @@ export const loader = async ({ request }) => {
           })
           .filter((plan) => Number(plan.count || 0) > 0)
       : [];
+  const visibleLoaderWarnings = visibleLoaderWarningsForView({
+    warnings: loaderWarnings,
+    viewMode,
+    visibleCourierOrders,
+    couriers,
+    preparers,
+    stockUsers,
+    stockHistoryDrafts,
+  });
 
   return {
     requests,
@@ -4487,7 +4568,7 @@ export const loader = async ({ request }) => {
     courierActivities,
     courierRouteSnapshots,
     plannedCourierRoutes,
-    loaderWarnings,
+    loaderWarnings: visibleLoaderWarnings,
     viewMode,
     shop: session.shop,
   };
