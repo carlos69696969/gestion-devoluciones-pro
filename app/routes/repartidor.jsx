@@ -573,6 +573,13 @@ function isCourierWorkableForCurrentRoute(request) {
 function shouldSkipRouteFinishReprogram({ requestId, status, routeAction }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
   const normalizedAction = String(routeAction || "").trim().toLowerCase();
+  const isDeliveryRequest = !String(requestId || "").startsWith("pickup-");
+  if (
+    isDeliveryRequest &&
+    ["no_entregado", "recoger_en_sucursal", "entregado"].includes(normalizedStatus)
+  ) {
+    return true;
+  }
   if (normalizedAction === "courier_route_order_assigned") {
     return false;
   }
@@ -2217,13 +2224,16 @@ export const loader = async ({ request }) => {
     if (currentRouteRequestIds.has(requestId)) {
       const routeAction = currentRouteActionByRequestId.get(requestId);
       const normalizedRequestStatus = String(requestRow?.status || "").trim().toLowerCase();
+      const isDeliveryOrder = String(requestRow?.courierLabel || "").trim().toLowerCase() === "entrega";
+      const isRetryableHistoricalDelivery =
+        isDeliveryOrder && ["no_entregado", "recoger_en_sucursal"].includes(normalizedRequestStatus);
       if (routeAction === COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION) {
         return null;
       }
       if (
         shouldResetAssignedOrderForCurrentRoute(routeAction) &&
         !isCourierRouteStatus(normalizedRequestStatus) &&
-        !isCourierHistoryStatus(normalizedRequestStatus)
+        (!isCourierHistoryStatus(normalizedRequestStatus) || isRetryableHistoricalDelivery)
       ) {
         return {
           ...requestRow,
