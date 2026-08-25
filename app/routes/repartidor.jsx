@@ -2785,8 +2785,11 @@ export default function RepartidorPublicPortal() {
   const branchReturnOrders = effectiveCourierOrders
     .filter((request) => {
       const action = String(request?.currentRouteAction || "").trim();
+      const normalizedStatus = String(request?.status || "").trim().toLowerCase();
+      const isDeliveryOrder = !isReturnOrder(request);
       if (["courier_mark_not_delivered", "courier_return_mark_received"].includes(action)) return true;
-      return !isReturnOrder(request) && !isCourierHistoryStatus(request?.status);
+      if (isDeliveryOrder && ["no_entregado", "recoger_en_sucursal"].includes(normalizedStatus)) return true;
+      return isDeliveryOrder && !isCourierHistoryStatus(normalizedStatus);
     })
     .sort(
       (firstRequest, secondRequest) =>
