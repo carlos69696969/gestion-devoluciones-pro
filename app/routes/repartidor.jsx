@@ -45,11 +45,6 @@ function courierPortalCookies(request) {
   };
 }
 
-function timestampParamToIso(value) {
-  const timestamp = Number(value || 0);
-  return Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp).toISOString() : "";
-}
-
 const DEFAULT_PICKUP_FAILED_REASON =
   "No logramos completar la recolección. 🚚 Visitamos tu domicilio, pero no obtuvimos respuesta al tocar la puerta ni al comunicarnos contigo. Nuestro equipo volverá a intentarlo mañana. 📦✨";
 const SECOND_PICKUP_FAILED_WARNING =
@@ -355,21 +350,6 @@ async function findActiveCourierRouteSession({ prisma, shop, courierId, routeId,
   return latestActivity?.action === COURIER_ROUTE_SESSION_STARTED_ACTION ? latestActivity : null;
 }
 
-async function hasCourierRouteFinished({ prisma, shop, courierId, routeId }) {
-  const cleanRouteId = String(routeId || "").trim();
-  if (!shop || !courierId || !cleanRouteId) return false;
-  const finishedRoute = await prisma.courierActivity.findFirst({
-    where: {
-      shop,
-      courierId: Number(courierId),
-      routeId: cleanRouteId,
-      action: "courier_route_finished",
-    },
-    select: { id: true },
-  });
-  return Boolean(finishedRoute);
-}
-
 async function getCourierDailyAccess(request, shop) {
   const { default: prisma } = await import("../db.server");
   const { dailyAccessCookie } = courierPortalCookies(request);
@@ -389,17 +369,6 @@ async function getCourierDailyAccess(request, shop) {
     select: { id: true, name: true, code: true },
   });
   if (!courier || String(access?.accessCode || "") !== courier.code) return null;
-  if (
-    access?.routeId &&
-    (await hasCourierRouteFinished({
-      prisma,
-      shop,
-      courierId: courier.id,
-      routeId: access.routeId,
-    }))
-  ) {
-    return null;
-  }
   const routeTransfer = access?.routeId
     ? await prisma.courierActivity.findFirst({
         where: {
@@ -491,16 +460,6 @@ async function recoverCourierDailyAccessFromDeviceSession(request, shop) {
   ) {
     return null;
   }
-  if (
-    await hasCourierRouteFinished({
-      prisma,
-      shop,
-      courierId: Number(sessionActivity.courierId),
-      routeId: String(sessionActivity.routeId || ""),
-    })
-  ) {
-    return null;
-  }
 
   const activeRouteSession = await findActiveCourierRouteSession({
     prisma,
@@ -574,7 +533,7 @@ function shouldSkipRouteFinishReprogram({ requestId, status, routeAction }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
   const normalizedAction = String(routeAction || "").trim().toLowerCase();
   if (normalizedAction === "courier_route_order_assigned") {
-    return !String(requestId || "").startsWith("pickup-") && normalizedStatus === "no_entregado";
+    return false;
   }
   if (
     [
@@ -590,7 +549,7 @@ function shouldSkipRouteFinishReprogram({ requestId, status, routeAction }) {
     return true;
   }
   if (!String(requestId || "").startsWith("pickup-") && normalizedStatus === "no_entregado") {
-    return true;
+    return false;
   }
   return isCourierHistoryStatus(normalizedStatus);
 }
@@ -868,7 +827,6 @@ export const action = async ({ request }) => {
         )
           .trim()
           .toLowerCase();
-        if (currentStatus === "no_entregado") return true;
         return !isCourierHistoryStatus(currentStatus);
       });
       const branchReturnRequestIdsToConfirm = visibleBranchReturnIds.length
@@ -1171,13 +1129,16 @@ export const action = async ({ request }) => {
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       });
       const transferredRouteFinished = latestTransfer?.routeId
-        ? await hasCourierRouteFinished({
-            prisma,
-            shop,
-            courierId: courier.id,
-            routeId: latestTransfer.routeId,
+        ? await prisma.courierActivity.findFirst({
+            where: {
+              shop,
+              courierId: courier.id,
+              routeId: latestTransfer.routeId,
+              action: "courier_route_finished",
+            },
+            select: { id: true },
           })
-        : false;
+        : null;
       const resumedTransfer = latestTransfer?.routeId && !transferredRouteFinished ? latestTransfer : null;
       const originalCourierName = resumedTransfer
         ? String(resumedTransfer.action || "").replace("courier_route_transferred_from:", "").trim() || courier.name
@@ -1205,13 +1166,16 @@ export const action = async ({ request }) => {
           })
         : null;
       const plannedRouteFinished = latestPlannedRoute?.routeId
-        ? await hasCourierRouteFinished({
-            prisma,
-            shop,
-            courierId: courier.id,
-            routeId: latestPlannedRoute.routeId,
+        ? await prisma.courierActivity.findFirst({
+            where: {
+              shop,
+              courierId: courier.id,
+              routeId: latestPlannedRoute.routeId,
+              action: "courier_route_finished",
+            },
+            select: { id: true },
           })
-        : false;
+        : null;
       const activeStartedRoute =
         latestPlannedRoute?.routeId && plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
       const plannedRoute =
@@ -1729,7 +1693,6 @@ export const action = async ({ request }) => {
     );
     let nextOverrideAttemptCount = String(result?.attemptCount || formData.get("currentAttemptCount") || "0");
     const nextTab =
-      intent === "courier_mark_not_delivered" ||
       intent === "courier_return_mark_received" ||
       intent === "courier_return_pickup_attempt_failed" ||
       intent === "courier_return_reject_after_failed_pickups"
@@ -1778,7 +1741,6 @@ export const loader = async ({ request }) => {
   const overrideRequestId = String(url.searchParams.get("overrideRequestId") || "").trim();
   const overrideStatus = String(url.searchParams.get("overrideStatus") || "").trim().toLowerCase();
   const overrideAttemptCount = Math.max(0, Number(url.searchParams.get("overrideAttemptCount") || "0"));
-  const overrideHistoryAt = timestampParamToIso(url.searchParams.get("updated"));
 
   if (freshAccess) {
     if (courierPortalSessionId(request) === "default") {
@@ -1990,18 +1952,11 @@ export const loader = async ({ request }) => {
         return requestRow;
       }
 
-      const nextRequest = {
+      return {
         ...requestRow,
         status: overrideStatus,
         attemptCount: overrideAttemptCount || Number(requestRow?.attemptCount || 0),
       };
-      if (
-        overrideStatus === "no_entregado" &&
-        String(requestRow?.courierLabel || "").trim().toLowerCase() === "entrega"
-      ) {
-        nextRequest.courierHistoryAt = overrideHistoryAt || requestRow?.courierHistoryAt || "";
-      }
-      return nextRequest;
     });
   }
 
@@ -2217,11 +2172,11 @@ export const loader = async ({ request }) => {
     const requestId = String(requestRow?.id || "").trim();
     if (currentRouteRequestIds.has(requestId)) {
       const routeAction = currentRouteActionByRequestId.get(requestId);
-      const isCurrentOverrideTarget = overrideRequestId && requestId === overrideRequestId && overrideStatus;
+      const normalizedRequestStatus = String(requestRow?.status || "").trim().toLowerCase();
       if (routeAction === COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION) {
         return null;
       }
-      if (shouldResetAssignedOrderForCurrentRoute(routeAction) && !isCurrentOverrideTarget) {
+      if (shouldResetAssignedOrderForCurrentRoute(routeAction) && !isCourierRouteStatus(normalizedRequestStatus)) {
         return {
           ...requestRow,
           status: "pendiente",
@@ -2331,14 +2286,6 @@ export default function RepartidorPublicPortal() {
   const [isOnline, setIsOnline] = useState(true);
   const [offlineSyncMessage, setOfflineSyncMessage] = useState("");
   const courierSessionKey = courierPortalSessionStorageKey(shop);
-  const courierAccessIdentity = requiresDailyAccess
-    ? "login"
-    : `${shop || ""}:${courierName || ""}:${transferredFromName || ""}:${transferredToName || ""}`;
-
-  useEffect(() => {
-    setShowBranchReturnConfirmation(false);
-    setBranchReturnConfirmationError("");
-  }, [courierAccessIdentity]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2481,14 +2428,7 @@ export default function RepartidorPublicPortal() {
             {actionData?.loginError ? (
               <p className={styles.accessError} role="alert">{actionData.loginError}</p>
             ) : null}
-            <Form
-              method="post"
-              className={styles.accessForm}
-              onSubmit={() => {
-                setShowBranchReturnConfirmation(false);
-                setBranchReturnConfirmationError("");
-              }}
-            >
+            <Form method="post" className={styles.accessForm}>
               <input type="hidden" name="intent" value="courier_daily_login" />
               <input type="hidden" name="shop" value={shop || ""} />
               <input
@@ -2727,7 +2667,6 @@ export default function RepartidorPublicPortal() {
   const overrideRequestId = String(searchParams.get("overrideRequestId") || "").trim();
   const overrideStatus = String(searchParams.get("overrideStatus") || "").trim().toLowerCase();
   const overrideAttemptCount = Math.max(0, Number(searchParams.get("overrideAttemptCount") || "0"));
-  const overrideHistoryAt = timestampParamToIso(searchParams.get("updated"));
   const effectiveCourierOrders = courierOrders.map((request) =>
     (() => {
       const isOverrideTarget = overrideRequestId && String(request?.id || "").trim() === overrideRequestId;
@@ -2740,19 +2679,11 @@ export default function RepartidorPublicPortal() {
         ? overrideAttemptCount || Number(request?.attemptCount || 0)
         : Number(request?.attemptCount || 0);
       const status = canApplyOverride ? overrideStatus || request?.status || "pendiente" : request?.status;
-      const nextRequest = {
+      return {
         ...request,
         status: status === "no_entregado" && attemptCount >= 3 ? "recoger_en_sucursal" : status,
         attemptCount,
       };
-      if (
-        canApplyOverride &&
-        status === "no_entregado" &&
-        String(request?.courierLabel || "").trim().toLowerCase() === "entrega"
-      ) {
-        nextRequest.courierHistoryAt = overrideHistoryAt || request?.courierHistoryAt || "";
-      }
-      return nextRequest;
     })(),
   );
   const historyOrders = effectiveCourierOrders
@@ -2791,9 +2722,7 @@ export default function RepartidorPublicPortal() {
     .filter((request) => {
       const action = String(request?.currentRouteAction || "").trim();
       if (["courier_mark_not_delivered", "courier_return_mark_received"].includes(action)) return true;
-      const normalizedStatus = String(request?.status || "").trim().toLowerCase();
-      if (!isReturnOrder(request) && normalizedStatus === "no_entregado") return true;
-      return !isReturnOrder(request) && !isCourierHistoryStatus(normalizedStatus);
+      return !isReturnOrder(request) && !isCourierHistoryStatus(request?.status);
     })
     .sort(
       (firstRequest, secondRequest) =>
@@ -2802,8 +2731,7 @@ export default function RepartidorPublicPortal() {
   const activeOrdersCount = pendingOrders.length + routeOrders.length;
   const dailyOrdersCount = activeOrdersCount + historyOrders.length;
   const routeOrder = routeOrders[0] || null;
-  const pendingPreviewOrder =
-    pendingOrders.find((request) => !isCourierFinalRouteAction(request?.currentRouteAction)) || null;
+  const pendingPreviewOrder = pendingOrders[0] || null;
   const visibleOrders =
     activeTab === "en_ruta"
       ? routeOrder
