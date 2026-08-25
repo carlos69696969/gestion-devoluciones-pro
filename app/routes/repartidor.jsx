@@ -538,7 +538,7 @@ function shouldSkipRouteFinishReprogram({ requestId, status, routeAction }) {
   const normalizedStatus = String(status || "").trim().toLowerCase();
   const normalizedAction = String(routeAction || "").trim().toLowerCase();
   if (normalizedAction === "courier_route_order_assigned") {
-    return false;
+    return !String(requestId || "").startsWith("pickup-") && normalizedStatus === "no_entregado";
   }
   if (
     [
@@ -554,7 +554,7 @@ function shouldSkipRouteFinishReprogram({ requestId, status, routeAction }) {
     return true;
   }
   if (!String(requestId || "").startsWith("pickup-") && normalizedStatus === "no_entregado") {
-    return false;
+    return true;
   }
   return isCourierHistoryStatus(normalizedStatus);
 }
@@ -832,6 +832,7 @@ export const action = async ({ request }) => {
         )
           .trim()
           .toLowerCase();
+        if (currentStatus === "no_entregado") return true;
         return !isCourierHistoryStatus(currentStatus);
       });
       const branchReturnRequestIdsToConfirm = visibleBranchReturnIds.length
@@ -2749,7 +2750,9 @@ export default function RepartidorPublicPortal() {
     .filter((request) => {
       const action = String(request?.currentRouteAction || "").trim();
       if (["courier_mark_not_delivered", "courier_return_mark_received"].includes(action)) return true;
-      return !isReturnOrder(request) && !isCourierHistoryStatus(request?.status);
+      const normalizedStatus = String(request?.status || "").trim().toLowerCase();
+      if (!isReturnOrder(request) && normalizedStatus === "no_entregado") return true;
+      return !isReturnOrder(request) && !isCourierHistoryStatus(normalizedStatus);
     })
     .sort(
       (firstRequest, secondRequest) =>
