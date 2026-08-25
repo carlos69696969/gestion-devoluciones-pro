@@ -3,6 +3,7 @@ import {
   dedupeCourierRequestsByOrderNumber,
   courierOrderTimestampMs,
   getCourierDeliveryAttemptCountFromTags,
+  getCourierRouteStepFromTags,
   getCourierRouteStatusFromTags,
 } from "./courier.shared";
 
@@ -570,6 +571,53 @@ async function getMaxCourierFailedDeliveryAttempt({ shopDomain, requestId, order
     orderNumber,
     statuses: ["no_entregado", "recoger_en_sucursal"],
   });
+}
+
+function hasConflictingCourierDeliveryTags(tags) {
+  const normalizedTags = new Set((Array.isArray(tags) ? tags : []).map(normalizeCourierTag));
+  const routeStep = getCourierRouteStepFromTags(tags);
+  if (!routeStep) return false;
+  return (
+    normalizedTags.has("reprogramado") ||
+    normalizedTags.has("rpfdt") ||
+    normalizedTags.has("reintentar entrega") ||
+    normalizedTags.has("no entregado") ||
+    normalizedTags.has("recoger en sucursal")
+  );
+}
+
+async function getLatestCourierDeliveryEventState({ shopDomain, requestId, orderNumber }) {
+  const shop = normalizeShop(shopDomain);
+  const cleanRequestId = String(requestId || "").trim();
+  const cleanOrderNumber = String(orderNumber || "").replace(/^#/, "").trim();
+  const references = [];
+  if (cleanRequestId) references.push({ requestId: cleanRequestId });
+  if (cleanOrderNumber) references.push({ orderNumber: cleanOrderNumber });
+  if (!shop || !references.length) return null;
+
+  try {
+    return await prisma.courierEvent.findFirst({
+      where: {
+        shop,
+        status: {
+          in: [
+            "en_ruta_1",
+            "en_ruta_2",
+            "en_ruta_3",
+            "no_entregado",
+            "recoger_en_sucursal",
+            "reintento_pendiente",
+          ],
+        },
+        OR: references,
+      },
+      select: { status: true, attempt: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+  } catch (error) {
+    console.error("Courier latest event state is not available yet", error);
+    return null;
+  }
 }
 
 const COURIER_STATUS_TAGS = [
@@ -2646,6 +2694,15 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
   const isShopifyDelivered = fulfillmentStatus === "FULFILLED";
   const orderNumber = String(orderNode.name || "").replace("#", "");
   const tagAttemptCount = getCourierDeliveryAttemptCountFromTags(orderNode.tags);
+  const tagStatus = getCourierRouteStatusFromTags(orderNode.tags);
+  const latestDeliveryEvent = !isShopifyDelivered && hasConflictingCourierDeliveryTags(courierTags)
+    ? await getLatestCourierDeliveryEventState({
+        shopDomain: shop,
+        requestId: orderNode.id,
+        orderNumber,
+      })
+    : null;
+  const latestEventAttemptCount = Math.max(0, Number(latestDeliveryEvent?.attempt || 0) || 0);
   const failedAttemptCount = isShopifyDelivered
     ? 0
     : await getMaxCourierFailedDeliveryAttempt({
@@ -2653,7 +2710,7 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
         requestId: orderNode.id,
         orderNumber,
       });
-  const attemptCount = Math.max(tagAttemptCount, failedAttemptCount);
+  const attemptCount = Math.max(latestDeliveryEvent ? latestEventAttemptCount : tagAttemptCount, failedAttemptCount);
   const scheduledDate = await getLatestCourierDeliveryDate({
     shopDomain: shop,
     requestId: orderNode.id,
@@ -2701,7 +2758,9 @@ async function mapShopifyOrderNodeToCourierOrder({ shop, orderNode }) {
     createdAt: orderNode.createdAt,
     updatedAt: orderNode.updatedAt || orderNode.createdAt,
     courierHistoryAt: isShopifyDelivered ? deliveredAt : orderNode.updatedAt || "",
-    status: isShopifyDelivered ? "entregado" : getCourierRouteStatusFromTags(orderNode.tags),
+    status: isShopifyDelivered
+      ? "entregado"
+      : String(latestDeliveryEvent?.status || tagStatus || "pendiente").trim().toLowerCase(),
     attemptCount,
     courierLabel: "Entrega",
     estimatedRefund: Number(orderNode.currentTotalPriceSet?.shopMoney?.amount || 0),
