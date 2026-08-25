@@ -2305,6 +2305,14 @@ export default function RepartidorPublicPortal() {
   const [isOnline, setIsOnline] = useState(true);
   const [offlineSyncMessage, setOfflineSyncMessage] = useState("");
   const courierSessionKey = courierPortalSessionStorageKey(shop);
+  const courierAccessIdentity = requiresDailyAccess
+    ? "login"
+    : `${shop || ""}:${courierName || ""}:${transferredFromName || ""}:${transferredToName || ""}`;
+
+  useEffect(() => {
+    setShowBranchReturnConfirmation(false);
+    setBranchReturnConfirmationError("");
+  }, [courierAccessIdentity]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
