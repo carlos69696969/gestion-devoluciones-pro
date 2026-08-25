@@ -6626,8 +6626,13 @@ function formatCourierDateFilterLabel(dateKey) {
   });
 }
 
+function effectiveCourierScheduleDate(request) {
+  if (isReturnCourierLabel(request?.courierLabel)) return request?.pickupDate;
+  return buildAdminCourierPresentation(request).scheduledDate || request?.pickupDate;
+}
+
 function courierDateKey(request) {
-  return mexicoDateKey(request?.pickupDate);
+  return mexicoDateKey(effectiveCourierScheduleDate(request));
 }
 
 function branchPickupDeadlineSourceDate(request, displayedScheduledDate) {
