@@ -1287,6 +1287,10 @@
   color: #005bd3;
 }
 
+.courierDateTestSwitch {
+  margin: 0 0 10px;
+}
+
 .courierOrdersActions {
   position: relative;
   display: flex;
