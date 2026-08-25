@@ -6769,7 +6769,8 @@ export default function ReturnsRequests() {
   const isExpiringBranchDeliveryRequests = branchDeliveryExpirationFetcher.state !== "idle";
   const todayCourierDateKey = mexicoDateKey(new Date());
   const tomorrowCourierDateKey = addDaysToDateKey(todayCourierDateKey, 1);
-  const selectedCourierDateKey = courierDateScope === "tomorrow" ? tomorrowCourierDateKey : todayCourierDateKey;
+  const isCourierTomorrowScope = courierDateScope === "tomorrow";
+  const selectedCourierDateKey = isCourierTomorrowScope ? tomorrowCourierDateKey : todayCourierDateKey;
   const courierDateOptions = [
     { value: "today", title: "Hoy", dateKey: todayCourierDateKey },
     { value: "tomorrow", title: "Mañana", dateKey: tomorrowCourierDateKey },
@@ -7547,7 +7548,11 @@ export default function ReturnsRequests() {
                       );
                     })}
                   </div>
-                  <div className={styles.courierOrdersCountGroup}>
+                  <div
+                    className={`${styles.courierOrdersCountGroup} ${
+                      isCourierTomorrowScope ? styles.courierOrdersCountGroupInline : ""
+                    }`}
+                  >
                     <span className={styles.courierOrdersCount}>Numero de ordenes de entrega: {courierDeliveryOrders.length}</span>
                     <span className={styles.courierOrdersCount}>Numero de devoluciones: {courierReturnOrders.length}</span>
                   </div>
@@ -7568,6 +7573,7 @@ export default function ReturnsRequests() {
                     </div>
                   ) : null}
                 </div>
+                {!isCourierTomorrowScope ? (
                 <div className={styles.courierOrdersActions}>
                   <div className={styles.courierMoreActions}>
                     <button
@@ -7639,6 +7645,7 @@ export default function ReturnsRequests() {
                     Distribuir rutas automaticamente
                   </button>
                 </div>
+                ) : null}
               </div>
               {courierBulkMode ? (
                 <courierRouteFetcher.Form
