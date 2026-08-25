@@ -6781,11 +6781,12 @@ export default function ReturnsRequests() {
     { value: "today", title: "Hoy", dateKey: todayCourierDateKey },
     { value: "tomorrow", title: "Mañana", dateKey: tomorrowCourierDateKey },
   ];
-  const courierTodayDateLimitKey = includeTomorrowCourierOrdersInToday ? tomorrowCourierDateKey : todayCourierDateKey;
   const courierDateFilteredOrders = courierOrders.filter((order) => {
     const orderDateKey = courierDateKey(order);
     if (!orderDateKey) return false;
-    return isCourierTomorrowScope ? orderDateKey === selectedCourierDateKey : orderDateKey <= courierTodayDateLimitKey;
+    if (isCourierTomorrowScope) return orderDateKey === selectedCourierDateKey;
+    if (includeTomorrowCourierOrdersInToday) return true;
+    return orderDateKey <= todayCourierDateKey;
   });
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
   const selectedCourierBulkOrderIdSet = new Set(selectedCourierBulkOrderIds.map((orderId) => String(orderId)));
@@ -7571,7 +7572,7 @@ export default function ReturnsRequests() {
                       }}
                     />
                     <span className={styles.branchPickupTestSlider} aria-hidden="true" />
-                    Modo prueba: incluir mañana en Hoy
+                    Modo prueba: incluir todas las fechas en Hoy
                   </label>
                   <div
                     className={`${styles.courierOrdersCountGroup} ${
