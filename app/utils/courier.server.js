@@ -1666,7 +1666,19 @@ export async function markCourierOrderAsNotDelivered({
     rescheduledDateLabel,
   });
   if (!notificationResult?.ok) {
-    return { ok: false, error: notificationResult?.error || "No se pudo enviar la notificacion." };
+    console.error("Courier not-delivered notification failed after state update", {
+      shopDomain,
+      orderNumber: requestRow.orderNumber,
+      attemptCount: nextAttemptCount,
+      error: notificationResult?.error || "No se pudo enviar la notificacion.",
+    });
+    return {
+      ok: true,
+      requestRow,
+      nextStatus,
+      attemptCount: nextAttemptCount,
+      notificationWarning: notificationResult?.error || "No se pudo enviar la notificacion.",
+    };
   }
 
   return { ok: true, requestRow, nextStatus, attemptCount: nextAttemptCount };
