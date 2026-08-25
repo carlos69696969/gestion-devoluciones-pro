@@ -355,6 +355,21 @@ async function findActiveCourierRouteSession({ prisma, shop, courierId, routeId,
   return latestActivity?.action === COURIER_ROUTE_SESSION_STARTED_ACTION ? latestActivity : null;
 }
 
+async function hasCourierRouteFinished({ prisma, shop, courierId, routeId }) {
+  const cleanRouteId = String(routeId || "").trim();
+  if (!shop || !courierId || !cleanRouteId) return false;
+  const finishedRoute = await prisma.courierActivity.findFirst({
+    where: {
+      shop,
+      courierId: Number(courierId),
+      routeId: cleanRouteId,
+      action: "courier_route_finished",
+    },
+    select: { id: true },
+  });
+  return Boolean(finishedRoute);
+}
+
 async function getCourierDailyAccess(request, shop) {
   const { default: prisma } = await import("../db.server");
   const { dailyAccessCookie } = courierPortalCookies(request);
@@ -374,6 +389,17 @@ async function getCourierDailyAccess(request, shop) {
     select: { id: true, name: true, code: true },
   });
   if (!courier || String(access?.accessCode || "") !== courier.code) return null;
+  if (
+    access?.routeId &&
+    (await hasCourierRouteFinished({
+      prisma,
+      shop,
+      courierId: courier.id,
+      routeId: access.routeId,
+    }))
+  ) {
+    return null;
+  }
   const routeTransfer = access?.routeId
     ? await prisma.courierActivity.findFirst({
         where: {
@@ -462,6 +488,16 @@ async function recoverCourierDailyAccessFromDeviceSession(request, shop) {
   if (
     !sessionActivity ||
     courierMexicoDateKey(sessionActivity.createdAt || new Date()) !== courierMexicoDateKey(new Date())
+  ) {
+    return null;
+  }
+  if (
+    await hasCourierRouteFinished({
+      prisma,
+      shop,
+      courierId: Number(sessionActivity.courierId),
+      routeId: String(sessionActivity.routeId || ""),
+    })
   ) {
     return null;
   }
@@ -1134,16 +1170,13 @@ export const action = async ({ request }) => {
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       });
       const transferredRouteFinished = latestTransfer?.routeId
-        ? await prisma.courierActivity.findFirst({
-            where: {
-              shop,
-              courierId: courier.id,
-              routeId: latestTransfer.routeId,
-              action: "courier_route_finished",
-            },
-            select: { id: true },
+        ? await hasCourierRouteFinished({
+            prisma,
+            shop,
+            courierId: courier.id,
+            routeId: latestTransfer.routeId,
           })
-        : null;
+        : false;
       const resumedTransfer = latestTransfer?.routeId && !transferredRouteFinished ? latestTransfer : null;
       const originalCourierName = resumedTransfer
         ? String(resumedTransfer.action || "").replace("courier_route_transferred_from:", "").trim() || courier.name
@@ -1171,16 +1204,13 @@ export const action = async ({ request }) => {
           })
         : null;
       const plannedRouteFinished = latestPlannedRoute?.routeId
-        ? await prisma.courierActivity.findFirst({
-            where: {
-              shop,
-              courierId: courier.id,
-              routeId: latestPlannedRoute.routeId,
-              action: "courier_route_finished",
-            },
-            select: { id: true },
+        ? await hasCourierRouteFinished({
+            prisma,
+            shop,
+            courierId: courier.id,
+            routeId: latestPlannedRoute.routeId,
           })
-        : null;
+        : false;
       const activeStartedRoute =
         latestPlannedRoute?.routeId && plannedRouteStarted && !plannedRouteFinished ? latestPlannedRoute : null;
       const plannedRoute =
@@ -2446,7 +2476,14 @@ export default function RepartidorPublicPortal() {
             {actionData?.loginError ? (
               <p className={styles.accessError} role="alert">{actionData.loginError}</p>
             ) : null}
-            <Form method="post" className={styles.accessForm}>
+            <Form
+              method="post"
+              className={styles.accessForm}
+              onSubmit={() => {
+                setShowBranchReturnConfirmation(false);
+                setBranchReturnConfirmationError("");
+              }}
+            >
               <input type="hidden" name="intent" value="courier_daily_login" />
               <input type="hidden" name="shop" value={shop || ""} />
               <input
