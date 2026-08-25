@@ -1242,6 +1242,45 @@
   gap: 6px;
 }
 
+.courierDateFilterGroup {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(430px, 100%);
+  margin-bottom: 10px;
+}
+
+.courierDateFilterButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.courierDateFilterButton strong {
+  color: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.courierDateFilterButton:hover,
+.courierDateFilterButtonActive {
+  border-color: #005bd3;
+  background: #eaf2ff;
+  color: #005bd3;
+}
+
 .courierOrdersActions {
   position: relative;
   display: flex;

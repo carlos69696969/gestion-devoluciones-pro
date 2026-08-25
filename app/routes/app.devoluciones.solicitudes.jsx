@@ -6615,6 +6615,21 @@ function formatCourierScheduledDate(pickupDate) {
   return [weekday, day, month, year].filter(Boolean).join(" ");
 }
 
+function formatCourierDateFilterLabel(dateKey) {
+  const raw = String(dateKey || "").trim();
+  if (!raw) return "";
+  const date = new Date(`${raw}T12:00:00`);
+  if (!Number.isFinite(date.getTime())) return raw;
+  return date.toLocaleDateString("es-MX", {
+    day: "2-digit",
+    month: "long",
+  });
+}
+
+function courierDateKey(request) {
+  return mexicoDateKey(request?.pickupDate);
+}
+
 function branchPickupDeadlineSourceDate(request, displayedScheduledDate) {
   const branchEvent = [
     ...(Array.isArray(request?.historyEvents) ? request.historyEvents : []),
@@ -6745,15 +6760,26 @@ export default function ReturnsRequests() {
   const [courierRefundRequest, setCourierRefundRequest] = useState(null);
   const [selectedCourierRefundUnitKeys, setSelectedCourierRefundUnitKeys] = useState([]);
   const [showOnlyNotLocatedCourierOrders, setShowOnlyNotLocatedCourierOrders] = useState(false);
+  const [courierDateScope, setCourierDateScope] = useState("today");
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
   const [branchPickupRefundTestMode, setBranchPickupRefundTestMode] = useState(false);
   const [notReturnedTestMode, setNotReturnedTestMode] = useState(false);
   const isExpiringBranchDeliveryRequests = branchDeliveryExpirationFetcher.state !== "idle";
+  const todayCourierDateKey = mexicoDateKey(new Date());
+  const tomorrowCourierDateKey = addDaysToDateKey(todayCourierDateKey, 1);
+  const selectedCourierDateKey = courierDateScope === "tomorrow" ? tomorrowCourierDateKey : todayCourierDateKey;
+  const courierDateOptions = [
+    { value: "today", title: "Hoy", dateKey: todayCourierDateKey },
+    { value: "tomorrow", title: "Mañana", dateKey: tomorrowCourierDateKey },
+  ];
+  const courierDateFilteredOrders = courierOrders.filter(
+    (order) => courierDateKey(order) === selectedCourierDateKey,
+  );
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
   const selectedCourierBulkOrderIdSet = new Set(selectedCourierBulkOrderIds.map((orderId) => String(orderId)));
-  const selectedCourierBulkOrders = courierOrders.filter((order) =>
+  const selectedCourierBulkOrders = courierDateFilteredOrders.filter((order) =>
     selectedCourierBulkOrderIdSet.has(String(order.id || "")),
   );
   const selectedCourierBulkTotal = selectedCourierBulkOrders.reduce(
@@ -6805,15 +6831,15 @@ export default function ReturnsRequests() {
   const selectedCourierRefundCurrency =
     courierRefundRequest?.currencyCode || selectedCourierRefundItems[0]?.currencyCode || "MXN";
   const canConfirmCourierRoutePlan =
-    selectedCourierIds.length > 0 && courierOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
+    selectedCourierIds.length > 0 && courierDateFilteredOrders.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
   const canConfirmCourierBulkAction =
     selectedCourierBulkOrderIds.length > 0 && !isSubmitting && !isCourierRouteSubmitting;
-  const notLocatedCourierOrders = courierOrders.filter(
+  const notLocatedCourierOrders = courierDateFilteredOrders.filter(
     (order) => String(order.status || "").trim().toLowerCase() === "no_localizado",
   );
-  const courierDeliveryOrders = courierOrders.filter((order) => !isReturnCourierLabel(order.courierLabel));
-  const courierReturnOrders = courierOrders.filter((order) => isReturnCourierLabel(order.courierLabel));
-  const visibleCourierOrders = showOnlyNotLocatedCourierOrders ? notLocatedCourierOrders : courierOrders;
+  const courierDeliveryOrders = courierDateFilteredOrders.filter((order) => !isReturnCourierLabel(order.courierLabel));
+  const courierReturnOrders = courierDateFilteredOrders.filter((order) => isReturnCourierLabel(order.courierLabel));
+  const visibleCourierOrders = showOnlyNotLocatedCourierOrders ? notLocatedCourierOrders : courierDateFilteredOrders;
   const courierRouteActionData = courierRouteFetcher.data || null;
   const branchPickupDeliveryActionData = branchPickupDeliveryFetcher.data || null;
   const branchPickupRefundActionData = branchPickupRefundFetcher.data || null;
@@ -7134,9 +7160,31 @@ export default function ReturnsRequests() {
   const courierRouteSearchParams = new URLSearchParams(location.search);
   const selectedRouteCourierId = Number(courierRouteSearchParams.get("routeCourierId") || 0);
   const selectedRouteId = String(courierRouteSearchParams.get("routeId") || "").trim();
+  const courierDateFilteredOrderIdSet = new Set(
+    courierDateFilteredOrders.map((order) => String(order.id || "").trim()).filter(Boolean),
+  );
+  const courierDateFilteredOrderNumberSet = new Set(
+    courierDateFilteredOrders.map((order) => String(order.orderNumber || "").trim()).filter(Boolean),
+  );
+  const visiblePlannedCourierRoutes = plannedCourierRoutes
+    .map((plan) => {
+      const requestIds = (plan.requestIds || []).filter((requestId) =>
+        courierDateFilteredOrderIdSet.has(String(requestId || "").trim()),
+      );
+      const orderNumbers = (plan.orderNumbers || []).filter((orderNumber) =>
+        courierDateFilteredOrderNumberSet.has(String(orderNumber || "").trim()),
+      );
+      return {
+        ...plan,
+        requestIds,
+        orderNumbers,
+        count: Math.max(requestIds.length, orderNumbers.length),
+      };
+    })
+    .filter((plan) => Number(plan.count || 0) > 0);
   const selectedCourierRoutePlan =
     selectedRouteCourierId && selectedRouteId
-      ? plannedCourierRoutes.find(
+      ? visiblePlannedCourierRoutes.find(
           (plan) =>
             Number(plan.courierId) === selectedRouteCourierId &&
             String(plan.routeId || "") === selectedRouteId,
@@ -7152,7 +7200,7 @@ export default function ReturnsRequests() {
     (selectedCourierRoutePlan?.orderNumbers || []).map((orderNumber) => String(orderNumber)),
   );
   const selectedCourierRouteOrders = selectedCourierRoutePlan
-    ? courierOrders.filter(
+    ? courierDateFilteredOrders.filter(
         (order) =>
           selectedCourierRouteRequestIds.has(String(order.id || "")) ||
           selectedCourierRouteOrderNumbers.has(String(order.orderNumber || "")),
@@ -7170,7 +7218,7 @@ export default function ReturnsRequests() {
     const query = nextParams.toString();
     return query ? `${location.pathname}?${query}` : location.pathname;
   };
-  const courierRouteOrdersPayload = courierOrders.map((order, index) => ({
+  const courierRouteOrdersPayload = courierDateFilteredOrders.map((order, index) => ({
     id: order.id,
     orderNumber: order.orderNumber,
     courierLabel: order.courierLabel,
@@ -7473,13 +7521,39 @@ export default function ReturnsRequests() {
             <>
               <div className={styles.courierOrdersHeader}>
                 <div>
+                  <div className={styles.courierDateFilterGroup}>
+                    {courierDateOptions.map((option) => {
+                      const isSelected = courierDateScope === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          className={`${styles.courierDateFilterButton} ${
+                            isSelected ? styles.courierDateFilterButtonActive : ""
+                          }`}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => {
+                            setCourierDateScope(option.value);
+                            setShowOnlyNotLocatedCourierOrders(false);
+                            setCourierBulkMode("");
+                            setSelectedCourierBulkOrderIds([]);
+                            setCourierRefundRequest(null);
+                            setSelectedCourierRefundUnitKeys([]);
+                          }}
+                        >
+                          <span>{option.title}</span>
+                          <strong>{formatCourierDateFilterLabel(option.dateKey)}</strong>
+                        </button>
+                      );
+                    })}
+                  </div>
                   <div className={styles.courierOrdersCountGroup}>
                     <span className={styles.courierOrdersCount}>Numero de ordenes de entrega: {courierDeliveryOrders.length}</span>
                     <span className={styles.courierOrdersCount}>Numero de devoluciones: {courierReturnOrders.length}</span>
                   </div>
-                  {plannedCourierRoutes.length ? (
+                  {visiblePlannedCourierRoutes.length ? (
                     <div className={styles.courierRoutePlanSummary}>
-                      {plannedCourierRoutes.map((plan) => {
+                      {visiblePlannedCourierRoutes.map((plan) => {
                         const courier = couriers.find((item) => Number(item.id) === Number(plan.courierId));
                         return (
                           <Link
@@ -7552,7 +7626,7 @@ export default function ReturnsRequests() {
                   <button
                     className={`${styles.btn} ${styles.btnPrimary}`}
                     type="button"
-                    disabled={isSubmitting || couriers.length === 0 || courierOrders.length === 0}
+                    disabled={isSubmitting || couriers.length === 0 || courierDateFilteredOrders.length === 0}
                     onClick={() => {
                       setCourierBulkMode("");
                       setSelectedCourierBulkOrderIds([]);
@@ -7670,7 +7744,7 @@ export default function ReturnsRequests() {
                     name="routeOrdersJson"
                     value={JSON.stringify(courierRouteOrdersPayload)}
                   />
-                  {courierOrders.map((order) => (
+                  {courierDateFilteredOrders.map((order) => (
                     <input key={order.id} type="hidden" name="routeOrderIds" value={String(order.id || "")} />
                   ))}
                   <div className={styles.courierRouteCourierList}>
