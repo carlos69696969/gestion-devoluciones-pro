@@ -417,10 +417,11 @@ export const loader = async ({ request }) => {
   const cachedCounts = cachedNavCounts(session.shop);
   const staleCounts = cachedNavCounts(session.shop, { allowStale: true });
   const refreshPromise = refreshNavCounts(admin, session);
-  const navCounts = cachedCounts || await Promise.race([
-    refreshPromise,
-    wait(900).then(() => staleCounts || NAV_COUNTS_EMPTY),
-  ]);
+  const navCounts =
+    cachedCounts ||
+    (staleCounts
+      ? await Promise.race([refreshPromise, wait(900).then(() => staleCounts)])
+      : await refreshPromise);
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "", navCounts, shop: session.shop };
@@ -431,7 +432,7 @@ export default function App() {
   const navigation = useNavigation();
   const isNavigating = navigation.state === "loading";
   const location = useLocation();
-  const withCount = (label, count) => (count > 0 ? `${label} (${count})` : label);
+  const withCount = (label, count) => `${label} (${Math.max(0, Number(count || 0))})`;
   const navParams = new URLSearchParams(location.search || "");
   const shop = String(navParams.get("shop") || sessionShop || "").trim();
   const host = String(navParams.get("host") || "").trim();
