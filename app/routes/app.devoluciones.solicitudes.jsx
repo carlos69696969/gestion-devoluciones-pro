@@ -3699,24 +3699,44 @@ async function refundExpiredBranchPickupOrdersForShop(admin, shopDomain, ordersF
   return { refundedCount, refundedRequestIds, failedRefunds };
 }
 
-async function safeLoaderArray(label, callback) {
-  try {
-    const result = await callback();
-    return Array.isArray(result) ? result : [];
-  } catch (error) {
-    console.error(label, error);
-    return [];
-  }
+function recordLoaderWarning(warnings, label, error) {
+  if (!Array.isArray(warnings)) return;
+  warnings.push({
+    label,
+    message: String(error?.message || error || "Error desconocido"),
+  });
 }
 
-async function safeLoaderValue(label, fallback, callback) {
-  try {
-    const result = await callback();
-    return result ?? fallback;
-  } catch (error) {
-    console.error(label, error);
-    return fallback;
+async function safeLoaderArray(label, callback, warnings = null) {
+  let lastError = null;
+  for (const delayMs of [0, 250]) {
+    if (delayMs) await wait(delayMs);
+    try {
+      const result = await callback();
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      lastError = error;
+    }
   }
+  console.error(label, lastError);
+  recordLoaderWarning(warnings, label, lastError);
+  return [];
+}
+
+async function safeLoaderValue(label, fallback, callback, warnings = null) {
+  let lastError = null;
+  for (const delayMs of [0, 250]) {
+    if (delayMs) await wait(delayMs);
+    try {
+      const result = await callback();
+      return result ?? fallback;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  console.error(label, lastError);
+  recordLoaderWarning(warnings, label, lastError);
+  return fallback;
 }
 
 function wait(ms) {
@@ -3750,6 +3770,9 @@ export const loader = async ({ request }) => {
   const requestedHistoryDate = String(url.searchParams.get("date") || "").trim();
   const requestedHistoryRouteId = String(url.searchParams.get("routeId") || "").trim();
   const requestedHistoryCourierId = Number(url.searchParams.get("courierId") || 0);
+  const loaderWarnings = [];
+  const loadArray = (label, callback) => safeLoaderArray(label, callback, loaderWarnings);
+  const loadValue = (label, fallback, callback) => safeLoaderValue(label, fallback, callback, loaderWarnings);
   const shouldLoadCourierHistoryActivity = viewMode === VIEW_MODE.COURIER_HISTORY && Boolean(requestedHistoryView);
   const shouldLoadCourierHistoryOrders =
     viewMode === VIEW_MODE.COURIER_HISTORY &&
@@ -3760,7 +3783,7 @@ export const loader = async ({ request }) => {
     viewMode === VIEW_MODE.COURIER_HISTORY
       ? new Set(
           (
-            await safeLoaderArray("No se pudieron cargar las ordenes purgadas del historial repartidor", () =>
+            await loadArray("No se pudieron cargar las ordenes purgadas del historial repartidor", () =>
               prisma.courierHistoryPurge.findMany({
                 where: { shop: session.shop },
                 select: { requestId: true },
@@ -3836,7 +3859,7 @@ export const loader = async ({ request }) => {
   let courierOrdersRaw = [];
   if (viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS) {
     const [activeRouteOrders, deliveryAdminOrders, sharedDeliveryOrders, pickupOrders] = await Promise.all([
-      safeLoaderArray("No se pudieron cargar las ordenes de rutas activas para repartidor/preparador", async () => {
+      loadArray("No se pudieron cargar las ordenes de rutas activas para repartidor/preparador", async () => {
         const activeRequestIds = await activeCourierRouteAssignmentRequestIds(session.shop);
         return fetchCourierOrdersByIdsForShop({
           shop: session.shop,
@@ -3844,16 +3867,16 @@ export const loader = async ({ request }) => {
           orderIds: activeRequestIds,
         });
       }),
-      safeLoaderArray("No se pudieron cargar las ordenes de entrega para repartidor/preparador", () =>
+      loadArray("No se pudieron cargar las ordenes de entrega para repartidor/preparador", () =>
         fetchCourierOrders(admin),
       ),
-      safeLoaderArray("No se pudieron cargar las ordenes de entrega compartidas para repartidor/preparador", () =>
+      loadArray("No se pudieron cargar las ordenes de entrega compartidas para repartidor/preparador", () =>
         fetchCourierOrdersForShop({
           shop: session.shop,
           sessionCandidates: [session],
         }),
       ),
-      safeLoaderArray("No se pudieron cargar las devoluciones de recoleccion para repartidor/preparador", () =>
+      loadArray("No se pudieron cargar las devoluciones de recoleccion para repartidor/preparador", () =>
         fetchPickupCourierOrders(session.shop),
       ),
     ]);
@@ -3867,13 +3890,13 @@ export const loader = async ({ request }) => {
     ];
   } else if (viewMode === VIEW_MODE.BRANCH_PICKUP) {
     const [sharedBranchPickupOrders, branchPickupOrders] = await Promise.all([
-      safeLoaderArray("No se pudieron cargar las ordenes para recoger en sucursal desde el contador", () =>
+      loadArray("No se pudieron cargar las ordenes para recoger en sucursal desde el contador", () =>
         fetchBranchPickupCourierOrdersForShop({
           shop: session.shop,
           sessionCandidates: [session],
         }),
       ),
-      safeLoaderArray("No se pudieron cargar las ordenes para recoger en sucursal", () =>
+      loadArray("No se pudieron cargar las ordenes para recoger en sucursal", () =>
         fetchBranchPickupCourierOrders(admin),
       ),
     ]);
@@ -3889,19 +3912,19 @@ export const loader = async ({ request }) => {
       branchPickupHistoryOrders,
       pickupHistoryOrders,
     ] = await Promise.all([
-      safeLoaderArray("No se pudieron cargar las ordenes activas para historial repartidor", () =>
+      loadArray("No se pudieron cargar las ordenes activas para historial repartidor", () =>
         fetchCourierOrders(admin),
       ),
-      safeLoaderArray("No se pudieron cargar las devoluciones activas para historial repartidor", () =>
+      loadArray("No se pudieron cargar las devoluciones activas para historial repartidor", () =>
         fetchPickupCourierOrders(session.shop),
       ),
-      safeLoaderArray("No se pudo cargar el historial de entregas repartidor", () =>
+      loadArray("No se pudo cargar el historial de entregas repartidor", () =>
         fetchCourierHistoryOrders(admin),
       ),
-      safeLoaderArray("No se pudo cargar el historial de recoger en sucursal", () =>
+      loadArray("No se pudo cargar el historial de recoger en sucursal", () =>
         fetchBranchPickupCourierOrders(admin),
       ),
-      safeLoaderArray("No se pudo cargar el historial de recolecciones repartidor", () =>
+      loadArray("No se pudo cargar el historial de recolecciones repartidor", () =>
         fetchPickupCourierHistoryOrders(session.shop),
       ),
     ]);
@@ -3919,7 +3942,7 @@ export const loader = async ({ request }) => {
   ) {
     await wait(150);
     const [retryActiveRouteOrders, retryDeliveryAdminOrders, retrySharedDeliveryOrders] = await Promise.all([
-      safeLoaderArray("No se pudieron recargar las ordenes de rutas activas para repartidor/preparador", async () => {
+      loadArray("No se pudieron recargar las ordenes de rutas activas para repartidor/preparador", async () => {
         const activeRequestIds = await activeCourierRouteAssignmentRequestIds(session.shop);
         return fetchCourierOrdersByIdsForShop({
           shop: session.shop,
@@ -3927,10 +3950,10 @@ export const loader = async ({ request }) => {
           orderIds: activeRequestIds,
         });
       }),
-      safeLoaderArray("No se pudieron recargar las ordenes de entrega para repartidor/preparador", () =>
+      loadArray("No se pudieron recargar las ordenes de entrega para repartidor/preparador", () =>
         fetchCourierOrders(admin),
       ),
-      safeLoaderArray("No se pudieron recargar las ordenes de entrega compartidas para repartidor/preparador", () =>
+      loadArray("No se pudieron recargar las ordenes de entrega compartidas para repartidor/preparador", () =>
         fetchCourierOrdersForShop({
           shop: session.shop,
           sessionCandidates: [session],
@@ -3956,13 +3979,13 @@ export const loader = async ({ request }) => {
   if (viewMode === VIEW_MODE.BRANCH_PICKUP && courierOrdersRaw.length === 0) {
     await wait(150);
     const [retrySharedBranchPickupOrders, retryBranchPickupOrdersFromAdmin] = await Promise.all([
-      safeLoaderArray("No se pudieron recargar las ordenes para recoger en sucursal desde el contador", () =>
+      loadArray("No se pudieron recargar las ordenes para recoger en sucursal desde el contador", () =>
         fetchBranchPickupCourierOrdersForShop({
           shop: session.shop,
           sessionCandidates: [session],
         }),
       ),
-      safeLoaderArray("No se pudieron recargar las ordenes para recoger en sucursal", () =>
+      loadArray("No se pudieron recargar las ordenes para recoger en sucursal", () =>
         fetchBranchPickupCourierOrders(admin),
       ),
     ]);
@@ -3981,7 +4004,7 @@ export const loader = async ({ request }) => {
   }
   const routeSettings =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS
-      ? await safeLoaderValue("No se pudo cargar la direccion inicial de rutas", null, () =>
+      ? await loadValue("No se pudo cargar la direccion inicial de rutas", null, () =>
           prisma.returnSettings.findUnique({
             where: { shop: session.shop },
             select: { branchAddress: true },
@@ -3999,7 +4022,7 @@ export const loader = async ({ request }) => {
     .filter(Boolean);
   const [deliveryHistoryEvents, courierActivitiesForCards, preparerAssignmentsForCourierOrders] = await Promise.all([
     deliveryRequestIds.length
-      ? safeLoaderArray("Courier event history is not available yet", () =>
+      ? loadArray("Courier event history is not available yet", () =>
           prisma.courierEvent.findMany({
             where: {
               shop: session.shop,
@@ -4010,7 +4033,7 @@ export const loader = async ({ request }) => {
         )
       : [],
     courierRequestIds.length
-      ? safeLoaderArray("No se pudieron cargar las actividades de rutas para tarjetas", () =>
+      ? loadArray("No se pudieron cargar las actividades de rutas para tarjetas", () =>
           prisma.courierActivity.findMany({
             where: {
               shop: session.shop,
@@ -4021,7 +4044,7 @@ export const loader = async ({ request }) => {
         )
       : [],
     courierRequestIds.length && (viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.COURIER_HISTORY)
-      ? safeLoaderArray("No se pudieron cargar las asignaciones de preparadores para ordenes", () =>
+      ? loadArray("No se pudieron cargar las asignaciones de preparadores para ordenes", () =>
           prisma.preparerAssignment.findMany({
             where: {
               shop: session.shop,
@@ -4061,7 +4084,7 @@ export const loader = async ({ request }) => {
     ),
   ];
   const transferActivitiesForCards = courierRouteIdsForCards.length
-    ? await safeLoaderArray("No se pudieron cargar los traspasos de rutas", () =>
+    ? await loadArray("No se pudieron cargar los traspasos de rutas", () =>
         prisma.courierActivity.findMany({
           where: {
             shop: session.shop,
@@ -4244,13 +4267,13 @@ export const loader = async ({ request }) => {
     );
   let visibleCourierOrders =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS
-      ? await safeLoaderValue("No se pudieron ordenar las rutas por distancia", courierOrders, () =>
+      ? await loadValue("No se pudieron ordenar las rutas por distancia", courierOrders, () =>
           sortCourierRouteOrdersByProximity(session.shop, courierOrders, routeStartAddress),
         )
       : courierOrders;
 
   if (viewMode === VIEW_MODE.BRANCH_PICKUP) {
-    const automaticRefundResult = await safeLoaderValue(
+    const automaticRefundResult = await loadValue(
       "No se pudieron revisar los reembolsos automaticos de sucursal",
       { refundedRequestIds: [] },
       () => refundExpiredBranchPickupOrdersForShop(admin, session.shop, visibleCourierOrders),
@@ -4263,7 +4286,7 @@ export const loader = async ({ request }) => {
 
   let couriers =
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.COURIERS || viewMode === VIEW_MODE.COURIER_HISTORY
-      ? await safeLoaderArray("No se pudieron cargar los repartidores", () =>
+      ? await loadArray("No se pudieron cargar los repartidores", () =>
           prisma.courier.findMany({
             where: { shop: session.shop },
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -4276,7 +4299,7 @@ export const loader = async ({ request }) => {
   );
   const preparers =
     viewMode === VIEW_MODE.PREPARERS
-      ? await safeLoaderArray("No se pudieron cargar los preparadores", () =>
+      ? await loadArray("No se pudieron cargar los preparadores", () =>
           prisma.preparer.findMany({
             where: { shop: session.shop },
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -4285,7 +4308,7 @@ export const loader = async ({ request }) => {
       : [];
   const preparerAssignments =
     viewMode === VIEW_MODE.PREPARERS
-      ? await safeLoaderArray("No se pudieron cargar las asignaciones de preparadores", () =>
+      ? await loadArray("No se pudieron cargar las asignaciones de preparadores", () =>
           prisma.preparerAssignment.findMany({
             where: { shop: session.shop },
             orderBy: [{ sequence: "asc" }, { id: "asc" }],
@@ -4294,7 +4317,7 @@ export const loader = async ({ request }) => {
       : [];
   const preparerRouteActivities =
     viewMode === VIEW_MODE.PREPARERS && courierRouteIdsForCards.length
-      ? await safeLoaderArray("No se pudieron cargar las actividades de ruta para preparadores", () =>
+      ? await loadArray("No se pudieron cargar las actividades de ruta para preparadores", () =>
           prisma.courierActivity.findMany({
             where: {
               shop: session.shop,
@@ -4305,7 +4328,7 @@ export const loader = async ({ request }) => {
         )
       : [];
   if (viewMode === VIEW_MODE.STOCK) {
-    safeLoaderArray("No se pudo sincronizar el inventario de stock", async () => {
+    loadArray("No se pudo sincronizar el inventario de stock", async () => {
       await ensureStockUserTable(prisma);
       await ensureStockInventoryArchiveWebhooks(admin);
       await syncReleasedStockLocationsFromShopify(admin, session.shop);
@@ -4315,14 +4338,14 @@ export const loader = async ({ request }) => {
   let [stockUsers, stockHistoryDrafts, stockSettings] =
     viewMode === VIEW_MODE.STOCK
       ? await Promise.all([
-          safeLoaderArray("No se pudieron cargar los usuarios de stock", async () => {
+          loadArray("No se pudieron cargar los usuarios de stock", async () => {
             await ensureStockUserTable(prisma);
             return prisma.stockUser.findMany({
               where: { shop: session.shop, active: true },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             });
           }),
-          safeLoaderArray("No se pudo cargar el historial de stock", () =>
+          loadArray("No se pudo cargar el historial de stock", () =>
             prisma.stockProductDraft.findMany({
               where: { shop: session.shop, status: "listo" },
               include: {
@@ -4333,7 +4356,7 @@ export const loader = async ({ request }) => {
               take: 100,
             }),
           ),
-          safeLoaderValue("No se pudo cargar la configuracion de stock", null, async () => {
+          loadValue("No se pudo cargar la configuracion de stock", null, async () => {
             await ensureStockUserTable(prisma);
             return prisma.returnSettings.findUnique({
               where: { shop: session.shop },
@@ -4343,7 +4366,7 @@ export const loader = async ({ request }) => {
         ])
       : [[], [], null];
   if (viewMode === VIEW_MODE.STOCK && stockHistoryDrafts.length) {
-    const stockHistoryCleanup = await safeLoaderValue(
+    const stockHistoryCleanup = await loadValue(
       "No se pudo limpiar el historial de stock contra Shopify",
       { deletedStockHistoryRecords: 0 },
       () =>
@@ -4354,7 +4377,7 @@ export const loader = async ({ request }) => {
         }),
     );
     if (stockHistoryCleanup.deletedStockHistoryRecords) {
-      stockHistoryDrafts = await safeLoaderArray("No se pudo recargar el historial de stock", () =>
+      stockHistoryDrafts = await loadArray("No se pudo recargar el historial de stock", () =>
         prisma.stockProductDraft.findMany({
           where: { shop: session.shop, status: "listo" },
           include: {
@@ -4371,7 +4394,7 @@ export const loader = async ({ request }) => {
     (viewMode === VIEW_MODE.COURIERS || shouldLoadCourierHistoryActivity) &&
     couriers.length
   ) {
-    const transferEvents = await safeLoaderArray("No se pudieron cargar los nombres originales de rutas transferidas", () =>
+    const transferEvents = await loadArray("No se pudieron cargar los nombres originales de rutas transferidas", () =>
       prisma.courierActivity.findMany({
         where: {
           shop: session.shop,
@@ -4397,7 +4420,7 @@ export const loader = async ({ request }) => {
 
   const courierActivities =
     shouldLoadCourierHistoryActivity
-      ? await safeLoaderArray("No se pudieron cargar las actividades del historial repartidor", () =>
+      ? await loadArray("No se pudieron cargar las actividades del historial repartidor", () =>
           prisma.courierActivity.findMany({
             where: {
               shop: session.shop,
@@ -4412,7 +4435,7 @@ export const loader = async ({ request }) => {
 
   const courierRouteSnapshots =
     shouldLoadCourierHistoryActivity
-      ? await safeLoaderArray("No se pudieron cargar los cierres de rutas del historial", () =>
+      ? await loadArray("No se pudieron cargar los cierres de rutas del historial", () =>
           prisma.courierRouteSnapshot.findMany({
             where: {
               shop: session.shop,
@@ -4428,7 +4451,7 @@ export const loader = async ({ request }) => {
       : [];
   const plannedCourierRoutes =
     viewMode === VIEW_MODE.COURIER
-      ? (await safeLoaderArray("No se pudieron cargar las rutas planeadas", () =>
+      ? (await loadArray("No se pudieron cargar las rutas planeadas", () =>
             plannedCourierRouteSummary(
               session.shop,
               couriers.map((courier) => courier.id),
@@ -4464,6 +4487,7 @@ export const loader = async ({ request }) => {
     courierActivities,
     courierRouteSnapshots,
     plannedCourierRoutes,
+    loaderWarnings,
     viewMode,
     shop: session.shop,
   };
@@ -6610,9 +6634,17 @@ export default function ReturnsRequests() {
     courierActivities = [],
     courierRouteSnapshots = [],
     plannedCourierRoutes = [],
+    loaderWarnings = [],
     viewMode,
     shop,
   } = useLoaderData();
+  const loaderWarningLabels = [
+    ...new Set(
+      (Array.isArray(loaderWarnings) ? loaderWarnings : [])
+        .map((warning) => String(warning?.label || "").trim())
+        .filter(Boolean),
+    ),
+  ];
   const actionData = useActionData();
   const courierRouteFetcher = useFetcher();
   const branchPickupDeliveryFetcher = useFetcher();
@@ -7115,6 +7147,11 @@ export default function ReturnsRequests() {
   return (
     <s-page heading={pageHeading}>
       {pageErrorMessage ? <p className={styles.errorMsg}>{pageErrorMessage}</p> : null}
+      {loaderWarningLabels.length ? (
+        <p className={styles.errorMsg} role="alert">
+          No se pudieron cargar algunos datos. Recarga la pagina antes de confiar en los conteos de esta seccion.
+        </p>
+      ) : null}
       {visiblePageSuccessMessage && !visibleRefundCardSuccess ? (
         <p className={styles.successMsg}>{visiblePageSuccessMessage}</p>
       ) : null}
