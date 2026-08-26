@@ -2224,16 +2224,23 @@ export const loader = async ({ request }) => {
     if (currentRouteRequestIds.has(requestId)) {
       const routeAction = currentRouteActionByRequestId.get(requestId);
       const normalizedRequestStatus = String(requestRow?.status || "").trim().toLowerCase();
-      const isDeliveryOrder = String(requestRow?.courierLabel || "").trim().toLowerCase() === "entrega";
+      const normalizedCourierLabel = String(requestRow?.courierLabel || "").trim().toLowerCase();
+      const isDeliveryOrder = normalizedCourierLabel === "entrega";
+      const isReturnOrder = normalizedCourierLabel === "devolucion";
       const isRetryableHistoricalDelivery =
         isDeliveryOrder && ["no_entregado", "recoger_en_sucursal"].includes(normalizedRequestStatus);
+      const isRetryableHistoricalReturn =
+        isReturnOrder &&
+        ["reintento_pendiente", "intento_fallido_1", "intento_fallido_2", "no_recibido"].includes(
+          normalizedRequestStatus,
+        );
       if (routeAction === COURIER_ROUTE_ORDER_NOT_LOCATED_ACTION) {
         return null;
       }
       if (
         shouldResetAssignedOrderForCurrentRoute(routeAction) &&
         !isCourierRouteStatus(normalizedRequestStatus) &&
-        (!isCourierHistoryStatus(normalizedRequestStatus) || isRetryableHistoricalDelivery)
+        (!isCourierHistoryStatus(normalizedRequestStatus) || isRetryableHistoricalDelivery || isRetryableHistoricalReturn)
       ) {
         return {
           ...requestRow,
