@@ -3184,12 +3184,8 @@ function buildViewWhere(shop, viewMode) {
   return { shop };
 }
 
-function shouldIncludeEvidencePhotos(viewMode) {
-  return (
-    viewMode === VIEW_MODE.REVIEW ||
-    viewMode === VIEW_MODE.REFUNDS ||
-    viewMode === VIEW_MODE.TO_RETURN
-  );
+function shouldIncludeEvidencePhotos(_viewMode) {
+  return false;
 }
 
 function shouldLoadOrderCatalogImages(viewMode) {
@@ -7371,6 +7367,7 @@ export default function ReturnsRequests() {
                   key={request.id}
                   request={request}
                   isSubmitting={isSubmitting}
+                  enableLazyMedia
                   onReviewActionSubmit={handleReviewActionSubmit}
                   cardSuccessMessage={
                     activeReviewCardMessage?.type === "success" &&
@@ -7405,6 +7402,7 @@ export default function ReturnsRequests() {
                   key={request.id}
                   request={request}
                   isSubmitting={isSubmitting}
+                  enableLazyMedia
                   hideCourierRouteStarts
                   useRefundQueueDateFormat
                   cardSuccessMessage={
@@ -7442,6 +7440,7 @@ export default function ReturnsRequests() {
                   key={request.id}
                   request={request}
                   isSubmitting={isSubmitting}
+                  enableLazyMedia
                   hideCourierRouteStarts
                   hidePendingReturnStatus
                   forceShowNotReturnedAction={notReturnedTestMode}
