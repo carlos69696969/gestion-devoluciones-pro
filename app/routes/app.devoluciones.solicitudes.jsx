@@ -2790,17 +2790,8 @@ function buildAdminCourierPresentation(request) {
     if (isRouteTimeEvent) {
       hasRouteTimeEvent = true;
       const adminNotLocatedReprogram = isAdminNotLocatedReprogramEvent(event);
-      const requestScheduledDate = request.courierLabel === "Entrega" && request.pickupDate
-        ? new Date(`${request.pickupDate}T12:00:00Z`)
-        : null;
       const noteDate = routeTimeIsoDate ? new Date(`${routeTimeIsoDate}T12:00:00Z`) : null;
-      const reprogrammedFor =
-        noteDate &&
-        requestScheduledDate &&
-        Number.isFinite(requestScheduledDate.getTime()) &&
-        requestScheduledDate.getTime() > noteDate.getTime()
-          ? requestScheduledDate
-          : noteDate;
+      const reprogrammedFor = noteDate && Number.isFinite(noteDate.getTime()) ? noteDate : null;
       const labelDateMatch = String(event.label || "").match(/para el ([^.\n]+)$/i);
       const reprogrammedDateLabel = reprogrammedFor
         ? formatCourierRescheduledDate(reprogrammedFor)
