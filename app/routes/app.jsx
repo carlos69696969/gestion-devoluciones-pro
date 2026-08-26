@@ -3,11 +3,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import {
-  fetchBranchPickupCourierOrdersForShop,
-  fetchCourierOrdersByIdsForShop,
-  fetchCourierOrdersForShop,
-} from "../utils/courier.server";
+import { fetchCourierOrdersByIdsForShop } from "../utils/courier.server";
 import { getCourierRouteStatusFromTags } from "../utils/courier.shared";
 import {
   archiveAllZeroInventoryProducts,
@@ -52,7 +48,7 @@ const HIDDEN_COURIER_DELIVERY_STATUSES = new Set([
   "recoger_en_sucursal",
 ]);
 const ZERO_INVENTORY_ARCHIVE_SYNC_INTERVAL_MS = 5 * 60 * 1000;
-const NAV_COUNTS_CACHE_TTL_MS = 45 * 1000;
+const NAV_COUNTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const NAV_COUNTS_EMPTY = {
   pickup: 0,
   branch: 0,
@@ -206,6 +202,49 @@ async function fetchCourierDeliveryCount(admin) {
   return orderIds.size;
 }
 
+async function fetchBranchPickupCourierCount(admin) {
+  const response = await admin.graphql(
+    `#graphql
+    query BranchPickupCourierCount {
+      orders(first: 250, query: "tag:'recoger en sucursal'", sortKey: UPDATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            displayFulfillmentStatus
+            tags
+            shippingLines(first: 5) {
+              nodes {
+                title
+                code
+                deliveryCategory
+              }
+            }
+          }
+        }
+      }
+    }`,
+  );
+  const payload = await response.json();
+  const errors = payload?.errors || [];
+  if (errors.length) {
+    throw new Error(errors[0]?.message || "No se pudieron contar las ordenes para recoger en sucursal.");
+  }
+
+  const orderIds = new Set();
+  for (const orderNode of payload?.data?.orders?.edges?.map((edge) => edge?.node).filter(Boolean) || []) {
+    const fulfillmentStatus = String(orderNode?.displayFulfillmentStatus || "").toUpperCase();
+    const courierStatus = getCourierRouteStatusFromTags(orderNode?.tags);
+    if (
+      isCourierLocalDeliveryOrder(orderNode) &&
+      !["FULFILLED", "RESTOCKED"].includes(fulfillmentStatus) &&
+      courierStatus === "recoger_en_sucursal"
+    ) {
+      orderIds.add(String(orderNode.id || ""));
+    }
+  }
+  return orderIds.size;
+}
+
 async function activePlannedCourierDeliveryCount(shop, sessionCandidates = []) {
   const routePlans = await prisma.courierActivity.findMany({
     where: {
@@ -326,57 +365,42 @@ async function loadReturnNavCounts(shop) {
 async function loadNavCounts(admin, session, fallbackCounts = NAV_COUNTS_EMPTY) {
   const fallback = normalizeNavCounts(fallbackCounts);
   let returnCountsFailed = false;
-  let deliveryOrdersFailed = false;
-  let branchPickupFailed = false;
-  let adminDeliveryCountFailed = false;
+  let deliveryCountFailed = false;
+  let branchPickupCountFailed = false;
   let plannedDeliveryCountFailed = false;
 
-  const [returnCounts, deliveryCourierOrders, branchPickupCourierOrders] = await Promise.all([
+  const [returnCounts, deliveryCourierCount, branchPickupCourierCount] = await Promise.all([
     loadReturnNavCounts(session.shop).catch((error) => {
       returnCountsFailed = true;
       console.error("No se pudieron contar las devoluciones del menu", error);
       return fallback;
     }),
-    fetchCourierOrdersForShop({
-      shop: session.shop,
-      sessionCandidates: [session],
-    }).catch((error) => {
-      deliveryOrdersFailed = true;
+    fetchCourierDeliveryCount(admin).catch((error) => {
+      deliveryCountFailed = true;
       console.error("No se pudieron contar las entregas del repartidor", error);
-      return [];
+      return 0;
     }),
-    fetchBranchPickupCourierOrdersForShop({
-      shop: session.shop,
-      sessionCandidates: [session],
-    }).catch((error) => {
-      branchPickupFailed = true;
+    fetchBranchPickupCourierCount(admin).catch((error) => {
+      branchPickupCountFailed = true;
       console.error("No se pudieron contar las ordenes para recoger en sucursal", error);
-      return [];
+      return 0;
     }),
   ]);
   const navCounts = normalizeNavCounts(returnCounts);
-  const adminDeliveryCount = deliveryCourierOrders.length
-    ? 0
-    : await fetchCourierDeliveryCount(admin).catch((error) => {
-        adminDeliveryCountFailed = true;
-        console.error("No se pudieron contar las entregas del repartidor desde admin", error);
-        return 0;
-      });
-  const plannedDeliveryCount = deliveryCourierOrders.length || adminDeliveryCount
+  const plannedDeliveryCount = deliveryCourierCount
     ? 0
     : await activePlannedCourierDeliveryCount(session.shop, [session]).catch((error) => {
         plannedDeliveryCountFailed = true;
         console.error("No se pudieron contar las rutas activas del repartidor", error);
         return 0;
       });
-  const courierCount = deliveryCourierOrders.length || adminDeliveryCount || plannedDeliveryCount;
+  const courierCount = deliveryCourierCount || plannedDeliveryCount;
   const courierCountFailed =
     !courierCount &&
-    deliveryOrdersFailed &&
-    adminDeliveryCountFailed &&
+    deliveryCountFailed &&
     plannedDeliveryCountFailed;
   navCounts.courier = courierCountFailed ? fallback.courier : courierCount;
-  navCounts.branchPickup = branchPickupFailed ? fallback.branchPickup : branchPickupCourierOrders.length;
+  navCounts.branchPickup = branchPickupCountFailed ? fallback.branchPickup : branchPickupCourierCount;
   if (returnCountsFailed) {
     navCounts.pickup = fallback.pickup;
     navCounts.branch = fallback.branch;
@@ -415,6 +439,11 @@ export const loader = async ({ request }) => {
   syncZeroInventoryArchiveFromAdmin(admin, session.shop);
 
   const cachedCounts = cachedNavCounts(session.shop);
+  if (cachedCounts) {
+    // eslint-disable-next-line no-undef
+    return { apiKey: process.env.SHOPIFY_API_KEY || "", navCounts: cachedCounts, shop: session.shop };
+  }
+
   const staleCounts = cachedNavCounts(session.shop, { allowStale: true });
   const refreshPromise = refreshNavCounts(admin, session);
   const navCounts =
