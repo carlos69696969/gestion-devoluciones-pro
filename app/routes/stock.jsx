@@ -1156,6 +1156,31 @@ function serializeDraft(draft, currentStockUserId = 0) {
   };
 }
 
+function serializeDraftSummary(draft, currentStockUserId = 0) {
+  const lockedByUserId = Number(draft.publishingLockedByStockUserId || 0);
+  const isLockedByCurrentUser = Boolean(
+    lockedByUserId && lockedByUserId === Number(currentStockUserId || 0),
+  );
+  const isBeingEdited = draft.status === STOCK_DRAFT_STATUS.EDITING;
+  return {
+    id: draft.id,
+    productName: draft.productName,
+    locationCode: draft.locationCode || "",
+    status: draft.status,
+    isBeingEdited,
+    publishingLockedByStockUserId: lockedByUserId,
+    publishingLockedAt: draft.publishingLockedAt
+      ? draft.publishingLockedAt.toISOString()
+      : "",
+    isLockedByCurrentUser,
+    isLockedByOther: Boolean(
+      isBeingEdited || (lockedByUserId && !isLockedByCurrentUser),
+    ),
+    createdAt: draft.createdAt.toISOString(),
+    updatedAt: draft.updatedAt.toISOString(),
+  };
+}
+
 function serializeStockUser(stockUser) {
   if (!stockUser) return null;
   return {
@@ -1418,22 +1443,12 @@ export async function loader({ request }) {
               select: {
                 id: true,
                 productName: true,
-                color: true,
-                size: true,
-                quantity: true,
-                sku: true,
-                audience: true,
-                garmentType: true,
                 locationCode: true,
-                price: true,
-                notes: true,
-                variants: true,
                 status: true,
                 publishingLockedByStockUserId: true,
                 publishingLockedAt: true,
                 createdAt: true,
                 updatedAt: true,
-                preparedByStockUser: { select: { name: true } },
               },
               take: 80,
             })
@@ -1543,7 +1558,11 @@ export async function loader({ request }) {
 
   return {
     shop,
-    drafts: drafts.map((draft) => serializeDraft(draft, stockUser?.id)),
+    drafts: drafts.map((draft) =>
+      stockUser?.role === STOCK_USER_ROLES.PUBLISHER
+        ? serializeDraftSummary(draft, stockUser?.id)
+        : serializeDraft(draft, stockUser?.id),
+    ),
     preparedHistory: preparedHistoryRows
       .filter(
         (draft) =>
@@ -1704,17 +1723,22 @@ export async function action({ request }) {
 
   if (stockUser) await clearExpiredStockPublicationLocks(shop);
 
-  if (intent === "load_stock_draft_photos") {
+  if (intent === "load_stock_draft_detail") {
     if (stockUser?.role !== STOCK_USER_ROLES.PUBLISHER) {
       return {
         ok: false,
         intent,
-        error: "Solo un publicador de productos puede ver estas fotos.",
+        error: "Solo un publicador de productos puede ver este producto.",
       };
     }
     const draftId = Number(formData.get("draftId") || 0);
     if (!draftId) {
-      return { ok: false, intent, draftId, error: "Producto de stock invalido." };
+      return {
+        ok: false,
+        intent,
+        draftId,
+        error: "Producto de stock invalido.",
+      };
     }
     const draft = await prisma.stockProductDraft.findFirst({
       where: {
@@ -1724,16 +1748,23 @@ export async function action({ request }) {
           in: [STOCK_DRAFT_STATUS.PENDING, STOCK_DRAFT_STATUS.EDITING],
         },
       },
-      select: { photos: true },
+      include: {
+        preparedByStockUser: { select: { name: true } },
+      },
     });
     if (!draft) {
-      return { ok: false, intent, draftId, error: "No se encontro este producto." };
+      return {
+        ok: false,
+        intent,
+        draftId,
+        error: "No se encontro este producto.",
+      };
     }
     return {
       ok: true,
       intent,
       draftId,
-      photos: Array.isArray(draft.photos) ? draft.photos : [],
+      draft: serializeDraft(draft, stockUser.id),
     };
   }
 
@@ -2506,7 +2537,7 @@ export default function StockPortal() {
   const editStockFetcher = useFetcher();
   const cancelStockEditFetcher = useFetcher();
   const editHeartbeatStockFetcher = useFetcher();
-  const stockPhotosFetcher = useFetcher();
+  const stockDetailFetcher = useFetcher();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
   const submit = useSubmit();
@@ -2542,7 +2573,7 @@ export default function StockPortal() {
     generateStockCreateRequestId(),
   );
   const [stockSaveLocked, setStockSaveLocked] = useState(false);
-  const [stockDraftPhotosById, setStockDraftPhotosById] = useState({});
+  const [stockDraftDetailsById, setStockDraftDetailsById] = useState({});
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -2595,22 +2626,25 @@ export default function StockPortal() {
       null,
     [drafts, selectedDraftId],
   );
-  const selectedStockDetail = selectedDraft;
-  const selectedStockDetailPhotoKey = selectedStockDetail
-    ? String(selectedStockDetail.id)
+  const selectedStockDetailKey = selectedDraft
+    ? String(selectedDraft.id)
     : "";
-  const selectedStockDetailPhotosLoaded = Boolean(
-    selectedStockDetailPhotoKey &&
+  const selectedStockDetailLoaded = Boolean(
+    selectedStockDetailKey &&
       Object.prototype.hasOwnProperty.call(
-        stockDraftPhotosById,
-        selectedStockDetailPhotoKey,
+        stockDraftDetailsById,
+        selectedStockDetailKey,
       ),
   );
-  const selectedStockDetailPhotos = selectedStockDetailPhotoKey
-    ? stockDraftPhotosById[selectedStockDetailPhotoKey] || []
+  const selectedStockDetail =
+    selectedStockDetailKey && selectedStockDetailLoaded
+      ? stockDraftDetailsById[selectedStockDetailKey]
+      : selectedDraft;
+  const selectedStockDetailPhotos = Array.isArray(selectedStockDetail?.photos)
+    ? selectedStockDetail.photos
     : [];
-  const selectedStockDetailPhotosLoading = Boolean(
-    selectedStockDetailPhotoKey && !selectedStockDetailPhotosLoaded,
+  const selectedStockDetailLoading = Boolean(
+    selectedStockDetailKey && !selectedStockDetailLoaded,
   );
   const selectedDraftVariants = useMemo(
     () => stockDisplayVariants(selectedStockDetail),
@@ -3241,59 +3275,62 @@ export default function StockPortal() {
   useEffect(() => {
     if (
       !isProductPublisher ||
-      !selectedStockDetailPhotoKey ||
-      selectedStockDetailPhotosLoaded ||
-      stockPhotosFetcher.state !== "idle"
+      !selectedStockDetailKey ||
+      selectedStockDetailLoaded ||
+      stockDetailFetcher.state !== "idle"
     )
       return;
     if (
-      stockPhotosFetcher.data?.intent === "load_stock_draft_photos" &&
-      String(stockPhotosFetcher.data.draftId || "") ===
-        selectedStockDetailPhotoKey
+      stockDetailFetcher.data?.intent === "load_stock_draft_detail" &&
+      String(stockDetailFetcher.data.draftId || "") ===
+        selectedStockDetailKey
     )
       return;
-    stockPhotosFetcher.submit(
+    stockDetailFetcher.submit(
       {
-        intent: "load_stock_draft_photos",
+        intent: "load_stock_draft_detail",
         shop,
         stockCode: accessCode || "",
-        draftId: selectedStockDetailPhotoKey,
+        draftId: selectedStockDetailKey,
       },
       { method: "post" },
     );
   }, [
     accessCode,
     isProductPublisher,
-    selectedStockDetailPhotoKey,
-    selectedStockDetailPhotosLoaded,
+    selectedStockDetailKey,
+    selectedStockDetailLoaded,
     shop,
-    stockPhotosFetcher.data,
-    stockPhotosFetcher,
+    stockDetailFetcher.data,
+    stockDetailFetcher,
   ]);
 
   useEffect(() => {
-    if (stockPhotosFetcher.data?.intent !== "load_stock_draft_photos") return;
-    if (stockPhotosFetcher.data.ok) {
-      const draftId = String(stockPhotosFetcher.data.draftId || "");
-      const photos = Array.isArray(stockPhotosFetcher.data.photos)
-        ? stockPhotosFetcher.data.photos
-        : [];
+    if (stockDetailFetcher.data?.intent !== "load_stock_draft_detail") return;
+    const draftId = String(stockDetailFetcher.data.draftId || "");
+    if (stockDetailFetcher.data.ok && stockDetailFetcher.data.draft) {
       if (draftId) {
-        setStockDraftPhotosById((current) => ({
+        setStockDraftDetailsById((current) => ({
           ...current,
-          [draftId]: photos,
+          [draftId]: stockDetailFetcher.data.draft,
         }));
       }
       return;
     }
-    if (stockPhotosFetcher.data.error) {
-      const draftId = String(stockPhotosFetcher.data.draftId || "");
+    if (stockDetailFetcher.data.error) {
       if (draftId) {
-        setStockDraftPhotosById((current) => ({ ...current, [draftId]: [] }));
+        setStockDraftDetailsById((current) => ({
+          ...current,
+          [draftId]: null,
+        }));
       }
-      setPublisherMessage(stockPhotosFetcher.data.error);
+      setPublisherMessage(stockDetailFetcher.data.error);
+      setSelectedDraftId(0);
+      setCheckedStockItems({});
+      clearPublisherDraftState();
+      setPublisherDraftUrl(0);
     }
-  }, [stockPhotosFetcher.data]);
+  }, [stockDetailFetcher.data]);
 
   useEffect(() => {
     if (!stockToast) return undefined;
@@ -4642,162 +4679,166 @@ export default function StockPortal() {
                   Regresar
                 </button>
               </div>
-              {selectedStockDetailPhotosLoading ? (
-                <p className={styles.empty}>Cargando fotos...</p>
-              ) : selectedStockDetailPhotos.length ? (
-                <div className={styles.downloadGrid}>
-                  {selectedStockDetailPhotos.map((photo, index) => (
-                    <figure
-                      className={styles.downloadPhoto}
-                      key={`${selectedStockDetail.id}-${index}`}
-                    >
-                      <button
-                        className={styles.photoPreviewButton}
-                        type="button"
-                        onClick={() =>
-                          openPhotoPreview({
-                            dataUrl: photo,
-                            name: `${selectedStockDetail.productName || "producto"} ${index + 1}`,
-                          })
-                        }
-                      >
-                        <img
-                          src={photo}
-                          alt={`${selectedStockDetail.productName} ${index + 1}`}
-                        />
-                      </button>
-                      <a
-                        href={photo}
-                        download={`${selectedStockDetail.sku || selectedStockDetail.productName}-foto-${index + 1}.jpg`}
-                      >
-                        Descargar foto
-                      </a>
-                    </figure>
-                  ))}
-                </div>
-              ) : selectedStockDetailPhotosLoaded ? (
-                <p className={styles.empty}>Este producto no tiene fotos.</p>
-              ) : null}
-              <dl className={styles.detailGrid}>
-                <div className={styles.detailMetaColumn}>
-                  <div>
-                    <dt>Producto</dt>
-                    <dd>{selectedStockDetail.productName || "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>Ubicacion</dt>
-                    <dd>{selectedStockDetail.locationCode || "-"}</dd>
-                  </div>
-                  <div className={styles.detailCheckCard}>
-                    <dt>SKU</dt>
-                    <dd>
-                      <span>{selectedStockDetail.sku || "-"}</span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Precio</dt>
-                    <dd>{money(selectedStockDetail.price)}</dd>
-                  </div>
-                  {selectedStockDetail.preparedByName ? (
-                    <div>
-                      <dt>Preparador de stock</dt>
-                      <dd>{selectedStockDetail.preparedByName}</dd>
+              {selectedStockDetailLoading ? (
+                <p className={styles.empty}>Cargando producto...</p>
+              ) : (
+                <>
+                  {selectedStockDetailPhotos.length ? (
+                    <div className={styles.downloadGrid}>
+                      {selectedStockDetailPhotos.map((photo, index) => (
+                        <figure
+                          className={styles.downloadPhoto}
+                          key={`${selectedStockDetail.id}-${index}`}
+                        >
+                          <button
+                            className={styles.photoPreviewButton}
+                            type="button"
+                            onClick={() =>
+                              openPhotoPreview({
+                                dataUrl: photo,
+                                name: `${selectedStockDetail.productName || "producto"} ${index + 1}`,
+                              })
+                            }
+                          >
+                            <img
+                              src={photo}
+                              alt={`${selectedStockDetail.productName} ${index + 1}`}
+                            />
+                          </button>
+                          <a
+                            href={photo}
+                            download={`${selectedStockDetail.sku || selectedStockDetail.productName}-foto-${index + 1}.jpg`}
+                          >
+                            Descargar foto
+                          </a>
+                        </figure>
+                      ))}
                     </div>
-                  ) : null}
-                  <publishStockFetcher.Form
-                    method="post"
-                    className={styles.stockPublishForm}
-                    onSubmit={(event) => {
-                      if (
-                        !window.confirm(
-                          `¿Marcar ${selectedStockDetail.sku || selectedStockDetail.locationCode} como listo?`,
-                        )
-                      ) {
-                        event.preventDefault();
-                      }
-                    }}
-                  >
-                    <input
-                      type="hidden"
-                      name="intent"
-                      value="publish_stock_draft"
-                    />
-                    <input type="hidden" name="shop" value={shop} />
-                    <input
-                      type="hidden"
-                      name="stockCode"
-                      value={accessCode || ""}
-                    />
-                    <input
-                      type="hidden"
-                      name="draftId"
-                      value={selectedStockDetail.id}
-                    />
-                    <button
-                      className={styles.primaryButton}
-                      type="submit"
-                      disabled={
-                        isPublisherLockingSelectedDraft ||
-                        publishStockFetcher.state !== "idle" ||
-                        !isSelectedDraftPublishReady
-                      }
-                    >
-                      {isPublisherLockingSelectedDraft
-                        ? "Tomando..."
-                        : publishStockFetcher.state !== "idle"
-                          ? "Guardando..."
-                          : "Listo"}
-                    </button>
-                  </publishStockFetcher.Form>
-                </div>
-                <div className={styles.detailColorCard}>
-                  <dt>Color</dt>
-                  <dd>
-                    {selectedDraftVariants.map((variant, variantIndex) => (
-                      <div
-                        className={styles.detailColorRow}
-                        key={`${selectedStockDetail.id}-color-${variantIndex}`}
-                      >
-                        <strong>{variant.color || "-"}</strong>
-                        {variant.sizes.length ? (
-                          <div className={styles.detailSizeChecks}>
-                            {variant.sizes.map((sizeRow) => (
-                              <label
-                                className={styles.detailSizeCheck}
-                                key={`${selectedStockDetail.id}-${variantIndex}-${sizeRow.size}`}
-                              >
-                                <span>
-                                  {formatStockSizeQuantity(
-                                    sizeRow.size,
-                                    sizeRow.quantity,
-                                  )}
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  aria-label={`Listo ${variant.color || "color"} ${stockSizeLabel(sizeRow.size)}`}
-                                  checked={Boolean(
-                                    checkedStockItems[
-                                      `draft:${selectedStockDetail.id}:variant:${variantIndex}:size:${sizeRow.size}`
-                                    ],
-                                  )}
-                                  onChange={() =>
-                                    toggleStockChecklistItem(
-                                      `draft:${selectedStockDetail.id}:variant:${variantIndex}:size:${sizeRow.size}`,
-                                    )
-                                  }
-                                />
-                              </label>
-                            ))}
-                          </div>
-                        ) : null}
+                  ) : (
+                    <p className={styles.empty}>Este producto no tiene fotos.</p>
+                  )}
+                  <dl className={styles.detailGrid}>
+                    <div className={styles.detailMetaColumn}>
+                      <div>
+                        <dt>Producto</dt>
+                        <dd>{selectedStockDetail.productName || "-"}</dd>
                       </div>
-                    ))}
-                  </dd>
-                </div>
-              </dl>
-              {selectedStockDetail.notes ? (
-                <p className={styles.notes}>{selectedStockDetail.notes}</p>
-              ) : null}
+                      <div>
+                        <dt>Ubicacion</dt>
+                        <dd>{selectedStockDetail.locationCode || "-"}</dd>
+                      </div>
+                      <div className={styles.detailCheckCard}>
+                        <dt>SKU</dt>
+                        <dd>
+                          <span>{selectedStockDetail.sku || "-"}</span>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Precio</dt>
+                        <dd>{money(selectedStockDetail.price)}</dd>
+                      </div>
+                      {selectedStockDetail.preparedByName ? (
+                        <div>
+                          <dt>Preparador de stock</dt>
+                          <dd>{selectedStockDetail.preparedByName}</dd>
+                        </div>
+                      ) : null}
+                      <publishStockFetcher.Form
+                        method="post"
+                        className={styles.stockPublishForm}
+                        onSubmit={(event) => {
+                          if (
+                            !window.confirm(
+                              `¿Marcar ${selectedStockDetail.sku || selectedStockDetail.locationCode} como listo?`,
+                            )
+                          ) {
+                            event.preventDefault();
+                          }
+                        }}
+                      >
+                        <input
+                          type="hidden"
+                          name="intent"
+                          value="publish_stock_draft"
+                        />
+                        <input type="hidden" name="shop" value={shop} />
+                        <input
+                          type="hidden"
+                          name="stockCode"
+                          value={accessCode || ""}
+                        />
+                        <input
+                          type="hidden"
+                          name="draftId"
+                          value={selectedStockDetail.id}
+                        />
+                        <button
+                          className={styles.primaryButton}
+                          type="submit"
+                          disabled={
+                            isPublisherLockingSelectedDraft ||
+                            publishStockFetcher.state !== "idle" ||
+                            !isSelectedDraftPublishReady
+                          }
+                        >
+                          {isPublisherLockingSelectedDraft
+                            ? "Tomando..."
+                            : publishStockFetcher.state !== "idle"
+                              ? "Guardando..."
+                              : "Listo"}
+                        </button>
+                      </publishStockFetcher.Form>
+                    </div>
+                    <div className={styles.detailColorCard}>
+                      <dt>Color</dt>
+                      <dd>
+                        {selectedDraftVariants.map((variant, variantIndex) => (
+                          <div
+                            className={styles.detailColorRow}
+                            key={`${selectedStockDetail.id}-color-${variantIndex}`}
+                          >
+                            <strong>{variant.color || "-"}</strong>
+                            {variant.sizes.length ? (
+                              <div className={styles.detailSizeChecks}>
+                                {variant.sizes.map((sizeRow) => (
+                                  <label
+                                    className={styles.detailSizeCheck}
+                                    key={`${selectedStockDetail.id}-${variantIndex}-${sizeRow.size}`}
+                                  >
+                                    <span>
+                                      {formatStockSizeQuantity(
+                                        sizeRow.size,
+                                        sizeRow.quantity,
+                                      )}
+                                    </span>
+                                    <input
+                                      type="checkbox"
+                                      aria-label={`Listo ${variant.color || "color"} ${stockSizeLabel(sizeRow.size)}`}
+                                      checked={Boolean(
+                                        checkedStockItems[
+                                          `draft:${selectedStockDetail.id}:variant:${variantIndex}:size:${sizeRow.size}`
+                                        ],
+                                      )}
+                                      onChange={() =>
+                                        toggleStockChecklistItem(
+                                          `draft:${selectedStockDetail.id}:variant:${variantIndex}:size:${sizeRow.size}`,
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </dd>
+                    </div>
+                  </dl>
+                  {selectedStockDetail.notes ? (
+                    <p className={styles.notes}>{selectedStockDetail.notes}</p>
+                  ) : null}
+                </>
+              )}
             </article>
           ) : null}
         </section>
