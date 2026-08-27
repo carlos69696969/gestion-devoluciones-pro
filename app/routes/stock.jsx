@@ -1415,7 +1415,24 @@ export async function loader({ request }) {
                 },
               },
               orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-              include: {
+              select: {
+                id: true,
+                productName: true,
+                color: true,
+                size: true,
+                quantity: true,
+                sku: true,
+                audience: true,
+                garmentType: true,
+                locationCode: true,
+                price: true,
+                notes: true,
+                variants: true,
+                status: true,
+                publishingLockedByStockUserId: true,
+                publishingLockedAt: true,
+                createdAt: true,
+                updatedAt: true,
                 preparedByStockUser: { select: { name: true } },
               },
               take: 80,
@@ -1457,7 +1474,6 @@ export async function loader({ request }) {
                 quantity: true,
                 price: true,
                 notes: true,
-                photos: true,
                 variants: true,
                 status: true,
                 publishingLockedByStockUserId: true,
@@ -1687,6 +1703,39 @@ export async function action({ request }) {
   const stockUser = activeStockUser;
 
   if (stockUser) await clearExpiredStockPublicationLocks(shop);
+
+  if (intent === "load_stock_draft_photos") {
+    if (stockUser?.role !== STOCK_USER_ROLES.PUBLISHER) {
+      return {
+        ok: false,
+        intent,
+        error: "Solo un publicador de productos puede ver estas fotos.",
+      };
+    }
+    const draftId = Number(formData.get("draftId") || 0);
+    if (!draftId) {
+      return { ok: false, intent, draftId, error: "Producto de stock invalido." };
+    }
+    const draft = await prisma.stockProductDraft.findFirst({
+      where: {
+        id: draftId,
+        shop,
+        status: {
+          in: [STOCK_DRAFT_STATUS.PENDING, STOCK_DRAFT_STATUS.EDITING],
+        },
+      },
+      select: { photos: true },
+    });
+    if (!draft) {
+      return { ok: false, intent, draftId, error: "No se encontro este producto." };
+    }
+    return {
+      ok: true,
+      intent,
+      draftId,
+      photos: Array.isArray(draft.photos) ? draft.photos : [],
+    };
+  }
 
   if (intent === "advance_stock_location") {
     if (stockUser?.role !== STOCK_USER_ROLES.PREPARER) {
@@ -2457,6 +2506,7 @@ export default function StockPortal() {
   const editStockFetcher = useFetcher();
   const cancelStockEditFetcher = useFetcher();
   const editHeartbeatStockFetcher = useFetcher();
+  const stockPhotosFetcher = useFetcher();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
   const submit = useSubmit();
@@ -2492,6 +2542,7 @@ export default function StockPortal() {
     generateStockCreateRequestId(),
   );
   const [stockSaveLocked, setStockSaveLocked] = useState(false);
+  const [stockDraftPhotosById, setStockDraftPhotosById] = useState({});
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -2545,6 +2596,22 @@ export default function StockPortal() {
     [drafts, selectedDraftId],
   );
   const selectedStockDetail = selectedDraft;
+  const selectedStockDetailPhotoKey = selectedStockDetail
+    ? String(selectedStockDetail.id)
+    : "";
+  const selectedStockDetailPhotosLoaded = Boolean(
+    selectedStockDetailPhotoKey &&
+      Object.prototype.hasOwnProperty.call(
+        stockDraftPhotosById,
+        selectedStockDetailPhotoKey,
+      ),
+  );
+  const selectedStockDetailPhotos = selectedStockDetailPhotoKey
+    ? stockDraftPhotosById[selectedStockDetailPhotoKey] || []
+    : [];
+  const selectedStockDetailPhotosLoading = Boolean(
+    selectedStockDetailPhotoKey && !selectedStockDetailPhotosLoaded,
+  );
   const selectedDraftVariants = useMemo(
     () => stockDisplayVariants(selectedStockDetail),
     [selectedStockDetail],
@@ -3172,6 +3239,63 @@ export default function StockPortal() {
   }, [publishStockFetcher.data, publishStockFetcher.state, revalidator]);
 
   useEffect(() => {
+    if (
+      !isProductPublisher ||
+      !selectedStockDetailPhotoKey ||
+      selectedStockDetailPhotosLoaded ||
+      stockPhotosFetcher.state !== "idle"
+    )
+      return;
+    if (
+      stockPhotosFetcher.data?.intent === "load_stock_draft_photos" &&
+      String(stockPhotosFetcher.data.draftId || "") ===
+        selectedStockDetailPhotoKey
+    )
+      return;
+    stockPhotosFetcher.submit(
+      {
+        intent: "load_stock_draft_photos",
+        shop,
+        stockCode: accessCode || "",
+        draftId: selectedStockDetailPhotoKey,
+      },
+      { method: "post" },
+    );
+  }, [
+    accessCode,
+    isProductPublisher,
+    selectedStockDetailPhotoKey,
+    selectedStockDetailPhotosLoaded,
+    shop,
+    stockPhotosFetcher.data,
+    stockPhotosFetcher,
+  ]);
+
+  useEffect(() => {
+    if (stockPhotosFetcher.data?.intent !== "load_stock_draft_photos") return;
+    if (stockPhotosFetcher.data.ok) {
+      const draftId = String(stockPhotosFetcher.data.draftId || "");
+      const photos = Array.isArray(stockPhotosFetcher.data.photos)
+        ? stockPhotosFetcher.data.photos
+        : [];
+      if (draftId) {
+        setStockDraftPhotosById((current) => ({
+          ...current,
+          [draftId]: photos,
+        }));
+      }
+      return;
+    }
+    if (stockPhotosFetcher.data.error) {
+      const draftId = String(stockPhotosFetcher.data.draftId || "");
+      if (draftId) {
+        setStockDraftPhotosById((current) => ({ ...current, [draftId]: [] }));
+      }
+      setPublisherMessage(stockPhotosFetcher.data.error);
+    }
+  }, [stockPhotosFetcher.data]);
+
+  useEffect(() => {
     if (!stockToast) return undefined;
     const timeoutId = window.setTimeout(() => setStockToast(null), 3600);
     return () => window.clearTimeout(timeoutId);
@@ -3396,7 +3520,6 @@ export default function StockPortal() {
       window.alert(STOCK_PUBLICATION_EDIT_BLOCKED_MESSAGE);
       return;
     }
-    loadStockDraftForEditing(item);
     setPendingEditDraftId(Number(item.id));
     editStockFetcher.submit(
       {
@@ -4519,9 +4642,11 @@ export default function StockPortal() {
                   Regresar
                 </button>
               </div>
-              {selectedStockDetail.photos?.length ? (
+              {selectedStockDetailPhotosLoading ? (
+                <p className={styles.empty}>Cargando fotos...</p>
+              ) : selectedStockDetailPhotos.length ? (
                 <div className={styles.downloadGrid}>
-                  {selectedStockDetail.photos.map((photo, index) => (
+                  {selectedStockDetailPhotos.map((photo, index) => (
                     <figure
                       className={styles.downloadPhoto}
                       key={`${selectedStockDetail.id}-${index}`}
@@ -4550,9 +4675,9 @@ export default function StockPortal() {
                     </figure>
                   ))}
                 </div>
-              ) : (
+              ) : selectedStockDetailPhotosLoaded ? (
                 <p className={styles.empty}>Este producto no tiene fotos.</p>
-              )}
+              ) : null}
               <dl className={styles.detailGrid}>
                 <div className={styles.detailMetaColumn}>
                   <div>
