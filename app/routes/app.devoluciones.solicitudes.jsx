@@ -6736,7 +6736,6 @@ export default function ReturnsRequests() {
   const courierRouteFetcher = useFetcher();
   const branchPickupDeliveryFetcher = useFetcher();
   const branchPickupRefundFetcher = useFetcher();
-  const branchDeliveryExpirationFetcher = useFetcher();
   const navigation = useNavigation();
   const location = useLocation();
   const isSubmitting = navigation.state === "submitting";
@@ -6756,7 +6755,6 @@ export default function ReturnsRequests() {
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
-  const isExpiringBranchDeliveryRequests = branchDeliveryExpirationFetcher.state !== "idle";
   const todayCourierDateKey = mexicoDateKey(new Date());
   const tomorrowCourierDateKey = addDaysToDateKey(todayCourierDateKey, 1);
   const isCourierTomorrowScope = courierDateScope === "tomorrow";
@@ -7276,23 +7274,6 @@ export default function ReturnsRequests() {
 
       {viewMode === VIEW_MODE.BRANCH ? (
         <s-section heading="Entregas en sucursal">
-          <div className={styles.branchPickupTestHeader}>
-            <branchDeliveryExpirationFetcher.Form method="post">
-              <input type="hidden" name="intent" value="expire_branch_delivery_requests" />
-              <label className={styles.branchPickupTestSwitch}>
-                <input
-                  type="checkbox"
-                  checked={isExpiringBranchDeliveryRequests}
-                  disabled={isExpiringBranchDeliveryRequests || branchRequests.length === 0}
-                  onChange={(event) => {
-                    if (event.target.checked) event.currentTarget.form?.requestSubmit();
-                  }}
-                />
-                <span className={styles.branchPickupTestSlider} aria-hidden="true" />
-                Vencio el tiempo
-              </label>
-            </branchDeliveryExpirationFetcher.Form>
-          </div>
           {branchRequests.length === 0 ? (
             <p>No hay solicitudes de entrega en sucursal.</p>
           ) : (
