@@ -6751,7 +6751,6 @@ export default function ReturnsRequests() {
   const [selectedCourierRefundUnitKeys, setSelectedCourierRefundUnitKeys] = useState([]);
   const [showOnlyNotLocatedCourierOrders, setShowOnlyNotLocatedCourierOrders] = useState(false);
   const [courierDateScope, setCourierDateScope] = useState("today");
-  const [includeAllCourierDatesInToday, setIncludeAllCourierDatesInToday] = useState(false);
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
@@ -6767,7 +6766,6 @@ export default function ReturnsRequests() {
     const orderDateKey = courierDateKey(order);
     if (!orderDateKey) return false;
     if (isCourierTomorrowScope) return orderDateKey === selectedCourierDateKey;
-    if (includeAllCourierDatesInToday) return true;
     return orderDateKey <= selectedCourierDateKey;
   });
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
@@ -7509,22 +7507,6 @@ export default function ReturnsRequests() {
                       );
                     })}
                   </div>
-                  <label className={`${styles.branchPickupTestSwitch} ${styles.courierDateTestSwitch}`}>
-                    <input
-                      type="checkbox"
-                      checked={includeAllCourierDatesInToday}
-                      onChange={(event) => {
-                        setIncludeAllCourierDatesInToday(event.target.checked);
-                        setShowOnlyNotLocatedCourierOrders(false);
-                        setCourierBulkMode("");
-                        setSelectedCourierBulkOrderIds([]);
-                        setCourierRefundRequest(null);
-                        setSelectedCourierRefundUnitKeys([]);
-                      }}
-                    />
-                    <span className={styles.branchPickupTestSlider} aria-hidden="true" />
-                    Modo prueba: incluir todas las fechas en Hoy
-                  </label>
                   <div
                     className={`${styles.courierOrdersCountGroup} ${
                       isCourierTomorrowScope ? styles.courierOrdersCountGroupInline : ""
