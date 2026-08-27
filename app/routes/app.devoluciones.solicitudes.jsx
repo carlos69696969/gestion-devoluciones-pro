@@ -6757,7 +6757,6 @@ export default function ReturnsRequests() {
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
   const [branchPickupRefundTestMode, setBranchPickupRefundTestMode] = useState(false);
-  const [notReturnedTestMode, setNotReturnedTestMode] = useState(false);
   const isExpiringBranchDeliveryRequests = branchDeliveryExpirationFetcher.state !== "idle";
   const todayCourierDateKey = mexicoDateKey(new Date());
   const tomorrowCourierDateKey = addDaysToDateKey(todayCourierDateKey, 1);
@@ -7424,17 +7423,6 @@ export default function ReturnsRequests() {
 
       {viewMode === VIEW_MODE.TO_RETURN ? (
         <s-section heading="Solicitudes pendientes por recoger en sucursal">
-          <div className={styles.branchPickupTestHeader}>
-            <label className={styles.branchPickupTestSwitch}>
-              <input
-                type="checkbox"
-                checked={notReturnedTestMode}
-                onChange={(event) => setNotReturnedTestMode(event.target.checked)}
-              />
-              <span className={styles.branchPickupTestSlider} aria-hidden="true" />
-              Modo prueba No devuelto
-            </label>
-          </div>
           {returnToCustomerQueueRequests.length === 0 ? (
             <p>No hay solicitudes pendientes por recoger.</p>
           ) : (
@@ -7447,7 +7435,7 @@ export default function ReturnsRequests() {
                   enableLazyMedia
                   hideCourierRouteStarts
                   hidePendingReturnStatus
-                  forceShowNotReturnedAction={notReturnedTestMode}
+                  forceShowNotReturnedAction={false}
                   useRefundQueueDateFormat
                   cardSuccessMessage={
                     visibleRefundCardSuccess?.requestId === String(request.id)
