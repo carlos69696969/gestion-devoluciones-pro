@@ -8,25 +8,6 @@ import {
 const ADMIN_API_VERSION = "2025-10";
 const MEXICO_TIME_ZONE = "America/Mexico_City";
 const HISTORY_STATUSES = ["reembolsada", "rechazada", "denegada", "reembolso_denegado", "no_devuelto"];
-const COURIER_HISTORY_FINAL_ACTIONS = [
-  "courier_mark_delivered",
-  "courier_mark_not_delivered",
-  "courier_route_order_not_located",
-  "courier_return_mark_received",
-  "courier_return_pickup_attempt_failed",
-  "courier_return_reject_after_failed_pickups",
-  "courier_branch_pickup_refunded",
-  "courier_order_refund_detail",
-];
-const COURIER_HISTORY_FINAL_STATUSES = [
-  "entregado",
-  "recibido",
-  "recibida",
-  "rechazada",
-  "no_recibido",
-  "no_entregado",
-  "reembolsada",
-];
 const DEFAULT_EVIDENCE_DAYS = 120;
 const DEFAULT_PURGE_DAYS = 180;
 const DEFAULT_BATCH_SIZE = 200;
@@ -398,63 +379,6 @@ async function cleanupEvidenceBatch(shop, inputs) {
   return { touchedRequests, cleanedPhotos };
 }
 
-async function collectCourierHistoryPurgeEntries(shop, purgeCutoff, batchSize) {
-  const [activityRows, eventRows, snapshotRows] = await Promise.all([
-    prisma.courierActivity.findMany({
-      where: {
-        shop,
-        createdAt: { lt: purgeCutoff },
-        action: { in: COURIER_HISTORY_FINAL_ACTIONS },
-      },
-      select: { requestId: true, orderNumber: true },
-      orderBy: { id: "asc" },
-      take: batchSize,
-    }),
-    prisma.courierEvent.findMany({
-      where: {
-        shop,
-        createdAt: { lt: purgeCutoff },
-        status: { in: COURIER_HISTORY_FINAL_STATUSES },
-      },
-      select: { requestId: true, orderNumber: true },
-      orderBy: { id: "asc" },
-      take: batchSize,
-    }),
-    prisma.courierRouteSnapshot.findMany({
-      where: {
-        shop,
-        finishedAt: { lt: purgeCutoff },
-      },
-      select: { orders: true },
-      orderBy: { id: "asc" },
-      take: batchSize,
-    }),
-  ]);
-
-  const entriesByRequestId = new Map();
-  for (const row of [...activityRows, ...eventRows]) {
-    const requestId = normalize(row.requestId);
-    if (!isPurgeableCourierRequestId(requestId)) continue;
-    entriesByRequestId.set(requestId, {
-      shop,
-      requestId,
-      orderNumber: normalize(row.orderNumber).replace(/^#/, "") || null,
-      cutoffAt: purgeCutoff,
-    });
-  }
-  for (const snapshot of snapshotRows) {
-    for (const entry of snapshotOrderEntries(snapshot)) {
-      entriesByRequestId.set(entry.requestId, {
-        shop,
-        requestId: entry.requestId,
-        orderNumber: entry.orderNumber,
-        cutoffAt: purgeCutoff,
-      });
-    }
-  }
-  return Array.from(entriesByRequestId.values());
-}
-
 async function deleteCourierRouteSnapshotsForPurgedOrders(shop, purgedRequestIds, batchSize) {
   const purgedRequestIdSet = new Set(
     (Array.isArray(purgedRequestIds) ? purgedRequestIds : [])
@@ -481,6 +405,68 @@ async function deleteCourierRouteSnapshotsForPurgedOrders(shop, purgedRequestIds
     where: { id: { in: removableIds } },
   });
   return Number(result.count || 0);
+}
+
+async function deleteCourierHistoryByAge(shop, purgeCutoff, batchSize) {
+  let deletedActivities = 0;
+  let deletedEvents = 0;
+  let deletedSnapshots = 0;
+
+  let keepDeletingActivities = true;
+  while (keepDeletingActivities) {
+    const rows = await prisma.courierActivity.findMany({
+      where: { shop, createdAt: { lt: purgeCutoff } },
+      select: { id: true },
+      orderBy: { id: "asc" },
+      take: batchSize,
+    });
+    if (!rows.length) {
+      keepDeletingActivities = false;
+      continue;
+    }
+    const result = await prisma.courierActivity.deleteMany({
+      where: { id: { in: rows.map((row) => row.id) } },
+    });
+    deletedActivities += Number(result.count || 0);
+  }
+
+  let keepDeletingEvents = true;
+  while (keepDeletingEvents) {
+    const rows = await prisma.courierEvent.findMany({
+      where: { shop, createdAt: { lt: purgeCutoff } },
+      select: { id: true },
+      orderBy: { id: "asc" },
+      take: batchSize,
+    });
+    if (!rows.length) {
+      keepDeletingEvents = false;
+      continue;
+    }
+    const result = await prisma.courierEvent.deleteMany({
+      where: { id: { in: rows.map((row) => row.id) } },
+    });
+    deletedEvents += Number(result.count || 0);
+  }
+
+  let keepDeletingSnapshots = true;
+  while (keepDeletingSnapshots) {
+    const rows = await prisma.courierRouteSnapshot.findMany({
+      where: { shop, finishedAt: { lt: purgeCutoff } },
+      select: { id: true },
+      orderBy: { id: "asc" },
+      take: batchSize,
+    });
+    if (!rows.length) {
+      keepDeletingSnapshots = false;
+      continue;
+    }
+    const result = await prisma.courierRouteSnapshot.deleteMany({
+      where: { id: { in: rows.map((row) => row.id) } },
+    });
+    deletedSnapshots += Number(result.count || 0);
+  }
+
+  return { deletedActivities, deletedEvents, deletedSnapshots };
 }
 
 async function purgeCourierHistoryBatch({ shop, session, inputs, logger }) {
@@ -511,26 +497,41 @@ async function purgeCourierHistoryBatch({ shop, session, inputs, logger }) {
     .map((entry) => normalize(entry.requestId))
     .filter(Boolean);
   if (purgedRequestIds.length) {
-    const [activityResult, eventResult, deliveryCodeResult] = await Promise.all([
+    const [activityResult, eventResult] = await Promise.all([
       prisma.courierActivity.deleteMany({
         where: { shop, requestId: { in: purgedRequestIds } },
       }),
       prisma.courierEvent.deleteMany({
         where: { shop, requestId: { in: purgedRequestIds } },
       }),
-      prisma.deliveryCodeAssignment.deleteMany({
-        where: {
-          shop,
-          active: false,
-          releasedAt: { lt: purgeCutoff },
-        },
-      }),
     ]);
     deletedActivities += Number(activityResult.count || 0);
     deletedEvents += Number(eventResult.count || 0);
-    deletedDeliveryCodes += Number(deliveryCodeResult.count || 0);
     deletedSnapshots += await deleteCourierRouteSnapshotsForPurgedOrders(shop, purgedRequestIds, inputs.batchSize);
   }
+
+  const agedHistory = await deleteCourierHistoryByAge(shop, purgeCutoff, inputs.batchSize);
+  deletedActivities += agedHistory.deletedActivities;
+  deletedEvents += agedHistory.deletedEvents;
+  deletedSnapshots += agedHistory.deletedSnapshots;
+
+  const [deliveryCodeResult, markerResult] = await Promise.all([
+    prisma.deliveryCodeAssignment.deleteMany({
+      where: {
+        shop,
+        active: false,
+        releasedAt: { lt: purgeCutoff },
+      },
+    }),
+    prisma.courierHistoryPurge.deleteMany({
+      where: {
+        shop,
+        cutoffAt: { lt: purgeCutoff },
+      },
+    }),
+  ]);
+  deletedDeliveryCodes += Number(deliveryCodeResult.count || 0);
+  purgedOrderMarkers += Number(markerResult.count || 0);
 
   return {
     purgedOrderMarkers,
