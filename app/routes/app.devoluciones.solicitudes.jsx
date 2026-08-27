@@ -4347,7 +4347,10 @@ export const loader = async ({ request }) => {
     viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.COURIERS || viewMode === VIEW_MODE.COURIER_HISTORY
       ? await loadArray("No se pudieron cargar los repartidores", () =>
           prisma.courier.findMany({
-            where: { shop: session.shop },
+            where:
+              viewMode === VIEW_MODE.COURIER_HISTORY
+                ? { shop: session.shop }
+                : { shop: session.shop, active: true },
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           }),
         )
@@ -4950,8 +4953,8 @@ export const action = async ({ request }) => {
     }
     const couriers = await prisma.courier.findMany({
       where: selectedCourierIds.length
-        ? { shop: session.shop, id: { in: selectedCourierIds } }
-        : { shop: session.shop, id: { in: [] } },
+        ? { shop: session.shop, id: { in: selectedCourierIds }, active: true }
+        : { shop: session.shop, id: { in: [] }, active: true },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     if (!couriers.length) {
@@ -5057,10 +5060,11 @@ export const action = async ({ request }) => {
   if (intent === "delete_courier") {
     const courierId = Number(formData.get("courierId") || 0);
     if (!courierId) return { ok: false, error: "Repartidor invalido." };
-    const deletedCourier = await prisma.courier.deleteMany({
+    const deactivatedCourier = await prisma.courier.updateMany({
       where: { id: courierId, shop: session.shop },
+      data: { active: false },
     });
-    if (!deletedCourier.count) {
+    if (!deactivatedCourier.count) {
       return { ok: false, error: "No se encontro el repartidor." };
     }
     return { ok: true, message: "Repartidor dado de baja correctamente." };
@@ -5318,7 +5322,7 @@ export const action = async ({ request }) => {
     if (!newCourierName) return { ok: false, error: "Escribe el nombre del nuevo repartidor." };
 
     const courier = await prisma.courier.findFirst({
-      where: { id: courierId, shop: session.shop },
+      where: { id: courierId, shop: session.shop, active: true },
       select: { id: true, name: true },
     });
     if (!courier) return { ok: false, error: "No se encontro el repartidor." };

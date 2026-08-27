@@ -385,6 +385,7 @@ async function getCourierDailyAccess(request, shop) {
     where: {
       id: Number(access.courierId),
       shop: String(shop || "").trim().toLowerCase(),
+      active: true,
     },
     select: { id: true, name: true, code: true },
   });
@@ -516,6 +517,7 @@ async function recoverCourierDailyAccessFromDeviceSession(request, shop) {
     where: {
       id: Number(sessionActivity.courierId),
       shop: String(shop || "").trim().toLowerCase(),
+      active: true,
     },
     select: { id: true, name: true, code: true },
   });
@@ -1161,7 +1163,7 @@ export const action = async ({ request }) => {
         return { ok: false, loginError: "Ingresa un codigo valido de 6 digitos." };
       }
       const courier = await prisma.courier.findFirst({
-        where: { shop, code },
+        where: { shop, code, active: true },
         select: { id: true, name: true },
       });
       if (!courier) {
