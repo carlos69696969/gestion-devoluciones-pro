@@ -6756,7 +6756,6 @@ export default function ReturnsRequests() {
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
-  const [branchPickupRefundTestMode, setBranchPickupRefundTestMode] = useState(false);
   const isExpiringBranchDeliveryRequests = branchDeliveryExpirationFetcher.state !== "idle";
   const todayCourierDateKey = mexicoDateKey(new Date());
   const tomorrowCourierDateKey = addDaysToDateKey(todayCourierDateKey, 1);
@@ -6839,12 +6838,6 @@ export default function ReturnsRequests() {
   const courierRouteActionData = courierRouteFetcher.data || null;
   const branchPickupDeliveryActionData = branchPickupDeliveryFetcher.data || null;
   const branchPickupRefundActionData = branchPickupRefundFetcher.data || null;
-  const branchPickupRefundSubmittingRequestId = String(
-    branchPickupRefundFetcher.formData?.get("requestId") ||
-      branchPickupRefundActionData?.requestId ||
-      branchPickupRefundActionData?.refundedBranchPickupRequestId ||
-      "",
-  ).trim();
   const actionErrorMessage = actionData?.reviewActionRequestId ? "" : actionData?.error || "";
   const pageErrorMessage =
     branchPickupDeliveryActionData?.error ||
@@ -7991,18 +7984,6 @@ export default function ReturnsRequests() {
 
       {viewMode === VIEW_MODE.BRANCH_PICKUP ? (
         <s-section heading="Recoger en sucursal">
-          <div className={styles.branchPickupTestHeader}>
-            <label className={styles.branchPickupTestSwitch}>
-              <input
-                type="checkbox"
-                checked={branchPickupRefundTestMode}
-                disabled={isSubmitting || isBranchPickupRefundSubmitting || courierOrders.length === 0}
-                onChange={(event) => setBranchPickupRefundTestMode(event.target.checked)}
-              />
-              <span className={styles.branchPickupTestSlider} aria-hidden="true" />
-              Modo prueba vencimiento
-            </label>
-          </div>
           {courierOrders.length === 0 ? (
             <p>No hay ordenes para recoger en sucursal.</p>
           ) : (
@@ -8018,30 +7999,12 @@ export default function ReturnsRequests() {
                   branchPickupView
                   hideTransferredCourierBadge
                   isSubmitting={isSubmitting}
-                  branchPickupRefundTestMode={branchPickupRefundTestMode}
-                  branchPickupRefundTestSubmitting={
-                    isBranchPickupRefundSubmitting &&
-                    branchPickupRefundSubmittingRequestId === String(request.id || "")
-                  }
-                  branchPickupRefundTestDisabled={isBranchPickupRefundSubmitting}
                   onBranchPickupDeliver={(selectedRequest) => {
                     setBranchPickupDeliveryRequest(selectedRequest);
                     setBranchPickupDeliveryCode("");
                   }}
                   onBranchPickupRefund={(selectedRequest) => {
                     setBranchPickupRefundRequest(selectedRequest);
-                  }}
-                  onBranchPickupTestRefund={(selectedRequest) => {
-                    const formData = new FormData();
-                    formData.set("intent", "branch_pickup_refund_expired");
-                    formData.set("requestId", String(selectedRequest.id || ""));
-                    formData.set("orderNumber", String(selectedRequest.orderNumber || ""));
-                    formData.set("deadline", String(selectedRequest.branchPickupDeadlineLabel || ""));
-                    formData.set("force", "1");
-                    branchPickupRefundFetcher.submit(formData, {
-                      method: "post",
-                      action: `${location.pathname}${location.search}`,
-                    });
                   }}
                 />
               ))}
