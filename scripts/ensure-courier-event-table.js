@@ -37,6 +37,16 @@ await prisma.$executeRawUnsafe(`
 `);
 
 await prisma.$executeRawUnsafe(`
+  ALTER TABLE "Courier"
+  ADD COLUMN IF NOT EXISTS "active" BOOLEAN NOT NULL DEFAULT true
+`);
+
+await prisma.$executeRawUnsafe(`
+  CREATE INDEX IF NOT EXISTS "Courier_shop_active_idx"
+  ON "Courier"("shop", "active")
+`);
+
+await prisma.$executeRawUnsafe(`
   CREATE INDEX IF NOT EXISTS "Courier_shop_createdAt_idx"
   ON "Courier"("shop", "createdAt")
 `);
