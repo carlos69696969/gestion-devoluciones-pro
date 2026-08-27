@@ -851,6 +851,11 @@ function sanitizeText(value, maxLength = 180) {
     .slice(0, maxLength);
 }
 
+function sanitizeStockCreateRequestId(value) {
+  const cleanValue = sanitizeText(value, 120);
+  return /^[a-z0-9_-]{12,120}$/i.test(cleanValue) ? cleanValue : "";
+}
+
 function normalizeAudience(value) {
   const cleanValue = String(value || "")
     .trim()
@@ -1173,6 +1178,10 @@ function generateStockSessionToken() {
 
 function generateStockDeviceId() {
   return `stock-device-${generateStockSessionToken()}`;
+}
+
+function generateStockCreateRequestId() {
+  return `stock-create-${generateStockSessionToken()}`;
 }
 
 function stockPortalSessionCookie() {
@@ -1979,6 +1988,22 @@ export async function action({ request }) {
     .map(sanitizePhotoDataUrl)
     .filter(Boolean)
     .slice(0, MAX_STOCK_PHOTOS);
+  const stockSavedRedirect = ({
+    sku,
+    locationCode,
+    quantity: savedQuantity,
+    variants: savedVariants,
+    edited = false,
+  }) =>
+    redirect(
+      stockPortalHref(
+        `&guardado=1${edited ? "&editado=1" : ""}&sku=${encodeURIComponent(sku || "")}&ubicacion=${encodeURIComponent(
+          locationCode || "",
+        )}&cantidad=${encodeURIComponent(String(savedQuantity || 0))}&tallas=${encodeURIComponent(
+          stockPrintSizeBatches(savedVariants),
+        )}`,
+      ),
+    );
   if (editingExpected && !editingDraftId) {
     return {
       ok: false,
@@ -2035,13 +2060,34 @@ export async function action({ request }) {
           "No se pudo guardar la edicion. Intenta abrir la orden otra vez.",
       };
     }
-    return redirect(
-      stockPortalHref(
-        `&guardado=1&editado=1&sku=${encodeURIComponent(currentDraft.sku || "")}&ubicacion=${encodeURIComponent(
-          currentDraft.locationCode || "",
-        )}&cantidad=${encodeURIComponent(String(quantity))}&tallas=${encodeURIComponent(stockPrintSizeBatches(variants))}`,
-      ),
-    );
+    return stockSavedRedirect({
+      sku: currentDraft.sku,
+      locationCode: currentDraft.locationCode,
+      quantity,
+      variants,
+      edited: true,
+    });
+  }
+  const createRequestId = sanitizeStockCreateRequestId(
+    formData.get("createRequestId"),
+  );
+  if (!createRequestId) {
+    return {
+      ok: false,
+      error: "No se pudo proteger este guardado. Recarga el portal e intenta nuevamente.",
+    };
+  }
+  const existingRequestDraft = await prisma.stockProductDraft.findFirst({
+    where: { shop, createRequestId },
+    select: { sku: true, locationCode: true, quantity: true, variants: true },
+  });
+  if (existingRequestDraft) {
+    return stockSavedRedirect({
+      sku: existingRequestDraft.sku,
+      locationCode: existingRequestDraft.locationCode,
+      quantity: existingRequestDraft.quantity,
+      variants: existingRequestDraft.variants,
+    });
   }
   const existingSkus = (
     await prisma.stockProductDraft.findMany({
@@ -2095,6 +2141,7 @@ export async function action({ request }) {
         variants,
         status: STOCK_DRAFT_STATUS.PENDING,
         preparedByStockUserId: stockUser.id,
+        createRequestId,
       },
     }),
   ];
@@ -2115,15 +2162,27 @@ export async function action({ request }) {
     );
   }
 
-  await prisma.$transaction(stockWriteOperations);
+  try {
+    await prisma.$transaction(stockWriteOperations);
+  } catch (error) {
+    if (error?.code === "P2002") {
+      const savedDraft = await prisma.stockProductDraft.findFirst({
+        where: { shop, createRequestId },
+        select: { sku: true, locationCode: true, quantity: true, variants: true },
+      });
+      if (savedDraft) {
+        return stockSavedRedirect({
+          sku: savedDraft.sku,
+          locationCode: savedDraft.locationCode,
+          quantity: savedDraft.quantity,
+          variants: savedDraft.variants,
+        });
+      }
+    }
+    throw error;
+  }
 
-  return redirect(
-    stockPortalHref(
-      `&guardado=1&sku=${encodeURIComponent(sku)}&ubicacion=${encodeURIComponent(locationCode)}&cantidad=${encodeURIComponent(
-        String(quantity),
-      )}&tallas=${encodeURIComponent(stockPrintSizeBatches(variants))}`,
-    ),
-  );
+  return stockSavedRedirect({ sku, locationCode, quantity, variants });
 }
 
 function money(value) {
@@ -2429,6 +2488,10 @@ export default function StockPortal() {
     useState("");
   const [pendingEditDraftId, setPendingEditDraftId] = useState(0);
   const [stockDeviceId, setStockDeviceId] = useState("");
+  const [stockCreateRequestId, setStockCreateRequestId] = useState(() =>
+    generateStockCreateRequestId(),
+  );
+  const [stockSaveLocked, setStockSaveLocked] = useState(false);
   const [variantGroups, setVariantGroups] = useState([blankStockVariant()]);
   const [captureDraftLoaded, setCaptureDraftLoaded] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -2441,6 +2504,7 @@ export default function StockPortal() {
     startY: 0,
   });
   const pendingStockSaveRef = useRef(false);
+  const stockSaveLockedRef = useRef(false);
   const lastDraftCountRef = useRef(drafts.length);
   const restoredPublisherStateKeyRef = useRef("");
   const publishNoticeArmedRef = useRef(false);
@@ -2590,6 +2654,9 @@ export default function StockPortal() {
     setEditingDraftBaselineSignature("");
     setPendingEditDraftId(0);
     setPhotos([]);
+    stockSaveLockedRef.current = false;
+    setStockSaveLocked(false);
+    setStockCreateRequestId(generateStockCreateRequestId());
     resetStockVariants();
     setCaptureDraftLoaded(true);
     if (clearSavedFlag) {
@@ -2840,7 +2907,11 @@ export default function StockPortal() {
   }, [drafts.length, navigation.state]);
 
   useEffect(() => {
-    if (actionData?.error) pendingStockSaveRef.current = false;
+    if (actionData?.error) {
+      pendingStockSaveRef.current = false;
+      stockSaveLockedRef.current = false;
+      setStockSaveLocked(false);
+    }
   }, [actionData?.error]);
 
   useEffect(() => {
@@ -3970,6 +4041,10 @@ export default function StockPortal() {
                 method="post"
                 className={styles.form}
                 onSubmit={(event) => {
+                  if (stockSaveLockedRef.current) {
+                    event.preventDefault();
+                    return;
+                  }
                   if (isEditingStockDraft && !editingDraftId) {
                     event.preventDefault();
                     window.alert(
@@ -3988,6 +4063,8 @@ export default function StockPortal() {
                     event.preventDefault();
                     return;
                   }
+                  stockSaveLockedRef.current = true;
+                  setStockSaveLocked(true);
                   pendingStockSaveRef.current = true;
                 }}
               >
@@ -4018,6 +4095,11 @@ export default function StockPortal() {
                   type="hidden"
                   name="editingExpected"
                   value={isEditingStockDraft ? "1" : ""}
+                />
+                <input
+                  type="hidden"
+                  name="createRequestId"
+                  value={editingDraftId ? "" : stockCreateRequestId}
                 />
                 {photos.map((photo) => (
                   <input
@@ -4309,9 +4391,11 @@ export default function StockPortal() {
                     <button
                       className={styles.primaryButton}
                       type="submit"
-                      disabled={isSubmitting || !canSubmitStockForm}
+                      disabled={
+                        stockSaveLocked || isSubmitting || !canSubmitStockForm
+                      }
                     >
-                      {isSubmitting ? "Guardando..." : "Listo"}
+                      {stockSaveLocked || isSubmitting ? "Guardando..." : "Listo"}
                     </button>
                   </div>
                 ) : null}

@@ -310,11 +310,13 @@ model StockProductDraft {
   publishingLockedAt            DateTime?
   locationReleasedAt            DateTime?
   locationReusedAt              DateTime?
+  createRequestId               String?
   createdAt                     DateTime   @default(now())
   updatedAt                     DateTime   @updatedAt
   preparedByStockUser           StockUser? @relation("StockPreparedProducts", fields: [preparedByStockUserId], references: [id])
   publishedByStockUser          StockUser? @relation("StockPublishedProducts", fields: [publishedByStockUserId], references: [id])
 
+  @@unique([shop, createRequestId])
   @@index([shop, status, createdAt])
   @@index([shop, sku])
   @@index([shop, audience, garmentType])
