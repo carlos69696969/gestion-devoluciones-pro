@@ -1172,6 +1172,10 @@
   transform: translateX(18px);
 }
 
+.courierDateTestSwitch {
+  margin: 0 0 10px;
+}
+
 .branchPickupTestCheckbox {
   display: inline-flex;
   align-items: center;
