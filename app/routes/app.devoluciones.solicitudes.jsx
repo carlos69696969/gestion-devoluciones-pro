@@ -25,6 +25,7 @@ import {
   ensureStockInventoryArchiveWebhooks,
   recordArchivedStockProduct,
 } from "../utils/stockZeroInventoryArchive.server";
+import { processKnownRefundStoreCreditDebit } from "../utils/storeCreditRewards.server";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -2877,6 +2878,10 @@ async function fetchOrderSnapshot(admin, orderId) {
         currentSubtotalPriceSet {
           shopMoney { amount currencyCode }
         }
+        customer {
+          id
+          email
+        }
         lineItems(first: 100) {
           edges {
             node {
@@ -2930,6 +2935,8 @@ async function fetchOrderSnapshot(admin, orderId) {
   if (!order) throw new Error("No se encontro la orden en Shopify.");
   return {
     orderId: order.id,
+    customerId: String(order.customer?.id || ""),
+    customerEmail: String(order.customer?.email || ""),
     currentTotalPrice: Number(order.currentTotalPriceSet?.shopMoney?.amount || 0),
     currentSubtotalPrice: Number(order.currentSubtotalPriceSet?.shopMoney?.amount || 0),
     currencyCode: String(order.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
@@ -3409,10 +3416,59 @@ async function refundShopifyOrderToOriginalPayment({
     refundId: String(payload?.data?.refundCreate?.refund?.id || ""),
     finalRefund,
     refundedSubtotal: finalRefund,
+    refundedProductSubtotal: subtotal,
     currencyCode: snapshot.currencyCode || "MXN",
+    customerId: snapshot.customerId || "",
+    customerEmail: snapshot.customerEmail || "",
     selectedAllLineItems,
     refundedItems,
   };
+}
+
+async function debitStoreCreditForAppRefund({
+  admin,
+  shop,
+  shopifyOrderId,
+  shopifyRefundId,
+  shopifyCustomerId = "",
+  refundedSubtotal,
+  currencyCode = "MXN",
+  source,
+}) {
+  if (!shopifyRefundId || !shopifyOrderId || Number(refundedSubtotal || 0) <= 0) {
+    return { skipped: true, reason: "missing_refund_data" };
+  }
+  try {
+    const result = await processKnownRefundStoreCreditDebit({
+      admin,
+      shop,
+      shopifyRefundId,
+      shopifyOrderId,
+      shopifyCustomerId,
+      refundedSubtotal,
+      currencyCode,
+      source,
+      payload: {
+        admin_graphql_api_id: shopifyRefundId,
+        order_id: shopifyOrderId,
+      },
+    });
+    console.log("Debito de credito en tienda procesado desde app refund", {
+      shop,
+      refundId: shopifyRefundId,
+      orderId: shopifyOrderId,
+      ...result,
+    });
+    return result;
+  } catch (error) {
+    console.error("No se pudo debitar credito en tienda desde app refund", {
+      shop,
+      refundId: shopifyRefundId,
+      orderId: shopifyOrderId,
+      error: error?.message || error,
+    });
+    return { skipped: true, reason: "debit_failed", error: error?.message || String(error || "") };
+  }
 }
 
 async function fetchBranchPickupOrderForDeadline(admin, shopifyOrderId) {
@@ -3559,6 +3615,16 @@ async function refundExpiredBranchPickupOrder({
     admin,
     shopifyOrderId: cleanRequestId,
     notePrefix: `Reembolso pedido #${resolvedOrderNumber || cleanRequestId.replace(/^gid:\/\/shopify\/Order\//, "")} no recogido en sucursal`,
+  });
+  await debitStoreCreditForAppRefund({
+    admin,
+    shop: shopDomain,
+    shopifyOrderId: cleanRequestId,
+    shopifyRefundId: refundResult.refundId,
+    shopifyCustomerId: refundResult.customerId,
+    refundedSubtotal: refundResult.refundedProductSubtotal,
+    currencyCode: refundResult.currencyCode,
+    source: "branch_pickup_refund",
   });
   await replaceShopifyOrderCourierStatusTag(admin, cleanRequestId, "reembolsada");
   await prisma.deliveryCodeAssignment.updateMany({
@@ -4757,6 +4823,16 @@ export const action = async ({ request }) => {
             includeShipping: true,
             selectedLineItemUnitKeys: refundableSelectedLineItemUnitKeys,
           });
+          await debitStoreCreditForAppRefund({
+            admin,
+            shop: session.shop,
+            shopifyOrderId: requestId,
+            shopifyRefundId: refundResult.refundId,
+            shopifyCustomerId: refundResult.customerId,
+            refundedSubtotal: refundResult.refundedProductSubtotal,
+            currencyCode: refundResult.currencyCode,
+            source: "courier_refund",
+          });
           const refundNotificationCopy = buildCourierOrderRefundNotificationCopy({
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
             refundAmount: refundResult.finalRefund,
@@ -5832,6 +5908,16 @@ export const action = async ({ request }) => {
       }
 
       const refundId = String(payload?.data?.refundCreate?.refund?.id || "");
+      await debitStoreCreditForAppRefund({
+        admin,
+        shop: session.shop,
+        shopifyOrderId: requestRow.shopifyOrderId,
+        shopifyRefundId: refundId,
+        shopifyCustomerId: snapshot.customerId,
+        refundedSubtotal: subtotal,
+        currencyCode: snapshot.currencyCode || "MXN",
+        source: "return_request_refund",
+      });
       const refundProcessedMessage = buildRefundProcessedMessage(requestRow, finalRefund);
       await prisma.returnRequest.update({
         where: { id },
