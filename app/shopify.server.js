@@ -24,6 +24,7 @@ const requiredScopes = [
   "write_merchant_managed_fulfillment_orders",
   "write_assigned_fulfillment_orders",
   "write_fulfillments",
+  "write_store_credit_account_transactions",
 ];
 const configuredScopes = process.env.SCOPES?.split(",").map((scope) => scope.trim()).filter(Boolean) || [];
 

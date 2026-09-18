@@ -220,6 +220,60 @@ model ReturnSettings {
   createdAt                       DateTime @default(now())
 }
 
+model StoreCreditLedger {
+  id                    Int                      @id @default(autoincrement())
+  shop                  String
+  shopifyOrderId        String
+  orderNumber           String?
+  shopifyCustomerId     String?
+  customerEmail         String?
+  currencyCode          String                   @default("MXN")
+  creditRate            Float                    @default(0.1)
+  eligibleSubtotal      Float                    @default(0)
+  creditedAmount        Float                    @default(0)
+  debitedAmount         Float                    @default(0)
+  pendingDebitAmount    Float                    @default(0)
+  status                String                   @default("pending")
+  creditTransactionId   String?
+  creditError           String?
+  creditedAt            DateTime?
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  transactions          StoreCreditTransaction[]
+
+  @@unique([shop, shopifyOrderId])
+  @@index([shop, shopifyCustomerId])
+  @@index([shop, status, createdAt])
+}
+
+model StoreCreditTransaction {
+  id                   Int                @id @default(autoincrement())
+  ledgerId             Int?
+  shop                 String
+  sourceKey            String
+  shopifyOrderId       String
+  shopifyRefundId      String?
+  shopifyCustomerId    String?
+  type                 String
+  source               String             @default("webhook")
+  amount               Float
+  currencyCode         String
+  shopifyTransactionId String?
+  status               String             @default("pending")
+  errorCode            String?
+  errorMessage         String?
+  payload              Json?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  ledger               StoreCreditLedger? @relation(fields: [ledgerId], references: [id], onDelete: SetNull)
+
+  @@unique([shop, sourceKey])
+  @@index([shop, shopifyOrderId])
+  @@index([shop, shopifyRefundId])
+  @@index([shop, shopifyCustomerId, status])
+  @@index([shop, type, createdAt])
+}
+
 model PushDevice {
   id             Int      @id @default(autoincrement())
   shop           String
