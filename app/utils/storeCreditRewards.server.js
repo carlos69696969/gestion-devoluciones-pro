@@ -6,7 +6,7 @@ const NOTIFICATIONS_API_BASE_URL = String(
   process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
 ).replace(/\/+$/, "");
 const NOTIFICATIONS_API_KEY = String(process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "").trim();
-const STORE_CREDIT_NOTIFICATION_DELAY_MS = Number(process.env.STORE_CREDIT_NOTIFICATION_DELAY_MS || 8 * 1000);
+const STORE_CREDIT_NOTIFICATION_TIMEOUT_MS = Number(process.env.STORE_CREDIT_NOTIFICATION_TIMEOUT_MS || 2500);
 
 function normalizeString(value) {
   return String(value || "").trim();
@@ -63,10 +63,6 @@ function moneyNumber(value) {
 
 function roundMoney(value) {
   return Math.round((moneyNumber(value) + Number.EPSILON) * 100) / 100;
-}
-
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
 }
 
 function moneyFromSet(set) {
@@ -305,11 +301,6 @@ async function scheduleStoreCreditNotification({
 }) {
   if (!NOTIFICATIONS_API_BASE_URL || !shop || !shopifyCustomerId || roundMoney(amount) <= 0) return;
 
-  const delayMs = Number.isFinite(STORE_CREDIT_NOTIFICATION_DELAY_MS)
-    ? STORE_CREDIT_NOTIFICATION_DELAY_MS
-    : 8 * 1000;
-  await wait(delayMs);
-
   const endpoints = NOTIFICATIONS_API_KEY
     ? [
         {
@@ -351,11 +342,18 @@ async function scheduleStoreCreditNotification({
       headers["x-api-key"] = endpoint.apiKey;
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      Number.isFinite(STORE_CREDIT_NOTIFICATION_TIMEOUT_MS) ? STORE_CREDIT_NOTIFICATION_TIMEOUT_MS : 2500,
+    );
+
     try {
       const response = await fetch(endpoint.url, {
         method: "POST",
         headers,
         body,
+        signal: controller.signal,
       });
       const responsePayload = await response.json().catch(() => null);
       if (response.ok && responsePayload?.ok !== false) {
@@ -373,6 +371,8 @@ async function scheduleStoreCreditNotification({
       };
     } catch (error) {
       lastError = { error: error?.message || error };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -527,23 +527,25 @@ export async function processPaidOrderStoreCreditReward({ admin, shop, payload =
         status: ledger.debitedAmount > 0 ? "partially_debited" : "credited",
       },
     });
-    void scheduleStoreCreditNotification({
-      shop: normalizedShop,
-      shopifyOrderId,
-      orderNumber: normalizeString(orderNode?.name || payload.name || payload.order_number),
-      shopifyCustomerId: customerId,
-      customerEmail,
-      amount: creditAmount,
-      currencyCode: subtotalMoney.currencyCode,
-      sourceKey: `store-credit-reward:${shopifyOrderId}`,
-      logger,
-    }).catch((error) => {
+    try {
+      await scheduleStoreCreditNotification({
+        shop: normalizedShop,
+        shopifyOrderId,
+        orderNumber: normalizeString(orderNode?.name || payload.name || payload.order_number),
+        shopifyCustomerId: customerId,
+        customerEmail,
+        amount: creditAmount,
+        currencyCode: subtotalMoney.currencyCode,
+        sourceKey: `store-credit-reward:${shopifyOrderId}`,
+        logger,
+      });
+    } catch (notificationError) {
       logger.warn?.("No se pudo iniciar la notificacion de credito en tienda", {
         shop: normalizedShop,
         shopifyOrderId,
-        error: error?.message || error,
+        error: notificationError?.message || notificationError,
       });
-    });
+    }
     return { credited: true, amount: creditAmount, currencyCode: subtotalMoney.currencyCode };
   } catch (error) {
     const firstUserError = error?.userErrors?.[0];
