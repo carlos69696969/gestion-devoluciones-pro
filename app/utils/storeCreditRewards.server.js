@@ -73,6 +73,54 @@ function moneyFromSet(set) {
   };
 }
 
+function proratedLineTotal(lineItem, refundQuantity) {
+  const quantity = Math.max(0, moneyNumber(refundQuantity));
+  if (quantity <= 0) return 0;
+
+  const lineQuantity = Math.max(1, moneyNumber(lineItem?.quantity || quantity));
+  const discountedTotal = moneyFromSet(lineItem?.discountedTotalSet).amount;
+  if (discountedTotal > 0) {
+    return roundMoney((discountedTotal / lineQuantity) * quantity);
+  }
+
+  const originalTotal = moneyFromSet(lineItem?.originalTotalSet).amount;
+  if (originalTotal > 0) {
+    return roundMoney((originalTotal / lineQuantity) * quantity);
+  }
+
+  const originalUnitPrice = moneyFromSet(lineItem?.originalUnitPriceSet).amount;
+  if (originalUnitPrice > 0) {
+    return roundMoney(originalUnitPrice * quantity);
+  }
+
+  return 0;
+}
+
+function refundLineItemSubtotal(item) {
+  const explicitSubtotal = moneyFromSet(item?.subtotalSet).amount;
+  if (explicitSubtotal > 0) return explicitSubtotal;
+  return proratedLineTotal(item?.lineItem, item?.quantity);
+}
+
+function refundLineItemSubtotalFromWebhook(item) {
+  const explicitSubtotal = moneyNumber(item?.subtotal || item?.subtotal_set?.shop_money?.amount);
+  if (explicitSubtotal > 0) return roundMoney(explicitSubtotal);
+
+  const quantity = Math.max(0, moneyNumber(item?.quantity));
+  const lineItem = item?.line_item || {};
+  const unitPrice = moneyNumber(
+    lineItem.discounted_price ||
+      lineItem.price ||
+      item?.price ||
+      item?.price_set?.shop_money?.amount,
+  );
+  if (quantity > 0 && unitPrice > 0) {
+    return roundMoney(unitPrice * quantity);
+  }
+
+  return 0;
+}
+
 function compactOrderPayload(payload = {}) {
   return {
     id: payload.id || null,
@@ -185,6 +233,25 @@ async function fetchRefundForStoreCredit(admin, refundId) {
               }
               lineItem {
                 id
+                quantity
+                originalUnitPriceSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+                originalTotalSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+                discountedTotalSet(withCodeDiscounts: true) {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
               }
             }
           }
@@ -403,7 +470,7 @@ function orderSubtotalFromWebhook(payload = {}) {
 
 function refundSubtotalFromWebhook(payload = {}) {
   const subtotal = (payload.refund_line_items || []).reduce(
-    (sum, item) => sum + moneyNumber(item?.subtotal || item?.subtotal_set?.shop_money?.amount),
+    (sum, item) => sum + refundLineItemSubtotalFromWebhook(item),
     0,
   );
   return {
@@ -601,7 +668,7 @@ export async function processRefundStoreCreditDebit({ admin, shop, payload = {},
   });
 
   const refundLineSubtotal = refundNode?.refundLineItems?.nodes?.length
-    ? refundNode.refundLineItems.nodes.reduce((sum, item) => sum + moneyFromSet(item?.subtotalSet).amount, 0)
+    ? refundNode.refundLineItems.nodes.reduce((sum, item) => sum + refundLineItemSubtotal(item), 0)
     : refundSubtotalFromWebhook(payload).amount;
   const refundCurrency =
     refundNode?.refundLineItems?.nodes?.find((item) => moneyFromSet(item?.subtotalSet).currencyCode)?.subtotalSet ||
