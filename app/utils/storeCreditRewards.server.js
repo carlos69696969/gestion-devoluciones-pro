@@ -2,6 +2,11 @@ import prisma from "../db.server";
 
 const DEFAULT_REWARD_RATE = 0.1;
 const RECENT_PENDING_MS = 5 * 60 * 1000;
+const NOTIFICATIONS_API_BASE_URL = String(
+  process.env.NOTIFICATIONS_API_URL || "https://centro-de-notificaciones-cariana.onrender.com",
+).replace(/\/+$/, "");
+const NOTIFICATIONS_API_KEY = String(process.env.NOTIFICATIONS_API_KEY || process.env.APP_INTERNAL_API_KEY || "").trim();
+const STORE_CREDIT_NOTIFICATION_DELAY_MS = Number(process.env.STORE_CREDIT_NOTIFICATION_DELAY_MS || 60 * 1000);
 
 function normalizeString(value) {
   return String(value || "").trim();
@@ -31,6 +36,14 @@ function customerIdFromPayload(payload = {}) {
     normalizeString(payload.customer?.admin_graphql_api_id) ||
     normalizeString(payload.customer?.id && numericIdToGid("Customer", payload.customer.id))
   );
+}
+
+function legacyNumericId(value) {
+  const text = normalizeString(value);
+  if (!text) return "";
+  if (/^\d+$/.test(text)) return text;
+  const match = text.match(/(\d+)(?!.*\d)/);
+  return match ? match[1] : "";
 }
 
 function readRewardRate() {
@@ -275,6 +288,66 @@ async function debitStoreCreditAccount(admin, { customerId, amount, currencyCode
   return result.storeCreditAccountTransaction || null;
 }
 
+async function scheduleStoreCreditNotification({
+  shop,
+  shopifyOrderId,
+  orderNumber,
+  shopifyCustomerId,
+  customerEmail,
+  amount,
+  currencyCode,
+  sourceKey,
+  logger = console,
+}) {
+  if (!NOTIFICATIONS_API_BASE_URL || !shop || !shopifyCustomerId || roundMoney(amount) <= 0) return;
+
+  const endpoint = `${NOTIFICATIONS_API_BASE_URL}/api/store-credit/events`;
+  const headers = {
+    "Content-Type": "application/json",
+    "x-shop-domain": shop,
+  };
+  if (NOTIFICATIONS_API_KEY) {
+    headers["x-api-key"] = NOTIFICATIONS_API_KEY;
+  }
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        shopDomain: shop,
+        event: {
+          sourceKey,
+          shopifyCustomerId: legacyNumericId(shopifyCustomerId),
+          customerEmail,
+          orderId: legacyNumericId(shopifyOrderId) || shopifyOrderId,
+          orderNumber,
+          amount: roundMoney(amount),
+          currencyCode,
+          delayMs: Number.isFinite(STORE_CREDIT_NOTIFICATION_DELAY_MS)
+            ? STORE_CREDIT_NOTIFICATION_DELAY_MS
+            : 60 * 1000,
+        },
+      }),
+    });
+    const responsePayload = await response.json().catch(() => null);
+    if (!response.ok || responsePayload?.ok === false) {
+      logger.warn?.("No se pudo programar la notificacion de credito en tienda", {
+        shop,
+        shopifyOrderId,
+        status: response.status,
+        detail: responsePayload?.error || responsePayload?.detail || responsePayload?.result?.reason || "",
+      });
+    }
+  } catch (error) {
+    logger.warn?.("No se pudo programar la notificacion de credito en tienda", {
+      shop,
+      shopifyOrderId,
+      error: error?.message || error,
+    });
+  }
+}
+
 async function findReusableTransaction({ shop, sourceKey }) {
   const transaction = await prisma.storeCreditTransaction.findUnique({
     where: { shop_sourceKey: { shop, sourceKey } },
@@ -418,6 +491,17 @@ export async function processPaidOrderStoreCreditReward({ admin, shop, payload =
         creditedAt: new Date(),
         status: ledger.debitedAmount > 0 ? "partially_debited" : "credited",
       },
+    });
+    await scheduleStoreCreditNotification({
+      shop: normalizedShop,
+      shopifyOrderId,
+      orderNumber: normalizeString(orderNode?.name || payload.name || payload.order_number),
+      shopifyCustomerId: customerId,
+      customerEmail,
+      amount: creditAmount,
+      currencyCode: subtotalMoney.currencyCode,
+      sourceKey: `store-credit-reward:${shopifyOrderId}`,
+      logger,
     });
     return { credited: true, amount: creditAmount, currencyCode: subtotalMoney.currencyCode };
   } catch (error) {
