@@ -18,6 +18,7 @@ if (process.env.npm_lifecycle_event !== "build") {
 
 const requiredScopes = [
   "read_orders",
+  "read_customers",
   "read_products",
   "read_inventory",
   "write_products",
