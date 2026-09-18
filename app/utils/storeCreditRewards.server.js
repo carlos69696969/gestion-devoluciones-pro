@@ -599,9 +599,6 @@ export async function processRefundStoreCreditDebit({ admin, shop, payload = {},
   const ledger = await prisma.storeCreditLedger.findUnique({
     where: { shop_shopifyOrderId: { shop: normalizedShop, shopifyOrderId } },
   });
-  if (!ledger || ledger.creditedAmount <= 0) {
-    return { skipped: true, reason: "order_without_credit" };
-  }
 
   const refundLineSubtotal = refundNode?.refundLineItems?.nodes?.length
     ? refundNode.refundLineItems.nodes.reduce((sum, item) => sum + moneyFromSet(item?.subtotalSet).amount, 0)
@@ -609,25 +606,40 @@ export async function processRefundStoreCreditDebit({ admin, shop, payload = {},
   const refundCurrency =
     refundNode?.refundLineItems?.nodes?.find((item) => moneyFromSet(item?.subtotalSet).currencyCode)?.subtotalSet ||
     refundNode?.totalRefundedSet;
-  const currencyCode = moneyFromSet(refundCurrency).currencyCode || ledger.currencyCode;
-  const refundableCredit = roundMoney(refundLineSubtotal * Number(ledger.creditRate || DEFAULT_REWARD_RATE));
-  const remainingCreditedAmount = roundMoney(Number(ledger.creditedAmount || 0) - Number(ledger.debitedAmount || 0));
-  const debitAmount = roundMoney(Math.min(refundableCredit, remainingCreditedAmount));
+  const currencyCode = moneyFromSet(refundCurrency).currencyCode || ledger?.currencyCode || "MXN";
+  const refundableCredit = roundMoney(refundLineSubtotal * Number(ledger?.creditRate || DEFAULT_REWARD_RATE));
+  const remainingCreditedAmount = ledger
+    ? roundMoney(Number(ledger.creditedAmount || 0) - Number(ledger.debitedAmount || 0))
+    : refundableCredit;
+  const debitAmount = roundMoney(ledger ? Math.min(refundableCredit, remainingCreditedAmount) : refundableCredit);
   if (debitAmount <= 0) return { skipped: true, reason: "nothing_to_debit" };
 
-  const customerId = normalizeString(refundNode?.order?.customer?.id || ledger.shopifyCustomerId);
+  let customerId = normalizeString(refundNode?.order?.customer?.id || ledger?.shopifyCustomerId);
+  if (!customerId) {
+    try {
+      const orderNode = await fetchOrderForStoreCredit(admin, shopifyOrderId);
+      customerId = normalizeString(orderNode?.customer?.id);
+    } catch (error) {
+      logger.warn?.("No se pudo leer la orden para debito de credito sin ledger", {
+        shop: normalizedShop,
+        shopifyOrderId,
+        error: error?.message || error,
+      });
+    }
+  }
   if (!customerId) return { skipped: true, reason: "missing_customer" };
 
   const transaction = existing
     ? await prisma.storeCreditTransaction.update({
         where: { id: existing.id },
         data: {
-          ledgerId: ledger.id,
+          ledgerId: ledger?.id || null,
           shopifyOrderId,
           shopifyRefundId,
           shopifyCustomerId: customerId,
           amount: debitAmount,
           currencyCode,
+          source: ledger ? "webhook" : "refund_without_ledger",
           status: "pending",
           errorCode: null,
           errorMessage: null,
@@ -636,13 +648,14 @@ export async function processRefundStoreCreditDebit({ admin, shop, payload = {},
       })
     : await prisma.storeCreditTransaction.create({
         data: {
-          ledgerId: ledger.id,
+          ledgerId: ledger?.id || null,
           shop: normalizedShop,
           sourceKey,
           shopifyOrderId,
           shopifyRefundId,
           shopifyCustomerId: customerId,
           type: "debit",
+          source: ledger ? "webhook" : "refund_without_ledger",
           amount: debitAmount,
           currencyCode,
           status: "pending",
@@ -656,7 +669,7 @@ export async function processRefundStoreCreditDebit({ admin, shop, payload = {},
       amount: debitAmount,
       currencyCode,
     });
-    const nextDebitedAmount = roundMoney(Number(ledger.debitedAmount || 0) + debitAmount);
+    const nextDebitedAmount = ledger ? roundMoney(Number(ledger.debitedAmount || 0) + debitAmount) : debitAmount;
     await prisma.storeCreditTransaction.update({
       where: { id: transaction.id },
       data: {
@@ -665,14 +678,16 @@ export async function processRefundStoreCreditDebit({ admin, shop, payload = {},
         errorMessage: null,
       },
     });
-    await prisma.storeCreditLedger.update({
-      where: { id: ledger.id },
-      data: {
-        debitedAmount: { increment: debitAmount },
-        status: nextDebitedAmount >= Number(ledger.creditedAmount || 0) ? "reversed" : "partially_debited",
-      },
-    });
-    return { debited: true, amount: debitAmount, currencyCode };
+    if (ledger) {
+      await prisma.storeCreditLedger.update({
+        where: { id: ledger.id },
+        data: {
+          debitedAmount: { increment: debitAmount },
+          status: nextDebitedAmount >= Number(ledger.creditedAmount || 0) ? "reversed" : "partially_debited",
+        },
+      });
+    }
+    return { debited: true, amount: debitAmount, currencyCode, withoutLedger: !ledger };
   } catch (error) {
     const firstUserError = error?.userErrors?.[0];
     const status = firstUserError?.code === "INSUFFICIENT_FUNDS" ? "pending_debit" : "failed";
@@ -684,13 +699,15 @@ export async function processRefundStoreCreditDebit({ admin, shop, payload = {},
         errorMessage: error?.message || "No se pudo debitar credito en tienda.",
       },
     });
-    await prisma.storeCreditLedger.update({
-      where: { id: ledger.id },
-      data: {
-        pendingDebitAmount: status === "pending_debit" ? { increment: debitAmount } : undefined,
-        status: status === "pending_debit" ? "pending_debit" : "debit_failed",
-      },
-    });
+    if (ledger) {
+      await prisma.storeCreditLedger.update({
+        where: { id: ledger.id },
+        data: {
+          pendingDebitAmount: status === "pending_debit" ? { increment: debitAmount } : undefined,
+          status: status === "pending_debit" ? "pending_debit" : "debit_failed",
+        },
+      });
+    }
     throw error;
   }
 }
