@@ -3373,6 +3373,12 @@ async function refundShopifyOrderToOriginalPayment({
   if (finalRefund <= 0) {
     throw new Error("No se encontro un monto valido para reembolsar.");
   }
+  const refundedProductSubtotal =
+    Number(subtotal || 0) > 0
+      ? Number(subtotal || 0)
+      : selectedAllLineItems
+        ? Number(snapshot.currentSubtotalPrice || 0)
+        : 0;
   const parentTransaction = pickParentTransaction(snapshot.transactions);
   if (!parentTransaction?.id || !parentTransaction?.gateway) {
     throw new Error("No se encontro una transaccion de pago valida para reembolsar al metodo original.");
@@ -3416,7 +3422,7 @@ async function refundShopifyOrderToOriginalPayment({
     refundId: String(payload?.data?.refundCreate?.refund?.id || ""),
     finalRefund,
     refundedSubtotal: finalRefund,
-    refundedProductSubtotal: subtotal,
+    refundedProductSubtotal,
     currencyCode: snapshot.currencyCode || "MXN",
     customerId: snapshot.customerId || "",
     customerEmail: snapshot.customerEmail || "",
@@ -3457,6 +3463,7 @@ async function debitStoreCreditForAppRefund({
       shop,
       refundId: shopifyRefundId,
       orderId: shopifyOrderId,
+      refundedSubtotal,
       ...result,
     });
     return result;
@@ -3465,6 +3472,7 @@ async function debitStoreCreditForAppRefund({
       shop,
       refundId: shopifyRefundId,
       orderId: shopifyOrderId,
+      refundedSubtotal,
       error: error?.message || error,
     });
     return { skipped: true, reason: "debit_failed", error: error?.message || String(error || "") };
