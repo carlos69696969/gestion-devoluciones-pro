@@ -494,6 +494,7 @@ function logStoreCreditDebitDiagnostic(logger, message, details = {}) {
     ledgerDebitedAmount: details.ledger ? Number(details.ledger.debitedAmount || 0) : null,
     ledgerPendingDebitAmount: details.ledger ? Number(details.ledger.pendingDebitAmount || 0) : null,
     ledgerStatus: details.ledger?.status || null,
+    ledgerCreditCapApplied: Boolean(details.ledgerCreditCapApplied),
     rawRefundLineSubtotal: details.rawRefundLineSubtotal,
     eligibleRefundSubtotal: details.eligibleRefundSubtotal,
     creditRate: details.creditRate,
@@ -566,10 +567,12 @@ async function debitRefundStoreCreditSubtotal({
 
   const creditRate = Number(ledger?.creditRate || readRewardRate());
   const refundableCredit = roundMoney(eligibleRefundSubtotal * creditRate);
-  const remainingCreditedAmount = ledger
-    ? roundMoney(Number(ledger.creditedAmount || 0) - Number(ledger.debitedAmount || 0))
+  const ledgerCreditedAmount = ledger ? roundMoney(Number(ledger.creditedAmount || 0)) : 0;
+  const shouldCapToLedgerCredit = Boolean(ledger && ledgerCreditedAmount > 0);
+  const remainingCreditedAmount = shouldCapToLedgerCredit
+    ? roundMoney(ledgerCreditedAmount - Number(ledger.debitedAmount || 0))
     : refundableCredit;
-  const debitAmount = roundMoney(ledger ? Math.min(refundableCredit, remainingCreditedAmount) : refundableCredit);
+  const debitAmount = roundMoney(Math.min(refundableCredit, remainingCreditedAmount));
   if (debitAmount <= 0) {
     logStoreCreditDebitDiagnostic(logger, "Diagnostico debito credito tienda sin monto para debitar", {
       shop: normalizedShop,
@@ -584,6 +587,7 @@ async function debitRefundStoreCreditSubtotal({
       refundableCredit,
       remainingCreditedAmount,
       debitAmount,
+      ledgerCreditCapApplied: shouldCapToLedgerCredit,
       currencyCode,
       reason: "debit_amount_zero",
     });
@@ -609,6 +613,7 @@ async function debitRefundStoreCreditSubtotal({
       refundableCredit,
       remainingCreditedAmount,
       debitAmount,
+      ledgerCreditCapApplied: shouldCapToLedgerCredit,
       currencyCode,
       customerId,
       reason: "missing_customer",
@@ -672,6 +677,7 @@ async function debitRefundStoreCreditSubtotal({
       refundableCredit,
       remainingCreditedAmount,
       debitAmount,
+      ledgerCreditCapApplied: shouldCapToLedgerCredit,
       currencyCode: normalizedCurrencyCode,
       customerId,
       reason: "attempting_debit",
