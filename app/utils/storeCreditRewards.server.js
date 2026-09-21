@@ -479,6 +479,33 @@ function refundSubtotalFromWebhook(payload = {}) {
   };
 }
 
+function logStoreCreditDebitDiagnostic(logger, message, details = {}) {
+  const log = logger?.warn || logger?.info || console.warn;
+  log.call(logger || console, message, {
+    shop: details.shop,
+    source: details.source,
+    refundId: details.refundId,
+    orderId: details.orderId,
+    sourceKey: details.sourceKey,
+    existingStatus: details.existingStatus || null,
+    ledgerFound: Boolean(details.ledger),
+    ledgerId: details.ledger?.id || null,
+    ledgerCreditedAmount: details.ledger ? Number(details.ledger.creditedAmount || 0) : null,
+    ledgerDebitedAmount: details.ledger ? Number(details.ledger.debitedAmount || 0) : null,
+    ledgerPendingDebitAmount: details.ledger ? Number(details.ledger.pendingDebitAmount || 0) : null,
+    ledgerStatus: details.ledger?.status || null,
+    rawRefundLineSubtotal: details.rawRefundLineSubtotal,
+    eligibleRefundSubtotal: details.eligibleRefundSubtotal,
+    creditRate: details.creditRate,
+    refundableCredit: details.refundableCredit,
+    remainingCreditedAmount: details.remainingCreditedAmount,
+    debitAmount: details.debitAmount,
+    currencyCode: details.currencyCode,
+    customerIdPresent: Boolean(details.customerId),
+    reason: details.reason,
+  });
+}
+
 async function debitRefundStoreCreditSubtotal({
   admin,
   shop,
@@ -489,6 +516,7 @@ async function debitRefundStoreCreditSubtotal({
   currencyCode = "MXN",
   payload = {},
   source = "webhook",
+  logger = console,
 }) {
   const normalizedShop = normalizeShop(shop);
   if (!rewardsEnabled()) return { skipped: true, reason: "disabled" };
@@ -500,6 +528,15 @@ async function debitRefundStoreCreditSubtotal({
   const sourceKey = `debit:${cleanRefundId}`;
   const existing = await findReusableTransaction({ shop: normalizedShop, sourceKey });
   if (existing?.skip || existing?.status === "completed" || existing?.status === "pending_debit") {
+    logStoreCreditDebitDiagnostic(logger, "Diagnostico debito credito tienda omitido por idempotencia", {
+      shop: normalizedShop,
+      source,
+      refundId: cleanRefundId,
+      orderId: shopifyOrderId,
+      sourceKey,
+      existingStatus: existing?.status,
+      reason: "already_processed",
+    });
     return { skipped: true, reason: "already_processed", transactionId: existing.id };
   }
 
@@ -511,7 +548,21 @@ async function debitRefundStoreCreditSubtotal({
   });
 
   const eligibleRefundSubtotal = roundMoney(refundLineSubtotal);
-  if (eligibleRefundSubtotal <= 0) return { skipped: true, reason: "nothing_to_debit" };
+  if (eligibleRefundSubtotal <= 0) {
+    logStoreCreditDebitDiagnostic(logger, "Diagnostico debito credito tienda sin subtotal elegible", {
+      shop: normalizedShop,
+      source,
+      refundId: cleanRefundId,
+      orderId: cleanOrderId,
+      sourceKey,
+      ledger,
+      rawRefundLineSubtotal: refundLineSubtotal,
+      eligibleRefundSubtotal,
+      currencyCode,
+      reason: "eligible_refund_subtotal_zero",
+    });
+    return { skipped: true, reason: "nothing_to_debit" };
+  }
 
   const creditRate = Number(ledger?.creditRate || readRewardRate());
   const refundableCredit = roundMoney(eligibleRefundSubtotal * creditRate);
@@ -519,14 +570,51 @@ async function debitRefundStoreCreditSubtotal({
     ? roundMoney(Number(ledger.creditedAmount || 0) - Number(ledger.debitedAmount || 0))
     : refundableCredit;
   const debitAmount = roundMoney(ledger ? Math.min(refundableCredit, remainingCreditedAmount) : refundableCredit);
-  if (debitAmount <= 0) return { skipped: true, reason: "nothing_to_debit" };
+  if (debitAmount <= 0) {
+    logStoreCreditDebitDiagnostic(logger, "Diagnostico debito credito tienda sin monto para debitar", {
+      shop: normalizedShop,
+      source,
+      refundId: cleanRefundId,
+      orderId: cleanOrderId,
+      sourceKey,
+      ledger,
+      rawRefundLineSubtotal: refundLineSubtotal,
+      eligibleRefundSubtotal,
+      creditRate,
+      refundableCredit,
+      remainingCreditedAmount,
+      debitAmount,
+      currencyCode,
+      reason: "debit_amount_zero",
+    });
+    return { skipped: true, reason: "nothing_to_debit" };
+  }
 
   let customerId = normalizeString(shopifyCustomerId || ledger?.shopifyCustomerId);
   if (!customerId) {
     const orderNode = await fetchOrderForStoreCredit(admin, cleanOrderId);
     customerId = normalizeString(orderNode?.customer?.id);
   }
-  if (!customerId) return { skipped: true, reason: "missing_customer" };
+  if (!customerId) {
+    logStoreCreditDebitDiagnostic(logger, "Diagnostico debito credito tienda sin customer", {
+      shop: normalizedShop,
+      source,
+      refundId: cleanRefundId,
+      orderId: cleanOrderId,
+      sourceKey,
+      ledger,
+      rawRefundLineSubtotal: refundLineSubtotal,
+      eligibleRefundSubtotal,
+      creditRate,
+      refundableCredit,
+      remainingCreditedAmount,
+      debitAmount,
+      currencyCode,
+      customerId,
+      reason: "missing_customer",
+    });
+    return { skipped: true, reason: "missing_customer" };
+  }
 
   const normalizedCurrencyCode = normalizeString(currencyCode || ledger?.currencyCode || "MXN").toUpperCase();
   const transactionSource = ledger ? source : `${source}_without_ledger`;
@@ -571,6 +659,23 @@ async function debitRefundStoreCreditSubtotal({
       });
 
   try {
+    logStoreCreditDebitDiagnostic(logger, "Diagnostico debito credito tienda intentando debitar Shopify", {
+      shop: normalizedShop,
+      source,
+      refundId: cleanRefundId,
+      orderId: cleanOrderId,
+      sourceKey,
+      ledger,
+      rawRefundLineSubtotal: refundLineSubtotal,
+      eligibleRefundSubtotal,
+      creditRate,
+      refundableCredit,
+      remainingCreditedAmount,
+      debitAmount,
+      currencyCode: normalizedCurrencyCode,
+      customerId,
+      reason: "attempting_debit",
+    });
     await debitStoreCreditAccount(admin, {
       customerId,
       amount: debitAmount,
@@ -820,6 +925,7 @@ export async function processRefundStoreCreditDebit({ admin, shop, payload = {},
     currencyCode,
     payload,
     source: "webhook",
+    logger,
   });
 }
 
@@ -833,6 +939,7 @@ export async function processKnownRefundStoreCreditDebit({
   currencyCode = "MXN",
   payload = {},
   source = "app_refund",
+  logger = console,
 }) {
   return debitRefundStoreCreditSubtotal({
     admin,
@@ -844,5 +951,6 @@ export async function processKnownRefundStoreCreditDebit({
     currencyCode,
     payload,
     source,
+    logger,
   });
 }
