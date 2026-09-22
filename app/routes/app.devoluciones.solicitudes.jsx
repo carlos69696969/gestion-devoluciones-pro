@@ -25,7 +25,10 @@ import {
   ensureStockInventoryArchiveWebhooks,
   recordArchivedStockProduct,
 } from "../utils/stockZeroInventoryArchive.server";
-import { processKnownRefundStoreCreditDebit } from "../utils/storeCreditRewards.server";
+import {
+  processKnownRefundStoreCreditDebit,
+  scheduleStoreCreditNotification,
+} from "../utils/storeCreditRewards.server";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -3572,6 +3575,48 @@ async function debitStoreCreditForAppRefund({
   }
 }
 
+async function emitStoreCreditRefundNotification({
+  shop,
+  shopifyOrderId,
+  orderNumber,
+  shopifyCustomerId,
+  customerEmail,
+  refundId,
+  amount,
+  currencyCode = "MXN",
+  source = "store_credit_refund",
+}) {
+  const creditAmount = roundMoneyValue(amount);
+  if (!shop || creditAmount <= 0) {
+    return { skipped: true, reason: "missing_store_credit_refund_amount" };
+  }
+
+  try {
+    await scheduleStoreCreditNotification({
+      shop,
+      shopifyOrderId,
+      orderNumber,
+      shopifyCustomerId,
+      customerEmail,
+      amount: creditAmount,
+      currencyCode,
+      sourceKey: `store-credit-refund:${refundId || `${shopifyOrderId || "order"}:${orderNumber || ""}`}`,
+      notificationType: "store_credit_refund",
+    });
+    return { ok: true };
+  } catch (error) {
+    console.warn("No se pudo iniciar la notificacion de credito reembolsado", {
+      shop,
+      refundId,
+      orderId: shopifyOrderId,
+      amount: creditAmount,
+      source,
+      error: error?.message || error,
+    });
+    return { skipped: true, reason: "notification_failed", error: error?.message || String(error || "") };
+  }
+}
+
 async function fetchBranchPickupOrderForDeadline(admin, shopifyOrderId) {
   const response = await admin.graphql(
     `#graphql
@@ -3724,6 +3769,17 @@ async function refundExpiredBranchPickupOrder({
     shopifyRefundId: refundResult.refundId,
     shopifyCustomerId: refundResult.customerId,
     refundedSubtotal: refundResult.refundedProductSubtotal,
+    currencyCode: refundResult.currencyCode,
+    source: "branch_pickup_refund",
+  });
+  await emitStoreCreditRefundNotification({
+    shop: shopDomain,
+    shopifyOrderId: cleanRequestId,
+    orderNumber: resolvedOrderNumber,
+    shopifyCustomerId: refundResult.customerId,
+    customerEmail: refundResult.customerEmail,
+    refundId: refundResult.refundId,
+    amount: refundResult.storeCreditRefundAmount,
     currencyCode: refundResult.currencyCode,
     source: "branch_pickup_refund",
   });
@@ -4934,6 +4990,17 @@ export const action = async ({ request }) => {
             currencyCode: refundResult.currencyCode,
             source: "courier_refund",
           });
+          await emitStoreCreditRefundNotification({
+            shop: session.shop,
+            shopifyOrderId: requestId,
+            orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
+            shopifyCustomerId: refundResult.customerId,
+            customerEmail: refundResult.customerEmail,
+            refundId: refundResult.refundId,
+            amount: refundResult.storeCreditRefundAmount,
+            currencyCode: refundResult.currencyCode,
+            source: "courier_refund",
+          });
           const refundNotificationCopy = buildCourierOrderRefundNotificationCopy({
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
             refundAmount: refundResult.finalRefund,
@@ -6027,6 +6094,17 @@ export const action = async ({ request }) => {
         shopifyRefundId: refundId,
         shopifyCustomerId: snapshot.customerId,
         refundedSubtotal: subtotal,
+        currencyCode: snapshot.currencyCode || "MXN",
+        source: "return_request_refund",
+      });
+      await emitStoreCreditRefundNotification({
+        shop: session.shop,
+        shopifyOrderId: requestRow.shopifyOrderId,
+        orderNumber: requestRow.orderNumber || requestRow.order_number || requestRow.id,
+        shopifyCustomerId: snapshot.customerId,
+        customerEmail: snapshot.customerEmail,
+        refundId,
+        amount: financialOutcome.storeCreditRefundAmount,
         currencyCode: snapshot.currencyCode || "MXN",
         source: "return_request_refund",
       });

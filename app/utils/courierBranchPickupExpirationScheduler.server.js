@@ -1,6 +1,7 @@
 import prisma from "../db.server";
 import { fetchBranchPickupCourierOrdersForShop } from "./courier.server";
 import { formatCourierScheduledDate, getCourierRouteStatusFromTags } from "./courier.shared";
+import { scheduleStoreCreditNotification } from "./storeCreditRewards.server";
 
 const ADMIN_API_VERSION = "2025-10";
 const MEXICO_TIME_ZONE = "America/Mexico_City";
@@ -497,6 +498,8 @@ async function refundShopifyOrderToOriginalPayment({ shop, session, shopifyOrder
     finalRefund,
     refundedSubtotal: finalRefund,
     currencyCode: snapshot.currencyCode || "MXN",
+    customerId: snapshot.customerId || "",
+    customerEmail: snapshot.customerEmail || "",
     cashRefundAmount: financialOutcome.cashRefundAmount,
     storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
     selectedAllLineItems,
@@ -613,6 +616,48 @@ async function emitBranchPickupRefundNotification({ shopDomain, requestId, order
   };
 }
 
+async function emitStoreCreditRefundNotification({
+  shop,
+  shopifyOrderId,
+  orderNumber,
+  shopifyCustomerId,
+  customerEmail,
+  refundId,
+  amount,
+  currencyCode = "MXN",
+  logger = console,
+}) {
+  const creditAmount = toFiniteNumber(amount, 0);
+  if (!shop || creditAmount <= 0) {
+    return { skipped: true, reason: "missing_store_credit_refund_amount" };
+  }
+
+  try {
+    await scheduleStoreCreditNotification({
+      shop,
+      shopifyOrderId,
+      orderNumber,
+      shopifyCustomerId,
+      customerEmail,
+      amount: creditAmount,
+      currencyCode,
+      sourceKey: `store-credit-refund:${refundId || `${shopifyOrderId || "order"}:${orderNumber || ""}`}`,
+      notificationType: "store_credit_refund",
+      logger,
+    });
+    return { ok: true };
+  } catch (error) {
+    logger.warn?.("No se pudo iniciar la notificacion de credito reembolsado", {
+      shop,
+      refundId,
+      orderId: shopifyOrderId,
+      amount: creditAmount,
+      error: error?.message || error,
+    });
+    return { skipped: true, reason: "notification_failed", error: error?.message || String(error || "") };
+  }
+}
+
 async function fetchCourierEventsForOrder({ shop, requestId }) {
   const events = await prisma.courierEvent.findMany({
     where: { shop, requestId },
@@ -694,6 +739,17 @@ async function refundExpiredBranchPickupOrder({ shop, session, order, logger = c
       sentRecipients: notificationResult.sentRecipients,
     });
   }
+  await emitStoreCreditRefundNotification({
+    shop,
+    shopifyOrderId: requestId,
+    orderNumber,
+    shopifyCustomerId: refundResult.customerId,
+    customerEmail: refundResult.customerEmail,
+    refundId: refundResult.refundId,
+    amount: refundResult.storeCreditRefundAmount,
+    currencyCode: refundResult.currencyCode,
+    logger,
+  });
 
   await persistDeadlineLabel({ shop, requestId, displayedDeadline });
   const latestCourierActivity = await prisma.courierActivity.findFirst({

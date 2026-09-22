@@ -355,7 +355,7 @@ async function debitStoreCreditAccount(admin, { customerId, amount, currencyCode
   return result.storeCreditAccountTransaction || null;
 }
 
-async function scheduleStoreCreditNotification({
+export async function scheduleStoreCreditNotification({
   shop,
   shopifyOrderId,
   orderNumber,
@@ -364,6 +364,9 @@ async function scheduleStoreCreditNotification({
   amount,
   currencyCode,
   sourceKey,
+  notificationType = "store_credit_reward",
+  title = "",
+  message = "",
   logger = console,
 }) {
   if (!NOTIFICATIONS_API_BASE_URL || !shop || !shopifyCustomerId || roundMoney(amount) <= 0) return;
@@ -394,6 +397,9 @@ async function scheduleStoreCreditNotification({
       orderNumber,
       amount: roundMoney(amount),
       currencyCode,
+      notificationType,
+      title,
+      message,
       delayMs: 0,
       sendNow: true,
     },
