@@ -2857,13 +2857,83 @@ function buildAdminCourierPresentation(request) {
   return { events: displayEvents, scheduledDate };
 }
 
-function pickParentTransaction(transactions) {
-  const success = transactions.filter((tx) => String(tx.status || "").toUpperCase() === "SUCCESS");
+function isSuccessfulPaymentTransaction(transaction) {
   return (
-    success.find((tx) => ["CAPTURE", "SALE"].includes(String(tx.kind || "").toUpperCase())) ||
-    success[0] ||
-    null
+    String(transaction?.status || "").toUpperCase() === "SUCCESS" &&
+    ["CAPTURE", "SALE"].includes(String(transaction?.kind || "").toUpperCase())
   );
+}
+
+function isStoreCreditGatewayName(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_");
+  return normalized.includes("store_credit") || normalized.includes("credito_en_tienda");
+}
+
+function transactionRefundableAmount(transaction) {
+  if (transaction?.maximumRefundableAmount !== null && transaction?.maximumRefundableAmount !== undefined) {
+    return roundMoneyValue(transaction.maximumRefundableAmount);
+  }
+  return roundMoneyValue(transaction?.amount);
+}
+
+function orderHasStoreCreditPayment(snapshot) {
+  return (
+    (snapshot?.paymentGatewayNames || []).some(isStoreCreditGatewayName) ||
+    (snapshot?.transactions || []).some((transaction) => isStoreCreditGatewayName(transaction?.gateway))
+  );
+}
+
+function buildRefundFinancialOutcome({ snapshot, orderId, refundAmount }) {
+  let remaining = roundMoneyValue(refundAmount);
+  const transactions = [];
+  const successfulPayments = (snapshot?.transactions || []).filter(
+    (transaction) => isSuccessfulPaymentTransaction(transaction) && !isStoreCreditGatewayName(transaction.gateway),
+  );
+
+  for (const transaction of successfulPayments) {
+    if (remaining <= 0) break;
+    const refundableAmount = transactionRefundableAmount(transaction);
+    if (!transaction?.id || !transaction?.gateway || refundableAmount <= 0) continue;
+    const amount = roundMoneyValue(Math.min(remaining, refundableAmount));
+    if (amount <= 0) continue;
+    transactions.push({
+      orderId,
+      kind: "REFUND",
+      gateway: transaction.gateway,
+      parentId: transaction.id,
+      amount: amount.toFixed(2),
+    });
+    remaining = roundMoneyValue(remaining - amount);
+  }
+
+  const canRefundRemainderToStoreCredit = remaining > 0 && orderHasStoreCreditPayment(snapshot);
+  const refundMethods = canRefundRemainderToStoreCredit
+    ? [
+        {
+          storeCreditRefund: {
+            amount: {
+              amount: remaining.toFixed(2),
+              currencyCode: snapshot?.currencyCode || "MXN",
+            },
+          },
+        },
+      ]
+    : [];
+  const storeCreditRefundAmount = canRefundRemainderToStoreCredit ? remaining : 0;
+  const cashRefundAmount = roundMoneyValue(refundAmount - remaining);
+
+  return {
+    transactions,
+    refundMethods,
+    cashRefundAmount,
+    storeCreditRefundAmount,
+    unallocatedAmount: canRefundRemainderToStoreCredit ? 0 : remaining,
+  };
 }
 
 async function fetchOrderSnapshot(admin, orderId) {
@@ -2882,6 +2952,7 @@ async function fetchOrderSnapshot(admin, orderId) {
           id
           email
         }
+        paymentGatewayNames
         lineItems(first: 100) {
           edges {
             node {
@@ -2921,6 +2992,13 @@ async function fetchOrderSnapshot(admin, orderId) {
           kind
           status
           gateway
+          amountSet {
+            shopMoney { amount currencyCode }
+          }
+          maximumRefundableV2 {
+            amount
+            currencyCode
+          }
         }
       }
     }`,
@@ -2940,6 +3018,7 @@ async function fetchOrderSnapshot(admin, orderId) {
     currentTotalPrice: Number(order.currentTotalPriceSet?.shopMoney?.amount || 0),
     currentSubtotalPrice: Number(order.currentSubtotalPriceSet?.shopMoney?.amount || 0),
     currencyCode: String(order.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
+    paymentGatewayNames: Array.isArray(order.paymentGatewayNames) ? order.paymentGatewayNames : [],
     lineItems: (order.lineItems?.edges || []).map(({ node }) => ({
       id: node.id,
       title: node.title,
@@ -2955,6 +3034,11 @@ async function fetchOrderSnapshot(admin, orderId) {
       kind: transaction.kind,
       status: transaction.status,
       gateway: transaction.gateway || "",
+      amount: Number(transaction.amountSet?.shopMoney?.amount || 0),
+      maximumRefundableAmount:
+        transaction.maximumRefundableV2?.amount === null || transaction.maximumRefundableV2?.amount === undefined
+          ? null
+          : Number(transaction.maximumRefundableV2.amount),
     })),
   };
 }
@@ -3379,10 +3463,24 @@ async function refundShopifyOrderToOriginalPayment({
       : selectedAllLineItems
         ? Number(snapshot.currentSubtotalPrice || 0)
         : 0;
-  const parentTransaction = pickParentTransaction(snapshot.transactions);
-  if (!parentTransaction?.id || !parentTransaction?.gateway) {
+  const financialOutcome = buildRefundFinancialOutcome({
+    snapshot,
+    orderId: shopifyOrderId,
+    refundAmount: finalRefund,
+  });
+  if (financialOutcome.unallocatedAmount > 0) {
     throw new Error("No se encontro una transaccion de pago valida para reembolsar al metodo original.");
   }
+  if (!financialOutcome.transactions.length && !financialOutcome.refundMethods.length) {
+    throw new Error("No se encontro una forma de pago valida para procesar el reembolso.");
+  }
+  console.log("Resultado financiero de reembolso Shopify", {
+    orderId: shopifyOrderId,
+    finalRefund,
+    cashRefundAmount: financialOutcome.cashRefundAmount,
+    storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
+    transactionCount: financialOutcome.transactions.length,
+  });
   const response = await admin.graphql(
     `#graphql
     mutation RefundBranchPickupOrder($input: RefundInput!) {
@@ -3399,15 +3497,8 @@ async function refundShopifyOrderToOriginalPayment({
           notify: false,
           refundLineItems,
           ...(shouldRefundShipping ? { shipping: { fullRefund: true } } : {}),
-          transactions: [
-            {
-              orderId: shopifyOrderId,
-              kind: "REFUND",
-              gateway: parentTransaction.gateway,
-              parentId: parentTransaction.id,
-              amount: Number(finalRefund).toFixed(2),
-            },
-          ],
+          transactions: financialOutcome.transactions,
+          ...(financialOutcome.refundMethods.length ? { refundMethods: financialOutcome.refundMethods } : {}),
         },
       },
     },
@@ -3426,6 +3517,8 @@ async function refundShopifyOrderToOriginalPayment({
     currencyCode: snapshot.currencyCode || "MXN",
     customerId: snapshot.customerId || "",
     customerEmail: snapshot.customerEmail || "",
+    cashRefundAmount: financialOutcome.cashRefundAmount,
+    storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
     selectedAllLineItems,
     refundedItems,
   };
@@ -5866,14 +5959,32 @@ export const action = async ({ request }) => {
         };
       }
 
-      const parentTransaction = pickParentTransaction(snapshot.transactions);
-      if (!parentTransaction?.id || !parentTransaction?.gateway) {
+      const financialOutcome = buildRefundFinancialOutcome({
+        snapshot,
+        orderId: requestRow.shopifyOrderId,
+        refundAmount: finalRefund,
+      });
+      if (financialOutcome.unallocatedAmount > 0) {
         return {
           ok: false,
           error:
             "No se encontro una transaccion de pago valida para reembolsar al metodo original.",
         };
       }
+      if (!financialOutcome.transactions.length && !financialOutcome.refundMethods.length) {
+        return {
+          ok: false,
+          error: "No se encontro una forma de pago valida para procesar el reembolso.",
+        };
+      }
+      console.log("Resultado financiero de reembolso Shopify", {
+        requestId: requestRow.id,
+        orderId: requestRow.shopifyOrderId,
+        finalRefund,
+        cashRefundAmount: financialOutcome.cashRefundAmount,
+        storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
+        transactionCount: financialOutcome.transactions.length,
+      });
 
       const response = await admin.graphql(
         `#graphql
@@ -5890,15 +6001,8 @@ export const action = async ({ request }) => {
               note: `Devolucion #${requestRow.id} desde Portal de devoluciones`,
               notify: false,
               refundLineItems,
-              transactions: [
-                {
-                  orderId: requestRow.shopifyOrderId,
-                  kind: "REFUND",
-                  gateway: parentTransaction.gateway,
-                  parentId: parentTransaction.id,
-                  amount: Number(finalRefund).toFixed(2),
-                },
-              ],
+              transactions: financialOutcome.transactions,
+              ...(financialOutcome.refundMethods.length ? { refundMethods: financialOutcome.refundMethods } : {}),
             },
           },
         },
