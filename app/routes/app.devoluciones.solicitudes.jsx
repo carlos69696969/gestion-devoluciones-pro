@@ -450,6 +450,10 @@ function buildCourierOrderRefundNotificationCopy({
   refundAmount,
   totalRefundAmount,
   storeCreditRefundAmount = 0,
+  originalRefundAmount = 0,
+  storeCreditExpectedDebitAmount = 0,
+  storeCreditDebitAmount = 0,
+  storeCreditCashRecoveryAmount = 0,
   currencyCode = "MXN",
   selectedAllLineItems = false,
   refundedItems = [],
@@ -462,6 +466,29 @@ function buildCourierOrderRefundNotificationCopy({
   const totalRefund = Number(totalRefundAmount || 0) > 0
     ? Number(totalRefundAmount || 0)
     : cashRefundAmount + creditRefundAmount;
+  const creditAdjustmentAmount = Number(storeCreditExpectedDebitAmount || 0);
+  const availableCreditRemovedAmount = Number(storeCreditDebitAmount || 0);
+  const spentCreditRecoveredAmount = Number(storeCreditCashRecoveryAmount || 0);
+  const grossRefundAmount = Number(originalRefundAmount || 0) > 0
+    ? Number(originalRefundAmount || 0)
+    : totalRefund + spentCreditRecoveredAmount;
+  if (spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0 && grossRefundAmount > cashRefundAmount) {
+    const grossRefundLabel = `$${toMoney(grossRefundAmount)} ${currency}`;
+    const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
+    const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
+    const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
+    const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
+    return {
+      title: "Reembolso realizado 💰",
+      message: [
+        `📦 Pedido #${cleanOrderNumber}. Durante la preparación de tu pedido detectamos que el producto ya no estaba disponible. Para evitar cualquier demora, procesamos el reembolso correspondiente por ${grossRefundLabel}.`,
+        `Esta compra había generado ${creditAdjustmentLabel} en crédito Cariana. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver.`,
+        `Por esta razón, de los ${grossRefundLabel} correspondientes al reembolso, recibirás ${cashRefundLabel} en tu método de pago original. El monto podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+        "Este ajuste no representa un cargo adicional; corresponde únicamente al crédito que había sido otorgado por la compra que ahora está siendo reembolsada.",
+        "Lamentamos el inconveniente y esperamos poder atenderte nuevamente pronto. Atte. Cariana ✨",
+      ].join("\n\n"),
+    };
+  }
   if (cashRefundAmount > 0 && creditRefundAmount > 0) {
     const totalAmountLabel = `$${toMoney(totalRefund)} ${currency}`;
     const creditAmountLabel = `$${toMoney(creditRefundAmount)} ${currency}`;
@@ -602,6 +629,10 @@ async function emitCourierOrderRefundNotification({
   refundAmount,
   totalRefundAmount,
   storeCreditRefundAmount,
+  originalRefundAmount,
+  storeCreditExpectedDebitAmount,
+  storeCreditDebitAmount,
+  storeCreditCashRecoveryAmount,
   currencyCode,
   selectedAllLineItems,
   refundedItems,
@@ -615,6 +646,10 @@ async function emitCourierOrderRefundNotification({
     refundAmount,
     totalRefundAmount,
     storeCreditRefundAmount,
+    originalRefundAmount,
+    storeCreditExpectedDebitAmount,
+    storeCreditDebitAmount,
+    storeCreditCashRecoveryAmount,
     currencyCode,
     selectedAllLineItems,
     refundedItems,
@@ -5228,6 +5263,10 @@ export const action = async ({ request }) => {
             refundAmount: cashNotificationAmount,
             totalRefundAmount: refundResult.finalRefund,
             storeCreditRefundAmount: refundResult.storeCreditRefundAmount,
+            originalRefundAmount: refundResult.originalRefundAmount,
+            storeCreditExpectedDebitAmount: refundResult.storeCreditExpectedDebitAmount,
+            storeCreditDebitAmount: refundResult.storeCreditDebitAmount,
+            storeCreditCashRecoveryAmount: refundResult.storeCreditCashRecoveryAmount,
             currencyCode: refundResult.currencyCode || "MXN",
             selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
             refundedItems: refundResult.refundedItems || [],
@@ -5240,6 +5279,10 @@ export const action = async ({ request }) => {
             refundAmount: cashNotificationAmount,
             totalRefundAmount: refundResult.finalRefund,
             storeCreditRefundAmount: refundResult.storeCreditRefundAmount,
+            originalRefundAmount: refundResult.originalRefundAmount,
+            storeCreditExpectedDebitAmount: refundResult.storeCreditExpectedDebitAmount,
+            storeCreditDebitAmount: refundResult.storeCreditDebitAmount,
+            storeCreditCashRecoveryAmount: refundResult.storeCreditCashRecoveryAmount,
             currencyCode: refundResult.currencyCode || "MXN",
             selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
             refundedItems: refundResult.refundedItems || [],
