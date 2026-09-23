@@ -478,12 +478,30 @@ function buildCourierOrderRefundNotificationCopy({
     const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
     const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
     const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
+    const creditRefundLabel = `$${toMoney(creditRefundAmount)} ${currency}`;
+    const originalStoreCreditPaymentAmount = creditRefundAmount > 0
+      ? creditRefundAmount + spentCreditRecoveredAmount
+      : 0;
+    const originalStoreCreditPaymentLabel = `$${toMoney(originalStoreCreditPaymentAmount)} ${currency}`;
+    const paymentBreakdownMessage =
+      creditRefundAmount > 0
+        ? `Este pedido fue pagado con ${cashRefundLabel} en tu método de pago original y ${originalStoreCreditPaymentLabel} en crédito Cariana.`
+        : "";
+    const creditAdjustmentMessage =
+      availableCreditRemovedAmount > 0
+        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver.`
+        : `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver.`;
+    const refundDistributionMessage =
+      creditRefundAmount > 0
+        ? `Por esta razón, recibirás ${cashRefundLabel} en tu método de pago original y ${creditRefundLabel} serán devueltos a tu crédito Cariana. El monto enviado a tu método de pago original podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`
+        : `Por esta razón, de los ${grossRefundLabel} correspondientes al reembolso, recibirás ${cashRefundLabel} en tu método de pago original. El monto podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`;
     return {
       title: "Reembolso realizado 💰",
       message: [
         `📦 Pedido #${cleanOrderNumber}. Durante la preparación de tu pedido detectamos que el producto ya no estaba disponible. Para evitar cualquier demora, procesamos el reembolso correspondiente por ${grossRefundLabel}.`,
-        `Esta compra había generado ${creditAdjustmentLabel} en crédito Cariana. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver.`,
-        `Por esta razón, de los ${grossRefundLabel} correspondientes al reembolso, recibirás ${cashRefundLabel} en tu método de pago original. El monto podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+        ...(paymentBreakdownMessage ? [paymentBreakdownMessage] : []),
+        creditAdjustmentMessage,
+        refundDistributionMessage,
         "Este ajuste no representa un cargo adicional; corresponde únicamente al crédito que había sido otorgado por la compra que ahora está siendo reembolsada.",
         "Lamentamos el inconveniente y esperamos poder atenderte nuevamente pronto. Atte. Cariana ✨",
       ].join("\n\n"),
