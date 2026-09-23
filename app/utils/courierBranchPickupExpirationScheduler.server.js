@@ -1,7 +1,7 @@
 import prisma from "../db.server";
 import { fetchBranchPickupCourierOrdersForShop } from "./courier.server";
 import { formatCourierScheduledDate, getCourierRouteStatusFromTags } from "./courier.shared";
-import { scheduleStoreCreditNotification } from "./storeCreditRewards.server";
+import { processKnownRefundStoreCreditDebit, scheduleStoreCreditNotification } from "./storeCreditRewards.server";
 
 const ADMIN_API_VERSION = "2025-10";
 const MEXICO_TIME_ZONE = "America/Mexico_City";
@@ -629,7 +629,7 @@ async function emitStoreCreditRefundNotification({
 }) {
   const creditAmount = toFiniteNumber(amount, 0);
   if (!shop || creditAmount <= 0) {
-    return { skipped: true, reason: "missing_store_credit_refund_amount" };
+    return { skipped: true, reason: "missing_store_credit_adjustment_amount" };
   }
 
   try {
@@ -647,7 +647,7 @@ async function emitStoreCreditRefundNotification({
     });
     return { ok: true };
   } catch (error) {
-    logger.warn?.("No se pudo iniciar la notificacion de credito reembolsado", {
+    logger.warn?.("No se pudo iniciar la notificacion de ajuste de credito", {
       shop,
       refundId,
       orderId: shopifyOrderId,
@@ -655,6 +655,68 @@ async function emitStoreCreditRefundNotification({
       error: error?.message || error,
     });
     return { skipped: true, reason: "notification_failed", error: error?.message || String(error || "") };
+  }
+}
+
+async function debitStoreCreditForScheduledRefund({
+  shop,
+  session,
+  shopifyRefundId,
+  shopifyOrderId,
+  shopifyCustomerId = "",
+  refundedSubtotal,
+  currencyCode = "MXN",
+  logger = console,
+}) {
+  if (!shop || !session || !shopifyRefundId || !shopifyOrderId || toFiniteNumber(refundedSubtotal, 0) <= 0) {
+    return { skipped: true, reason: "missing_refund_data" };
+  }
+
+  const admin = {
+    graphql: async (query, options = {}) => ({
+      json: async () =>
+        shopifyGraphql({
+          shop,
+          session,
+          query,
+          variables: options?.variables || {},
+        }),
+    }),
+  };
+
+  try {
+    const result = await processKnownRefundStoreCreditDebit({
+      admin,
+      shop,
+      shopifyRefundId,
+      shopifyOrderId,
+      shopifyCustomerId,
+      refundedSubtotal,
+      currencyCode,
+      source: "branch_pickup_scheduler_refund",
+      payload: {
+        admin_graphql_api_id: shopifyRefundId,
+        order_id: shopifyOrderId,
+      },
+      logger,
+    });
+    logger.info?.("Debito de credito en tienda procesado desde scheduler de sucursal", {
+      shop,
+      refundId: shopifyRefundId,
+      orderId: shopifyOrderId,
+      refundedSubtotal,
+      ...result,
+    });
+    return result;
+  } catch (error) {
+    logger.warn?.("No se pudo debitar credito en tienda desde scheduler de sucursal", {
+      shop,
+      refundId: shopifyRefundId,
+      orderId: shopifyOrderId,
+      refundedSubtotal,
+      error: error?.message || error,
+    });
+    return { skipped: true, reason: "debit_failed", error: error?.message || String(error || "") };
   }
 }
 
@@ -739,6 +801,16 @@ async function refundExpiredBranchPickupOrder({ shop, session, order, logger = c
       sentRecipients: notificationResult.sentRecipients,
     });
   }
+  const creditAdjustmentResult = await debitStoreCreditForScheduledRefund({
+    shop,
+    session,
+    shopifyRefundId: refundResult.refundId,
+    shopifyOrderId: requestId,
+    shopifyCustomerId: refundResult.customerId,
+    refundedSubtotal: refundResult.refundedSubtotal,
+    currencyCode: refundResult.currencyCode,
+    logger,
+  });
   await emitStoreCreditRefundNotification({
     shop,
     shopifyOrderId: requestId,
@@ -746,8 +818,8 @@ async function refundExpiredBranchPickupOrder({ shop, session, order, logger = c
     shopifyCustomerId: refundResult.customerId,
     customerEmail: refundResult.customerEmail,
     refundId: refundResult.refundId,
-    amount: refundResult.storeCreditRefundAmount,
-    currencyCode: refundResult.currencyCode,
+    amount: creditAdjustmentResult.amount,
+    currencyCode: creditAdjustmentResult.currencyCode || refundResult.currencyCode,
     logger,
   });
 

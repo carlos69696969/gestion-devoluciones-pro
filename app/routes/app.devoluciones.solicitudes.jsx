@@ -3609,11 +3609,11 @@ async function emitStoreCreditRefundNotification({
   refundId,
   amount,
   currencyCode = "MXN",
-  source = "store_credit_refund",
+  source = "store_credit_adjustment",
 }) {
   const creditAmount = roundMoneyValue(amount);
   if (!shop || creditAmount <= 0) {
-    return { skipped: true, reason: "missing_store_credit_refund_amount" };
+    return { skipped: true, reason: "missing_store_credit_adjustment_amount" };
   }
 
   try {
@@ -3630,7 +3630,7 @@ async function emitStoreCreditRefundNotification({
     });
     return { ok: true };
   } catch (error) {
-    console.warn("No se pudo iniciar la notificacion de credito reembolsado", {
+    console.warn("No se pudo iniciar la notificacion de ajuste de credito", {
       shop,
       refundId,
       orderId: shopifyOrderId,
@@ -3787,7 +3787,7 @@ async function refundExpiredBranchPickupOrder({
     shopifyOrderId: cleanRequestId,
     notePrefix: `Reembolso pedido #${resolvedOrderNumber || cleanRequestId.replace(/^gid:\/\/shopify\/Order\//, "")} no recogido en sucursal`,
   });
-  await debitStoreCreditForAppRefund({
+  const creditAdjustmentResult = await debitStoreCreditForAppRefund({
     admin,
     shop: shopDomain,
     shopifyOrderId: cleanRequestId,
@@ -3804,8 +3804,8 @@ async function refundExpiredBranchPickupOrder({
     shopifyCustomerId: refundResult.customerId,
     customerEmail: refundResult.customerEmail,
     refundId: refundResult.refundId,
-    amount: refundResult.storeCreditRefundAmount,
-    currencyCode: refundResult.currencyCode,
+    amount: creditAdjustmentResult.amount,
+    currencyCode: creditAdjustmentResult.currencyCode || refundResult.currencyCode,
     source: "branch_pickup_refund",
   });
   await replaceShopifyOrderCourierStatusTag(admin, cleanRequestId, "reembolsada");
@@ -5005,7 +5005,7 @@ export const action = async ({ request }) => {
             includeShipping: true,
             selectedLineItemUnitKeys: refundableSelectedLineItemUnitKeys,
           });
-          await debitStoreCreditForAppRefund({
+          const creditAdjustmentResult = await debitStoreCreditForAppRefund({
             admin,
             shop: session.shop,
             shopifyOrderId: requestId,
@@ -5022,8 +5022,8 @@ export const action = async ({ request }) => {
             shopifyCustomerId: refundResult.customerId,
             customerEmail: refundResult.customerEmail,
             refundId: refundResult.refundId,
-            amount: refundResult.storeCreditRefundAmount,
-            currencyCode: refundResult.currencyCode,
+            amount: creditAdjustmentResult.amount,
+            currencyCode: creditAdjustmentResult.currencyCode || refundResult.currencyCode,
             source: "courier_refund",
           });
           const cashNotificationAmount =
@@ -6120,7 +6120,7 @@ export const action = async ({ request }) => {
       }
 
       const refundId = String(payload?.data?.refundCreate?.refund?.id || "");
-      await debitStoreCreditForAppRefund({
+      const creditAdjustmentResult = await debitStoreCreditForAppRefund({
         admin,
         shop: session.shop,
         shopifyOrderId: requestRow.shopifyOrderId,
@@ -6137,8 +6137,8 @@ export const action = async ({ request }) => {
         shopifyCustomerId: snapshot.customerId,
         customerEmail: snapshot.customerEmail,
         refundId,
-        amount: financialOutcome.storeCreditRefundAmount,
-        currencyCode: snapshot.currencyCode || "MXN",
+        amount: creditAdjustmentResult.amount,
+        currencyCode: creditAdjustmentResult.currencyCode || snapshot.currencyCode || "MXN",
         source: "return_request_refund",
       });
       const refundProcessedMessage = buildRefundProcessedMessage(requestRow, finalRefund);
