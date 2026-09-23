@@ -491,13 +491,26 @@ function buildCourierOrderRefundNotificationCopy({
       : "Hemos procesado el reembolso de los siguientes productos debido a que ya no se encuentran disponibles:";
 
   if (!selectedAllLineItems) {
+    const totalRefundLabel = `$${toMoney(totalRefund)} ${currency}`;
+    const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
+    const creditRefundLabel = `$${toMoney(creditRefundAmount)} ${currency}`;
+    const refundDistributionLines =
+      cashRefundAmount > 0 && creditRefundAmount > 0
+        ? [
+            `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+            `${creditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
+          ]
+        : [
+            "El monto se reflejará en tu método de pago original en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.",
+          ];
     return {
       title: "Reembolso parcial procesado 💰",
       message: [
         `📦 Pedido #${cleanOrderNumber}. ${refundIntro}`,
         ...(itemLines.length ? itemLines : [`• Productos seleccionados — ${amountLabel}`]),
-        `Total reembolsado: ${amountLabel} 💰`,
-        "El monto se reflejará en tu método de pago original en un plazo de 5 a 10 días hábiles, dependiendo de tu banco. Los demás artículos de tu pedido sí serán enviados y recibirás una notificación cuando vayan en camino. Agradecemos tu comprensión. Atte. Cariana ✨",
+        `Total reembolsado: ${totalRefundLabel} 💰`,
+        ...refundDistributionLines,
+        "Los demás artículos de tu pedido sí serán enviados y recibirás una notificación cuando vayan en camino. Agradecemos tu comprensión. Atte. Cariana ✨",
       ].join("\n"),
     };
   }
