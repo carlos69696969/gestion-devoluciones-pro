@@ -532,16 +532,20 @@ function buildCourierOrderRefundNotificationCopy({
       : 0;
     const originalStoreCreditPaymentLabel = `$${toMoney(originalStoreCreditPaymentAmount)} ${currency}`;
     const paymentBreakdownMessage =
-      creditRefundAmount > 0
+      cashRefundAmount > 0 && creditRefundAmount > 0
         ? `Este pedido fue pagado con ${cashRefundLabel} en tu método de pago original y ${originalStoreCreditPaymentLabel} en crédito Cariana.`
+        : creditRefundAmount > 0
+          ? `Este pedido fue pagado con ${originalStoreCreditPaymentLabel} en crédito Cariana.`
         : "";
     const creditAdjustmentMessage =
       availableCreditRemovedAmount > 0
         ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver.`
         : `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver.`;
     const refundDistributionMessage =
-      creditRefundAmount > 0
+      cashRefundAmount > 0 && creditRefundAmount > 0
         ? `Por esta razón, recibirás ${cashRefundLabel} en tu método de pago original y ${creditRefundLabel} serán devueltos a tu crédito Cariana. El monto enviado a tu método de pago original podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`
+        : creditRefundAmount > 0
+          ? `Por esta razón, ${creditRefundLabel} serán devueltos a tu crédito Cariana y estarán disponibles para utilizarlos en una próxima compra.`
         : `Por esta razón, de los ${grossRefundLabel} correspondientes al reembolso, recibirás ${cashRefundLabel} en tu método de pago original. El monto podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`;
     return {
       title: "Reembolso realizado 💰",
@@ -5308,10 +5312,7 @@ export const action = async ({ request }) => {
             currencyCode: creditAdjustmentResult.currencyCode || refundResult.currencyCode,
             source: "courier_refund",
           });
-          const cashNotificationAmount =
-            Number(refundResult.cashRefundAmount || 0) > 0
-              ? refundResult.cashRefundAmount
-              : refundResult.finalRefund;
+          const cashNotificationAmount = Number(refundResult.cashRefundAmount || 0);
           const refundNotificationCopy = buildCourierOrderRefundNotificationCopy({
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
             refundAmount: cashNotificationAmount,
