@@ -472,6 +472,21 @@ function buildCourierOrderRefundNotificationCopy({
   const grossRefundAmount = Number(originalRefundAmount || 0) > 0
     ? Number(originalRefundAmount || 0)
     : totalRefund + spentCreditRecoveredAmount;
+  const totalRefundLabel = `$${toMoney(totalRefund)} ${currency}`;
+  const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
+  const creditRefundLabel = `$${toMoney(creditRefundAmount)} ${currency}`;
+  const refundDistributionLines = [
+    ...(cashRefundAmount > 0
+      ? [
+          `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+        ]
+      : []),
+    ...(creditRefundAmount > 0
+      ? [
+          `${creditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
+        ]
+      : []),
+  ];
   const itemLines = (refundedItems || [])
     .filter((item) => String(item?.title || "").trim())
     .map((item) => {
@@ -491,25 +506,15 @@ function buildCourierOrderRefundNotificationCopy({
       : "Hemos procesado el reembolso de los siguientes productos debido a que ya no se encuentran disponibles:";
 
   if (!selectedAllLineItems) {
-    const totalRefundLabel = `$${toMoney(totalRefund)} ${currency}`;
-    const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
-    const creditRefundLabel = `$${toMoney(creditRefundAmount)} ${currency}`;
-    const refundDistributionLines =
-      cashRefundAmount > 0 && creditRefundAmount > 0
-        ? [
-            `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
-            `${creditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
-          ]
-        : [
-            "El monto se reflejará en tu método de pago original en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.",
-          ];
     return {
       title: "Reembolso parcial procesado 💰",
       message: [
         `📦 Pedido #${cleanOrderNumber}. ${refundIntro}`,
         ...(itemLines.length ? itemLines : [`• Productos seleccionados — ${amountLabel}`]),
         `Total reembolsado: ${totalRefundLabel} 💰`,
-        ...refundDistributionLines,
+        ...(refundDistributionLines.length
+          ? refundDistributionLines
+          : ["El monto se reflejará en tu cuenta en un plazo de 5 a 10 días hábiles."]),
         "Los demás artículos de tu pedido sí serán enviados y recibirás una notificación cuando vayan en camino. Agradecemos tu comprensión. Atte. Cariana ✨",
       ].join("\n"),
     };
@@ -567,7 +572,13 @@ function buildCourierOrderRefundNotificationCopy({
   if (selectedAllLineItems) {
     return {
       title: "Reembolso realizado 💰",
-      message: `📦 Pedido #${cleanOrderNumber}. Durante la preparación de tu pedido detectamos que el producto ya no estaba disponible. Para evitar cualquier demora, procesamos el reembolso de tu compra por la cantidad de ${amountLabel}. El monto se reflejará en tu cuenta de 5 a 10 días hábiles, dependiendo de tu banco. Lamentamos este inconveniente y esperamos poder atenderte nuevamente pronto. Att Cariana. ✨`,
+      message: [
+        `📦 Pedido #${cleanOrderNumber}. Durante la preparación de tu pedido detectamos que el producto ya no estaba disponible. Para evitar cualquier demora, procesamos el reembolso correspondiente por ${totalRefundLabel}.`,
+        ...(refundDistributionLines.length
+          ? refundDistributionLines
+          : ["El monto se reflejará en tu cuenta en un plazo de 5 a 10 días hábiles."]),
+        "Lamentamos este inconveniente y esperamos poder atenderte nuevamente pronto. Atte. Cariana ✨",
+      ].join("\n\n"),
     };
   }
 
