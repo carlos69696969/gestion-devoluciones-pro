@@ -566,6 +566,7 @@ function buildCourierOrderRefundNotificationCopy({
         `Este pedido fue pagado con ${creditAmountLabel} crédito Cariana y ${cashAmountLabel} en tu método de pago original.`,
         `${creditAmountLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
         `${cashAmountLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+        "Agradecemos tu comprensión. Atte. Cariana✨",
       ].join("\n\n"),
     };
   }
