@@ -447,6 +447,8 @@ function buildBranchPickupRefundNotificationCopy(orderNumber, refundAmount, curr
 function buildCourierOrderRefundNotificationCopy({
   orderNumber,
   refundAmount,
+  totalRefundAmount,
+  storeCreditRefundAmount = 0,
   currencyCode = "MXN",
   selectedAllLineItems = false,
   refundedItems = [],
@@ -454,6 +456,25 @@ function buildCourierOrderRefundNotificationCopy({
   const cleanOrderNumber = String(orderNumber || "").replace(/^#/, "").trim() || "****";
   const currency = String(currencyCode || "MXN").trim().toUpperCase() || "MXN";
   const amountLabel = `$${toMoney(refundAmount)} ${currency}`;
+  const cashRefundAmount = Number(refundAmount || 0);
+  const creditRefundAmount = Number(storeCreditRefundAmount || 0);
+  const totalRefund = Number(totalRefundAmount || 0) > 0
+    ? Number(totalRefundAmount || 0)
+    : cashRefundAmount + creditRefundAmount;
+  if (cashRefundAmount > 0 && creditRefundAmount > 0) {
+    const totalAmountLabel = `$${toMoney(totalRefund)} ${currency}`;
+    const creditAmountLabel = `$${toMoney(creditRefundAmount)} ${currency}`;
+    const cashAmountLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
+    return {
+      title: "Reembolso realizado 💰",
+      message: [
+        `📦 Pedido #${cleanOrderNumber}. Durante la preparación de tu pedido detectamos que el producto ya no estaba disponible. Para evitar cualquier demora, realizamos un reembolso total de ${totalAmountLabel}, distribuido de la siguiente manera:`,
+        `${creditAmountLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
+        `${cashAmountLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+        "Lamentamos el inconveniente y esperamos poder atenderte nuevamente muy pronto. Atte. Cariana ✨",
+      ].join("\n"),
+    };
+  }
   if (selectedAllLineItems) {
     return {
       title: "Reembolso realizado 💰",
@@ -578,6 +599,8 @@ async function emitCourierOrderRefundNotification({
   requestId,
   orderNumber,
   refundAmount,
+  totalRefundAmount,
+  storeCreditRefundAmount,
   currencyCode,
   selectedAllLineItems,
   refundedItems,
@@ -589,6 +612,8 @@ async function emitCourierOrderRefundNotification({
   const copy = buildCourierOrderRefundNotificationCopy({
     orderNumber,
     refundAmount,
+    totalRefundAmount,
+    storeCreditRefundAmount,
     currencyCode,
     selectedAllLineItems,
     refundedItems,
@@ -5008,6 +5033,8 @@ export const action = async ({ request }) => {
           const refundNotificationCopy = buildCourierOrderRefundNotificationCopy({
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
             refundAmount: cashNotificationAmount,
+            totalRefundAmount: refundResult.finalRefund,
+            storeCreditRefundAmount: refundResult.storeCreditRefundAmount,
             currencyCode: refundResult.currencyCode || "MXN",
             selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
             refundedItems: refundResult.refundedItems || [],
@@ -5018,6 +5045,8 @@ export const action = async ({ request }) => {
             requestId,
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
             refundAmount: cashNotificationAmount,
+            totalRefundAmount: refundResult.finalRefund,
+            storeCreditRefundAmount: refundResult.storeCreditRefundAmount,
             currencyCode: refundResult.currencyCode || "MXN",
             selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
             refundedItems: refundResult.refundedItems || [],
