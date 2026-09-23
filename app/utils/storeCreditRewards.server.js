@@ -507,10 +507,159 @@ function logStoreCreditDebitDiagnostic(logger, message, details = {}) {
     refundableCredit: details.refundableCredit,
     remainingCreditedAmount: details.remainingCreditedAmount,
     debitAmount: details.debitAmount,
+    cashRecoveredAmount: details.cashRecoveredAmount,
+    totalRecoveredAmount: details.totalRecoveredAmount,
     currencyCode: details.currencyCode,
     customerIdPresent: Boolean(details.customerId),
     reason: details.reason,
   });
+}
+
+function calculateRefundStoreCreditDebitPlan({ ledger, refundLineSubtotal }) {
+  const eligibleRefundSubtotal = roundMoney(refundLineSubtotal);
+  const creditRate = Number(ledger?.creditRate || readRewardRate());
+  const refundableCredit = roundMoney(eligibleRefundSubtotal * creditRate);
+  const ledgerCreditedAmount = ledger ? roundMoney(Number(ledger.creditedAmount || 0)) : 0;
+  const shouldCapToLedgerCredit = Boolean(ledger && ledgerCreditedAmount > 0);
+  const remainingCreditedAmount = shouldCapToLedgerCredit
+    ? roundMoney(ledgerCreditedAmount - Number(ledger.debitedAmount || 0))
+    : refundableCredit;
+  const expectedDebitAmount = roundMoney(Math.min(refundableCredit, remainingCreditedAmount));
+
+  return {
+    eligibleRefundSubtotal,
+    creditRate,
+    refundableCredit,
+    remainingCreditedAmount,
+    expectedDebitAmount,
+    ledgerCreditCapApplied: shouldCapToLedgerCredit,
+  };
+}
+
+async function fetchCustomerStoreCreditBalance(admin, { customerId, currencyCode = "MXN" }) {
+  const normalizedCurrencyCode = normalizeString(currencyCode || "MXN").toUpperCase();
+  const data = await runGraphql(
+    admin,
+    `#graphql
+    query CustomerStoreCreditBalance($id: ID!, $query: String) {
+      customer(id: $id) {
+        storeCreditAccounts(first: 50, query: $query) {
+          nodes {
+            id
+            balance {
+              amount
+              currencyCode
+            }
+          }
+        }
+      }
+    }`,
+    {
+      id: customerId,
+      query: normalizedCurrencyCode ? `currency_code:${normalizedCurrencyCode}` : undefined,
+    },
+  );
+  const accounts = data?.customer?.storeCreditAccounts?.nodes || [];
+  return roundMoney(
+    accounts.reduce((total, account) => {
+      const balance = account?.balance;
+      if (!balance) return total;
+      if (
+        normalizedCurrencyCode &&
+        normalizeString(balance.currencyCode).toUpperCase() !== normalizedCurrencyCode
+      ) {
+        return total;
+      }
+      return total + Number(balance.amount || 0);
+    }, 0),
+  );
+}
+
+export async function planRefundStoreCreditRecovery({
+  admin,
+  shop,
+  shopifyOrderId,
+  shopifyCustomerId = "",
+  refundLineSubtotal,
+  currencyCode = "MXN",
+  source = "app_refund",
+  logger = console,
+}) {
+  const normalizedShop = normalizeShop(shop);
+  if (!rewardsEnabled()) return { skipped: true, reason: "disabled" };
+  if (!admin || !normalizedShop) return { skipped: true, reason: "missing_admin_or_shop" };
+
+  const cleanOrderId = normalizeString(shopifyOrderId);
+  if (!cleanOrderId) return { skipped: true, reason: "missing_order_id" };
+
+  const ledger = await prisma.storeCreditLedger.findUnique({
+    where: { shop_shopifyOrderId: { shop: normalizedShop, shopifyOrderId: cleanOrderId } },
+  });
+  if (!ledger) {
+    return { skipped: true, reason: "missing_ledger" };
+  }
+
+  const debitPlan = calculateRefundStoreCreditDebitPlan({ ledger, refundLineSubtotal });
+  const normalizedCurrencyCode = normalizeString(currencyCode || ledger.currencyCode || "MXN").toUpperCase();
+  if (debitPlan.eligibleRefundSubtotal <= 0 || debitPlan.expectedDebitAmount <= 0) {
+    return {
+      skipped: true,
+      reason: "nothing_to_recover",
+      ...debitPlan,
+      currencyCode: normalizedCurrencyCode,
+    };
+  }
+
+  let customerId = normalizeString(shopifyCustomerId || ledger.shopifyCustomerId);
+  if (!customerId) {
+    const orderNode = await fetchOrderForStoreCredit(admin, cleanOrderId);
+    customerId = normalizeString(orderNode?.customer?.id);
+  }
+  if (!customerId) {
+    return { skipped: true, reason: "missing_customer", ...debitPlan, currencyCode: normalizedCurrencyCode };
+  }
+
+  const availableStoreCreditAmount = Math.max(
+    0,
+    await fetchCustomerStoreCreditBalance(admin, { customerId, currencyCode: normalizedCurrencyCode }),
+  );
+  const storeCreditDebitAmount = roundMoney(
+    Math.min(debitPlan.expectedDebitAmount, availableStoreCreditAmount),
+  );
+  const cashRecoveryAmount = roundMoney(
+    Math.max(0, debitPlan.expectedDebitAmount - storeCreditDebitAmount),
+  );
+
+  logStoreCreditDebitDiagnostic(logger, "Diagnostico recuperacion credito tienda para reembolso", {
+    shop: normalizedShop,
+    source,
+    orderId: cleanOrderId,
+    ledger,
+    rawRefundLineSubtotal: refundLineSubtotal,
+    eligibleRefundSubtotal: debitPlan.eligibleRefundSubtotal,
+    creditRate: debitPlan.creditRate,
+    refundableCredit: debitPlan.refundableCredit,
+    remainingCreditedAmount: debitPlan.remainingCreditedAmount,
+    debitAmount: storeCreditDebitAmount,
+    cashRecoveredAmount: cashRecoveryAmount,
+    totalRecoveredAmount: debitPlan.expectedDebitAmount,
+    ledgerCreditCapApplied: debitPlan.ledgerCreditCapApplied,
+    currencyCode: normalizedCurrencyCode,
+    customerId,
+    reason: "planned_recovery",
+  });
+
+  return {
+    skipped: false,
+    customerId,
+    currencyCode: normalizedCurrencyCode,
+    availableStoreCreditAmount,
+    storeCreditDebitAmount,
+    cashRecoveryAmount,
+    totalRecoveredAmount: debitPlan.expectedDebitAmount,
+    expectedDebitAmount: debitPlan.expectedDebitAmount,
+    ...debitPlan,
+  };
 }
 
 async function debitRefundStoreCreditSubtotal({
@@ -524,6 +673,8 @@ async function debitRefundStoreCreditSubtotal({
   payload = {},
   source = "webhook",
   logger = console,
+  maxDebitAmount = null,
+  cashRecoveredAmount = 0,
 }) {
   const normalizedShop = normalizeShop(shop);
   if (!rewardsEnabled()) return { skipped: true, reason: "disabled" };
@@ -571,15 +722,32 @@ async function debitRefundStoreCreditSubtotal({
     return { skipped: true, reason: "nothing_to_debit" };
   }
 
-  const creditRate = Number(ledger?.creditRate || readRewardRate());
-  const refundableCredit = roundMoney(eligibleRefundSubtotal * creditRate);
-  const ledgerCreditedAmount = ledger ? roundMoney(Number(ledger.creditedAmount || 0)) : 0;
-  const shouldCapToLedgerCredit = Boolean(ledger && ledgerCreditedAmount > 0);
-  const remainingCreditedAmount = shouldCapToLedgerCredit
-    ? roundMoney(ledgerCreditedAmount - Number(ledger.debitedAmount || 0))
-    : refundableCredit;
-  const debitAmount = roundMoney(Math.min(refundableCredit, remainingCreditedAmount));
-  if (debitAmount <= 0) {
+  const debitPlan = calculateRefundStoreCreditDebitPlan({ ledger, refundLineSubtotal: eligibleRefundSubtotal });
+  const hasDebitLimit = maxDebitAmount !== null && maxDebitAmount !== undefined && Number.isFinite(Number(maxDebitAmount));
+  const debitAmount = roundMoney(
+    Math.min(
+      debitPlan.expectedDebitAmount,
+      hasDebitLimit ? Math.max(0, Number(maxDebitAmount || 0)) : debitPlan.expectedDebitAmount,
+    ),
+  );
+  const existingPayload =
+    existing?.payload && typeof existing.payload === "object" && !Array.isArray(existing.payload)
+      ? existing.payload
+      : {};
+  const existingCashRecoveredAmount = roundMoney(existingPayload.cash_recovered_from_refund_amount);
+  const requestedCashRecoveredAmount = roundMoney(
+    Math.min(
+      Math.max(0, Number(cashRecoveredAmount || 0)),
+      Math.max(0, debitPlan.expectedDebitAmount - debitAmount),
+    ),
+  );
+  const normalizedCashRecoveredAmount = roundMoney(
+    Math.max(0, requestedCashRecoveredAmount - existingCashRecoveredAmount),
+  );
+  const payloadCashRecoveredAmount = roundMoney(existingCashRecoveredAmount + normalizedCashRecoveredAmount);
+  const totalRecoveredAmount = roundMoney(debitAmount + normalizedCashRecoveredAmount);
+  const reportedTotalRecoveredAmount = roundMoney(debitAmount + payloadCashRecoveredAmount);
+  if (debitPlan.expectedDebitAmount <= 0 || totalRecoveredAmount <= 0) {
     logStoreCreditDebitDiagnostic(logger, "Diagnostico debito credito tienda sin monto para debitar", {
       shop: normalizedShop,
       source,
@@ -589,11 +757,13 @@ async function debitRefundStoreCreditSubtotal({
       ledger,
       rawRefundLineSubtotal: refundLineSubtotal,
       eligibleRefundSubtotal,
-      creditRate,
-      refundableCredit,
-      remainingCreditedAmount,
+      creditRate: debitPlan.creditRate,
+      refundableCredit: debitPlan.refundableCredit,
+      remainingCreditedAmount: debitPlan.remainingCreditedAmount,
       debitAmount,
-      ledgerCreditCapApplied: shouldCapToLedgerCredit,
+      cashRecoveredAmount: normalizedCashRecoveredAmount,
+      totalRecoveredAmount: reportedTotalRecoveredAmount,
+      ledgerCreditCapApplied: debitPlan.ledgerCreditCapApplied,
       currencyCode,
       reason: "debit_amount_zero",
     });
@@ -615,11 +785,13 @@ async function debitRefundStoreCreditSubtotal({
       ledger,
       rawRefundLineSubtotal: refundLineSubtotal,
       eligibleRefundSubtotal,
-      creditRate,
-      refundableCredit,
-      remainingCreditedAmount,
+      creditRate: debitPlan.creditRate,
+      refundableCredit: debitPlan.refundableCredit,
+      remainingCreditedAmount: debitPlan.remainingCreditedAmount,
       debitAmount,
-      ledgerCreditCapApplied: shouldCapToLedgerCredit,
+      cashRecoveredAmount: normalizedCashRecoveredAmount,
+      totalRecoveredAmount: reportedTotalRecoveredAmount,
+      ledgerCreditCapApplied: debitPlan.ledgerCreditCapApplied,
       currencyCode,
       customerId,
       reason: "missing_customer",
@@ -632,6 +804,9 @@ async function debitRefundStoreCreditSubtotal({
   const transactionPayload = {
     ...compactRefundPayload(payload),
     known_refund_subtotal: eligibleRefundSubtotal,
+    expected_credit_reversal_amount: debitPlan.expectedDebitAmount,
+    store_credit_debit_amount: debitAmount,
+    cash_recovered_from_refund_amount: payloadCashRecoveredAmount,
     source,
   };
 
@@ -669,31 +844,10 @@ async function debitRefundStoreCreditSubtotal({
         },
       });
 
-  try {
-    logStoreCreditDebitDiagnostic(logger, "Diagnostico debito credito tienda intentando debitar Shopify", {
-      shop: normalizedShop,
-      source,
-      refundId: cleanRefundId,
-      orderId: cleanOrderId,
-      sourceKey,
-      ledger,
-      rawRefundLineSubtotal: refundLineSubtotal,
-      eligibleRefundSubtotal,
-      creditRate,
-      refundableCredit,
-      remainingCreditedAmount,
-      debitAmount,
-      ledgerCreditCapApplied: shouldCapToLedgerCredit,
-      currencyCode: normalizedCurrencyCode,
-      customerId,
-      reason: "attempting_debit",
-    });
-    await debitStoreCreditAccount(admin, {
-      customerId,
-      amount: debitAmount,
-      currencyCode: normalizedCurrencyCode,
-    });
-    const nextDebitedAmount = ledger ? roundMoney(Number(ledger.debitedAmount || 0) + debitAmount) : debitAmount;
+  if (debitAmount <= 0 && normalizedCashRecoveredAmount > 0) {
+    const nextDebitedAmount = ledger
+      ? roundMoney(Number(ledger.debitedAmount || 0) + normalizedCashRecoveredAmount)
+      : normalizedCashRecoveredAmount;
     await prisma.storeCreditTransaction.update({
       where: { id: transaction.id },
       data: {
@@ -706,12 +860,77 @@ async function debitRefundStoreCreditSubtotal({
       await prisma.storeCreditLedger.update({
         where: { id: ledger.id },
         data: {
-          debitedAmount: { increment: debitAmount },
+          debitedAmount: { increment: normalizedCashRecoveredAmount },
           status: nextDebitedAmount >= Number(ledger.creditedAmount || 0) ? "reversed" : "partially_debited",
         },
       });
     }
-    return { debited: true, amount: debitAmount, currencyCode: normalizedCurrencyCode, withoutLedger: !ledger };
+    return {
+      debited: false,
+      amount: 0,
+      cashRecoveredAmount: normalizedCashRecoveredAmount,
+      totalRecoveredAmount: reportedTotalRecoveredAmount,
+      expectedDebitAmount: debitPlan.expectedDebitAmount,
+      currencyCode: normalizedCurrencyCode,
+      withoutLedger: !ledger,
+    };
+  }
+
+  try {
+    logStoreCreditDebitDiagnostic(logger, "Diagnostico debito credito tienda intentando debitar Shopify", {
+      shop: normalizedShop,
+      source,
+      refundId: cleanRefundId,
+      orderId: cleanOrderId,
+      sourceKey,
+      ledger,
+      rawRefundLineSubtotal: refundLineSubtotal,
+      eligibleRefundSubtotal,
+      creditRate: debitPlan.creditRate,
+      refundableCredit: debitPlan.refundableCredit,
+      remainingCreditedAmount: debitPlan.remainingCreditedAmount,
+      debitAmount,
+      cashRecoveredAmount: normalizedCashRecoveredAmount,
+      totalRecoveredAmount: reportedTotalRecoveredAmount,
+      ledgerCreditCapApplied: debitPlan.ledgerCreditCapApplied,
+      currencyCode: normalizedCurrencyCode,
+      customerId,
+      reason: "attempting_debit",
+    });
+    await debitStoreCreditAccount(admin, {
+      customerId,
+      amount: debitAmount,
+      currencyCode: normalizedCurrencyCode,
+    });
+    const nextDebitedAmount = ledger
+      ? roundMoney(Number(ledger.debitedAmount || 0) + totalRecoveredAmount)
+      : totalRecoveredAmount;
+    await prisma.storeCreditTransaction.update({
+      where: { id: transaction.id },
+      data: {
+        status: "completed",
+        errorCode: null,
+        errorMessage: null,
+      },
+    });
+    if (ledger) {
+      await prisma.storeCreditLedger.update({
+        where: { id: ledger.id },
+        data: {
+          debitedAmount: { increment: totalRecoveredAmount },
+          status: nextDebitedAmount >= Number(ledger.creditedAmount || 0) ? "reversed" : "partially_debited",
+        },
+      });
+    }
+    return {
+      debited: true,
+      amount: debitAmount,
+      cashRecoveredAmount: normalizedCashRecoveredAmount,
+      totalRecoveredAmount: reportedTotalRecoveredAmount,
+      expectedDebitAmount: debitPlan.expectedDebitAmount,
+      currencyCode: normalizedCurrencyCode,
+      withoutLedger: !ledger,
+    };
   } catch (error) {
     const firstUserError = error?.userErrors?.[0];
     const status = firstUserError?.code === "INSUFFICIENT_FUNDS" ? "pending_debit" : "failed";
@@ -724,12 +943,16 @@ async function debitRefundStoreCreditSubtotal({
       },
     });
     if (ledger) {
+      const ledgerUpdate = {
+        pendingDebitAmount: status === "pending_debit" ? { increment: debitAmount } : undefined,
+        status: status === "pending_debit" ? "pending_debit" : "debit_failed",
+      };
+      if (normalizedCashRecoveredAmount > 0) {
+        ledgerUpdate.debitedAmount = { increment: normalizedCashRecoveredAmount };
+      }
       await prisma.storeCreditLedger.update({
         where: { id: ledger.id },
-        data: {
-          pendingDebitAmount: status === "pending_debit" ? { increment: debitAmount } : undefined,
-          status: status === "pending_debit" ? "pending_debit" : "debit_failed",
-        },
+        data: ledgerUpdate,
       });
     }
     throw error;
@@ -952,6 +1175,8 @@ export async function processKnownRefundStoreCreditDebit({
   payload = {},
   source = "app_refund",
   logger = console,
+  maxDebitAmount = null,
+  cashRecoveredAmount = 0,
 }) {
   return debitRefundStoreCreditSubtotal({
     admin,
@@ -964,5 +1189,7 @@ export async function processKnownRefundStoreCreditDebit({
     payload,
     source,
     logger,
+    maxDebitAmount,
+    cashRecoveredAmount,
   });
 }

@@ -1,7 +1,11 @@
 import prisma from "../db.server";
 import { fetchBranchPickupCourierOrdersForShop } from "./courier.server";
 import { formatCourierScheduledDate, getCourierRouteStatusFromTags } from "./courier.shared";
-import { processKnownRefundStoreCreditDebit, scheduleStoreCreditNotification } from "./storeCreditRewards.server";
+import {
+  planRefundStoreCreditRecovery,
+  processKnownRefundStoreCreditDebit,
+  scheduleStoreCreditNotification,
+} from "./storeCreditRewards.server";
 
 const ADMIN_API_VERSION = "2025-10";
 const MEXICO_TIME_ZONE = "America/Mexico_City";
@@ -586,12 +590,35 @@ async function refundShopifyOrderToOriginalPayment({ shop, session, shopifyOrder
   if (!refundLineItems.length) throw new Error("No hay lineas para reembolsar.");
   const finalRefund = Number(subtotal || 0);
   if (finalRefund <= 0) throw new Error("No se encontro un monto valido para reembolsar.");
+  const admin = {
+    graphql: async (query, options = {}) => ({
+      json: async () =>
+        shopifyGraphql({
+          shop,
+          session,
+          query,
+          variables: options?.variables || {},
+        }),
+    }),
+  };
+  const creditRecoveryPlan = await planRefundStoreCreditRecovery({
+    admin,
+    shop,
+    shopifyOrderId,
+    shopifyCustomerId: snapshot.customerId,
+    refundLineSubtotal: subtotal,
+    currencyCode: snapshot.currencyCode || "MXN",
+    source: "branch_pickup_scheduler_refund",
+  });
+  const cashRecoveryAmount = roundMoneyValue(creditRecoveryPlan?.cashRecoveryAmount || 0);
+  const financialRefundAmount = roundMoneyValue(Math.max(0, finalRefund - cashRecoveryAmount));
+  const shouldRefundShipping = false;
   const financialOutcome = await buildSuggestedRefundFinancialOutcome({
     shop,
     session,
     snapshot,
     orderId: shopifyOrderId,
-    refundAmount: finalRefund,
+    refundAmount: financialRefundAmount,
     refundLineItems,
     refundShipping: shouldRefundShipping,
   });
@@ -604,6 +631,10 @@ async function refundShopifyOrderToOriginalPayment({ shop, session, shopifyOrder
   console.log("Resultado financiero de reembolso Shopify", {
     orderId: shopifyOrderId,
     finalRefund,
+    financialRefundAmount,
+    cashRecoveryAmount,
+    storeCreditRecoveryDebitAmount: creditRecoveryPlan?.storeCreditDebitAmount || 0,
+    storeCreditRecoveryExpectedAmount: creditRecoveryPlan?.expectedDebitAmount || 0,
     cashRefundAmount: financialOutcome.cashRefundAmount,
     storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
     transactionAmounts: financialOutcome.transactions.map((transaction) => ({
@@ -637,6 +668,7 @@ async function refundShopifyOrderToOriginalPayment({ shop, session, shopifyOrder
         refundLineItems,
         transactions: financialOutcome.transactions,
         ...(financialOutcome.refundMethods.length ? { refundMethods: financialOutcome.refundMethods } : {}),
+        ...(cashRecoveryAmount > 0 ? { discrepancyReason: "OTHER" } : {}),
       },
     },
   });
@@ -646,13 +678,18 @@ async function refundShopifyOrderToOriginalPayment({ shop, session, shopifyOrder
   }
   return {
     refundId: normalize(payload?.data?.refundCreate?.refund?.id),
-    finalRefund,
-    refundedSubtotal: finalRefund,
+    finalRefund: financialRefundAmount,
+    originalRefundAmount: finalRefund,
+    refundedSubtotal: financialRefundAmount,
+    refundedProductSubtotal: subtotal,
     currencyCode: snapshot.currencyCode || "MXN",
     customerId: snapshot.customerId || "",
     customerEmail: snapshot.customerEmail || "",
     cashRefundAmount: financialOutcome.cashRefundAmount,
     storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
+    storeCreditDebitAmount: creditRecoveryPlan?.storeCreditDebitAmount || 0,
+    storeCreditCashRecoveryAmount: cashRecoveryAmount,
+    storeCreditExpectedDebitAmount: creditRecoveryPlan?.expectedDebitAmount || 0,
     selectedAllLineItems,
     refundedItems,
   };
@@ -818,6 +855,8 @@ async function debitStoreCreditForScheduledRefund({
   refundedSubtotal,
   currencyCode = "MXN",
   logger = console,
+  maxStoreCreditDebitAmount = null,
+  cashRecoveredAmount = 0,
 }) {
   if (!shop || !session || !shopifyRefundId || !shopifyOrderId || toFiniteNumber(refundedSubtotal, 0) <= 0) {
     return { skipped: true, reason: "missing_refund_data" };
@@ -849,6 +888,8 @@ async function debitStoreCreditForScheduledRefund({
         admin_graphql_api_id: shopifyRefundId,
         order_id: shopifyOrderId,
       },
+      maxDebitAmount: maxStoreCreditDebitAmount,
+      cashRecoveredAmount,
       logger,
     });
     logger.info?.("Debito de credito en tienda procesado desde scheduler de sucursal", {
@@ -958,8 +999,10 @@ async function refundExpiredBranchPickupOrder({ shop, session, order, logger = c
     shopifyRefundId: refundResult.refundId,
     shopifyOrderId: requestId,
     shopifyCustomerId: refundResult.customerId,
-    refundedSubtotal: refundResult.refundedSubtotal,
+    refundedSubtotal: refundResult.refundedProductSubtotal || refundResult.refundedSubtotal,
     currencyCode: refundResult.currencyCode,
+    maxStoreCreditDebitAmount: refundResult.storeCreditDebitAmount,
+    cashRecoveredAmount: refundResult.storeCreditCashRecoveryAmount,
     logger,
   });
   await emitStoreCreditRefundNotification({
@@ -969,7 +1012,7 @@ async function refundExpiredBranchPickupOrder({ shop, session, order, logger = c
     shopifyCustomerId: refundResult.customerId,
     customerEmail: refundResult.customerEmail,
     refundId: refundResult.refundId,
-    amount: creditAdjustmentResult.amount,
+    amount: creditAdjustmentResult.totalRecoveredAmount || creditAdjustmentResult.amount,
     currencyCode: creditAdjustmentResult.currencyCode || refundResult.currencyCode,
     logger,
   });
