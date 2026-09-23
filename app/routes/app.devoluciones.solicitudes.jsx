@@ -515,10 +515,10 @@ function buildCourierOrderRefundNotificationCopy({
       title: "Reembolso realizado 💰",
       message: [
         `📦 Pedido #${cleanOrderNumber}. Durante la preparación de tu pedido detectamos que el producto ya no estaba disponible. Para evitar cualquier demora, realizamos un reembolso total de ${totalAmountLabel}, distribuido de la siguiente manera:`,
+        `Este pedido fue pagado con ${creditAmountLabel} crédito Cariana y ${cashAmountLabel} en tu método de pago original.`,
         `${creditAmountLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
         `${cashAmountLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
-        "Lamentamos el inconveniente y esperamos poder atenderte nuevamente muy pronto. Atte. Cariana ✨",
-      ].join("\n"),
+      ].join("\n\n"),
     };
   }
   if (selectedAllLineItems) {
