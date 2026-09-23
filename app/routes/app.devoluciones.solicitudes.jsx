@@ -5001,9 +5001,13 @@ export const action = async ({ request }) => {
             currencyCode: refundResult.currencyCode,
             source: "courier_refund",
           });
+          const cashNotificationAmount =
+            Number(refundResult.cashRefundAmount || 0) > 0
+              ? refundResult.cashRefundAmount
+              : refundResult.finalRefund;
           const refundNotificationCopy = buildCourierOrderRefundNotificationCopy({
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
-            refundAmount: refundResult.finalRefund,
+            refundAmount: cashNotificationAmount,
             currencyCode: refundResult.currencyCode || "MXN",
             selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
             refundedItems: refundResult.refundedItems || [],
@@ -5013,7 +5017,7 @@ export const action = async ({ request }) => {
             shopDomain: session.shop,
             requestId,
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
-            refundAmount: refundResult.finalRefund,
+            refundAmount: cashNotificationAmount,
             currencyCode: refundResult.currencyCode || "MXN",
             selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
             refundedItems: refundResult.refundedItems || [],
