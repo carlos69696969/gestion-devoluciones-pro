@@ -2909,6 +2909,33 @@ function transactionRefundableAmount(transaction) {
   return roundMoneyValue(transaction?.amount);
 }
 
+function isSuccessfulRefundTransaction(transaction) {
+  return (
+    String(transaction?.status || "").toUpperCase() === "SUCCESS" &&
+    String(transaction?.kind || "").toUpperCase() === "REFUND"
+  );
+}
+
+function transactionRefundedAmount(parentTransaction, transactions = []) {
+  if (!parentTransaction?.id) return 0;
+  return roundMoneyValue(
+    (transactions || [])
+      .filter((transaction) => isSuccessfulRefundTransaction(transaction))
+      .filter((transaction) => String(transaction.parentId || "") === String(parentTransaction.id || ""))
+      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
+  );
+}
+
+function remainingTransactionRefundableAmount(transaction, transactions = []) {
+  const explicitMaximum = transactionRefundableAmount(transaction);
+  if (transaction?.maximumRefundableAmount !== null && transaction?.maximumRefundableAmount !== undefined) {
+    return explicitMaximum;
+  }
+  const originalAmount = roundMoneyValue(transaction?.amount);
+  const alreadyRefunded = transactionRefundedAmount(transaction, transactions);
+  return roundMoneyValue(Math.max(0, originalAmount - alreadyRefunded));
+}
+
 function orderHasStoreCreditPayment(snapshot) {
   return (
     (snapshot?.paymentGatewayNames || []).some(isStoreCreditGatewayName) ||
@@ -2925,7 +2952,7 @@ function buildRefundFinancialOutcome({ snapshot, orderId, refundAmount }) {
 
   for (const transaction of successfulPayments) {
     if (remaining <= 0) break;
-    const refundableAmount = transactionRefundableAmount(transaction);
+    const refundableAmount = remainingTransactionRefundableAmount(transaction, snapshot?.transactions || []);
     if (!transaction?.id || !transaction?.gateway || refundableAmount <= 0) continue;
     const amount = roundMoneyValue(Math.min(remaining, refundableAmount));
     if (amount <= 0) continue;
@@ -3027,6 +3054,9 @@ async function fetchOrderSnapshot(admin, orderId) {
             amount
             currencyCode
           }
+          parentTransaction {
+            id
+          }
         }
       }
     }`,
@@ -3067,6 +3097,7 @@ async function fetchOrderSnapshot(admin, orderId) {
         transaction.maximumRefundableV2?.amount === null || transaction.maximumRefundableV2?.amount === undefined
           ? null
           : Number(transaction.maximumRefundableV2.amount),
+      parentId: transaction.parentTransaction?.id || "",
     })),
   };
 }
