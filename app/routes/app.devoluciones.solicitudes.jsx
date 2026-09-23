@@ -3001,6 +3001,113 @@ function buildRefundFinancialOutcome({ snapshot, orderId, refundAmount }) {
   };
 }
 
+async function buildSuggestedRefundFinancialOutcome({
+  admin,
+  snapshot,
+  orderId,
+  refundAmount,
+  refundLineItems,
+  refundShipping = false,
+}) {
+  const response = await admin.graphql(
+    `#graphql
+    query SuggestedRefundFinancialOutcome($id: ID!, $refundLineItems: [RefundLineItemInput!], $refundShipping: Boolean) {
+      order(id: $id) {
+        suggestedRefund(
+          refundLineItems: $refundLineItems
+          refundShipping: $refundShipping
+          refundMethodAllocation: ORIGINAL_PAYMENT_METHODS
+        ) {
+          amountSet {
+            shopMoney { amount currencyCode }
+          }
+          maximumRefundableSet {
+            shopMoney { amount currencyCode }
+          }
+          suggestedTransactions {
+            gateway
+            amountSet {
+              shopMoney { amount currencyCode }
+            }
+            maximumRefundableSet {
+              shopMoney { amount currencyCode }
+            }
+            parentTransaction {
+              id
+            }
+          }
+        }
+      }
+    }`,
+    {
+      variables: {
+        id: orderId,
+        refundLineItems,
+        refundShipping: Boolean(refundShipping),
+      },
+    },
+  );
+  const payload = await response.json();
+  const errors = payload?.errors || [];
+  if (errors.length) {
+    throw new Error(errors[0]?.message || "No se pudo calcular la sugerencia de reembolso en Shopify.");
+  }
+
+  const suggestedRefund = payload?.data?.order?.suggestedRefund;
+  if (!suggestedRefund) {
+    throw new Error("Shopify no devolvio una sugerencia de reembolso para esta orden.");
+  }
+
+  let remaining = roundMoneyValue(refundAmount);
+  const transactions = [];
+  for (const suggestedTransaction of suggestedRefund.suggestedTransactions || []) {
+    if (remaining <= 0) break;
+    if (isStoreCreditGatewayName(suggestedTransaction?.gateway)) continue;
+    const suggestedAmount = roundMoneyValue(shopMoneyAmount(suggestedTransaction?.amountSet));
+    const maximumRefundable = suggestedTransaction?.maximumRefundableSet
+      ? roundMoneyValue(shopMoneyAmount(suggestedTransaction.maximumRefundableSet))
+      : suggestedAmount;
+    const amount = roundMoneyValue(Math.min(remaining, suggestedAmount, maximumRefundable));
+    const parentId = String(suggestedTransaction?.parentTransaction?.id || "");
+    const gateway = String(suggestedTransaction?.gateway || "");
+    if (!parentId || !gateway || amount <= 0) continue;
+    transactions.push({
+      orderId,
+      kind: "REFUND",
+      gateway,
+      parentId,
+      amount: amount.toFixed(2),
+    });
+    remaining = roundMoneyValue(remaining - amount);
+  }
+
+  const canRefundRemainderToStoreCredit = remaining > 0 && orderHasStoreCreditPayment(snapshot);
+  const refundMethods = canRefundRemainderToStoreCredit
+    ? [
+        {
+          storeCreditRefund: {
+            amount: {
+              amount: remaining.toFixed(2),
+              currencyCode: snapshot?.currencyCode || "MXN",
+            },
+          },
+        },
+      ]
+    : [];
+  const storeCreditRefundAmount = canRefundRemainderToStoreCredit ? remaining : 0;
+  const cashRefundAmount = roundMoneyValue(refundAmount - remaining);
+
+  return {
+    transactions,
+    refundMethods,
+    cashRefundAmount,
+    storeCreditRefundAmount,
+    unallocatedAmount: canRefundRemainderToStoreCredit ? 0 : remaining,
+    suggestedRefundAmount: roundMoneyValue(shopMoneyAmount(suggestedRefund.amountSet)),
+    suggestedMaximumRefundable: roundMoneyValue(shopMoneyAmount(suggestedRefund.maximumRefundableSet)),
+  };
+}
+
 async function fetchOrderSnapshot(admin, orderId) {
   const response = await admin.graphql(
     `#graphql
@@ -3532,10 +3639,13 @@ async function refundShopifyOrderToOriginalPayment({
       : selectedAllLineItems
         ? Number(snapshot.currentSubtotalPrice || 0)
         : 0;
-  const financialOutcome = buildRefundFinancialOutcome({
+  const financialOutcome = await buildSuggestedRefundFinancialOutcome({
+    admin,
     snapshot,
     orderId: shopifyOrderId,
     refundAmount: finalRefund,
+    refundLineItems,
+    refundShipping: shouldRefundShipping,
   });
   if (financialOutcome.unallocatedAmount > 0) {
     throw new Error("No se encontro una transaccion de pago valida para reembolsar al metodo original.");
@@ -3548,6 +3658,16 @@ async function refundShopifyOrderToOriginalPayment({
     finalRefund,
     cashRefundAmount: financialOutcome.cashRefundAmount,
     storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
+    transactionAmounts: financialOutcome.transactions.map((transaction) => ({
+      gateway: transaction.gateway,
+      amount: transaction.amount,
+    })),
+    refundMethodAmounts: financialOutcome.refundMethods.map((method) => ({
+      amount: method.storeCreditRefund?.amount?.amount || "0.00",
+      currencyCode: method.storeCreditRefund?.amount?.currencyCode || snapshot.currencyCode || "MXN",
+    })),
+    suggestedRefundAmount: financialOutcome.suggestedRefundAmount,
+    suggestedMaximumRefundable: financialOutcome.suggestedMaximumRefundable,
     transactionCount: financialOutcome.transactions.length,
   });
   const response = await admin.graphql(
@@ -6100,10 +6220,13 @@ export const action = async ({ request }) => {
         };
       }
 
-      const financialOutcome = buildRefundFinancialOutcome({
+      const financialOutcome = await buildSuggestedRefundFinancialOutcome({
+        admin,
         snapshot,
         orderId: requestRow.shopifyOrderId,
         refundAmount: finalRefund,
+        refundLineItems,
+        refundShipping: false,
       });
       if (financialOutcome.unallocatedAmount > 0) {
         return {
@@ -6124,6 +6247,16 @@ export const action = async ({ request }) => {
         finalRefund,
         cashRefundAmount: financialOutcome.cashRefundAmount,
         storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
+        transactionAmounts: financialOutcome.transactions.map((transaction) => ({
+          gateway: transaction.gateway,
+          amount: transaction.amount,
+        })),
+        refundMethodAmounts: financialOutcome.refundMethods.map((method) => ({
+          amount: method.storeCreditRefund?.amount?.amount || "0.00",
+          currencyCode: method.storeCreditRefund?.amount?.currencyCode || snapshot.currencyCode || "MXN",
+        })),
+        suggestedRefundAmount: financialOutcome.suggestedRefundAmount,
+        suggestedMaximumRefundable: financialOutcome.suggestedMaximumRefundable,
         transactionCount: financialOutcome.transactions.length,
       });
 
