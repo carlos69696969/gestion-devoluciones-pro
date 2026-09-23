@@ -373,22 +373,29 @@ function isSuccessfulRefundTransaction(transaction) {
 
 function transactionRefundedAmount(parentTransaction, transactions = []) {
   if (!parentTransaction?.id) return 0;
+  const refunds = (transactions || []).filter((transaction) => isSuccessfulRefundTransaction(transaction));
+  const linkedRefunds = refunds.filter((transaction) => normalize(transaction.parentId) === normalize(parentTransaction.id));
+  const fallbackRefunds = linkedRefunds.length
+    ? []
+    : refunds.filter(
+        (transaction) =>
+          !normalize(transaction.parentId) &&
+          normalize(transaction.gateway).toLowerCase() === normalize(parentTransaction.gateway).toLowerCase() &&
+          !isStoreCreditGatewayName(transaction.gateway),
+      );
   return roundMoneyValue(
-    (transactions || [])
-      .filter((transaction) => isSuccessfulRefundTransaction(transaction))
-      .filter((transaction) => normalize(transaction.parentId) === normalize(parentTransaction.id))
-      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
+    [...linkedRefunds, ...fallbackRefunds].reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
   );
 }
 
 function remainingTransactionRefundableAmount(transaction, transactions = []) {
-  const explicitMaximum = transactionRefundableAmount(transaction);
-  if (transaction?.maximumRefundableAmount !== null && transaction?.maximumRefundableAmount !== undefined) {
-    return explicitMaximum;
-  }
   const originalAmount = roundMoneyValue(transaction?.amount);
   const alreadyRefunded = transactionRefundedAmount(transaction, transactions);
-  return roundMoneyValue(Math.max(0, originalAmount - alreadyRefunded));
+  const computedRemaining = roundMoneyValue(Math.max(0, originalAmount - alreadyRefunded));
+  if (transaction?.maximumRefundableAmount !== null && transaction?.maximumRefundableAmount !== undefined) {
+    return roundMoneyValue(Math.min(computedRemaining, transactionRefundableAmount(transaction)));
+  }
+  return computedRemaining;
 }
 
 function orderHasStoreCreditPayment(snapshot) {
