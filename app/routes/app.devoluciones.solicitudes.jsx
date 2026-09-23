@@ -472,6 +472,36 @@ function buildCourierOrderRefundNotificationCopy({
   const grossRefundAmount = Number(originalRefundAmount || 0) > 0
     ? Number(originalRefundAmount || 0)
     : totalRefund + spentCreditRecoveredAmount;
+  const itemLines = (refundedItems || [])
+    .filter((item) => String(item?.title || "").trim())
+    .map((item) => {
+      const quantity = Math.max(1, Number(item.quantity || 1));
+      const title = String(item.title || "").trim();
+      const quantitySuffix = quantity > 1 ? ` x${quantity}` : "";
+      const itemTotal = Number(item.total || 0);
+      return `• ${title}${quantitySuffix} — $${toMoney(itemTotal)} ${currency}`;
+    });
+  const refundedItemCount = (refundedItems || []).reduce(
+    (sum, item) => sum + Math.max(1, Number(item?.quantity || 1)),
+    0,
+  );
+  const refundIntro =
+    refundedItemCount === 1
+      ? "Hemos procesado el reembolso del siguiente producto debido a que ya no se encuentra disponible:"
+      : "Hemos procesado el reembolso de los siguientes productos debido a que ya no se encuentran disponibles:";
+
+  if (!selectedAllLineItems) {
+    return {
+      title: "Reembolso parcial procesado 💰",
+      message: [
+        `📦 Pedido #${cleanOrderNumber}. ${refundIntro}`,
+        ...(itemLines.length ? itemLines : [`• Productos seleccionados — ${amountLabel}`]),
+        `Total reembolsado: ${amountLabel} 💰`,
+        "El monto se reflejará en tu método de pago original en un plazo de 5 a 10 días hábiles, dependiendo de tu banco. Los demás artículos de tu pedido sí serán enviados y recibirás una notificación cuando vayan en camino. Agradecemos tu comprensión. Atte. Cariana ✨",
+      ].join("\n"),
+    };
+  }
+
   if (spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0 && grossRefundAmount > cashRefundAmount) {
     const grossRefundLabel = `$${toMoney(grossRefundAmount)} ${currency}`;
     const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
@@ -528,31 +558,13 @@ function buildCourierOrderRefundNotificationCopy({
     };
   }
 
-  const itemLines = (refundedItems || [])
-    .filter((item) => String(item?.title || "").trim())
-    .map((item) => {
-      const quantity = Math.max(1, Number(item.quantity || 1));
-      const title = String(item.title || "").trim();
-      const quantitySuffix = quantity > 1 ? ` x${quantity}` : "";
-      const itemTotal = Number(item.total || 0);
-      return `• ${title}${quantitySuffix} — $${toMoney(itemTotal)} ${currency}`;
-    });
-  const refundedItemCount = (refundedItems || []).reduce(
-    (sum, item) => sum + Math.max(1, Number(item?.quantity || 1)),
-    0,
-  );
-  const refundIntro =
-    refundedItemCount === 1
-      ? "Hemos procesado el reembolso del siguiente producto debido a que ya no se encuentra disponible:"
-      : "Hemos procesado el reembolso de los siguientes productos debido a que ya no se encuentran disponibles:";
-
   return {
     title: "Reembolso parcial procesado 💰",
     message: [
       `📦 Pedido #${cleanOrderNumber}. ${refundIntro}`,
       ...(itemLines.length ? itemLines : [`• Productos seleccionados — ${amountLabel}`]),
       `Total reembolsado: ${amountLabel} 💰`,
-      "El monto se reflejará en tu cuenta de 5 a 10 días hábiles, dependiendo de tu banco. Los demás artículos de tu pedido sí serán enviados y recibirás una notificación cuando vayan en camino. Agradecemos tu comprensión y la confianza que has depositado en Cariana. ✨",
+      "El monto se reflejará en tu método de pago original en un plazo de 5 a 10 días hábiles, dependiendo de tu banco. Los demás artículos de tu pedido sí serán enviados y recibirás una notificación cuando vayan en camino. Agradecemos tu comprensión. Atte. Cariana ✨",
     ].join("\n"),
   };
 }
@@ -3117,11 +3129,10 @@ async function buildSuggestedRefundFinancialOutcome({
   for (const suggestedTransaction of suggestedRefund.suggestedTransactions || []) {
     if (remaining <= 0) break;
     if (isStoreCreditGatewayName(suggestedTransaction?.gateway)) continue;
-    const suggestedAmount = roundMoneyValue(shopMoneyAmount(suggestedTransaction?.amountSet));
     const maximumRefundable = suggestedTransaction?.maximumRefundableSet
       ? roundMoneyValue(shopMoneyAmount(suggestedTransaction.maximumRefundableSet))
-      : suggestedAmount;
-    const amount = roundMoneyValue(Math.min(remaining, suggestedAmount, maximumRefundable));
+      : roundMoneyValue(shopMoneyAmount(suggestedTransaction?.amountSet));
+    const amount = roundMoneyValue(Math.min(remaining, maximumRefundable));
     const parentId = String(suggestedTransaction?.parentTransaction?.id || "");
     const gateway = String(suggestedTransaction?.gateway || "");
     if (!parentId || !gateway || amount <= 0) continue;

@@ -513,11 +513,10 @@ async function buildSuggestedRefundFinancialOutcome({
   for (const suggestedTransaction of suggestedRefund.suggestedTransactions || []) {
     if (remaining <= 0) break;
     if (isStoreCreditGatewayName(suggestedTransaction?.gateway)) continue;
-    const suggestedAmount = roundMoneyValue(shopMoneyAmount(suggestedTransaction?.amountSet));
     const maximumRefundable = suggestedTransaction?.maximumRefundableSet
       ? roundMoneyValue(shopMoneyAmount(suggestedTransaction.maximumRefundableSet))
-      : suggestedAmount;
-    const amount = roundMoneyValue(Math.min(remaining, suggestedAmount, maximumRefundable));
+      : roundMoneyValue(shopMoneyAmount(suggestedTransaction?.amountSet));
+    const amount = roundMoneyValue(Math.min(remaining, maximumRefundable));
     const parentId = normalize(suggestedTransaction?.parentTransaction?.id);
     const gateway = normalize(suggestedTransaction?.gateway);
     if (!parentId || !gateway || amount <= 0) continue;
