@@ -4609,6 +4609,8 @@ export const loader = async ({ request }) => {
       where: {
         shop: session.shop,
         orderNumber: { in: orderNumbers },
+        returnMethod: { not: "pickup" },
+        status: { in: Array.from(METHOD_QUEUE_STATUSES) },
       },
       include: {
         items: {
