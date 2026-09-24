@@ -603,8 +603,34 @@ function buildCourierOrderRefundNotificationCopy({
   };
 }
 
-function buildRefundProcessedMessage(requestRow, finalRefund) {
+function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
   const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
+  const currency = String(options?.currencyCode || "MXN").trim().toUpperCase() || "MXN";
+  const refundedAmount = Number(finalRefund || 0);
+  const originalRefundAmount = Number(options?.originalRefundAmount || 0) > 0
+    ? Number(options.originalRefundAmount || 0)
+    : refundedAmount;
+  const creditAdjustmentAmount = Number(options?.storeCreditExpectedDebitAmount || 0);
+  const availableCreditRemovedAmount = Number(options?.storeCreditDebitAmount || 0);
+  const spentCreditRecoveredAmount = Number(options?.storeCreditCashRecoveryAmount || 0);
+  if (spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0) {
+    const originalRefundLabel = `$${toMoney(originalRefundAmount)} ${currency}`;
+    const refundedAmountLabel = `$${toMoney(refundedAmount)} ${currency}`;
+    const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
+    const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
+    const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
+    const creditAdjustmentMessage =
+      availableCreditRemovedAmount > 0
+        ? `Esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver.`
+        : `Esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver.`;
+    return [
+      `Pedido #${orderNumber}. Tu devolución fue procesada correctamente por un total de ${originalRefundLabel}.`,
+      creditAdjustmentMessage,
+      `Por esta razón, de los ${originalRefundLabel} correspondientes al reembolso, recibirás ${refundedAmountLabel} en tu método de pago original. El monto podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+      "Este ajuste no representa un cargo adicional; corresponde únicamente al crédito que había sido otorgado por la compra que ahora está siendo reembolsada.",
+      "Gracias por confiar en Cariana. 💙",
+    ].join("\n\n");
+  }
   return `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de $${toMoney(finalRefund)} MXN. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙`;
 }
 
@@ -6468,7 +6494,13 @@ export const action = async ({ request }) => {
         currencyCode: creditAdjustmentResult.currencyCode || snapshot.currencyCode || "MXN",
         source: "return_request_refund",
       });
-      const refundProcessedMessage = buildRefundProcessedMessage(requestRow, financialRefundAmount);
+      const refundProcessedMessage = buildRefundProcessedMessage(requestRow, financialRefundAmount, {
+        originalRefundAmount: finalRefund,
+        storeCreditExpectedDebitAmount: creditRecoveryPlan?.expectedDebitAmount || 0,
+        storeCreditDebitAmount: creditRecoveryPlan?.storeCreditDebitAmount || 0,
+        storeCreditCashRecoveryAmount: cashRecoveryAmount,
+        currencyCode: snapshot.currencyCode || "MXN",
+      });
       await prisma.returnRequest.update({
         where: { id },
         data: {
