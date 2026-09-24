@@ -754,12 +754,31 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
     ].join("\n\n");
   }
   if (availableCreditAdjustmentMessage) {
-    const refundedAmountLabel = `$${toMoney(finalRefund)} ${currency}`;
+    const actualRefundAmount = roundMoneyValue(cashRefundAmount + storeCreditRefundAmount);
+    const refundedAmountLabel = `$${toMoney(actualRefundAmount > 0 ? actualRefundAmount : finalRefund)} ${currency}`;
+    const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
+    const storeCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
+    const refundDistributionLines = [
+      ...(storeCreditRefundAmount > 0
+        ? [
+            `${storeCreditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
+          ]
+        : []),
+      ...(cashRefundAmount > 0
+        ? [
+            `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+          ]
+        : []),
+    ];
     return [
-      `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de ${refundedAmountLabel}.`,
+      `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por la cantidad de ${refundedAmountLabel}.`,
       availableCreditAdjustmentMessage,
-      `${refundedAmountLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
-      "Gracias por confiar en Cariana. 💙",
+      ...(refundDistributionLines.length
+        ? refundDistributionLines
+        : [
+            `${refundedAmountLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+          ]),
+      "Gracias por confiar en Cariana ✨",
     ].join("\n\n");
   }
   return `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de $${toMoney(finalRefund)} MXN. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙`;
