@@ -158,7 +158,7 @@ const RETURN_EVENT_BY_INTENT = {
   mark_returned_to_customer: "return_rejected",
   mark_not_returned: "return_rejected",
   mark_never_arrived: "return_expired",
-  process_refund: "refund_completed",
+  process_refund: "refund_processed",
 };
 
 function buildReturnReference(requestRow) {
@@ -1969,7 +1969,7 @@ function buildStatusTimeline(
       : kind === STATUS_RECEIVED_KIND
       ? receivedReturnPortalMessage(requestRow)
       : kind === STATUS_REFUNDED_KIND
-      ? buildRefundProcessedMessage(requestRow, requestRow.finalRefund)
+      ? normalizeDisplayedReasonText(entry.reason) || buildRefundProcessedMessage(requestRow, requestRow.finalRefund)
       : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestRow, routeTimeRescheduleDateFromReason(entry.reason))
       : kind === "never_arrived_branch"
