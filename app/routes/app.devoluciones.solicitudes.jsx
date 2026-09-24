@@ -3265,6 +3265,22 @@ function storeCreditPaymentAmount(snapshot) {
   );
 }
 
+function originalPaymentAmount(snapshot) {
+  return roundMoneyValue(
+    (snapshot?.transactions || [])
+      .filter((transaction) => isSuccessfulPaymentTransaction(transaction) && !isStoreCreditGatewayName(transaction.gateway))
+      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
+  );
+}
+
+function originalPaymentRefundedAmount(snapshot) {
+  return roundMoneyValue(
+    (snapshot?.transactions || [])
+      .filter((transaction) => isSuccessfulRefundTransaction(transaction) && !isStoreCreditGatewayName(transaction.gateway))
+      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
+  );
+}
+
 function storeCreditRefundedAmount(snapshot) {
   return roundMoneyValue(
     (snapshot?.transactions || [])
@@ -3335,6 +3351,7 @@ async function buildSuggestedRefundFinancialOutcome({
   preferStoreCreditRefund = false,
   storeCreditRefundRecoveryAmount = 0,
   allowStoreCreditRefund = true,
+  maxOriginalPaymentRefundAmount = null,
 }) {
   const response = await admin.graphql(
     `#graphql
@@ -3394,13 +3411,25 @@ async function buildSuggestedRefundFinancialOutcome({
     ? roundMoneyValue(Math.min(remaining, Math.max(0, storeCreditRefundableAmount - recoveredFromStoreCreditRefund)))
     : 0;
   remaining = roundMoneyValue(remaining - preferredStoreCreditRefundAmount);
+  const originalPaymentRefundCap =
+    maxOriginalPaymentRefundAmount === null || maxOriginalPaymentRefundAmount === undefined
+      ? null
+      : roundMoneyValue(Math.max(0, Number(maxOriginalPaymentRefundAmount || 0)));
+  let remainingOriginalPaymentRefundBudget =
+    originalPaymentRefundCap === null
+      ? null
+      : roundMoneyValue(Math.max(0, originalPaymentRefundCap - originalPaymentRefundedAmount(snapshot)));
   const transactions = [];
   for (const suggestedTransaction of suggestedRefund.suggestedTransactions || []) {
     if (remaining <= 0) break;
     if (isStoreCreditGatewayName(suggestedTransaction?.gateway)) continue;
-    const maximumRefundable = suggestedTransaction?.maximumRefundableSet
+    const suggestedMaximumRefundable = suggestedTransaction?.maximumRefundableSet
       ? roundMoneyValue(shopMoneyAmount(suggestedTransaction.maximumRefundableSet))
       : roundMoneyValue(shopMoneyAmount(suggestedTransaction?.amountSet));
+    const maximumRefundable =
+      remainingOriginalPaymentRefundBudget === null
+        ? suggestedMaximumRefundable
+        : roundMoneyValue(Math.min(suggestedMaximumRefundable, remainingOriginalPaymentRefundBudget));
     const amount = roundMoneyValue(Math.min(remaining, maximumRefundable));
     const parentId = String(suggestedTransaction?.parentTransaction?.id || "");
     const gateway = String(suggestedTransaction?.gateway || "");
@@ -3413,6 +3442,9 @@ async function buildSuggestedRefundFinancialOutcome({
       amount: amount.toFixed(2),
     });
     remaining = roundMoneyValue(remaining - amount);
+    if (remainingOriginalPaymentRefundBudget !== null) {
+      remainingOriginalPaymentRefundBudget = roundMoneyValue(Math.max(0, remainingOriginalPaymentRefundBudget - amount));
+    }
   }
 
   const canRefundRemainderToStoreCredit = allowStoreCreditRefund && remaining > 0 && orderHasStoreCreditPayment(snapshot);
@@ -3454,6 +3486,9 @@ async function fetchOrderSnapshot(admin, orderId) {
           shopMoney { amount currencyCode }
         }
         currentSubtotalPriceSet {
+          shopMoney { amount currencyCode }
+        }
+        totalShippingPriceSet {
           shopMoney { amount currencyCode }
         }
         customer {
@@ -3528,6 +3563,7 @@ async function fetchOrderSnapshot(admin, orderId) {
     customerEmail: String(order.customer?.email || ""),
     currentTotalPrice: Number(order.currentTotalPriceSet?.shopMoney?.amount || 0),
     currentSubtotalPrice: Number(order.currentSubtotalPriceSet?.shopMoney?.amount || 0),
+    totalShippingPrice: Number(order.totalShippingPriceSet?.shopMoney?.amount || 0),
     currencyCode: String(order.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
     paymentGatewayNames: Array.isArray(order.paymentGatewayNames) ? order.paymentGatewayNames : [],
     lineItems: (order.lineItems?.edges || []).map(({ node }) => ({
@@ -6580,6 +6616,10 @@ export const action = async ({ request }) => {
       });
       const cashRecoveryAmount = roundMoneyValue(creditRecoveryPlan?.cashRecoveryAmount || 0);
       const mixedPaymentRefund = remainingStoreCreditRefundableAmount(snapshot) > 0 && orderHasOriginalPayment(snapshot);
+      const nonRefundableShippingAmount = roundMoneyValue(Math.max(0, Number(snapshot.totalShippingPrice || 0)));
+      const maxOriginalPaymentRefundAmount = mixedPaymentRefund
+        ? roundMoneyValue(Math.max(0, originalPaymentAmount(snapshot) - nonRefundableShippingAmount))
+        : null;
       const hasRemainingOrderItemsAfterRefund =
         mixedPaymentRefund && remainingRefundableQuantityAfterRefund(snapshot.lineItems, refundLineItems) > 0;
       const storeCreditRefundRecoveryAmount = mixedPaymentRefund
@@ -6605,6 +6645,7 @@ export const action = async ({ request }) => {
         preferStoreCreditRefund: mixedPaymentRefund && !hasRemainingOrderItemsAfterRefund,
         storeCreditRefundRecoveryAmount,
         allowStoreCreditRefund: true,
+        maxOriginalPaymentRefundAmount,
       });
       if (financialOutcome.unallocatedAmount > 0) {
         return {
