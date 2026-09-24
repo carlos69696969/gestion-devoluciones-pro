@@ -1028,7 +1028,7 @@ function buildStatusTimeline(requestItem) {
       : kind === STATUS_RECEIVED_KIND
       ? receivedReturnPortalMessage(requestItem)
       : kind === STATUS_REFUNDED_KIND
-      ? refundProcessedPortalMessage(requestItem)
+      ? normalizeDisplayedReasonText(entry.reason) || refundProcessedPortalMessage(requestItem)
       : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestItem, routeTimeRescheduleDateFromReason(entry.reason))
       : kind === "never_arrived_branch"
