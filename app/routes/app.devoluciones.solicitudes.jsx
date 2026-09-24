@@ -619,6 +619,10 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
   const originalPaymentRecoveryAmount = Number(options?.originalPaymentRecoveryAmount || 0);
   const mixedPaymentRefund = Boolean(options?.mixedPaymentRefund);
   const hasRemainingOrderItemsAfterRefund = Boolean(options?.hasRemainingOrderItemsAfterRefund);
+  const availableCreditAdjustmentMessage =
+    creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0 && spentCreditRecoveredAmount <= 0
+      ? `Además, esta compra había generado $${toMoney(creditAdjustmentAmount)} ${currency} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, $${toMoney(availableCreditRemovedAmount)} ${currency} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana.`
+      : "";
   if (mixedPaymentRefund && hasRemainingOrderItemsAfterRefund) {
     const refundedAmountLabel = `$${toMoney(refundedAmount)} ${currency}`;
     const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
@@ -702,9 +706,19 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
     return [
       `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente. Realizamos un reembolso total de ${totalRefundLabel}, distribuido de la siguiente manera:`,
       `Este reembolso corresponde a una compra realizada con ${storeCreditRefundLabel} en crédito Cariana y ${cashRefundLabel} en tu método de pago original.`,
+      ...(availableCreditAdjustmentMessage ? [availableCreditAdjustmentMessage] : []),
       `${storeCreditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
       `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
       "Gracias por confiar en Cariana ✨",
+    ].join("\n\n");
+  }
+  if (availableCreditAdjustmentMessage) {
+    const refundedAmountLabel = `$${toMoney(finalRefund)} ${currency}`;
+    return [
+      `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de ${refundedAmountLabel}.`,
+      availableCreditAdjustmentMessage,
+      `${refundedAmountLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+      "Gracias por confiar en Cariana. 💙",
     ].join("\n\n");
   }
   return `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de $${toMoney(finalRefund)} MXN. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙`;
