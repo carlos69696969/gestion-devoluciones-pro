@@ -3214,9 +3214,17 @@ function isSuccessfulRefundTransaction(transaction) {
   );
 }
 
+function isActiveRefundTransaction(transaction) {
+  const status = String(transaction?.status || "").toUpperCase();
+  return (
+    String(transaction?.kind || "").toUpperCase() === "REFUND" &&
+    !["FAILURE", "ERROR", "CANCELLED"].includes(status)
+  );
+}
+
 function transactionRefundedAmount(parentTransaction, transactions = []) {
   if (!parentTransaction?.id) return 0;
-  const refunds = (transactions || []).filter((transaction) => isSuccessfulRefundTransaction(transaction));
+  const refunds = (transactions || []).filter((transaction) => isActiveRefundTransaction(transaction));
   const linkedRefunds = refunds.filter(
     (transaction) => String(transaction.parentId || "") === String(parentTransaction.id || ""),
   );
@@ -3276,7 +3284,7 @@ function originalPaymentAmount(snapshot) {
 function originalPaymentRefundedAmount(snapshot) {
   return roundMoneyValue(
     (snapshot?.transactions || [])
-      .filter((transaction) => isSuccessfulRefundTransaction(transaction) && !isStoreCreditGatewayName(transaction.gateway))
+      .filter((transaction) => isActiveRefundTransaction(transaction) && !isStoreCreditGatewayName(transaction.gateway))
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
   );
 }
@@ -3284,7 +3292,7 @@ function originalPaymentRefundedAmount(snapshot) {
 function storeCreditRefundedAmount(snapshot) {
   return roundMoneyValue(
     (snapshot?.transactions || [])
-      .filter((transaction) => isSuccessfulRefundTransaction(transaction) && isStoreCreditGatewayName(transaction.gateway))
+      .filter((transaction) => isActiveRefundTransaction(transaction) && isStoreCreditGatewayName(transaction.gateway))
       .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
   );
 }
