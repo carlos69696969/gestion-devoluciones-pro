@@ -613,6 +613,8 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
   const creditAdjustmentAmount = Number(options?.storeCreditExpectedDebitAmount || 0);
   const availableCreditRemovedAmount = Number(options?.storeCreditDebitAmount || 0);
   const spentCreditRecoveredAmount = Number(options?.storeCreditCashRecoveryAmount || 0);
+  const cashRefundAmount = Number(options?.cashRefundAmount || 0);
+  const storeCreditRefundAmount = Number(options?.storeCreditRefundAmount || 0);
   if (spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0) {
     const originalRefundLabel = `$${toMoney(originalRefundAmount)} ${currency}`;
     const refundedAmountLabel = `$${toMoney(refundedAmount)} ${currency}`;
@@ -631,7 +633,30 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
       "Gracias por confiar en Cariana. 💙",
     ].join("\n\n");
   }
+  if (cashRefundAmount > 0 && storeCreditRefundAmount > 0) {
+    const totalRefundLabel = `$${toMoney(cashRefundAmount + storeCreditRefundAmount)} ${currency}`;
+    const storeCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
+    const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
+    return [
+      `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente. Realizamos un reembolso total de ${totalRefundLabel}, distribuido de la siguiente manera:`,
+      `Este pedido fue pagado con ${storeCreditRefundLabel} crédito Cariana y ${cashRefundLabel} en tu método de pago original.`,
+      `${storeCreditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
+      `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+      "Gracias por confiar en Cariana ✨",
+    ].join("\n\n");
+  }
   return `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de $${toMoney(finalRefund)} MXN. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙`;
+}
+
+function buildRefundProcessedNotificationTitle(options = {}) {
+  const cashRefundAmount = Number(options?.cashRefundAmount || 0);
+  const storeCreditRefundAmount = Number(options?.storeCreditRefundAmount || 0);
+  const spentCreditRecoveredAmount = Number(options?.storeCreditCashRecoveryAmount || 0);
+  const creditAdjustmentAmount = Number(options?.storeCreditExpectedDebitAmount || 0);
+  if (cashRefundAmount > 0 && storeCreditRefundAmount > 0 && !(spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0)) {
+    return "Reembolso realizado 💰";
+  }
+  return "Reembolso procesado ✅";
 }
 
 async function emitBranchPickupRefundNotification({ shopDomain, requestId, orderNumber, refundAmount, currencyCode }) {
@@ -6494,13 +6519,17 @@ export const action = async ({ request }) => {
         currencyCode: creditAdjustmentResult.currencyCode || snapshot.currencyCode || "MXN",
         source: "return_request_refund",
       });
-      const refundProcessedMessage = buildRefundProcessedMessage(requestRow, financialRefundAmount, {
+      const refundProcessedMessageOptions = {
         originalRefundAmount: finalRefund,
         storeCreditExpectedDebitAmount: creditRecoveryPlan?.expectedDebitAmount || 0,
         storeCreditDebitAmount: creditRecoveryPlan?.storeCreditDebitAmount || 0,
         storeCreditCashRecoveryAmount: cashRecoveryAmount,
+        cashRefundAmount: financialOutcome.cashRefundAmount,
+        storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
         currencyCode: snapshot.currencyCode || "MXN",
-      });
+      };
+      const refundProcessedMessage = buildRefundProcessedMessage(requestRow, financialRefundAmount, refundProcessedMessageOptions);
+      const refundProcessedTitle = buildRefundProcessedNotificationTitle(refundProcessedMessageOptions);
       await prisma.returnRequest.update({
         where: { id },
         data: {
@@ -6521,7 +6550,7 @@ export const action = async ({ request }) => {
         requestRow,
         intent,
         note: refundProcessedMessage,
-        title: "Reembolso procesado ✅",
+        title: refundProcessedTitle,
         message: refundProcessedMessage,
       });
       return { ok: true, message: "Reembolso procesado correctamente.", refundActionRequestId: id };
