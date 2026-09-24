@@ -475,6 +475,17 @@ function buildCourierOrderRefundNotificationCopy({
   const totalRefundLabel = `$${toMoney(totalRefund)} ${currency}`;
   const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
   const creditRefundLabel = `$${toMoney(creditRefundAmount)} ${currency}`;
+  const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
+  const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
+  const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
+  const creditAdjustmentMessage =
+    creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0 && spentCreditRecoveredAmount > 0
+      ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver.`
+      : creditAdjustmentAmount > 0 && spentCreditRecoveredAmount > 0
+        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver.`
+      : creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0
+        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana.`
+      : "";
   const refundDistributionLines = [
     ...(cashRefundAmount > 0
       ? [
@@ -511,6 +522,7 @@ function buildCourierOrderRefundNotificationCopy({
       message: [
         `📦 Pedido #${cleanOrderNumber}. ${refundIntro}`,
         ...(itemLines.length ? itemLines : [`• Productos seleccionados — ${amountLabel}`]),
+        ...(creditAdjustmentMessage ? [creditAdjustmentMessage] : []),
         `Total reembolsado: ${totalRefundLabel} 💰`,
         ...(refundDistributionLines.length
           ? refundDistributionLines
@@ -522,9 +534,6 @@ function buildCourierOrderRefundNotificationCopy({
 
   if (spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0 && grossRefundAmount > cashRefundAmount) {
     const grossRefundLabel = `$${toMoney(grossRefundAmount)} ${currency}`;
-    const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
-    const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
-    const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
     const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
     const creditRefundLabel = `$${toMoney(creditRefundAmount)} ${currency}`;
     const originalStoreCreditPaymentAmount = creditRefundAmount > 0
@@ -537,10 +546,6 @@ function buildCourierOrderRefundNotificationCopy({
         : creditRefundAmount > 0
           ? `Este pedido fue pagado con ${originalStoreCreditPaymentLabel} en crédito Cariana.`
         : "";
-    const creditAdjustmentMessage =
-      availableCreditRemovedAmount > 0
-        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver.`
-        : `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver.`;
     const refundDistributionMessage =
       cashRefundAmount > 0 && creditRefundAmount > 0
         ? `Por esta razón, recibirás ${cashRefundLabel} en tu método de pago original y ${creditRefundLabel} serán devueltos a tu crédito Cariana. El monto enviado a tu método de pago original podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`
