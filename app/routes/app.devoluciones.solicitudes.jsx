@@ -639,7 +639,7 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
     const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
     return [
       `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente. Realizamos un reembolso total de ${totalRefundLabel}, distribuido de la siguiente manera:`,
-      `Este pedido fue pagado con ${storeCreditRefundLabel} crédito Cariana y ${cashRefundLabel} en tu método de pago original.`,
+      `Este reembolso corresponde a una compra realizada con ${storeCreditRefundLabel} en crédito Cariana y ${cashRefundLabel} en tu método de pago original.`,
       `${storeCreditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
       `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
       "Gracias por confiar en Cariana ✨",
@@ -3104,6 +3104,26 @@ function orderHasStoreCreditPayment(snapshot) {
   );
 }
 
+function storeCreditPaymentAmount(snapshot) {
+  return roundMoneyValue(
+    (snapshot?.transactions || [])
+      .filter((transaction) => isSuccessfulPaymentTransaction(transaction) && isStoreCreditGatewayName(transaction.gateway))
+      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
+  );
+}
+
+function storeCreditRefundedAmount(snapshot) {
+  return roundMoneyValue(
+    (snapshot?.transactions || [])
+      .filter((transaction) => isSuccessfulRefundTransaction(transaction) && isStoreCreditGatewayName(transaction.gateway))
+      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
+  );
+}
+
+function remainingStoreCreditRefundableAmount(snapshot) {
+  return roundMoneyValue(Math.max(0, storeCreditPaymentAmount(snapshot) - storeCreditRefundedAmount(snapshot)));
+}
+
 function buildRefundFinancialOutcome({ snapshot, orderId, refundAmount }) {
   let remaining = roundMoneyValue(refundAmount);
   const transactions = [];
@@ -3159,6 +3179,7 @@ async function buildSuggestedRefundFinancialOutcome({
   refundAmount,
   refundLineItems,
   refundShipping = false,
+  preferStoreCreditRefund = false,
 }) {
   const response = await admin.graphql(
     `#graphql
@@ -3210,6 +3231,10 @@ async function buildSuggestedRefundFinancialOutcome({
   }
 
   let remaining = roundMoneyValue(refundAmount);
+  const preferredStoreCreditRefundAmount = preferStoreCreditRefund
+    ? roundMoneyValue(Math.min(remaining, remainingStoreCreditRefundableAmount(snapshot)))
+    : 0;
+  remaining = roundMoneyValue(remaining - preferredStoreCreditRefundAmount);
   const transactions = [];
   for (const suggestedTransaction of suggestedRefund.suggestedTransactions || []) {
     if (remaining <= 0) break;
@@ -3232,20 +3257,22 @@ async function buildSuggestedRefundFinancialOutcome({
   }
 
   const canRefundRemainderToStoreCredit = remaining > 0 && orderHasStoreCreditPayment(snapshot);
-  const refundMethods = canRefundRemainderToStoreCredit
+  const storeCreditRefundAmount = roundMoneyValue(
+    preferredStoreCreditRefundAmount + (canRefundRemainderToStoreCredit ? remaining : 0),
+  );
+  const refundMethods = storeCreditRefundAmount > 0
     ? [
         {
           storeCreditRefund: {
             amount: {
-              amount: remaining.toFixed(2),
+              amount: storeCreditRefundAmount.toFixed(2),
               currencyCode: snapshot?.currencyCode || "MXN",
             },
           },
         },
       ]
     : [];
-  const storeCreditRefundAmount = canRefundRemainderToStoreCredit ? remaining : 0;
-  const cashRefundAmount = roundMoneyValue(refundAmount - remaining);
+  const cashRefundAmount = roundMoneyValue(refundAmount - storeCreditRefundAmount - (canRefundRemainderToStoreCredit ? 0 : remaining));
 
   return {
     transactions,
@@ -6424,6 +6451,7 @@ export const action = async ({ request }) => {
         refundAmount: financialRefundAmount,
         refundLineItems,
         refundShipping: false,
+        preferStoreCreditRefund: cashRecoveryAmount <= 0,
       });
       if (financialOutcome.unallocatedAmount > 0) {
         return {
