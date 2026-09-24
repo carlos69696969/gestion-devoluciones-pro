@@ -759,7 +759,7 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
     const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
     const storeCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
     const storeCreditOnlyPaymentMessage =
-      storeCreditRefundAmount > 0 && cashRefundAmount <= 0 && !mixedPaymentRefund
+      storeCreditRefundAmount > 0 && cashRefundAmount <= 0
         ? `Esta compra fue pagada con ${storeCreditRefundLabel} en crédito Cariana.`
         : "";
     const refundDistributionLines = [
