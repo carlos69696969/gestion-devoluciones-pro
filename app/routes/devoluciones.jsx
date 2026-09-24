@@ -2023,6 +2023,7 @@ export default function PublicReturnsPortal() {
             completedText={completedText}
             completedRefundText={completedRefundText}
             completedRequests={completedRequests}
+            storeCreditRewardRate={storeCreditRewardRate}
           />
         ) : null}
       </div>
@@ -2030,12 +2031,22 @@ export default function PublicReturnsPortal() {
   );
 }
 
-function CompletedReturnsSection({ completedTitle, completedText, completedRefundText, completedRequests }) {
+function CompletedReturnsSection({
+  completedTitle,
+  completedText,
+  completedRefundText,
+  completedRequests,
+  storeCreditRewardRate = DEFAULT_STORE_CREDIT_REWARD_RATE,
+}) {
   return (
     <section className={styles.card}>
       <div className={styles.completedGrid}>
         {completedRequests.map((requestItem) => (
-          <CompletedReturnSummary key={requestItem.id} requestItem={requestItem} />
+          <CompletedReturnSummary
+            key={requestItem.id}
+            requestItem={requestItem}
+            storeCreditRewardRate={storeCreditRewardRate}
+          />
         ))}
       </div>
     </section>
@@ -2146,7 +2157,7 @@ function timelineToneClassName(tone) {
   return "";
 }
 
-function CompletedReturnSummary({ requestItem }) {
+function CompletedReturnSummary({ requestItem, storeCreditRewardRate = DEFAULT_STORE_CREDIT_REWARD_RATE }) {
   const [viewerImage, setViewerImage] = useState(null);
   const [showAllStates, setShowAllStates] = useState(false);
   const timelineEvents = useMemo(() => buildStatusTimeline(requestItem), [requestItem]);
@@ -2167,6 +2178,17 @@ function CompletedReturnSummary({ requestItem }) {
   const isReceived = normalizedStatus === "recibida";
   const isRefunded = normalizedStatus === "reembolsada";
   const displayStatusLabel = isCurrentReprogrammed ? "reprogramada" : requestItem.statusLabel;
+  const storeCreditBenefitAmount = roundMoneyValue(
+    Number(requestItem.estimatedRefund || 0) *
+      Math.max(0, Math.min(1, Number(storeCreditRewardRate || DEFAULT_STORE_CREDIT_REWARD_RATE))),
+  );
+  const storeCreditBenefitNotice =
+    storeCreditBenefitAmount > 0 ? (
+      <p className={styles.instructionsText}>
+        <strong className={styles.importantLabel}>IMPORTANTE</strong>{" "}
+        Esta compra habia generado <strong>${toMXN(storeCreditBenefitAmount)} MXN</strong> en credito Cariana como beneficio. Al realizar la devolucion, ese beneficio tambien debe ser cancelado.
+      </p>
+    ) : null;
   return (
     <article className={styles.completedCard}>
       <h3 className={styles.completedTitle}>Pedido #{requestItem.orderNumber}</h3>
@@ -2305,6 +2327,7 @@ function CompletedReturnSummary({ requestItem }) {
 
         {requestItem.returnMethod === "pickup" ? (
           <>
+            {storeCreditBenefitNotice}
             <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.pickupInstructions || "-"}</p>
             <p>
               <strong>Direccion de recoleccion:</strong>{" "}
@@ -2319,6 +2342,7 @@ function CompletedReturnSummary({ requestItem }) {
         ) : (
           <>
             <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={requestItem.branchAddress} /></p>
+            {storeCreditBenefitNotice}
             <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.branchInstructions || "-"}</p>
             {requestItem.branchDeliveryDeadlineAt ? (
               <p><strong>Fecha limite de entrega:</strong> {formatReturnPortalDate(requestItem.branchDeliveryDeadlineAt)}</p>
