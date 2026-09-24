@@ -7723,6 +7723,7 @@ export default function ReturnsRequests() {
     "";
   const [visiblePageSuccessMessage, setVisiblePageSuccessMessage] = useState("");
   const [visibleRefundCardSuccess, setVisibleRefundCardSuccess] = useState(null);
+  const [visibleRefundSectionSuccess, setVisibleRefundSectionSuccess] = useState("");
   const [visibleReviewCardMessage, setVisibleReviewCardMessage] = useState(null);
   const [pendingReviewActionRequest, setPendingReviewActionRequest] = useState(null);
   const [pendingReceivedActionRequest, setPendingReceivedActionRequest] = useState(null);
@@ -7758,12 +7759,14 @@ export default function ReturnsRequests() {
     }
     setVisiblePageSuccessMessage("");
     setPendingReceivedActionRequest(null);
+    setVisibleRefundSectionSuccess(String(message || "").trim());
     setVisibleRefundCardSuccess({
       requestId: String(requestId || ""),
       message: String(message || "").trim(),
     });
     refundSuccessTimeoutRef.current = window.setTimeout(() => {
       setVisibleRefundCardSuccess(null);
+      setVisibleRefundSectionSuccess("");
       refundSuccessTimeoutRef.current = null;
     }, 4000);
   };
@@ -7993,7 +7996,9 @@ export default function ReturnsRequests() {
     Boolean(visibleRefundCardSuccess?.requestId) &&
     refundQueueRequests.some((requestRow) => String(requestRow.id) === visibleRefundCardSuccess.requestId);
   const visibleRefundSectionSuccessMessage =
-    visibleRefundCardSuccess && !hasVisibleRefundSuccessCard ? visibleRefundCardSuccess.message : "";
+    !hasVisibleRefundSuccessCard
+      ? visibleRefundCardSuccess?.message || visibleRefundSectionSuccess
+      : "";
   const returnToCustomerQueueRequests = requests
     .filter((requestRow) => RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase()))
     .sort((a, b) => {
