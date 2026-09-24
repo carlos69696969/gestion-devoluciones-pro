@@ -2947,6 +2947,7 @@ function ReturnsRequestForm({
                 {returnMethod === "branch" ? (
                   <>
                     <p><strong>Direccion sucursal:</strong> <BranchAddressLink address={settings.branchAddress} /></p>
+                    {storeCreditBenefitNotice}
                     <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.branchInstructions}</p>
                     <p><strong>Horario de sucursal:</strong> {settings.branchHours}</p>
                     <p><strong>Subtotal a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
@@ -2960,6 +2961,7 @@ function ReturnsRequestForm({
                         .join(", ") || "-"}
                     </p>
                     <p><strong>Dia:</strong> {formatReturnPortalDateKey(pickup.pickupDate)}</p>
+                    {storeCreditBenefitNotice}
                     <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
                     <p><strong>Instrucciones del cliente:</strong> {pickup.pickupNotes || "-"}</p>
                     <p><strong>Subtotal a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
