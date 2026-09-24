@@ -12470,7 +12470,6 @@ function RequestCard({
                   event.preventDefault();
                   return;
                 }
-                onRefundActionSuccess?.(request.id, "Reembolso procesado correctamente.");
               }}
             >
               <input type="hidden" name="intent" value="process_refund" />
