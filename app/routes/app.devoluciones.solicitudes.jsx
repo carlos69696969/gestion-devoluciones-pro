@@ -758,6 +758,10 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
     const refundedAmountLabel = `$${toMoney(actualRefundAmount > 0 ? actualRefundAmount : finalRefund)} ${currency}`;
     const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
     const storeCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
+    const storeCreditOnlyPaymentMessage =
+      storeCreditRefundAmount > 0 && cashRefundAmount <= 0 && !mixedPaymentRefund
+        ? `Esta compra fue pagada con ${storeCreditRefundLabel} en crédito Cariana.`
+        : "";
     const refundDistributionLines = [
       ...(storeCreditRefundAmount > 0
         ? [
@@ -772,6 +776,7 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
     ];
     return [
       `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por la cantidad de ${refundedAmountLabel}.`,
+      ...(storeCreditOnlyPaymentMessage ? [storeCreditOnlyPaymentMessage] : []),
       availableCreditAdjustmentMessage,
       ...(refundDistributionLines.length
         ? refundDistributionLines
