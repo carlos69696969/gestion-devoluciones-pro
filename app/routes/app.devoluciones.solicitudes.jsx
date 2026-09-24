@@ -618,6 +618,28 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
   const storeCreditRefundRecoveryAmount = Number(options?.storeCreditRefundRecoveryAmount || 0);
   const originalPaymentRecoveryAmount = Number(options?.originalPaymentRecoveryAmount || 0);
   const mixedPaymentRefund = Boolean(options?.mixedPaymentRefund);
+  const hasRemainingOrderItemsAfterRefund = Boolean(options?.hasRemainingOrderItemsAfterRefund);
+  if (mixedPaymentRefund && hasRemainingOrderItemsAfterRefund) {
+    const refundedAmountLabel = `$${toMoney(refundedAmount)} ${currency}`;
+    const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
+    const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
+    const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
+    const creditAdjustmentMessage =
+      creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0 && spentCreditRecoveredAmount > 0
+        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver en tu método de pago original.`
+        : creditAdjustmentAmount > 0 && spentCreditRecoveredAmount > 0
+          ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver en tu método de pago original.`
+          : creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0
+            ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana.`
+            : "";
+    return [
+      `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por la cantidad de ${refundedAmountLabel}.`,
+      ...(creditAdjustmentMessage ? [creditAdjustmentMessage] : []),
+      `${refundedAmountLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+      `El crédito Cariana utilizado en esta compra se mantiene aplicado al resto del pedido. Si posteriormente se procesa la devolución del último producto pendiente, el crédito correspondiente será devuelto a tu saldo Cariana.`,
+      "Gracias por confiar en Cariana ✨",
+    ].join("\n\n");
+  }
   if (mixedPaymentRefund && spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0) {
     const originalRefundLabel = `$${toMoney(originalRefundAmount)} ${currency}`;
     const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
@@ -693,6 +715,9 @@ function buildRefundProcessedNotificationTitle(options = {}) {
   const storeCreditRefundAmount = Number(options?.storeCreditRefundAmount || 0);
   const spentCreditRecoveredAmount = Number(options?.storeCreditCashRecoveryAmount || 0);
   const creditAdjustmentAmount = Number(options?.storeCreditExpectedDebitAmount || 0);
+  if (options?.mixedPaymentRefund && options?.hasRemainingOrderItemsAfterRefund) {
+    return "Reembolso procesado ✅";
+  }
   if (options?.mixedPaymentRefund) {
     return "Reembolso realizado 💰";
   }
@@ -3230,6 +3255,7 @@ async function buildSuggestedRefundFinancialOutcome({
   refundShipping = false,
   preferStoreCreditRefund = false,
   storeCreditRefundRecoveryAmount = 0,
+  allowStoreCreditRefund = true,
 }) {
   const response = await admin.graphql(
     `#graphql
@@ -3310,7 +3336,7 @@ async function buildSuggestedRefundFinancialOutcome({
     remaining = roundMoneyValue(remaining - amount);
   }
 
-  const canRefundRemainderToStoreCredit = remaining > 0 && orderHasStoreCreditPayment(snapshot);
+  const canRefundRemainderToStoreCredit = allowStoreCreditRefund && remaining > 0 && orderHasStoreCreditPayment(snapshot);
   const storeCreditRefundAmount = roundMoneyValue(
     preferredStoreCreditRefundAmount + (canRefundRemainderToStoreCredit ? remaining : 0),
   );
@@ -3751,6 +3777,18 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
   }
 
   return { refundLineItems: refundableLines, subtotal };
+}
+
+function remainingRefundableQuantityAfterRefund(orderLineItems, refundLineItems) {
+  const currentRefundableQuantity = (orderLineItems || []).reduce(
+    (sum, line) => sum + Math.max(0, Number(line?.quantity || 0)),
+    0,
+  );
+  const currentRefundQuantity = (refundLineItems || []).reduce(
+    (sum, line) => sum + Math.max(0, Number(line?.quantity || 0)),
+    0,
+  );
+  return Math.max(0, currentRefundableQuantity - currentRefundQuantity);
 }
 
 function parseSelectedLineItemUnitCounts(selectedLineItemUnitKeys = []) {
@@ -6497,8 +6535,15 @@ export const action = async ({ request }) => {
       });
       const cashRecoveryAmount = roundMoneyValue(creditRecoveryPlan?.cashRecoveryAmount || 0);
       const mixedPaymentRefund = remainingStoreCreditRefundableAmount(snapshot) > 0 && orderHasOriginalPayment(snapshot);
+      const hasRemainingOrderItemsAfterRefund =
+        mixedPaymentRefund && remainingRefundableQuantityAfterRefund(snapshot.lineItems, refundLineItems) > 0;
       const storeCreditRefundRecoveryAmount = mixedPaymentRefund
-        ? roundMoneyValue(Math.min(cashRecoveryAmount, remainingStoreCreditRefundableAmount(snapshot)))
+        ? roundMoneyValue(
+            Math.min(
+              hasRemainingOrderItemsAfterRefund ? 0 : cashRecoveryAmount,
+              remainingStoreCreditRefundableAmount(snapshot),
+            ),
+          )
         : 0;
       const originalPaymentRecoveryAmount = roundMoneyValue(
         Math.max(0, cashRecoveryAmount - storeCreditRefundRecoveryAmount),
@@ -6512,8 +6557,9 @@ export const action = async ({ request }) => {
         refundAmount: financialRefundAmount,
         refundLineItems,
         refundShipping: false,
-        preferStoreCreditRefund: mixedPaymentRefund,
+        preferStoreCreditRefund: mixedPaymentRefund && !hasRemainingOrderItemsAfterRefund,
         storeCreditRefundRecoveryAmount,
+        allowStoreCreditRefund: !hasRemainingOrderItemsAfterRefund,
       });
       if (financialOutcome.unallocatedAmount > 0) {
         return {
@@ -6536,6 +6582,7 @@ export const action = async ({ request }) => {
         cashRecoveryAmount,
         storeCreditRefundRecoveryAmount,
         originalPaymentRecoveryAmount,
+        hasRemainingOrderItemsAfterRefund,
         storeCreditRecoveryDebitAmount: creditRecoveryPlan?.storeCreditDebitAmount || 0,
         storeCreditRecoveryExpectedAmount: creditRecoveryPlan?.expectedDebitAmount || 0,
         cashRefundAmount: financialOutcome.cashRefundAmount,
@@ -6619,6 +6666,7 @@ export const action = async ({ request }) => {
         storeCreditRefundRecoveryAmount,
         originalPaymentRecoveryAmount,
         mixedPaymentRefund,
+        hasRemainingOrderItemsAfterRefund,
         cashRefundAmount: financialOutcome.cashRefundAmount,
         storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
         currencyCode: snapshot.currencyCode || "MXN",
