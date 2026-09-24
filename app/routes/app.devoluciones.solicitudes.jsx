@@ -625,33 +625,58 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
       : "";
   if (mixedPaymentRefund && hasRemainingOrderItemsAfterRefund) {
     const refundedAmountLabel = `$${toMoney(refundedAmount)} ${currency}`;
+    const originalRefundLabel = `$${toMoney(originalRefundAmount)} ${currency}`;
     const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
     const storeCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
     const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
     const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
     const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
+    const originalStoreCreditPaymentAmount = roundMoneyValue(
+      storeCreditRefundAmount + storeCreditRefundRecoveryAmount + spentCreditRecoveredAmount,
+    );
+    const originalPaymentAmount = roundMoneyValue(cashRefundAmount);
+    const originalStoreCreditPaymentLabel = `$${toMoney(originalStoreCreditPaymentAmount)} ${currency}`;
+    const originalPaymentLabel = `$${toMoney(originalPaymentAmount)} ${currency}`;
+    const paymentBreakdownMessage =
+      originalStoreCreditPaymentAmount > 0 && originalPaymentAmount > 0
+        ? `Este pedido fue pagado con ${originalStoreCreditPaymentLabel} en crédito Cariana y ${originalPaymentLabel} en tu método de pago original.`
+        : "";
     const creditAdjustmentMessage =
       creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0 && spentCreditRecoveredAmount > 0
-        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver en tu método de pago original.`
+        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que fueron ajustados del importe a devolver.`
         : creditAdjustmentAmount > 0 && spentCreditRecoveredAmount > 0
-          ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver en tu método de pago original.`
+          ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver.`
           : creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0
             ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana.`
             : "";
-    const refundDistributionLines = [
-      ...(cashRefundAmount > 0
+    const refundIntroMessage =
+      spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0
+        ? `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por un total de ${originalRefundLabel}.`
+        : `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por la cantidad de ${refundedAmountLabel}.`;
+    const refundDistributionLines =
+      spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0
         ? [
-            `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+            cashRefundAmount > 0 && storeCreditRefundAmount > 0
+              ? `Por esta razón, recibirás ${cashRefundLabel} en tu método de pago original y ${storeCreditRefundLabel} serán devueltos a tu crédito Cariana. El monto enviado a tu método de pago original podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`
+              : cashRefundAmount > 0
+                ? `Por esta razón, recibirás ${cashRefundLabel} en tu método de pago original. El monto podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`
+                : `Por esta razón, ${storeCreditRefundLabel} serán devueltos a tu crédito Cariana y estarán disponibles para utilizarlos en una próxima compra.`,
           ]
-        : []),
-      ...(storeCreditRefundAmount > 0
-        ? [
-            `${storeCreditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
-          ]
-        : []),
-    ];
+        : [
+            ...(cashRefundAmount > 0
+              ? [
+                  `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+                ]
+              : []),
+            ...(storeCreditRefundAmount > 0
+              ? [
+                  `${storeCreditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
+                ]
+              : []),
+          ];
     return [
-      `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por la cantidad de ${refundedAmountLabel}.`,
+      refundIntroMessage,
+      ...(paymentBreakdownMessage ? [paymentBreakdownMessage] : []),
       ...(creditAdjustmentMessage ? [creditAdjustmentMessage] : []),
       ...refundDistributionLines,
       storeCreditRefundAmount > 0
