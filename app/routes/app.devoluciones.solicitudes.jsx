@@ -625,6 +625,8 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
       : "";
   if (mixedPaymentRefund && hasRemainingOrderItemsAfterRefund) {
     const refundedAmountLabel = `$${toMoney(refundedAmount)} ${currency}`;
+    const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
+    const storeCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
     const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
     const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
     const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
@@ -636,11 +638,25 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
           : creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0
             ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana.`
             : "";
+    const refundDistributionLines = [
+      ...(cashRefundAmount > 0
+        ? [
+            `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
+          ]
+        : []),
+      ...(storeCreditRefundAmount > 0
+        ? [
+            `${storeCreditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
+          ]
+        : []),
+    ];
     return [
       `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por la cantidad de ${refundedAmountLabel}.`,
       ...(creditAdjustmentMessage ? [creditAdjustmentMessage] : []),
-      `${refundedAmountLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
-      `El crédito Cariana utilizado en esta compra se mantiene aplicado al resto del pedido. Si posteriormente se procesa la devolución del último producto pendiente, el crédito correspondiente será devuelto a tu saldo Cariana.`,
+      ...refundDistributionLines,
+      storeCreditRefundAmount > 0
+        ? "Como el importe disponible en tu método de pago original ya no cubría el total de esta devolución, una parte fue devuelta a tu crédito Cariana. El crédito restante de esta compra se mantiene aplicado al resto del pedido."
+        : "El crédito Cariana utilizado en esta compra se mantiene aplicado al resto del pedido. Si posteriormente se procesa la devolución del último producto pendiente, el crédito correspondiente será devuelto a tu saldo Cariana.",
       "Gracias por confiar en Cariana ✨",
     ].join("\n\n");
   }
@@ -6575,7 +6591,7 @@ export const action = async ({ request }) => {
         refundShipping: false,
         preferStoreCreditRefund: mixedPaymentRefund && !hasRemainingOrderItemsAfterRefund,
         storeCreditRefundRecoveryAmount,
-        allowStoreCreditRefund: !hasRemainingOrderItemsAfterRefund,
+        allowStoreCreditRefund: true,
       });
       if (financialOutcome.unallocatedAmount > 0) {
         return {
