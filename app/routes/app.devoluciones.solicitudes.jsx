@@ -727,6 +727,36 @@ function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
       "Gracias por confiar en Cariana ✨",
     ].join("\n\n");
   }
+  if (
+    !mixedPaymentRefund &&
+    storeCreditRefundAmount > 0 &&
+    cashRefundAmount <= 0
+  ) {
+    const originalRefundLabel = `$${toMoney(originalRefundAmount)} ${currency}`;
+    const storeCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
+    const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
+    const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
+    const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
+    const paymentBreakdownMessage = `Esta compra fue pagada con ${originalRefundLabel} en crédito Cariana.`;
+    const creditAdjustmentMessage = creditAdjustmentAmount > 0
+      ? availableCreditRemovedAmount > 0 && spentCreditRecoveredAmount > 0
+        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que fueron ajustados del importe a devolver.`
+        : spentCreditRecoveredAmount > 0
+          ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver.`
+          : `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana.`
+      : "";
+    const adjustmentExplanation = creditAdjustmentAmount > 0
+      ? "Este ajuste no representa un cargo adicional; corresponde únicamente al crédito que había sido otorgado por la compra que ahora está siendo reembolsada."
+      : "";
+    return [
+      `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por un total de ${originalRefundLabel}.`,
+      paymentBreakdownMessage,
+      ...(creditAdjustmentMessage ? [creditAdjustmentMessage] : []),
+      `Por esta razón, de los ${originalRefundLabel} correspondientes al reembolso, ${storeCreditRefundLabel} fueron devueltos a tu crédito Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
+      ...(adjustmentExplanation ? [adjustmentExplanation] : []),
+      "Gracias por confiar en Cariana. 💙",
+    ].join("\n\n");
+  }
   if (spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0) {
     const originalRefundLabel = `$${toMoney(originalRefundAmount)} ${currency}`;
     const refundedAmountLabel = `$${toMoney(refundedAmount)} ${currency}`;
