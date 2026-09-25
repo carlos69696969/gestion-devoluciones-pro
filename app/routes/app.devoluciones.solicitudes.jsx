@@ -109,6 +109,11 @@ const METHOD_QUEUE_STATUSES = new Set([
   "no_recibido",
 ]);
 const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
+const PICKUP_RETURN_COST_RESERVE_STATUSES = new Set([
+  ...METHOD_QUEUE_STATUSES,
+  ...REFUND_QUEUE_STATUSES,
+  "reembolsada",
+]);
 const RETURN_TO_CUSTOMER_STATUSES = new Set(["por_devolver"]);
 const BRANCH_PICKUP_STATUSES = new Set([
   "por_devolver",
@@ -3299,6 +3304,30 @@ function storeCreditRefundedAmount(snapshot) {
 
 function remainingStoreCreditRefundableAmount(snapshot) {
   return roundMoneyValue(Math.max(0, storeCreditPaymentAmount(snapshot) - storeCreditRefundedAmount(snapshot)));
+}
+
+async function pickupReturnCostReserveForOrder({ shop, shopifyOrderId, orderNumber }) {
+  const cleanShop = String(shop || "").trim();
+  const cleanShopifyOrderId = String(shopifyOrderId || "").trim();
+  const cleanOrderNumber = String(orderNumber || "").trim();
+  if (!cleanShop || (!cleanShopifyOrderId && !cleanOrderNumber)) return 0;
+
+  const orderFilter = cleanShopifyOrderId
+    ? { shopifyOrderId: cleanShopifyOrderId }
+    : { orderNumber: cleanOrderNumber };
+  const rows = await prisma.returnRequest.findMany({
+    where: {
+      shop: cleanShop,
+      ...orderFilter,
+      returnMethod: "pickup",
+      status: { in: Array.from(PICKUP_RETURN_COST_RESERVE_STATUSES) },
+    },
+    select: { returnCost: true },
+  });
+
+  return roundMoneyValue(
+    rows.reduce((total, row) => total + Math.max(0, Number(row.returnCost || 0)), 0),
+  );
 }
 
 function buildRefundFinancialOutcome({ snapshot, orderId, refundAmount }) {
@@ -6625,8 +6654,17 @@ export const action = async ({ request }) => {
       const cashRecoveryAmount = roundMoneyValue(creditRecoveryPlan?.cashRecoveryAmount || 0);
       const mixedPaymentRefund = remainingStoreCreditRefundableAmount(snapshot) > 0 && orderHasOriginalPayment(snapshot);
       const nonRefundableShippingAmount = roundMoneyValue(Math.max(0, Number(snapshot.totalShippingPrice || 0)));
+      const pickupReturnCostReserve = mixedPaymentRefund
+        ? await pickupReturnCostReserveForOrder({
+            shop: session.shop,
+            shopifyOrderId: requestRow.shopifyOrderId,
+            orderNumber: requestRow.orderNumber,
+          })
+        : 0;
       const maxOriginalPaymentRefundAmount = mixedPaymentRefund
-        ? roundMoneyValue(Math.max(0, originalPaymentAmount(snapshot) - nonRefundableShippingAmount))
+        ? roundMoneyValue(
+            Math.max(0, originalPaymentAmount(snapshot) - nonRefundableShippingAmount - pickupReturnCostReserve),
+          )
         : null;
       const hasRemainingOrderItemsAfterRefund =
         mixedPaymentRefund && remainingRefundableQuantityAfterRefund(snapshot.lineItems, refundLineItems) > 0;
@@ -6674,6 +6712,9 @@ export const action = async ({ request }) => {
         finalRefund,
         financialRefundAmount,
         cashRecoveryAmount,
+        nonRefundableShippingAmount,
+        pickupReturnCostReserve,
+        maxOriginalPaymentRefundAmount,
         storeCreditRefundRecoveryAmount,
         originalPaymentRecoveryAmount,
         hasRemainingOrderItemsAfterRefund,
