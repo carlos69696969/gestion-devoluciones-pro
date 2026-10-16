@@ -13,7 +13,6 @@ const DEFAULT_REASONS = [
 ];
 
 const DEFAULT_EVIDENCE_REASONS = ["No era lo que pedi", "Llego danado"];
-const DEFAULT_STORE_CREDIT_REWARD_RATE = 0.1;
 const ADMIN_API_VERSION = "2025-10";
 const DELIVERED_FULFILLMENT_STATUSES = new Set(["FULFILLED", "PARTIALLY_FULFILLED"]);
 const RETURNED_TO_CUSTOMER_KIND = "returned_to_customer";
@@ -202,12 +201,6 @@ function jsonWithCors(data) {
 
 function maybeProbeResponse(isProbe, payload) {
   return isProbe ? jsonWithCors(payload) : payload;
-}
-
-function readStoreCreditRewardRate(env = {}) {
-  const configured = Number(env.STORE_CREDIT_REWARD_RATE || DEFAULT_STORE_CREDIT_REWARD_RATE);
-  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_STORE_CREDIT_REWARD_RATE;
-  return Math.min(configured, 1);
 }
 
 function normalizePortalMode(value) {
@@ -1028,7 +1021,7 @@ function buildStatusTimeline(requestItem) {
       : kind === STATUS_RECEIVED_KIND
       ? receivedReturnPortalMessage(requestItem)
       : kind === STATUS_REFUNDED_KIND
-      ? normalizeDisplayedReasonText(entry.reason) || refundProcessedPortalMessage(requestItem)
+      ? refundProcessedPortalMessage(requestItem)
       : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestItem, routeTimeRescheduleDateFromReason(entry.reason))
       : kind === "never_arrived_branch"
@@ -1268,7 +1261,6 @@ export const loader = async ({ request }) => {
   const url = new URL(request.url);
   // eslint-disable-next-line no-undef
   const env = process.env || {};
-  const storeCreditRewardRate = readStoreCreditRewardRate(env);
   const incomingShop = (url.searchParams.get("shop") || "").trim().toLowerCase();
   const configuredShop = String(env.SHOPIFY_SHOP_DOMAIN || "").trim().toLowerCase();
   const orderNumber = (url.searchParams.get("order") || "").trim();
@@ -1622,7 +1614,6 @@ export const loader = async ({ request }) => {
         completedRefundText: completionRefundText,
         hasDeniedStatus: hasDenied,
         isDelivered,
-        storeCreditRewardRate,
         message: !isDelivered
           ? "Tu pedido aun no esta marcado como entregado. Las devoluciones se habilitan cuando se marca como entregado."
           : isExpired
@@ -1950,7 +1941,6 @@ export default function PublicReturnsPortal() {
     requestedMode = "",
     hasDeniedStatus = false,
     isDelivered = false,
-    storeCreditRewardRate = DEFAULT_STORE_CREDIT_REWARD_RATE,
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -1996,7 +1986,6 @@ export default function PublicReturnsPortal() {
             reasons={reasons}
             evidenceReasons={evidenceReasons}
             settings={settings}
-            storeCreditRewardRate={storeCreditRewardRate}
             shop={shop}
             isSubmitting={isSubmitting}
             actionData={actionData}
@@ -2023,7 +2012,6 @@ export default function PublicReturnsPortal() {
             completedText={completedText}
             completedRefundText={completedRefundText}
             completedRequests={completedRequests}
-            storeCreditRewardRate={storeCreditRewardRate}
           />
         ) : null}
       </div>
@@ -2031,22 +2019,12 @@ export default function PublicReturnsPortal() {
   );
 }
 
-function CompletedReturnsSection({
-  completedTitle,
-  completedText,
-  completedRefundText,
-  completedRequests,
-  storeCreditRewardRate = DEFAULT_STORE_CREDIT_REWARD_RATE,
-}) {
+function CompletedReturnsSection({ completedTitle, completedText, completedRefundText, completedRequests }) {
   return (
     <section className={styles.card}>
       <div className={styles.completedGrid}>
         {completedRequests.map((requestItem) => (
-          <CompletedReturnSummary
-            key={requestItem.id}
-            requestItem={requestItem}
-            storeCreditRewardRate={storeCreditRewardRate}
-          />
+          <CompletedReturnSummary key={requestItem.id} requestItem={requestItem} />
         ))}
       </div>
     </section>
@@ -2157,7 +2135,7 @@ function timelineToneClassName(tone) {
   return "";
 }
 
-function CompletedReturnSummary({ requestItem, storeCreditRewardRate = DEFAULT_STORE_CREDIT_REWARD_RATE }) {
+function CompletedReturnSummary({ requestItem }) {
   const [viewerImage, setViewerImage] = useState(null);
   const [showAllStates, setShowAllStates] = useState(false);
   const timelineEvents = useMemo(() => buildStatusTimeline(requestItem), [requestItem]);
@@ -2178,17 +2156,6 @@ function CompletedReturnSummary({ requestItem, storeCreditRewardRate = DEFAULT_S
   const isReceived = normalizedStatus === "recibida";
   const isRefunded = normalizedStatus === "reembolsada";
   const displayStatusLabel = isCurrentReprogrammed ? "reprogramada" : requestItem.statusLabel;
-  const storeCreditBenefitAmount = roundMoneyValue(
-    Number(requestItem.estimatedRefund || 0) *
-      Math.max(0, Math.min(1, Number(storeCreditRewardRate || DEFAULT_STORE_CREDIT_REWARD_RATE))),
-  );
-  const storeCreditBenefitNotice =
-    storeCreditBenefitAmount > 0 ? (
-      <p className={styles.instructionsText}>
-        <strong className={styles.importantLabel}>IMPORTANTE</strong>{" "}
-        Esta compra habia generado <strong>${toMXN(storeCreditBenefitAmount)} MXN</strong> en credito Cariana como beneficio. Al realizar la devolucion, ese beneficio tambien debe ser cancelado.
-      </p>
-    ) : null;
   return (
     <article className={styles.completedCard}>
       <h3 className={styles.completedTitle}>Pedido #{requestItem.orderNumber}</h3>
@@ -2327,7 +2294,6 @@ function CompletedReturnSummary({ requestItem, storeCreditRewardRate = DEFAULT_S
 
         {requestItem.returnMethod === "pickup" ? (
           <>
-            {storeCreditBenefitNotice}
             <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.pickupInstructions || "-"}</p>
             <p>
               <strong>Direccion de recoleccion:</strong>{" "}
@@ -2342,7 +2308,6 @@ function CompletedReturnSummary({ requestItem, storeCreditRewardRate = DEFAULT_S
         ) : (
           <>
             <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={requestItem.branchAddress} /></p>
-            {storeCreditBenefitNotice}
             <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>instrucciones:</strong> {requestItem.branchInstructions || "-"}</p>
             {requestItem.branchDeliveryDeadlineAt ? (
               <p><strong>Fecha limite de entrega:</strong> {formatReturnPortalDate(requestItem.branchDeliveryDeadlineAt)}</p>
@@ -2358,16 +2323,7 @@ function CompletedReturnSummary({ requestItem, storeCreditRewardRate = DEFAULT_S
   );
 }
 
-function ReturnsRequestForm({
-  order,
-  reasons,
-  evidenceReasons,
-  settings,
-  storeCreditRewardRate = DEFAULT_STORE_CREDIT_REWARD_RATE,
-  shop,
-  isSubmitting,
-  actionData,
-}) {
+function ReturnsRequestForm({ order, reasons, evidenceReasons, settings, shop, isSubmitting, actionData }) {
   const evidenceSet = useMemo(
     () => new Set((evidenceReasons || []).map((reason) => reasonKey(reason)).filter(Boolean)),
     [evidenceReasons],
@@ -2447,16 +2403,6 @@ function ReturnsRequestForm({
     (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 1),
     0,
   );
-  const storeCreditBenefitAmount = roundMoneyValue(
-    estimatedRefund * Math.max(0, Math.min(1, Number(storeCreditRewardRate || DEFAULT_STORE_CREDIT_REWARD_RATE))),
-  );
-  const storeCreditBenefitNotice =
-    storeCreditBenefitAmount > 0 ? (
-      <p className={styles.instructionsText}>
-        <strong className={styles.importantLabel}>IMPORTANTE</strong>{" "}
-        Esta compra habia generado <strong>${toMXN(storeCreditBenefitAmount)} MXN</strong> en credito Cariana como beneficio. Al realizar la devolucion, ese beneficio tambien debe ser cancelado.
-      </p>
-    ) : null;
   const pickupCost = Number(settings.pickupCost || 0);
   const effectivePickupCost = requiresReview ? 0 : pickupCost;
   const returnCost = returnMethod === "pickup" ? effectivePickupCost : 0;
@@ -2853,14 +2799,12 @@ function ReturnsRequestForm({
                   <p><strong>Cliente:</strong> {order.customerName || "Cliente"}</p>
                   {order.customerPhone ? <p><strong>Telefono:</strong> {order.customerPhone}</p> : null}
                   <p><strong>Direccion de la sucursal:</strong> <BranchAddressLink address={settings.branchAddress} /></p>
-                  {storeCreditBenefitNotice}
                   <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.branchInstructions}</p>
                   <p><strong>Horario de sucursal:</strong> {settings.branchHours}</p>
                 </div>
               ) : (
                 <div className={styles.summary} style={{ marginTop: 12 }}>
                   <h3 className={styles.sectionTitle}>Recoleccion a domicilio</h3>
-                  {storeCreditBenefitNotice}
                   <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
                   <p><strong>Horario de recoleccion:</strong> {pickupHoursOnlyLabel(settings.pickupHours)}</p>
                   <div className={styles.summary} style={{ marginTop: 12, background: "#fff" }}>
@@ -2971,7 +2915,6 @@ function ReturnsRequestForm({
                 {returnMethod === "branch" ? (
                   <>
                     <p><strong>Direccion sucursal:</strong> <BranchAddressLink address={settings.branchAddress} /></p>
-                    {storeCreditBenefitNotice}
                     <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.branchInstructions}</p>
                     <p><strong>Horario de sucursal:</strong> {settings.branchHours}</p>
                     <p><strong>Subtotal a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>
@@ -2985,7 +2928,6 @@ function ReturnsRequestForm({
                         .join(", ") || "-"}
                     </p>
                     <p><strong>Dia:</strong> {formatReturnPortalDateKey(pickup.pickupDate)}</p>
-                    {storeCreditBenefitNotice}
                     <p className={styles.instructionsText}><strong className={styles.importantLabel}>IMPORTANTE</strong> <strong>Instrucciones:</strong> {settings.pickupInstructions}</p>
                     <p><strong>Instrucciones del cliente:</strong> {pickup.pickupNotes || "-"}</p>
                     <p><strong>Subtotal a reembolsar:</strong> ${toMXN(estimatedRefund)} MXN</p>

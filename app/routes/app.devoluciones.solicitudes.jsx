@@ -25,11 +25,6 @@ import {
   ensureStockInventoryArchiveWebhooks,
   recordArchivedStockProduct,
 } from "../utils/stockZeroInventoryArchive.server";
-import {
-  planRefundStoreCreditRecovery,
-  processKnownRefundStoreCreditDebit,
-  scheduleStoreCreditNotification,
-} from "../utils/storeCreditRewards.server";
 import styles from "../styles/admin.module.css";
 
 const STATUS_LABEL = {
@@ -109,11 +104,6 @@ const METHOD_QUEUE_STATUSES = new Set([
   "no_recibido",
 ]);
 const REFUND_QUEUE_STATUSES = new Set(["recibida"]);
-const PICKUP_RETURN_COST_RESERVE_STATUSES = new Set([
-  ...METHOD_QUEUE_STATUSES,
-  ...REFUND_QUEUE_STATUSES,
-  "reembolsada",
-]);
 const RETURN_TO_CUSTOMER_STATUSES = new Set(["por_devolver"]);
 const BRANCH_PICKUP_STATUSES = new Set([
   "por_devolver",
@@ -163,7 +153,7 @@ const RETURN_EVENT_BY_INTENT = {
   mark_returned_to_customer: "return_rejected",
   mark_not_returned: "return_rejected",
   mark_never_arrived: "return_expired",
-  process_refund: "refund_processed",
+  process_refund: "refund_completed",
 };
 
 function buildReturnReference(requestRow) {
@@ -453,12 +443,6 @@ function buildBranchPickupRefundNotificationCopy(orderNumber, refundAmount, curr
 function buildCourierOrderRefundNotificationCopy({
   orderNumber,
   refundAmount,
-  totalRefundAmount,
-  storeCreditRefundAmount = 0,
-  originalRefundAmount = 0,
-  storeCreditExpectedDebitAmount = 0,
-  storeCreditDebitAmount = 0,
-  storeCreditCashRecoveryAmount = 0,
   currencyCode = "MXN",
   selectedAllLineItems = false,
   refundedItems = [],
@@ -466,43 +450,13 @@ function buildCourierOrderRefundNotificationCopy({
   const cleanOrderNumber = String(orderNumber || "").replace(/^#/, "").trim() || "****";
   const currency = String(currencyCode || "MXN").trim().toUpperCase() || "MXN";
   const amountLabel = `$${toMoney(refundAmount)} ${currency}`;
-  const cashRefundAmount = Number(refundAmount || 0);
-  const creditRefundAmount = Number(storeCreditRefundAmount || 0);
-  const totalRefund = Number(totalRefundAmount || 0) > 0
-    ? Number(totalRefundAmount || 0)
-    : cashRefundAmount + creditRefundAmount;
-  const creditAdjustmentAmount = Number(storeCreditExpectedDebitAmount || 0);
-  const availableCreditRemovedAmount = Number(storeCreditDebitAmount || 0);
-  const spentCreditRecoveredAmount = Number(storeCreditCashRecoveryAmount || 0);
-  const grossRefundAmount = Number(originalRefundAmount || 0) > 0
-    ? Number(originalRefundAmount || 0)
-    : totalRefund + spentCreditRecoveredAmount;
-  const totalRefundLabel = `$${toMoney(totalRefund)} ${currency}`;
-  const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
-  const creditRefundLabel = `$${toMoney(creditRefundAmount)} ${currency}`;
-  const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
-  const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
-  const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
-  const creditAdjustmentMessage =
-    creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0 && spentCreditRecoveredAmount > 0
-      ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver.`
-      : creditAdjustmentAmount > 0 && spentCreditRecoveredAmount > 0
-        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver.`
-      : creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0
-        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, ese beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana.`
-      : "";
-  const refundDistributionLines = [
-    ...(cashRefundAmount > 0
-      ? [
-          `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
-        ]
-      : []),
-    ...(creditRefundAmount > 0
-      ? [
-          `${creditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
-        ]
-      : []),
-  ];
+  if (selectedAllLineItems) {
+    return {
+      title: "Reembolso realizado 💰",
+      message: `📦 Pedido #${cleanOrderNumber}. Durante la preparación de tu pedido detectamos que el producto ya no estaba disponible. Para evitar cualquier demora, procesamos el reembolso de tu compra por la cantidad de ${amountLabel}. El monto se reflejará en tu cuenta de 5 a 10 días hábiles, dependiendo de tu banco. Lamentamos este inconveniente y esperamos poder atenderte nuevamente pronto. Att Cariana. ✨`,
+    };
+  }
+
   const itemLines = (refundedItems || [])
     .filter((item) => String(item?.title || "").trim())
     .map((item) => {
@@ -521,324 +475,20 @@ function buildCourierOrderRefundNotificationCopy({
       ? "Hemos procesado el reembolso del siguiente producto debido a que ya no se encuentra disponible:"
       : "Hemos procesado el reembolso de los siguientes productos debido a que ya no se encuentran disponibles:";
 
-  if (!selectedAllLineItems) {
-    return {
-      title: "Reembolso parcial procesado 💰",
-      message: [
-        `📦 Pedido #${cleanOrderNumber}. ${refundIntro}`,
-        ...(itemLines.length ? itemLines : [`• Productos seleccionados — ${amountLabel}`]),
-        ...(creditAdjustmentMessage ? [creditAdjustmentMessage] : []),
-        `Total reembolsado: ${totalRefundLabel} 💰`,
-        ...(refundDistributionLines.length
-          ? refundDistributionLines
-          : ["El monto se reflejará en tu cuenta en un plazo de 5 a 10 días hábiles."]),
-        "Los demás artículos de tu pedido sí serán enviados y recibirás una notificación cuando vayan en camino. Agradecemos tu comprensión. Atte. Cariana ✨",
-      ].join("\n"),
-    };
-  }
-
-  if (spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0 && grossRefundAmount > cashRefundAmount) {
-    const grossRefundLabel = `$${toMoney(grossRefundAmount)} ${currency}`;
-    const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
-    const creditRefundLabel = `$${toMoney(creditRefundAmount)} ${currency}`;
-    const originalStoreCreditPaymentAmount = creditRefundAmount > 0
-      ? creditRefundAmount + spentCreditRecoveredAmount
-      : 0;
-    const originalStoreCreditPaymentLabel = `$${toMoney(originalStoreCreditPaymentAmount)} ${currency}`;
-    const paymentBreakdownMessage =
-      cashRefundAmount > 0 && creditRefundAmount > 0
-        ? `Este pedido fue pagado con ${cashRefundLabel} en tu método de pago original y ${originalStoreCreditPaymentLabel} en crédito Cariana.`
-        : creditRefundAmount > 0
-          ? `Este pedido fue pagado con ${originalStoreCreditPaymentLabel} en crédito Cariana.`
-        : "";
-    const refundDistributionMessage =
-      cashRefundAmount > 0 && creditRefundAmount > 0
-        ? `Por esta razón, recibirás ${cashRefundLabel} en tu método de pago original y ${creditRefundLabel} serán devueltos a tu crédito Cariana. El monto enviado a tu método de pago original podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`
-        : creditRefundAmount > 0
-          ? `Por esta razón, ${creditRefundLabel} serán devueltos a tu crédito Cariana y estarán disponibles para utilizarlos en una próxima compra.`
-        : `Por esta razón, de los ${grossRefundLabel} correspondientes al reembolso, recibirás ${cashRefundLabel} en tu método de pago original. El monto podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`;
-    return {
-      title: "Reembolso realizado 💰",
-      message: [
-        `📦 Pedido #${cleanOrderNumber}. Durante la preparación de tu pedido detectamos que el producto ya no estaba disponible. Para evitar cualquier demora, procesamos el reembolso correspondiente por ${grossRefundLabel}.`,
-        ...(paymentBreakdownMessage ? [paymentBreakdownMessage] : []),
-        creditAdjustmentMessage,
-        refundDistributionMessage,
-        "Este ajuste no representa un cargo adicional; corresponde únicamente al crédito que había sido otorgado por la compra que ahora está siendo reembolsada.",
-        "Lamentamos el inconveniente y esperamos poder atenderte nuevamente pronto. Atte. Cariana ✨",
-      ].join("\n\n"),
-    };
-  }
-  if (cashRefundAmount > 0 && creditRefundAmount > 0) {
-    const totalAmountLabel = `$${toMoney(totalRefund)} ${currency}`;
-    const creditAmountLabel = `$${toMoney(creditRefundAmount)} ${currency}`;
-    const cashAmountLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
-    return {
-      title: "Reembolso realizado 💰",
-      message: [
-        `📦 Pedido #${cleanOrderNumber}. Durante la preparación de tu pedido detectamos que el producto ya no estaba disponible. Para evitar cualquier demora, realizamos un reembolso total de ${totalAmountLabel}, distribuido de la siguiente manera:`,
-        `Este pedido fue pagado con ${creditAmountLabel} crédito Cariana y ${cashAmountLabel} en tu método de pago original.`,
-        `${creditAmountLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
-        `${cashAmountLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
-        "Lamentamos este inconveniente y esperamos poder atenderte nuevamente pronto. Atte. Cariana ✨",
-      ].join("\n\n"),
-    };
-  }
-  if (selectedAllLineItems) {
-    return {
-      title: "Reembolso realizado 💰",
-      message: [
-        `📦 Pedido #${cleanOrderNumber}. Durante la preparación de tu pedido detectamos que el producto ya no estaba disponible. Para evitar cualquier demora, procesamos el reembolso correspondiente por ${totalRefundLabel}.`,
-        ...(refundDistributionLines.length
-          ? refundDistributionLines
-          : ["El monto se reflejará en tu cuenta en un plazo de 5 a 10 días hábiles."]),
-        "Lamentamos este inconveniente y esperamos poder atenderte nuevamente pronto. Atte. Cariana ✨",
-      ].join("\n\n"),
-    };
-  }
-
   return {
     title: "Reembolso parcial procesado 💰",
     message: [
       `📦 Pedido #${cleanOrderNumber}. ${refundIntro}`,
       ...(itemLines.length ? itemLines : [`• Productos seleccionados — ${amountLabel}`]),
       `Total reembolsado: ${amountLabel} 💰`,
-      "El monto se reflejará en tu método de pago original en un plazo de 5 a 10 días hábiles, dependiendo de tu banco. Los demás artículos de tu pedido sí serán enviados y recibirás una notificación cuando vayan en camino. Agradecemos tu comprensión. Atte. Cariana ✨",
+      "El monto se reflejará en tu cuenta de 5 a 10 días hábiles, dependiendo de tu banco. Los demás artículos de tu pedido sí serán enviados y recibirás una notificación cuando vayan en camino. Agradecemos tu comprensión y la confianza que has depositado en Cariana. ✨",
     ].join("\n"),
   };
 }
 
-function buildRefundProcessedMessage(requestRow, finalRefund, options = {}) {
+function buildRefundProcessedMessage(requestRow, finalRefund) {
   const orderNumber = String(requestRow?.orderNumber || "").replace(/^#/, "").trim() || "****";
-  const currency = String(options?.currencyCode || "MXN").trim().toUpperCase() || "MXN";
-  const refundedAmount = Number(finalRefund || 0);
-  const originalRefundAmount = Number(options?.originalRefundAmount || 0) > 0
-    ? Number(options.originalRefundAmount || 0)
-    : refundedAmount;
-  const creditAdjustmentAmount = Number(options?.storeCreditExpectedDebitAmount || 0);
-  const availableCreditRemovedAmount = Number(options?.storeCreditDebitAmount || 0);
-  const spentCreditRecoveredAmount = Number(options?.storeCreditCashRecoveryAmount || 0);
-  const cashRefundAmount = Number(options?.cashRefundAmount || 0);
-  const storeCreditRefundAmount = Number(options?.storeCreditRefundAmount || 0);
-  const storeCreditRefundRecoveryAmount = Number(options?.storeCreditRefundRecoveryAmount || 0);
-  const originalPaymentRecoveryAmount = Number(options?.originalPaymentRecoveryAmount || 0);
-  const mixedPaymentRefund = Boolean(options?.mixedPaymentRefund);
-  const hasRemainingOrderItemsAfterRefund = Boolean(options?.hasRemainingOrderItemsAfterRefund);
-  const availableCreditAdjustmentMessage =
-    creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0 && spentCreditRecoveredAmount <= 0
-      ? `Además, esta compra había generado $${toMoney(creditAdjustmentAmount)} ${currency} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, $${toMoney(availableCreditRemovedAmount)} ${currency} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana.`
-      : "";
-  if (mixedPaymentRefund && hasRemainingOrderItemsAfterRefund) {
-    const refundedAmountLabel = `$${toMoney(refundedAmount)} ${currency}`;
-    const originalRefundLabel = `$${toMoney(originalRefundAmount)} ${currency}`;
-    const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
-    const storeCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
-    const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
-    const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
-    const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
-    const originalStoreCreditPaymentAmount = roundMoneyValue(
-      storeCreditRefundAmount + storeCreditRefundRecoveryAmount + spentCreditRecoveredAmount,
-    );
-    const originalPaymentAmount = roundMoneyValue(cashRefundAmount);
-    const originalStoreCreditPaymentLabel = `$${toMoney(originalStoreCreditPaymentAmount)} ${currency}`;
-    const originalPaymentLabel = `$${toMoney(originalPaymentAmount)} ${currency}`;
-    const paymentBreakdownMessage =
-      originalStoreCreditPaymentAmount > 0 && originalPaymentAmount > 0
-        ? `Este pedido fue pagado con ${originalStoreCreditPaymentLabel} en crédito Cariana y ${originalPaymentLabel} en tu método de pago original.`
-        : "";
-    const creditAdjustmentMessage =
-      creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0 && spentCreditRecoveredAmount > 0
-        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que fueron ajustados del importe a devolver.`
-        : creditAdjustmentAmount > 0 && spentCreditRecoveredAmount > 0
-          ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver.`
-          : creditAdjustmentAmount > 0 && availableCreditRemovedAmount > 0
-            ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana.`
-            : "";
-    const refundIntroMessage =
-      spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0
-        ? `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por un total de ${originalRefundLabel}.`
-        : `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por la cantidad de ${refundedAmountLabel}.`;
-    const refundDistributionLines =
-      spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0
-        ? [
-            cashRefundAmount > 0 && storeCreditRefundAmount > 0
-              ? `Por esta razón, recibirás ${cashRefundLabel} en tu método de pago original y ${storeCreditRefundLabel} serán devueltos a tu crédito Cariana. El monto enviado a tu método de pago original podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`
-              : cashRefundAmount > 0
-                ? `Por esta razón, recibirás ${cashRefundLabel} en tu método de pago original. El monto podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`
-                : `Por esta razón, ${storeCreditRefundLabel} serán devueltos a tu crédito Cariana y estarán disponibles para utilizarlos en una próxima compra.`,
-          ]
-        : [
-            ...(cashRefundAmount > 0
-              ? [
-                  `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
-                ]
-              : []),
-            ...(storeCreditRefundAmount > 0
-              ? [
-                  `${storeCreditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
-                ]
-              : []),
-          ];
-    return [
-      refundIntroMessage,
-      ...(paymentBreakdownMessage ? [paymentBreakdownMessage] : []),
-      ...(creditAdjustmentMessage ? [creditAdjustmentMessage] : []),
-      ...refundDistributionLines,
-      storeCreditRefundAmount > 0
-        ? "Como el importe disponible en tu método de pago original ya no cubría el total de esta devolución, una parte fue devuelta a tu crédito Cariana. El crédito restante de esta compra se mantiene aplicado al resto del pedido."
-        : "El crédito Cariana utilizado en esta compra se mantiene aplicado al resto del pedido. Si posteriormente se procesa la devolución del último producto pendiente, el crédito correspondiente será devuelto a tu saldo Cariana.",
-      "Gracias por confiar en Cariana ✨",
-    ].join("\n\n");
-  }
-  if (mixedPaymentRefund && spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0) {
-    const originalRefundLabel = `$${toMoney(originalRefundAmount)} ${currency}`;
-    const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
-    const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
-    const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
-    const storeCreditRefundRecoveryLabel = `$${toMoney(storeCreditRefundRecoveryAmount)} ${currency}`;
-    const originalPaymentRecoveryLabel = `$${toMoney(originalPaymentRecoveryAmount)} ${currency}`;
-    const originalStoreCreditPaymentAmount = roundMoneyValue(storeCreditRefundAmount + storeCreditRefundRecoveryAmount);
-    const originalPaymentAmount = roundMoneyValue(cashRefundAmount + originalPaymentRecoveryAmount);
-    const originalStoreCreditPaymentLabel = `$${toMoney(originalStoreCreditPaymentAmount)} ${currency}`;
-    const originalPaymentLabel = `$${toMoney(originalPaymentAmount)} ${currency}`;
-    const finalStoreCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
-    const finalCashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
-    const availableCreditSentence = availableCreditRemovedAmount > 0
-      ? `Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana.`
-      : "Actualmente, este crédito ya no permanecía disponible en tu saldo.";
-    const spentCreditSentence =
-      storeCreditRefundRecoveryAmount > 0 && originalPaymentRecoveryAmount > 0
-        ? `Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente. Para completar este ajuste, primero se aplicaron ${storeCreditRefundRecoveryLabel} del crédito que sería devuelto por esta devolución. Como aún faltaban ${originalPaymentRecoveryLabel}, esa cantidad fue ajustada del importe a devolver en tu método de pago original.`
-        : storeCreditRefundRecoveryAmount > 0
-          ? `Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que fueron ajustados del crédito que sería devuelto por esta devolución.`
-          : `Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver en tu método de pago original.`;
-    const refundDistributionMessage =
-      cashRefundAmount > 0 && storeCreditRefundAmount > 0
-        ? `Por esta razón, recibirás ${finalStoreCreditRefundLabel} en tu crédito Cariana y ${finalCashRefundLabel} en tu método de pago original. El monto enviado a tu método de pago original podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`
-        : storeCreditRefundAmount > 0
-          ? `Por esta razón, recibirás ${finalStoreCreditRefundLabel} en tu crédito Cariana y estará disponible para utilizarlo en una próxima compra.`
-          : `Por esta razón, recibirás ${finalCashRefundLabel} en tu método de pago original. El monto podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`;
-    return [
-      `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por un total de ${originalRefundLabel}.`,
-      `Este reembolso corresponde a una compra realizada con ${originalStoreCreditPaymentLabel} en crédito Cariana y ${originalPaymentLabel} en tu método de pago original.`,
-      `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. ${availableCreditSentence} ${spentCreditSentence}`,
-      refundDistributionMessage,
-      "Este ajuste no representa un cargo adicional; corresponde únicamente al crédito que había sido otorgado por la compra que ahora está siendo reembolsada.",
-      "Gracias por confiar en Cariana ✨",
-    ].join("\n\n");
-  }
-  if (
-    !mixedPaymentRefund &&
-    storeCreditRefundAmount > 0 &&
-    cashRefundAmount <= 0
-  ) {
-    const originalRefundLabel = `$${toMoney(originalRefundAmount)} ${currency}`;
-    const storeCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
-    const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
-    const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
-    const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
-    const paymentBreakdownMessage = `Esta compra fue pagada con ${originalRefundLabel} en crédito Cariana.`;
-    const creditAdjustmentMessage = creditAdjustmentAmount > 0
-      ? availableCreditRemovedAmount > 0 && spentCreditRecoveredAmount > 0
-        ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que fueron ajustados del importe a devolver.`
-        : spentCreditRecoveredAmount > 0
-          ? `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver.`
-          : `Además, esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana.`
-      : "";
-    const adjustmentExplanation = creditAdjustmentAmount > 0
-      ? "Este ajuste no representa un cargo adicional; corresponde únicamente al crédito que había sido otorgado por la compra que ahora está siendo reembolsada."
-      : "";
-    return [
-      `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por un total de ${originalRefundLabel}.`,
-      paymentBreakdownMessage,
-      ...(creditAdjustmentMessage ? [creditAdjustmentMessage] : []),
-      `Por esta razón, de los ${originalRefundLabel} correspondientes al reembolso, ${storeCreditRefundLabel} fueron devueltos a tu crédito Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
-      ...(adjustmentExplanation ? [adjustmentExplanation] : []),
-      "Gracias por confiar en Cariana. 💙",
-    ].join("\n\n");
-  }
-  if (spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0) {
-    const originalRefundLabel = `$${toMoney(originalRefundAmount)} ${currency}`;
-    const refundedAmountLabel = `$${toMoney(refundedAmount)} ${currency}`;
-    const creditAdjustmentLabel = `$${toMoney(creditAdjustmentAmount)} ${currency}`;
-    const availableCreditRemovedLabel = `$${toMoney(availableCreditRemovedAmount)} ${currency}`;
-    const spentCreditRecoveredLabel = `$${toMoney(spentCreditRecoveredAmount)} ${currency}`;
-    const creditAdjustmentMessage =
-      availableCreditRemovedAmount > 0
-        ? `Esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Actualmente, ${availableCreditRemovedLabel} permanecían disponibles en tu saldo, por lo que fueron retirados de tu crédito Cariana. Los ${spentCreditRecoveredLabel} restantes ya habían sido utilizados previamente, por lo que esta cantidad fue ajustada del importe a devolver.`
-        : `Esta compra había generado ${creditAdjustmentLabel} en crédito Cariana como beneficio. Al realizar el reembolso, este beneficio también debe ser cancelado. Como ese crédito ya había sido utilizado previamente, los ${spentCreditRecoveredLabel} fueron ajustados del importe a devolver.`;
-    return [
-      `Pedido #${orderNumber}. Tu devolución fue procesada correctamente por un total de ${originalRefundLabel}.`,
-      creditAdjustmentMessage,
-      `Por esta razón, de los ${originalRefundLabel} correspondientes al reembolso, recibirás ${refundedAmountLabel} en tu método de pago original. El monto podrá reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
-      "Este ajuste no representa un cargo adicional; corresponde únicamente al crédito que había sido otorgado por la compra que ahora está siendo reembolsada.",
-      "Gracias por confiar en Cariana. 💙",
-    ].join("\n\n");
-  }
-  if (cashRefundAmount > 0 && storeCreditRefundAmount > 0) {
-    const totalRefundLabel = `$${toMoney(cashRefundAmount + storeCreditRefundAmount)} ${currency}`;
-    const storeCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
-    const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
-    return [
-      `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente. Realizamos un reembolso total de ${totalRefundLabel}, distribuido de la siguiente manera:`,
-      `Este reembolso corresponde a una compra realizada con ${storeCreditRefundLabel} en crédito Cariana y ${cashRefundLabel} en tu método de pago original.`,
-      ...(availableCreditAdjustmentMessage ? [availableCreditAdjustmentMessage] : []),
-      `${storeCreditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
-      `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
-      "Gracias por confiar en Cariana ✨",
-    ].join("\n\n");
-  }
-  if (availableCreditAdjustmentMessage) {
-    const actualRefundAmount = roundMoneyValue(cashRefundAmount + storeCreditRefundAmount);
-    const refundedAmountLabel = `$${toMoney(actualRefundAmount > 0 ? actualRefundAmount : finalRefund)} ${currency}`;
-    const cashRefundLabel = `$${toMoney(cashRefundAmount)} ${currency}`;
-    const storeCreditRefundLabel = `$${toMoney(storeCreditRefundAmount)} ${currency}`;
-    const storeCreditOnlyPaymentMessage =
-      storeCreditRefundAmount > 0 && cashRefundAmount <= 0
-        ? `Esta compra fue pagada con ${storeCreditRefundLabel} en crédito Cariana.`
-        : "";
-    const refundDistributionLines = [
-      ...(storeCreditRefundAmount > 0
-        ? [
-            `${storeCreditRefundLabel} fueron devueltos a tu crédito de tienda Cariana y ya están disponibles para utilizarlos en una próxima compra.`,
-          ]
-        : []),
-      ...(cashRefundAmount > 0
-        ? [
-            `${cashRefundLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
-          ]
-        : []),
-    ];
-    return [
-      `📦 Pedido #${orderNumber}. Tu devolución fue procesada correctamente por la cantidad de ${refundedAmountLabel}.`,
-      ...(storeCreditOnlyPaymentMessage ? [storeCreditOnlyPaymentMessage] : []),
-      availableCreditAdjustmentMessage,
-      ...(refundDistributionLines.length
-        ? refundDistributionLines
-        : [
-            `${refundedAmountLabel} fueron reembolsados a tu método de pago original y podrán reflejarse en un plazo de 5 a 10 días hábiles, dependiendo de tu banco.`,
-          ]),
-      "Gracias por confiar en Cariana ✨",
-    ].join("\n\n");
-  }
   return `Pedido #${orderNumber}. 💸 Tu reembolso ya fue procesado correctamente por la cantidad de $${toMoney(finalRefund)} MXN. Dependiendo de tu banco, el monto podrá verse reflejado en tu cuenta dentro de 5 a 10 días hábiles. Gracias por confiar en Cariana. 💙`;
-}
-
-function buildRefundProcessedNotificationTitle(options = {}) {
-  const cashRefundAmount = Number(options?.cashRefundAmount || 0);
-  const storeCreditRefundAmount = Number(options?.storeCreditRefundAmount || 0);
-  const spentCreditRecoveredAmount = Number(options?.storeCreditCashRecoveryAmount || 0);
-  const creditAdjustmentAmount = Number(options?.storeCreditExpectedDebitAmount || 0);
-  if (options?.mixedPaymentRefund && options?.hasRemainingOrderItemsAfterRefund) {
-    return "Reembolso procesado ✅";
-  }
-  if (options?.mixedPaymentRefund) {
-    return "Reembolso realizado 💰";
-  }
-  if (cashRefundAmount > 0 && storeCreditRefundAmount > 0 && !(spentCreditRecoveredAmount > 0 && creditAdjustmentAmount > 0)) {
-    return "Reembolso realizado 💰";
-  }
-  return "Reembolso procesado ✅";
 }
 
 async function emitBranchPickupRefundNotification({ shopDomain, requestId, orderNumber, refundAmount, currencyCode }) {
@@ -924,12 +574,6 @@ async function emitCourierOrderRefundNotification({
   requestId,
   orderNumber,
   refundAmount,
-  totalRefundAmount,
-  storeCreditRefundAmount,
-  originalRefundAmount,
-  storeCreditExpectedDebitAmount,
-  storeCreditDebitAmount,
-  storeCreditCashRecoveryAmount,
   currencyCode,
   selectedAllLineItems,
   refundedItems,
@@ -941,12 +585,6 @@ async function emitCourierOrderRefundNotification({
   const copy = buildCourierOrderRefundNotificationCopy({
     orderNumber,
     refundAmount,
-    totalRefundAmount,
-    storeCreditRefundAmount,
-    originalRefundAmount,
-    storeCreditExpectedDebitAmount,
-    storeCreditDebitAmount,
-    storeCreditCashRecoveryAmount,
     currencyCode,
     selectedAllLineItems,
     refundedItems,
@@ -2176,7 +1814,7 @@ function buildStatusTimeline(
       : kind === STATUS_RECEIVED_KIND
       ? receivedReturnPortalMessage(requestRow)
       : kind === STATUS_REFUNDED_KIND
-      ? normalizeDisplayedReasonText(entry.reason) || buildRefundProcessedMessage(requestRow, requestRow.finalRefund)
+      ? buildRefundProcessedMessage(requestRow, requestRow.finalRefund)
       : kind === "courier_route_time_reprogrammed"
       ? buildReturnRouteTimeRescheduleMessage(requestRow, routeTimeRescheduleDateFromReason(entry.reason))
       : kind === "never_arrived_branch"
@@ -3218,329 +2856,13 @@ function buildAdminCourierPresentation(request) {
   return { events: displayEvents, scheduledDate };
 }
 
-function isSuccessfulPaymentTransaction(transaction) {
+function pickParentTransaction(transactions) {
+  const success = transactions.filter((tx) => String(tx.status || "").toUpperCase() === "SUCCESS");
   return (
-    String(transaction?.status || "").toUpperCase() === "SUCCESS" &&
-    ["CAPTURE", "SALE"].includes(String(transaction?.kind || "").toUpperCase())
+    success.find((tx) => ["CAPTURE", "SALE"].includes(String(tx.kind || "").toUpperCase())) ||
+    success[0] ||
+    null
   );
-}
-
-function isStoreCreditGatewayName(value) {
-  const normalized = String(value || "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "_");
-  return normalized.includes("store_credit") || normalized.includes("credito_en_tienda");
-}
-
-function transactionRefundableAmount(transaction) {
-  if (transaction?.maximumRefundableAmount !== null && transaction?.maximumRefundableAmount !== undefined) {
-    return roundMoneyValue(transaction.maximumRefundableAmount);
-  }
-  return roundMoneyValue(transaction?.amount);
-}
-
-function isSuccessfulRefundTransaction(transaction) {
-  return (
-    String(transaction?.status || "").toUpperCase() === "SUCCESS" &&
-    String(transaction?.kind || "").toUpperCase() === "REFUND"
-  );
-}
-
-function isActiveRefundTransaction(transaction) {
-  const status = String(transaction?.status || "").toUpperCase();
-  return (
-    String(transaction?.kind || "").toUpperCase() === "REFUND" &&
-    !["FAILURE", "ERROR", "CANCELLED"].includes(status)
-  );
-}
-
-function transactionRefundedAmount(parentTransaction, transactions = []) {
-  if (!parentTransaction?.id) return 0;
-  const refunds = (transactions || []).filter((transaction) => isActiveRefundTransaction(transaction));
-  const linkedRefunds = refunds.filter(
-    (transaction) => String(transaction.parentId || "") === String(parentTransaction.id || ""),
-  );
-  const fallbackRefunds = linkedRefunds.length
-    ? []
-    : refunds.filter(
-        (transaction) =>
-          !String(transaction.parentId || "").trim() &&
-          String(transaction.gateway || "").trim().toLowerCase() ===
-            String(parentTransaction.gateway || "").trim().toLowerCase() &&
-          !isStoreCreditGatewayName(transaction.gateway),
-      );
-  return roundMoneyValue(
-    [...linkedRefunds, ...fallbackRefunds].reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
-  );
-}
-
-function remainingTransactionRefundableAmount(transaction, transactions = []) {
-  const originalAmount = roundMoneyValue(transaction?.amount);
-  const alreadyRefunded = transactionRefundedAmount(transaction, transactions);
-  const computedRemaining = roundMoneyValue(Math.max(0, originalAmount - alreadyRefunded));
-  if (transaction?.maximumRefundableAmount !== null && transaction?.maximumRefundableAmount !== undefined) {
-    return roundMoneyValue(Math.min(computedRemaining, transactionRefundableAmount(transaction)));
-  }
-  return computedRemaining;
-}
-
-function orderHasStoreCreditPayment(snapshot) {
-  return (
-    (snapshot?.paymentGatewayNames || []).some(isStoreCreditGatewayName) ||
-    (snapshot?.transactions || []).some((transaction) => isStoreCreditGatewayName(transaction?.gateway))
-  );
-}
-
-function orderHasOriginalPayment(snapshot) {
-  return (snapshot?.transactions || []).some(
-    (transaction) => isSuccessfulPaymentTransaction(transaction) && !isStoreCreditGatewayName(transaction.gateway),
-  );
-}
-
-function storeCreditPaymentAmount(snapshot) {
-  return roundMoneyValue(
-    (snapshot?.transactions || [])
-      .filter((transaction) => isSuccessfulPaymentTransaction(transaction) && isStoreCreditGatewayName(transaction.gateway))
-      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
-  );
-}
-
-function originalPaymentAmount(snapshot) {
-  return roundMoneyValue(
-    (snapshot?.transactions || [])
-      .filter((transaction) => isSuccessfulPaymentTransaction(transaction) && !isStoreCreditGatewayName(transaction.gateway))
-      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
-  );
-}
-
-function originalPaymentRefundedAmount(snapshot) {
-  return roundMoneyValue(
-    (snapshot?.transactions || [])
-      .filter((transaction) => isActiveRefundTransaction(transaction) && !isStoreCreditGatewayName(transaction.gateway))
-      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
-  );
-}
-
-function storeCreditRefundedAmount(snapshot) {
-  return roundMoneyValue(
-    (snapshot?.transactions || [])
-      .filter((transaction) => isActiveRefundTransaction(transaction) && isStoreCreditGatewayName(transaction.gateway))
-      .reduce((total, transaction) => total + Number(transaction.amount || 0), 0),
-  );
-}
-
-function remainingStoreCreditRefundableAmount(snapshot) {
-  return roundMoneyValue(Math.max(0, storeCreditPaymentAmount(snapshot) - storeCreditRefundedAmount(snapshot)));
-}
-
-async function pickupReturnCostReserveForOrder({ shop, shopifyOrderId, orderNumber }) {
-  const cleanShop = String(shop || "").trim();
-  const cleanShopifyOrderId = String(shopifyOrderId || "").trim();
-  const cleanOrderNumber = String(orderNumber || "").trim();
-  if (!cleanShop || (!cleanShopifyOrderId && !cleanOrderNumber)) return 0;
-
-  const orderFilter = cleanShopifyOrderId
-    ? { shopifyOrderId: cleanShopifyOrderId }
-    : { orderNumber: cleanOrderNumber };
-  const rows = await prisma.returnRequest.findMany({
-    where: {
-      shop: cleanShop,
-      ...orderFilter,
-      returnMethod: "pickup",
-      status: { in: Array.from(PICKUP_RETURN_COST_RESERVE_STATUSES) },
-    },
-    select: { returnCost: true },
-  });
-
-  return roundMoneyValue(
-    rows.reduce((total, row) => total + Math.max(0, Number(row.returnCost || 0)), 0),
-  );
-}
-
-function buildRefundFinancialOutcome({ snapshot, orderId, refundAmount }) {
-  let remaining = roundMoneyValue(refundAmount);
-  const transactions = [];
-  const successfulPayments = (snapshot?.transactions || []).filter(
-    (transaction) => isSuccessfulPaymentTransaction(transaction) && !isStoreCreditGatewayName(transaction.gateway),
-  );
-
-  for (const transaction of successfulPayments) {
-    if (remaining <= 0) break;
-    const refundableAmount = remainingTransactionRefundableAmount(transaction, snapshot?.transactions || []);
-    if (!transaction?.id || !transaction?.gateway || refundableAmount <= 0) continue;
-    const amount = roundMoneyValue(Math.min(remaining, refundableAmount));
-    if (amount <= 0) continue;
-    transactions.push({
-      orderId,
-      kind: "REFUND",
-      gateway: transaction.gateway,
-      parentId: transaction.id,
-      amount: amount.toFixed(2),
-    });
-    remaining = roundMoneyValue(remaining - amount);
-  }
-
-  const canRefundRemainderToStoreCredit = remaining > 0 && orderHasStoreCreditPayment(snapshot);
-  const refundMethods = canRefundRemainderToStoreCredit
-    ? [
-        {
-          storeCreditRefund: {
-            amount: {
-              amount: remaining.toFixed(2),
-              currencyCode: snapshot?.currencyCode || "MXN",
-            },
-          },
-        },
-      ]
-    : [];
-  const storeCreditRefundAmount = canRefundRemainderToStoreCredit ? remaining : 0;
-  const cashRefundAmount = roundMoneyValue(refundAmount - remaining);
-
-  return {
-    transactions,
-    refundMethods,
-    cashRefundAmount,
-    storeCreditRefundAmount,
-    unallocatedAmount: canRefundRemainderToStoreCredit ? 0 : remaining,
-  };
-}
-
-async function buildSuggestedRefundFinancialOutcome({
-  admin,
-  snapshot,
-  orderId,
-  refundAmount,
-  refundLineItems,
-  refundShipping = false,
-  preferStoreCreditRefund = false,
-  storeCreditRefundRecoveryAmount = 0,
-  allowStoreCreditRefund = true,
-  maxOriginalPaymentRefundAmount = null,
-}) {
-  const response = await admin.graphql(
-    `#graphql
-    query SuggestedRefundFinancialOutcome($id: ID!, $refundLineItems: [RefundLineItemInput!], $refundShipping: Boolean) {
-      order(id: $id) {
-        suggestedRefund(
-          refundLineItems: $refundLineItems
-          refundShipping: $refundShipping
-          refundMethodAllocation: ORIGINAL_PAYMENT_METHODS
-        ) {
-          amountSet {
-            shopMoney { amount currencyCode }
-          }
-          maximumRefundableSet {
-            shopMoney { amount currencyCode }
-          }
-          suggestedTransactions {
-            gateway
-            amountSet {
-              shopMoney { amount currencyCode }
-            }
-            maximumRefundableSet {
-              shopMoney { amount currencyCode }
-            }
-            parentTransaction {
-              id
-            }
-          }
-        }
-      }
-    }`,
-    {
-      variables: {
-        id: orderId,
-        refundLineItems,
-        refundShipping: Boolean(refundShipping),
-      },
-    },
-  );
-  const payload = await response.json();
-  const errors = payload?.errors || [];
-  if (errors.length) {
-    throw new Error(errors[0]?.message || "No se pudo calcular la sugerencia de reembolso en Shopify.");
-  }
-
-  const suggestedRefund = payload?.data?.order?.suggestedRefund;
-  if (!suggestedRefund) {
-    throw new Error("Shopify no devolvio una sugerencia de reembolso para esta orden.");
-  }
-
-  let remaining = roundMoneyValue(refundAmount);
-  const storeCreditRefundableAmount = remainingStoreCreditRefundableAmount(snapshot);
-  const recoveredFromStoreCreditRefund = roundMoneyValue(
-    Math.min(Math.max(0, Number(storeCreditRefundRecoveryAmount || 0)), storeCreditRefundableAmount),
-  );
-  const preferredStoreCreditRefundAmount = preferStoreCreditRefund
-    ? roundMoneyValue(Math.min(remaining, Math.max(0, storeCreditRefundableAmount - recoveredFromStoreCreditRefund)))
-    : 0;
-  remaining = roundMoneyValue(remaining - preferredStoreCreditRefundAmount);
-  const originalPaymentRefundCap =
-    maxOriginalPaymentRefundAmount === null || maxOriginalPaymentRefundAmount === undefined
-      ? null
-      : roundMoneyValue(Math.max(0, Number(maxOriginalPaymentRefundAmount || 0)));
-  let remainingOriginalPaymentRefundBudget =
-    originalPaymentRefundCap === null
-      ? null
-      : roundMoneyValue(Math.max(0, originalPaymentRefundCap - originalPaymentRefundedAmount(snapshot)));
-  const transactions = [];
-  for (const suggestedTransaction of suggestedRefund.suggestedTransactions || []) {
-    if (remaining <= 0) break;
-    if (isStoreCreditGatewayName(suggestedTransaction?.gateway)) continue;
-    const suggestedMaximumRefundable = suggestedTransaction?.maximumRefundableSet
-      ? roundMoneyValue(shopMoneyAmount(suggestedTransaction.maximumRefundableSet))
-      : roundMoneyValue(shopMoneyAmount(suggestedTransaction?.amountSet));
-    const maximumRefundable =
-      remainingOriginalPaymentRefundBudget === null
-        ? suggestedMaximumRefundable
-        : roundMoneyValue(Math.min(suggestedMaximumRefundable, remainingOriginalPaymentRefundBudget));
-    const amount = roundMoneyValue(Math.min(remaining, maximumRefundable));
-    const parentId = String(suggestedTransaction?.parentTransaction?.id || "");
-    const gateway = String(suggestedTransaction?.gateway || "");
-    if (!parentId || !gateway || amount <= 0) continue;
-    transactions.push({
-      orderId,
-      kind: "REFUND",
-      gateway,
-      parentId,
-      amount: amount.toFixed(2),
-    });
-    remaining = roundMoneyValue(remaining - amount);
-    if (remainingOriginalPaymentRefundBudget !== null) {
-      remainingOriginalPaymentRefundBudget = roundMoneyValue(Math.max(0, remainingOriginalPaymentRefundBudget - amount));
-    }
-  }
-
-  const canRefundRemainderToStoreCredit = allowStoreCreditRefund && remaining > 0 && orderHasStoreCreditPayment(snapshot);
-  const storeCreditRefundAmount = roundMoneyValue(
-    preferredStoreCreditRefundAmount + (canRefundRemainderToStoreCredit ? remaining : 0),
-  );
-  const refundMethods = storeCreditRefundAmount > 0
-    ? [
-        {
-          storeCreditRefund: {
-            amount: {
-              amount: storeCreditRefundAmount.toFixed(2),
-              currencyCode: snapshot?.currencyCode || "MXN",
-            },
-          },
-        },
-      ]
-    : [];
-  const cashRefundAmount = roundMoneyValue(refundAmount - storeCreditRefundAmount - (canRefundRemainderToStoreCredit ? 0 : remaining));
-
-  return {
-    transactions,
-    refundMethods,
-    cashRefundAmount,
-    storeCreditRefundAmount,
-    unallocatedAmount: canRefundRemainderToStoreCredit ? 0 : remaining,
-    suggestedRefundAmount: roundMoneyValue(shopMoneyAmount(suggestedRefund.amountSet)),
-    suggestedMaximumRefundable: roundMoneyValue(shopMoneyAmount(suggestedRefund.maximumRefundableSet)),
-  };
 }
 
 async function fetchOrderSnapshot(admin, orderId) {
@@ -3555,14 +2877,6 @@ async function fetchOrderSnapshot(admin, orderId) {
         currentSubtotalPriceSet {
           shopMoney { amount currencyCode }
         }
-        totalShippingPriceSet {
-          shopMoney { amount currencyCode }
-        }
-        customer {
-          id
-          email
-        }
-        paymentGatewayNames
         lineItems(first: 100) {
           edges {
             node {
@@ -3602,16 +2916,6 @@ async function fetchOrderSnapshot(admin, orderId) {
           kind
           status
           gateway
-          amountSet {
-            shopMoney { amount currencyCode }
-          }
-          maximumRefundableV2 {
-            amount
-            currencyCode
-          }
-          parentTransaction {
-            id
-          }
         }
       }
     }`,
@@ -3626,13 +2930,9 @@ async function fetchOrderSnapshot(admin, orderId) {
   if (!order) throw new Error("No se encontro la orden en Shopify.");
   return {
     orderId: order.id,
-    customerId: String(order.customer?.id || ""),
-    customerEmail: String(order.customer?.email || ""),
     currentTotalPrice: Number(order.currentTotalPriceSet?.shopMoney?.amount || 0),
     currentSubtotalPrice: Number(order.currentSubtotalPriceSet?.shopMoney?.amount || 0),
-    totalShippingPrice: Number(order.totalShippingPriceSet?.shopMoney?.amount || 0),
     currencyCode: String(order.currentTotalPriceSet?.shopMoney?.currencyCode || "MXN"),
-    paymentGatewayNames: Array.isArray(order.paymentGatewayNames) ? order.paymentGatewayNames : [],
     lineItems: (order.lineItems?.edges || []).map(({ node }) => ({
       id: node.id,
       title: node.title,
@@ -3648,12 +2948,6 @@ async function fetchOrderSnapshot(admin, orderId) {
       kind: transaction.kind,
       status: transaction.status,
       gateway: transaction.gateway || "",
-      amount: Number(transaction.amountSet?.shopMoney?.amount || 0),
-      maximumRefundableAmount:
-        transaction.maximumRefundableV2?.amount === null || transaction.maximumRefundableV2?.amount === undefined
-          ? null
-          : Number(transaction.maximumRefundableV2.amount),
-      parentId: transaction.parentTransaction?.id || "",
     })),
   };
 }
@@ -3961,18 +3255,6 @@ function mapRequestItemsToRefundLineItems(requestItems, orderLineItems) {
   return { refundLineItems: refundableLines, subtotal };
 }
 
-function remainingRefundableQuantityAfterRefund(orderLineItems, refundLineItems) {
-  const currentRefundableQuantity = (orderLineItems || []).reduce(
-    (sum, line) => sum + Math.max(0, Number(line?.quantity || 0)),
-    0,
-  );
-  const currentRefundQuantity = (refundLineItems || []).reduce(
-    (sum, line) => sum + Math.max(0, Number(line?.quantity || 0)),
-    0,
-  );
-  return Math.max(0, currentRefundableQuantity - currentRefundQuantity);
-}
-
 function parseSelectedLineItemUnitCounts(selectedLineItemUnitKeys = []) {
   const counts = new Map();
   for (const rawKey of selectedLineItemUnitKeys || []) {
@@ -4064,7 +3346,6 @@ async function replaceShopifyOrderCourierStatusTag(admin, shopifyOrderId, status
 
 async function refundShopifyOrderToOriginalPayment({
   admin,
-  shop,
   shopifyOrderId,
   notePrefix,
   includeShipping = false,
@@ -4085,58 +3366,10 @@ async function refundShopifyOrderToOriginalPayment({
   if (finalRefund <= 0) {
     throw new Error("No se encontro un monto valido para reembolsar.");
   }
-  const refundedProductSubtotal =
-    Number(subtotal || 0) > 0
-      ? Number(subtotal || 0)
-      : selectedAllLineItems
-        ? Number(snapshot.currentSubtotalPrice || 0)
-        : 0;
-  const creditRecoveryPlan = await planRefundStoreCreditRecovery({
-    admin,
-    shop,
-    shopifyOrderId,
-    shopifyCustomerId: snapshot.customerId,
-    refundLineSubtotal: refundedProductSubtotal,
-    currencyCode: snapshot.currencyCode || "MXN",
-    source: "app_refund",
-  });
-  const cashRecoveryAmount = roundMoneyValue(creditRecoveryPlan?.cashRecoveryAmount || 0);
-  const financialRefundAmount = roundMoneyValue(Math.max(0, finalRefund - cashRecoveryAmount));
-  const financialOutcome = await buildSuggestedRefundFinancialOutcome({
-    admin,
-    snapshot,
-    orderId: shopifyOrderId,
-    refundAmount: financialRefundAmount,
-    refundLineItems,
-    refundShipping: shouldRefundShipping,
-  });
-  if (financialOutcome.unallocatedAmount > 0) {
+  const parentTransaction = pickParentTransaction(snapshot.transactions);
+  if (!parentTransaction?.id || !parentTransaction?.gateway) {
     throw new Error("No se encontro una transaccion de pago valida para reembolsar al metodo original.");
   }
-  if (!financialOutcome.transactions.length && !financialOutcome.refundMethods.length) {
-    throw new Error("No se encontro una forma de pago valida para procesar el reembolso.");
-  }
-  console.log("Resultado financiero de reembolso Shopify", {
-    orderId: shopifyOrderId,
-    finalRefund,
-    financialRefundAmount,
-    cashRecoveryAmount,
-    storeCreditRecoveryDebitAmount: creditRecoveryPlan?.storeCreditDebitAmount || 0,
-    storeCreditRecoveryExpectedAmount: creditRecoveryPlan?.expectedDebitAmount || 0,
-    cashRefundAmount: financialOutcome.cashRefundAmount,
-    storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
-    transactionAmounts: financialOutcome.transactions.map((transaction) => ({
-      gateway: transaction.gateway,
-      amount: transaction.amount,
-    })),
-    refundMethodAmounts: financialOutcome.refundMethods.map((method) => ({
-      amount: method.storeCreditRefund?.amount?.amount || "0.00",
-      currencyCode: method.storeCreditRefund?.amount?.currencyCode || snapshot.currencyCode || "MXN",
-    })),
-    suggestedRefundAmount: financialOutcome.suggestedRefundAmount,
-    suggestedMaximumRefundable: financialOutcome.suggestedMaximumRefundable,
-    transactionCount: financialOutcome.transactions.length,
-  });
   const response = await admin.graphql(
     `#graphql
     mutation RefundBranchPickupOrder($input: RefundInput!) {
@@ -4153,9 +3386,15 @@ async function refundShopifyOrderToOriginalPayment({
           notify: false,
           refundLineItems,
           ...(shouldRefundShipping ? { shipping: { fullRefund: true } } : {}),
-          transactions: financialOutcome.transactions,
-          ...(financialOutcome.refundMethods.length ? { refundMethods: financialOutcome.refundMethods } : {}),
-          ...(cashRecoveryAmount > 0 ? { discrepancyReason: "OTHER" } : {}),
+          transactions: [
+            {
+              orderId: shopifyOrderId,
+              kind: "REFUND",
+              gateway: parentTransaction.gateway,
+              parentId: parentTransaction.id,
+              amount: Number(finalRefund).toFixed(2),
+            },
+          ],
         },
       },
     },
@@ -4168,115 +3407,12 @@ async function refundShopifyOrderToOriginalPayment({
   }
   return {
     refundId: String(payload?.data?.refundCreate?.refund?.id || ""),
-    finalRefund: financialRefundAmount,
-    originalRefundAmount: finalRefund,
-    refundedSubtotal: financialRefundAmount,
-    refundedProductSubtotal,
+    finalRefund,
+    refundedSubtotal: finalRefund,
     currencyCode: snapshot.currencyCode || "MXN",
-    customerId: snapshot.customerId || "",
-    customerEmail: snapshot.customerEmail || "",
-    cashRefundAmount: financialOutcome.cashRefundAmount,
-    storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
-    storeCreditDebitAmount: creditRecoveryPlan?.storeCreditDebitAmount || 0,
-    storeCreditCashRecoveryAmount: cashRecoveryAmount,
-    storeCreditExpectedDebitAmount: creditRecoveryPlan?.expectedDebitAmount || 0,
     selectedAllLineItems,
     refundedItems,
   };
-}
-
-async function debitStoreCreditForAppRefund({
-  admin,
-  shop,
-  shopifyOrderId,
-  shopifyRefundId,
-  shopifyCustomerId = "",
-  refundedSubtotal,
-  currencyCode = "MXN",
-  source,
-  maxStoreCreditDebitAmount = null,
-  cashRecoveredAmount = 0,
-}) {
-  if (!shopifyRefundId || !shopifyOrderId || Number(refundedSubtotal || 0) <= 0) {
-    return { skipped: true, reason: "missing_refund_data" };
-  }
-  try {
-    const result = await processKnownRefundStoreCreditDebit({
-      admin,
-      shop,
-      shopifyRefundId,
-      shopifyOrderId,
-      shopifyCustomerId,
-      refundedSubtotal,
-      currencyCode,
-      source,
-      payload: {
-        admin_graphql_api_id: shopifyRefundId,
-        order_id: shopifyOrderId,
-      },
-      maxDebitAmount: maxStoreCreditDebitAmount,
-      cashRecoveredAmount,
-    });
-    console.log("Debito de credito en tienda procesado desde app refund", {
-      shop,
-      refundId: shopifyRefundId,
-      orderId: shopifyOrderId,
-      refundedSubtotal,
-      ...result,
-    });
-    return result;
-  } catch (error) {
-    console.error("No se pudo debitar credito en tienda desde app refund", {
-      shop,
-      refundId: shopifyRefundId,
-      orderId: shopifyOrderId,
-      refundedSubtotal,
-      error: error?.message || error,
-    });
-    return { skipped: true, reason: "debit_failed", error: error?.message || String(error || "") };
-  }
-}
-
-async function emitStoreCreditRefundNotification({
-  shop,
-  shopifyOrderId,
-  orderNumber,
-  shopifyCustomerId,
-  customerEmail,
-  refundId,
-  amount,
-  currencyCode = "MXN",
-  source = "store_credit_adjustment",
-}) {
-  const creditAmount = roundMoneyValue(amount);
-  if (!shop || creditAmount <= 0) {
-    return { skipped: true, reason: "missing_store_credit_adjustment_amount" };
-  }
-
-  try {
-    await scheduleStoreCreditNotification({
-      shop,
-      shopifyOrderId,
-      orderNumber,
-      shopifyCustomerId,
-      customerEmail,
-      amount: creditAmount,
-      currencyCode,
-      sourceKey: `store-credit-refund:${refundId || `${shopifyOrderId || "order"}:${orderNumber || ""}`}`,
-      notificationType: "store_credit_refund",
-    });
-    return { ok: true };
-  } catch (error) {
-    console.warn("No se pudo iniciar la notificacion de ajuste de credito", {
-      shop,
-      refundId,
-      orderId: shopifyOrderId,
-      amount: creditAmount,
-      source,
-      error: error?.message || error,
-    });
-    return { skipped: true, reason: "notification_failed", error: error?.message || String(error || "") };
-  }
 }
 
 async function fetchBranchPickupOrderForDeadline(admin, shopifyOrderId) {
@@ -4421,32 +3557,8 @@ async function refundExpiredBranchPickupOrder({
   const resolvedOrderNumber = cleanOrderNumber || String(branchOrder?.name || "").replace("#", "").trim();
   const refundResult = await refundShopifyOrderToOriginalPayment({
     admin,
-    shop: shopDomain,
     shopifyOrderId: cleanRequestId,
     notePrefix: `Reembolso pedido #${resolvedOrderNumber || cleanRequestId.replace(/^gid:\/\/shopify\/Order\//, "")} no recogido en sucursal`,
-  });
-  const creditAdjustmentResult = await debitStoreCreditForAppRefund({
-    admin,
-    shop: shopDomain,
-    shopifyOrderId: cleanRequestId,
-    shopifyRefundId: refundResult.refundId,
-    shopifyCustomerId: refundResult.customerId,
-    refundedSubtotal: refundResult.refundedProductSubtotal,
-    currencyCode: refundResult.currencyCode,
-    source: "branch_pickup_refund",
-    maxStoreCreditDebitAmount: refundResult.storeCreditDebitAmount,
-    cashRecoveredAmount: refundResult.storeCreditCashRecoveryAmount,
-  });
-  await emitStoreCreditRefundNotification({
-    shop: shopDomain,
-    shopifyOrderId: cleanRequestId,
-    orderNumber: resolvedOrderNumber,
-    shopifyCustomerId: refundResult.customerId,
-    customerEmail: refundResult.customerEmail,
-    refundId: refundResult.refundId,
-    amount: creditAdjustmentResult.totalRecoveredAmount || creditAdjustmentResult.amount,
-    currencyCode: creditAdjustmentResult.currencyCode || refundResult.currencyCode,
-    source: "branch_pickup_refund",
   });
   await replaceShopifyOrderCourierStatusTag(admin, cleanRequestId, "reembolsada");
   await prisma.deliveryCodeAssignment.updateMany({
@@ -4768,6 +3880,40 @@ export const loader = async ({ request }) => {
           include: { items: { select: itemSelect } },
           orderBy: { createdAt: "desc" },
         });
+
+  if (viewMode === VIEW_MODE.BRANCH && rawRequests.length > 0) {
+    const orderNumbers = [
+      ...new Set(rawRequests.map((requestRow) => String(requestRow.orderNumber || "").trim()).filter(Boolean)),
+    ];
+    const comparableRequests = await prisma.returnRequest.findMany({
+      where: {
+        shop: session.shop,
+        orderNumber: { in: orderNumbers },
+      },
+      include: {
+        items: {
+          select: {
+            lineItemId: true,
+            productId: true,
+            variantId: true,
+            title: true,
+            quantity: true,
+          },
+        },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    const latestRequestIdByItemsSignature = new Map();
+    for (const requestRow of comparableRequests) {
+      const signature = returnRequestItemsSignature(requestRow);
+      if (!latestRequestIdByItemsSignature.has(signature)) {
+        latestRequestIdByItemsSignature.set(signature, requestRow.id);
+      }
+    }
+    rawRequests = rawRequests.filter(
+      (requestRow) => latestRequestIdByItemsSignature.get(returnRequestItemsSignature(requestRow)) === requestRow.id,
+    );
+  }
 
   let courierOrdersRaw = [];
   if (viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS) {
@@ -5606,45 +4752,14 @@ export const action = async ({ request }) => {
           }
           const refundResult = await refundShopifyOrderToOriginalPayment({
             admin,
-            shop: session.shop,
             shopifyOrderId: requestId,
             notePrefix: `Reembolso pedido #${orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, "")} desde ordenes repartidor`,
             includeShipping: true,
             selectedLineItemUnitKeys: refundableSelectedLineItemUnitKeys,
           });
-          const creditAdjustmentResult = await debitStoreCreditForAppRefund({
-            admin,
-            shop: session.shop,
-            shopifyOrderId: requestId,
-            shopifyRefundId: refundResult.refundId,
-            shopifyCustomerId: refundResult.customerId,
-            refundedSubtotal: refundResult.refundedProductSubtotal,
-            currencyCode: refundResult.currencyCode,
-            source: "courier_refund",
-            maxStoreCreditDebitAmount: refundResult.storeCreditDebitAmount,
-            cashRecoveredAmount: refundResult.storeCreditCashRecoveryAmount,
-          });
-          await emitStoreCreditRefundNotification({
-            shop: session.shop,
-            shopifyOrderId: requestId,
-            orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
-            shopifyCustomerId: refundResult.customerId,
-            customerEmail: refundResult.customerEmail,
-            refundId: refundResult.refundId,
-            amount: creditAdjustmentResult.totalRecoveredAmount || creditAdjustmentResult.amount,
-            currencyCode: creditAdjustmentResult.currencyCode || refundResult.currencyCode,
-            source: "courier_refund",
-          });
-          const cashNotificationAmount = Number(refundResult.cashRefundAmount || 0);
           const refundNotificationCopy = buildCourierOrderRefundNotificationCopy({
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
-            refundAmount: cashNotificationAmount,
-            totalRefundAmount: refundResult.finalRefund,
-            storeCreditRefundAmount: refundResult.storeCreditRefundAmount,
-            originalRefundAmount: refundResult.originalRefundAmount,
-            storeCreditExpectedDebitAmount: refundResult.storeCreditExpectedDebitAmount,
-            storeCreditDebitAmount: refundResult.storeCreditDebitAmount,
-            storeCreditCashRecoveryAmount: refundResult.storeCreditCashRecoveryAmount,
+            refundAmount: refundResult.finalRefund,
             currencyCode: refundResult.currencyCode || "MXN",
             selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
             refundedItems: refundResult.refundedItems || [],
@@ -5654,13 +4769,7 @@ export const action = async ({ request }) => {
             shopDomain: session.shop,
             requestId,
             orderNumber: orderNumber || requestId.replace(/^gid:\/\/shopify\/Order\//, ""),
-            refundAmount: cashNotificationAmount,
-            totalRefundAmount: refundResult.finalRefund,
-            storeCreditRefundAmount: refundResult.storeCreditRefundAmount,
-            originalRefundAmount: refundResult.originalRefundAmount,
-            storeCreditExpectedDebitAmount: refundResult.storeCreditExpectedDebitAmount,
-            storeCreditDebitAmount: refundResult.storeCreditDebitAmount,
-            storeCreditCashRecoveryAmount: refundResult.storeCreditCashRecoveryAmount,
+            refundAmount: refundResult.finalRefund,
             currencyCode: refundResult.currencyCode || "MXN",
             selectedAllLineItems: Boolean(refundResult.selectedAllLineItems),
             refundedItems: refundResult.refundedItems || [],
@@ -6672,98 +5781,15 @@ export const action = async ({ request }) => {
             "No se puede procesar este reembolso: el costo de recoleccion es mayor o igual al subtotal.",
         };
       }
-      const creditRecoveryPlan = await planRefundStoreCreditRecovery({
-        admin,
-        shop: session.shop,
-        shopifyOrderId: requestRow.shopifyOrderId,
-        shopifyCustomerId: snapshot.customerId,
-        refundLineSubtotal: subtotal,
-        currencyCode: snapshot.currencyCode || "MXN",
-        source: "return_request_refund",
-      });
-      const cashRecoveryAmount = roundMoneyValue(creditRecoveryPlan?.cashRecoveryAmount || 0);
-      const mixedPaymentRefund = remainingStoreCreditRefundableAmount(snapshot) > 0 && orderHasOriginalPayment(snapshot);
-      const nonRefundableShippingAmount = roundMoneyValue(Math.max(0, Number(snapshot.totalShippingPrice || 0)));
-      const pickupReturnCostReserve = mixedPaymentRefund
-        ? await pickupReturnCostReserveForOrder({
-            shop: session.shop,
-            shopifyOrderId: requestRow.shopifyOrderId,
-            orderNumber: requestRow.orderNumber,
-          })
-        : 0;
-      const maxOriginalPaymentRefundAmount = mixedPaymentRefund
-        ? roundMoneyValue(
-            Math.max(0, originalPaymentAmount(snapshot) - nonRefundableShippingAmount - pickupReturnCostReserve),
-          )
-        : null;
-      const hasRemainingOrderItemsAfterRefund =
-        mixedPaymentRefund && remainingRefundableQuantityAfterRefund(snapshot.lineItems, refundLineItems) > 0;
-      const storeCreditRefundRecoveryAmount = mixedPaymentRefund
-        ? roundMoneyValue(
-            Math.min(
-              hasRemainingOrderItemsAfterRefund ? 0 : cashRecoveryAmount,
-              remainingStoreCreditRefundableAmount(snapshot),
-            ),
-          )
-        : 0;
-      const originalPaymentRecoveryAmount = roundMoneyValue(
-        Math.max(0, cashRecoveryAmount - storeCreditRefundRecoveryAmount),
-      );
-      const financialRefundAmount = roundMoneyValue(Math.max(0, finalRefund - cashRecoveryAmount));
 
-      const financialOutcome = await buildSuggestedRefundFinancialOutcome({
-        admin,
-        snapshot,
-        orderId: requestRow.shopifyOrderId,
-        refundAmount: financialRefundAmount,
-        refundLineItems,
-        refundShipping: false,
-        preferStoreCreditRefund: mixedPaymentRefund && !hasRemainingOrderItemsAfterRefund,
-        storeCreditRefundRecoveryAmount,
-        allowStoreCreditRefund: true,
-        maxOriginalPaymentRefundAmount,
-      });
-      if (financialOutcome.unallocatedAmount > 0) {
+      const parentTransaction = pickParentTransaction(snapshot.transactions);
+      if (!parentTransaction?.id || !parentTransaction?.gateway) {
         return {
           ok: false,
           error:
             "No se encontro una transaccion de pago valida para reembolsar al metodo original.",
         };
       }
-      if (!financialOutcome.transactions.length && !financialOutcome.refundMethods.length) {
-        return {
-          ok: false,
-          error: "No se encontro una forma de pago valida para procesar el reembolso.",
-        };
-      }
-      console.log("Resultado financiero de reembolso Shopify", {
-        requestId: requestRow.id,
-        orderId: requestRow.shopifyOrderId,
-        finalRefund,
-        financialRefundAmount,
-        cashRecoveryAmount,
-        nonRefundableShippingAmount,
-        pickupReturnCostReserve,
-        maxOriginalPaymentRefundAmount,
-        storeCreditRefundRecoveryAmount,
-        originalPaymentRecoveryAmount,
-        hasRemainingOrderItemsAfterRefund,
-        storeCreditRecoveryDebitAmount: creditRecoveryPlan?.storeCreditDebitAmount || 0,
-        storeCreditRecoveryExpectedAmount: creditRecoveryPlan?.expectedDebitAmount || 0,
-        cashRefundAmount: financialOutcome.cashRefundAmount,
-        storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
-        transactionAmounts: financialOutcome.transactions.map((transaction) => ({
-          gateway: transaction.gateway,
-          amount: transaction.amount,
-        })),
-        refundMethodAmounts: financialOutcome.refundMethods.map((method) => ({
-          amount: method.storeCreditRefund?.amount?.amount || "0.00",
-          currencyCode: method.storeCreditRefund?.amount?.currencyCode || snapshot.currencyCode || "MXN",
-        })),
-        suggestedRefundAmount: financialOutcome.suggestedRefundAmount,
-        suggestedMaximumRefundable: financialOutcome.suggestedMaximumRefundable,
-        transactionCount: financialOutcome.transactions.length,
-      });
 
       const response = await admin.graphql(
         `#graphql
@@ -6780,9 +5806,15 @@ export const action = async ({ request }) => {
               note: `Devolucion #${requestRow.id} desde Portal de devoluciones`,
               notify: false,
               refundLineItems,
-              transactions: financialOutcome.transactions,
-              ...(financialOutcome.refundMethods.length ? { refundMethods: financialOutcome.refundMethods } : {}),
-              ...(cashRecoveryAmount > 0 ? { discrepancyReason: "OTHER" } : {}),
+              transactions: [
+                {
+                  orderId: requestRow.shopifyOrderId,
+                  kind: "REFUND",
+                  gateway: parentTransaction.gateway,
+                  parentId: parentTransaction.id,
+                  amount: Number(finalRefund).toFixed(2),
+                },
+              ],
             },
           },
         },
@@ -6800,44 +5832,7 @@ export const action = async ({ request }) => {
       }
 
       const refundId = String(payload?.data?.refundCreate?.refund?.id || "");
-      const creditAdjustmentResult = await debitStoreCreditForAppRefund({
-        admin,
-        shop: session.shop,
-        shopifyOrderId: requestRow.shopifyOrderId,
-        shopifyRefundId: refundId,
-        shopifyCustomerId: snapshot.customerId,
-        refundedSubtotal: subtotal,
-        currencyCode: snapshot.currencyCode || "MXN",
-        source: "return_request_refund",
-        maxStoreCreditDebitAmount: creditRecoveryPlan?.storeCreditDebitAmount,
-        cashRecoveredAmount: cashRecoveryAmount,
-      });
-      await emitStoreCreditRefundNotification({
-        shop: session.shop,
-        shopifyOrderId: requestRow.shopifyOrderId,
-        orderNumber: requestRow.orderNumber || requestRow.order_number || requestRow.id,
-        shopifyCustomerId: snapshot.customerId,
-        customerEmail: snapshot.customerEmail,
-        refundId,
-        amount: creditAdjustmentResult.totalRecoveredAmount || creditAdjustmentResult.amount,
-        currencyCode: creditAdjustmentResult.currencyCode || snapshot.currencyCode || "MXN",
-        source: "return_request_refund",
-      });
-      const refundProcessedMessageOptions = {
-        originalRefundAmount: finalRefund,
-        storeCreditExpectedDebitAmount: creditRecoveryPlan?.expectedDebitAmount || 0,
-        storeCreditDebitAmount: creditRecoveryPlan?.storeCreditDebitAmount || 0,
-        storeCreditCashRecoveryAmount: cashRecoveryAmount,
-        storeCreditRefundRecoveryAmount,
-        originalPaymentRecoveryAmount,
-        mixedPaymentRefund,
-        hasRemainingOrderItemsAfterRefund,
-        cashRefundAmount: financialOutcome.cashRefundAmount,
-        storeCreditRefundAmount: financialOutcome.storeCreditRefundAmount,
-        currencyCode: snapshot.currencyCode || "MXN",
-      };
-      const refundProcessedMessage = buildRefundProcessedMessage(requestRow, financialRefundAmount, refundProcessedMessageOptions);
-      const refundProcessedTitle = buildRefundProcessedNotificationTitle(refundProcessedMessageOptions);
+      const refundProcessedMessage = buildRefundProcessedMessage(requestRow, finalRefund);
       await prisma.returnRequest.update({
         where: { id },
         data: {
@@ -6858,7 +5853,7 @@ export const action = async ({ request }) => {
         requestRow,
         intent,
         note: refundProcessedMessage,
-        title: refundProcessedTitle,
+        title: "Reembolso procesado ✅",
         message: refundProcessedMessage,
       });
       return { ok: true, message: "Reembolso procesado correctamente.", refundActionRequestId: id };
@@ -7756,7 +6751,6 @@ export default function ReturnsRequests() {
   const [selectedCourierRefundUnitKeys, setSelectedCourierRefundUnitKeys] = useState([]);
   const [showOnlyNotLocatedCourierOrders, setShowOnlyNotLocatedCourierOrders] = useState(false);
   const [courierDateScope, setCourierDateScope] = useState("today");
-  const [includeTomorrowCourierOrdersInToday, setIncludeTomorrowCourierOrdersInToday] = useState(false);
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
@@ -7768,12 +6762,11 @@ export default function ReturnsRequests() {
     { value: "today", title: "Hoy", dateKey: todayCourierDateKey },
     { value: "tomorrow", title: "Mañana", dateKey: tomorrowCourierDateKey },
   ];
-  const courierTodayDateLimitKey = includeTomorrowCourierOrdersInToday ? tomorrowCourierDateKey : todayCourierDateKey;
   const courierDateFilteredOrders = courierOrders.filter((order) => {
     const orderDateKey = courierDateKey(order);
     if (!orderDateKey) return false;
     if (isCourierTomorrowScope) return orderDateKey === selectedCourierDateKey;
-    return orderDateKey <= courierTodayDateLimitKey;
+    return orderDateKey <= selectedCourierDateKey;
   });
   const selectedCourierIdSet = new Set(selectedCourierIds.map((courierId) => String(courierId)));
   const selectedCourierBulkOrderIdSet = new Set(selectedCourierBulkOrderIds.map((orderId) => String(orderId)));
@@ -7856,7 +6849,6 @@ export default function ReturnsRequests() {
     "";
   const [visiblePageSuccessMessage, setVisiblePageSuccessMessage] = useState("");
   const [visibleRefundCardSuccess, setVisibleRefundCardSuccess] = useState(null);
-  const [visibleRefundSectionSuccess, setVisibleRefundSectionSuccess] = useState("");
   const [visibleReviewCardMessage, setVisibleReviewCardMessage] = useState(null);
   const [pendingReviewActionRequest, setPendingReviewActionRequest] = useState(null);
   const [pendingReceivedActionRequest, setPendingReceivedActionRequest] = useState(null);
@@ -7892,14 +6884,12 @@ export default function ReturnsRequests() {
     }
     setVisiblePageSuccessMessage("");
     setPendingReceivedActionRequest(null);
-    setVisibleRefundSectionSuccess(String(message || "").trim());
     setVisibleRefundCardSuccess({
       requestId: String(requestId || ""),
       message: String(message || "").trim(),
     });
     refundSuccessTimeoutRef.current = window.setTimeout(() => {
       setVisibleRefundCardSuccess(null);
-      setVisibleRefundSectionSuccess("");
       refundSuccessTimeoutRef.current = null;
     }, 4000);
   };
@@ -8129,9 +7119,7 @@ export default function ReturnsRequests() {
     Boolean(visibleRefundCardSuccess?.requestId) &&
     refundQueueRequests.some((requestRow) => String(requestRow.id) === visibleRefundCardSuccess.requestId);
   const visibleRefundSectionSuccessMessage =
-    !hasVisibleRefundSuccessCard
-      ? visibleRefundCardSuccess?.message || visibleRefundSectionSuccess
-      : "";
+    visibleRefundCardSuccess && !hasVisibleRefundSuccessCard ? visibleRefundCardSuccess.message : "";
   const returnToCustomerQueueRequests = requests
     .filter((requestRow) => RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase()))
     .sort((a, b) => {
@@ -8519,24 +7507,6 @@ export default function ReturnsRequests() {
                       );
                     })}
                   </div>
-                  {!isCourierTomorrowScope ? (
-                    <label className={`${styles.branchPickupTestSwitch} ${styles.courierDateTestSwitch}`}>
-                      <input
-                        type="checkbox"
-                        checked={includeTomorrowCourierOrdersInToday}
-                        onChange={(event) => {
-                          setIncludeTomorrowCourierOrdersInToday(event.target.checked);
-                          setShowOnlyNotLocatedCourierOrders(false);
-                          setCourierBulkMode("");
-                          setSelectedCourierBulkOrderIds([]);
-                          setCourierRefundRequest(null);
-                          setSelectedCourierRefundUnitKeys([]);
-                        }}
-                      />
-                      <span className={styles.branchPickupTestSlider} aria-hidden="true" />
-                      Modo prueba: incluir mañana en Hoy
-                    </label>
-                  ) : null}
                   <div
                     className={`${styles.courierOrdersCountGroup} ${
                       isCourierTomorrowScope ? styles.courierOrdersCountGroupInline : ""
@@ -12624,6 +11594,7 @@ function RequestCard({
                   event.preventDefault();
                   return;
                 }
+                onRefundActionSuccess?.(request.id, "Reembolso procesado correctamente.");
               }}
             >
               <input type="hidden" name="intent" value="process_refund" />

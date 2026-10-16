@@ -18,15 +18,12 @@ if (process.env.npm_lifecycle_event !== "build") {
 
 const requiredScopes = [
   "read_orders",
-  "read_customers",
   "read_products",
   "read_inventory",
   "write_products",
   "write_merchant_managed_fulfillment_orders",
   "write_assigned_fulfillment_orders",
   "write_fulfillments",
-  "read_store_credit_accounts",
-  "write_store_credit_account_transactions",
 ];
 const configuredScopes = process.env.SCOPES?.split(",").map((scope) => scope.trim()).filter(Boolean) || [];
 
