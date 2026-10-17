@@ -3881,40 +3881,6 @@ export const loader = async ({ request }) => {
           orderBy: { createdAt: "desc" },
         });
 
-  if (viewMode === VIEW_MODE.BRANCH && rawRequests.length > 0) {
-    const orderNumbers = [
-      ...new Set(rawRequests.map((requestRow) => String(requestRow.orderNumber || "").trim()).filter(Boolean)),
-    ];
-    const comparableRequests = await prisma.returnRequest.findMany({
-      where: {
-        shop: session.shop,
-        orderNumber: { in: orderNumbers },
-      },
-      include: {
-        items: {
-          select: {
-            lineItemId: true,
-            productId: true,
-            variantId: true,
-            title: true,
-            quantity: true,
-          },
-        },
-      },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    });
-    const latestRequestIdByItemsSignature = new Map();
-    for (const requestRow of comparableRequests) {
-      const signature = returnRequestItemsSignature(requestRow);
-      if (!latestRequestIdByItemsSignature.has(signature)) {
-        latestRequestIdByItemsSignature.set(signature, requestRow.id);
-      }
-    }
-    rawRequests = rawRequests.filter(
-      (requestRow) => latestRequestIdByItemsSignature.get(returnRequestItemsSignature(requestRow)) === requestRow.id,
-    );
-  }
-
   let courierOrdersRaw = [];
   if (viewMode === VIEW_MODE.COURIER || viewMode === VIEW_MODE.PREPARERS) {
     const [activeRouteOrders, deliveryAdminOrders, sharedDeliveryOrders, pickupOrders] = await Promise.all([
@@ -6849,6 +6815,7 @@ export default function ReturnsRequests() {
     "";
   const [visiblePageSuccessMessage, setVisiblePageSuccessMessage] = useState("");
   const [visibleRefundCardSuccess, setVisibleRefundCardSuccess] = useState(null);
+  const [visibleRefundSectionSuccess, setVisibleRefundSectionSuccess] = useState("");
   const [visibleReviewCardMessage, setVisibleReviewCardMessage] = useState(null);
   const [pendingReviewActionRequest, setPendingReviewActionRequest] = useState(null);
   const [pendingReceivedActionRequest, setPendingReceivedActionRequest] = useState(null);
@@ -6884,12 +6851,14 @@ export default function ReturnsRequests() {
     }
     setVisiblePageSuccessMessage("");
     setPendingReceivedActionRequest(null);
+    setVisibleRefundSectionSuccess(String(message || "").trim());
     setVisibleRefundCardSuccess({
       requestId: String(requestId || ""),
       message: String(message || "").trim(),
     });
     refundSuccessTimeoutRef.current = window.setTimeout(() => {
       setVisibleRefundCardSuccess(null);
+      setVisibleRefundSectionSuccess("");
       refundSuccessTimeoutRef.current = null;
     }, 4000);
   };
@@ -7119,7 +7088,9 @@ export default function ReturnsRequests() {
     Boolean(visibleRefundCardSuccess?.requestId) &&
     refundQueueRequests.some((requestRow) => String(requestRow.id) === visibleRefundCardSuccess.requestId);
   const visibleRefundSectionSuccessMessage =
-    visibleRefundCardSuccess && !hasVisibleRefundSuccessCard ? visibleRefundCardSuccess.message : "";
+    !hasVisibleRefundSuccessCard
+      ? visibleRefundCardSuccess?.message || visibleRefundSectionSuccess
+      : "";
   const returnToCustomerQueueRequests = requests
     .filter((requestRow) => RETURN_TO_CUSTOMER_STATUSES.has(String(requestRow.status || "").toLowerCase()))
     .sort((a, b) => {
@@ -11594,7 +11565,6 @@ function RequestCard({
                   event.preventDefault();
                   return;
                 }
-                onRefundActionSuccess?.(request.id, "Reembolso procesado correctamente.");
               }}
             >
               <input type="hidden" name="intent" value="process_refund" />
