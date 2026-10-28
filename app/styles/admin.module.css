@@ -1134,6 +1134,10 @@
   user-select: none;
 }
 
+.courierDateTestSwitch {
+  margin: 0 0 10px;
+}
+
 .branchPickupTestSwitch input {
   position: absolute;
   opacity: 0;

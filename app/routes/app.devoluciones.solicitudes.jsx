@@ -6717,6 +6717,7 @@ export default function ReturnsRequests() {
   const [selectedCourierRefundUnitKeys, setSelectedCourierRefundUnitKeys] = useState([]);
   const [showOnlyNotLocatedCourierOrders, setShowOnlyNotLocatedCourierOrders] = useState(false);
   const [courierDateScope, setCourierDateScope] = useState("today");
+  const [includeAllCourierDatesInToday, setIncludeAllCourierDatesInToday] = useState(false);
   const [branchPickupDeliveryRequest, setBranchPickupDeliveryRequest] = useState(null);
   const [branchPickupDeliveryCode, setBranchPickupDeliveryCode] = useState("");
   const [branchPickupRefundRequest, setBranchPickupRefundRequest] = useState(null);
@@ -6729,6 +6730,7 @@ export default function ReturnsRequests() {
     { value: "tomorrow", title: "Mañana", dateKey: tomorrowCourierDateKey },
   ];
   const courierDateFilteredOrders = courierOrders.filter((order) => {
+    if (!isCourierTomorrowScope && includeAllCourierDatesInToday) return true;
     const orderDateKey = courierDateKey(order);
     if (!orderDateKey) return false;
     if (isCourierTomorrowScope) return orderDateKey === selectedCourierDateKey;
@@ -7478,6 +7480,25 @@ export default function ReturnsRequests() {
                       );
                     })}
                   </div>
+                  {!isCourierTomorrowScope ? (
+                    <label className={`${styles.branchPickupTestSwitch} ${styles.courierDateTestSwitch}`}>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={includeAllCourierDatesInToday}
+                        onChange={(event) => {
+                          setIncludeAllCourierDatesInToday(event.target.checked);
+                          setShowOnlyNotLocatedCourierOrders(false);
+                          setCourierBulkMode("");
+                          setSelectedCourierBulkOrderIds([]);
+                          setCourierRefundRequest(null);
+                          setSelectedCourierRefundUnitKeys([]);
+                        }}
+                      />
+                      <span className={styles.branchPickupTestSlider} aria-hidden="true" />
+                      Modo prueba: incluir todas las fechas en Hoy
+                    </label>
+                  ) : null}
                   <div
                     className={`${styles.courierOrdersCountGroup} ${
                       isCourierTomorrowScope ? styles.courierOrdersCountGroupInline : ""
